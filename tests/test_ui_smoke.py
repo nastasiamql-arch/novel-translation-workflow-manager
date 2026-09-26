@@ -55,7 +55,7 @@ def test_workspace_click_copy_and_step_cycle(tmp_path):
     QTest.mouseClick(copy_button, Qt.LeftButton)
     app.processEvents()
     urls = app.clipboard().mimeData().urls()
-    assert [url.toLocalFile() for url in urls] == [str(source.resolve())]
+    assert [Path(url.toLocalFile()) for url in urls] == [source.resolve()]
     assert window.steps.currentRow() == 1
 
     window.resize(900, 600)
