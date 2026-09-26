@@ -106,30 +106,31 @@ class MainWindow(QMainWindow):
         row=self.files.currentItem();return next((f for f in self.step().files if f.id==row.data(Qt.UserRole)),None) if row and self.step() else None
     def add_file(self):
         if not self.profile or not self.step():return
-        mode,ok=QInputDialog.getItem(self,"Add File","Choose how to use this file:",["Import a copy","Link original (follow updates)"],0,False)
-        if not ok:return
-        src,_=QFileDialog.getOpenFileName(self,"Choose file","","Text files (*.txt *.md *.json)")
+        root=self.repo.profile_dir(self.profile.id).resolve()
+        src,_=QFileDialog.getOpenFileName(self,"Link original file",str(root),"Text files (*.txt *.md *.json)")
         if not src:return
-        p=Path(src)
-        if p.suffix.lower() not in (".txt",".md",".json"):QMessageBox.warning(self,"Unsupported","Choose .txt, .md, or .json.");return
-        label,ok=QInputDialog.getText(self,"File label","Display name:",text=p.stem)
+        source=Path(src).resolve()
+        if source.suffix.lower() not in (".txt",".md",".json"):QMessageBox.warning(self,"Unsupported","Choose .txt, .md, or .json.");return
+        label,ok=QInputDialog.getText(self,"File label","Display label:",text=source.stem)
         if not ok:return
-        if mode=="Link original (follow updates)":
-            source=str(p.resolve())
-            if any(item.reference_type=="external_file" and Path(item.path).resolve()==p.resolve() for item in self.step().files):
-                QMessageBox.information(self,"Already added","This linked file is already attached to the selected step.");return
-            self.step().files.append(StepFile(label=label or p.stem,reference_type="external_file",path=source,file_type="reference",order=len(self.step().files)))
-            self.save();self.refresh_files();self.statusBar().showMessage("Linked to original file; future changes will be used",4000);return
-        rel="reference/"+p.name;dst=self.repo.resolve_project_path(self.profile.id,rel);dst.parent.mkdir(parents=True,exist_ok=True)
-        if dst.exists():
-            choice=QMessageBox.question(self,"File already imported","Replace the stored copy with this latest version? Choose No to attach the existing stored copy.",QMessageBox.Yes|QMessageBox.No|QMessageBox.Cancel,QMessageBox.Yes)
-            if choice==QMessageBox.Cancel:return
-            if choice==QMessageBox.Yes:
-                import shutil;shutil.copy2(p,dst)
-            already=any(item.path==rel for item in self.step().files)
-            if not already:self.step().files.append(StepFile(label=label or p.stem,path=rel,file_type="reference",order=len(self.step().files)))
-            self.save();self.refresh_files();return
-        import shutil;shutil.copy2(p,dst);self.step().files.append(StepFile(label=label or p.stem,path=rel,file_type="reference",order=len(self.step().files)));self.save();self.refresh_files()
+        try:
+            relative=source.relative_to(root).as_posix()
+            reference_type="repository_file";stored_path=relative
+        except ValueError:
+            reference_type="external_file";stored_path=str(source)
+        old_copy="reference/"+source.name
+        linked=False
+        for workflow_step in self.profile.workflow.steps:
+            for item in workflow_step.files:
+                if item.reference_type=="repository_file" and item.path==old_copy:
+                    item.reference_type=reference_type;item.path=stored_path;linked=True
+        already=any(item.reference_type==reference_type and item.path==stored_path for item in self.step().files)
+        if not already:
+            self.step().files.append(StepFile(label=label or source.stem,reference_type=reference_type,path=stored_path,file_type=source.parent.name,order=len(self.step().files)))
+        self.save();self.refresh_files()
+        message="Linked to original file; future edits will be used"
+        if linked:message="Updated existing workflow references to use the original file"
+        self.statusBar().showMessage(message,5000)
     def add_dynamic(self):
         if not self.step():return
         ref,ok=QInputDialog.getItem(self,"Dynamic chapter","Reference:",["CURRENT_SOURCE_CHAPTER","CURRENT_TRANSLATED_CHAPTER","CURRENT_REVIEWED_CHAPTER"],0,False)
