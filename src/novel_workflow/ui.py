@@ -87,14 +87,6 @@ class MainWindow(QMainWindow):
         self.novel.setObjectName("currentNovel")
         bar.addWidget(self.novel)
         bar.addSeparator()
-        bar.addWidget(QLabel("บท"))
-        self.chapter=QSpinBox()
-        self.chapter.setMinimum(1)
-        self.chapter.setFixedWidth(92)
-        self.chapter.valueChanged.connect(self.chapter_changed)
-        bar.addWidget(self.chapter)
-        for label,fn in (("◀",lambda:self.chapter.setValue(max(1,self.chapter.value()-1))),("▶",lambda:self.chapter.setValue(self.chapter.value()+1))):
-            a=QAction(label,self);a.setToolTip("ไปบทก่อนหน้า" if label=="◀" else "ไปบทถัดไป");a.triggered.connect(fn);bar.addAction(a)
         bar.addSeparator()
         for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("ตั้งค่า",self.settings_dialog)):
             a=QAction(label,self);a.triggered.connect(fn);bar.addAction(a)
@@ -105,7 +97,7 @@ class MainWindow(QMainWindow):
         self.profiles=QListWidget()
         self.profiles.setSpacing(2)
         self.profiles.currentRowChanged.connect(self.select_profile)
-        splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),("เปลี่ยนชื่อ",self.rename_profile),("ตัวเปิดไฟล์",self.launcher_dialog),("ลบนิยาย",self.delete_profile)]))
+        splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),("เลือกบท",self.chapter_dialog),("เปลี่ยนชื่อ",self.rename_profile),("ตัวเปิดไฟล์",self.launcher_dialog),("ลบนิยาย",self.delete_profile)]))
         self.steps=QListWidget()
         self.steps.setSpacing(2)
         self.steps.currentRowChanged.connect(self.select_step)
@@ -162,7 +154,8 @@ class MainWindow(QMainWindow):
     def select_profile(self,i):
         if i<0 or i>=len(getattr(self,"ps_list",[])):return
         self.profile=self.ps_list[i];self.settings.last_profile_id=self.profile.id;self.novel.setText(self.profile.name)
-        self.chapter.blockSignals(True);self.chapter.setValue(self.profile.chapter_state.current_chapter);self.chapter.blockSignals(False);self.refresh_steps()
+        self.statusBar().showMessage(f"{self.profile.name} · บท {self.profile.chapter_state.current_chapter}")
+        self.refresh_steps()
     def refresh_steps(self):
         self.steps.blockSignals(True);self.steps.clear()
         if self.profile:
@@ -179,6 +172,11 @@ class MainWindow(QMainWindow):
     def save(self):
         if self.profile:self.repo.save_profile(self.profile)
         self.repo.save_settings(self.settings);self.statusBar().showMessage("Saved",2000)
+    def chapter_dialog(self):
+        if not self.profile:return
+        chapter,ok=QInputDialog.getInt(self,"เลือกบทปัจจุบัน",self.profile.name,self.profile.chapter_state.current_chapter,1,999999)
+        if ok:self.chapter_changed(chapter)
+
     def chapter_changed(self,n):
         if self.profile:self.profile.chapter_state.current_chapter=n;self.save()
     def launch_profile(self):
