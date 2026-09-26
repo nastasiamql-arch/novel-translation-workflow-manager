@@ -5,7 +5,7 @@ import pytest
 
 def test_profiles_are_independent(tmp_path):
     repo=ProjectRepository(tmp_path);svc=ProfileService(repo);a=svc.create("A");b=svc.create("B")
-    (repo.profile_dir(a.id)/"source"/"Novel - 25.txt").write_text("A",encoding="utf-8")
+    (repo.profile_dir(a.id)/"source"/"chapter_25.txt").write_text("A",encoding="utf-8")
     assert not (repo.profile_dir(b.id)/"source"/"chapter_25.txt").exists()
     assert [p.name for p in repo.list_profiles()]==["A","B"]
 
@@ -17,10 +17,10 @@ def test_workflow_and_ordering():
     assert WorkflowService.move(s.files,0,1)==1 and s.files[1].order==1
 
 def test_chapter_reference_resolves_without_editing_step(tmp_path):
-    repo=ProjectRepository(tmp_path);p=NovelProfile(name="A");repo.save_profile(p);root=repo.profile_dir(p.id)
+    repo=ProjectRepository(tmp_path);p=NovelProfile(name="A");p.chapter_state.current_chapter=25;repo.save_profile(p);root=repo.profile_dir(p.id)
     step=WorkflowStep(name="terms",files=[StepFile(label="chapter",reference_type="dynamic",dynamic_reference="CURRENT_SOURCE_CHAPTER")])
     service=AssemblyService(repo)
-    (root/"source"/"chapter_25.txt").write_text("chapter 25",encoding="utf-8")
+    (root/"source"/"Novel - 25.txt").write_text("chapter 25",encoding="utf-8")
     assert "chapter 25" in service.assemble(p,step,"## {FILE_NAME}")
     p.chapter_state.current_chapter=26;(root/"source"/"Novel - 26.txt").write_text("chapter 26",encoding="utf-8")
     assert "chapter 26" in service.assemble(p,step,"## {FILE_NAME}")
