@@ -3,6 +3,19 @@ import uuid
 
 def uid(): return uuid.uuid4().hex
 
+def _daily_activity_from_dict(value):
+    if not isinstance(value, dict): return {}
+    activity = {}
+    for day, chapters in value.items():
+        if not isinstance(chapters, list): continue
+        parsed = set()
+        for chapter in chapters:
+            try: number = int(chapter)
+            except (TypeError, ValueError): continue
+            if not isinstance(chapter, bool) and number > 0: parsed.add(number)
+        activity[str(day)] = sorted(parsed)
+    return activity
+
 @dataclass
 class StepFile:
     id: str = field(default_factory=uid)
@@ -80,11 +93,7 @@ class NovelProfile:
             translation_goal_target=d.get("translation_goal_target"),
             translation_goal_baseline=d.get("translation_goal_baseline"),
             translation_checkpoint_path=d.get("translation_checkpoint_path"),
-            translation_daily_activity={
-                str(day): sorted({int(chapter) for chapter in chapters if int(chapter) > 0})
-                for day, chapters in (d.get("translation_daily_activity", {}) or {}).items()
-                if isinstance(chapters, list)
-            },
+            translation_daily_activity=_daily_activity_from_dict(d.get("translation_daily_activity", {})),
             cover_image_path=d.get("cover_image_path"),
         )
 
