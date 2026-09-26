@@ -7,7 +7,7 @@ from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow
 from .services import ProfileService, WorkflowService, AssemblyService
 from .launcher import LauncherService
 from .storage import ProjectRepository
-from .translation_progress import sync_profile_context
+from .translation_progress import latest_context_chapter, sync_profile_context
 from .progress_dialog import TranslationDashboardDialog
 
 class Editor(QDialog):
@@ -98,7 +98,7 @@ class MainWindow(QMainWindow):
         self.profiles=QListWidget()
         self.profiles.setSpacing(2)
         self.profiles.currentRowChanged.connect(self.select_profile)
-        splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),("ตั้งรูปปก",self.set_cover),("เอารูปปกออก",self.remove_cover),("เปลี่ยนชื่อ",self.rename_profile),("ตัวเปิดไฟล์",self.launcher_dialog),("ลบนิยาย",self.delete_profile)]))
+        splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),("ตั้งรูปปก",self.set_cover),("เอารูปปกออก",self.remove_cover),("เลือก Context",self.set_context_file),("เปลี่ยนชื่อ",self.rename_profile),("ตัวเปิดไฟล์",self.launcher_dialog),("ลบนิยาย",self.delete_profile)]))
         self.steps=QListWidget()
         self.steps.setSpacing(2)
         self.steps.currentRowChanged.connect(self.select_step)
@@ -316,6 +316,26 @@ class MainWindow(QMainWindow):
             self.refresh_profiles(self.profile.id if self.profile else None)
             QMessageBox.information(self,"Import Complete",f"นำเข้าข้อมูล Launcher แล้ว\nโปรไฟล์ใหม่: {result['profiles']}\nกลุ่มใหม่: {result['groups']}\nรายการเปิดโปรแกรม/ไฟล์/เว็บไซต์: {result['launch_targets']}\n\nไฟล์ต้นฉบับไม่ได้ถูกแก้ไข")
         except Exception as error:QMessageBox.warning(self,"Import Failed",str(error))
+
+    def set_context_file(self):
+        if not self.profile:return
+        path,_=QFileDialog.getOpenFileName(self,"เลือกไฟล์ Context ของนิยาย",str(Path(self.profile.main_folder or Path.home()).expanduser()),"Context files (*.md *.txt *.json);;All files (*)")
+        if not path:return
+        context=Path(path).expanduser()
+        try:
+            chapter=latest_context_chapter(context.read_text(encoding="utf-8-sig",errors="replace"))
+        except OSError as exc:
+            QMessageBox.warning(self,"อ่าน Context ไม่ได้",str(exc))
+            return
+        if chapter is None:
+            QMessageBox.warning(self,"ไม่พบเลขบท","ไฟล์นี้ไม่พบหัวข้อที่ขึ้นต้นด้วย “บทที่ <เลขบท>”")
+            return
+        self.profile.context_path=str(context.resolve())
+        self.profile.translation_checkpoint_path=str(context.resolve())
+        self.profile.chapter_state.current_chapter=chapter
+        self.repo.save_profile(self.profile)
+        self.statusBar().showMessage(f"เชื่อม Context แล้ว · บทล่าสุด {chapter}",3500)
+        self.refresh_translation_progress()
 
     def set_cover(self):
         if not self.profile:return
