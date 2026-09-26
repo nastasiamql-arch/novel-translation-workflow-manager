@@ -31,7 +31,10 @@ def main() -> int:
         window = MainWindow(repo)
         window.show()
 
+        smoke_passed = False
+
         def exercise_workspace():
+            nonlocal smoke_passed
             try:
                 assert window.novel.text() == profile.name
                 assert window.steps.currentRow() == 0
@@ -69,16 +72,19 @@ def main() -> int:
                 window.resize(900, 600)
                 app.processEvents()
                 assert window.width() == 900
-                print("UI smoke passed: select step, enable file, copy to clipboard, cycle, theme, resize")
                 window.close()
                 app.exit(0)
+                smoke_passed = True
+                print("UI smoke passed: select step, enable file, copy to clipboard, cycle, theme, resize")
             except Exception as exc:
                 print(f"UI smoke failed: {type(exc).__name__}: {exc}")
                 window.close()
                 app.exit(1)
 
         QTimer.singleShot(100, exercise_workspace)
-        return app.exec()
+        event_result = app.exec()
+        print(f"Qt event loop exit status: {event_result}")
+        return 0 if smoke_passed else (event_result or 1)
 
 
 if __name__ == "__main__":
