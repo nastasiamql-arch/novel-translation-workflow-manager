@@ -99,6 +99,14 @@ def goal_progress(profile: NovelProfile) -> tuple[int, int, int] | None:
     return completed, target, min(100, round(completed * 100 / target))
 
 
+def reset_goal_progress(profile: NovelProfile) -> bool:
+    """Start a fresh goal cycle at the profile's current Context chapter."""
+    if profile.translation_goal_target is None or profile.translation_goal_baseline is None:
+        return False
+    profile.translation_goal_baseline = profile.chapter_state.current_chapter
+    return True
+
+
 def week_start(day: date | None = None) -> date:
     current = day or datetime.now().date()
     return current - timedelta(days=current.weekday())
