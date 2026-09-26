@@ -3,7 +3,7 @@ from dataclasses import asdict as asdict_target
 from PySide6.QtCore import Qt, QUrl, QSize, QTimer, QMimeData
 from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QFontMetrics
 from PySide6.QtWidgets import *
-from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow
+from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow, migrate_legacy_basic_workflow
 from .services import ProfileService, WorkflowService, AssemblyService
 from .launcher import LauncherService
 from .storage import ProjectRepository
@@ -86,9 +86,9 @@ class MainWindow(QMainWindow):
         bar.addWidget(QLabel("นิยาย"))
         self.novel=QLabel("ยังไม่ได้เลือก")
         self.novel.setObjectName("currentNovel")
-        self.novel.setMinimumWidth(80)
-        self.novel.setMaximumWidth(250)
-        self.novel.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Fixed)
+        self.novel.setMinimumWidth(210)
+        self.novel.setMaximumWidth(440)
+        self.novel.setSizePolicy(QSizePolicy.Preferred,QSizePolicy.Fixed)
         bar.addWidget(self.novel)
         bar.addSeparator()
         spacer=QWidget()
@@ -117,8 +117,11 @@ class MainWindow(QMainWindow):
         self.goal_label=QLabel("เป้าหมายวันนี้")
         self.goal_bar=QProgressBar()
         self.goal_bar.setFixedHeight(15)
+        self.latest_chapter_label=QLabel("บทล่าสุดจากไฟล์ Context")
+        self.latest_chapter_label.setStyleSheet("color:#777780;font-size:9pt;background:transparent;border:0")
         goal_layout.addWidget(self.goal_label)
         goal_layout.addWidget(self.goal_bar)
+        goal_layout.addWidget(self.latest_chapter_label)
         splitter.addWidget(self.column("ขั้นตอนงาน",self.steps,[],below=self.goal_panel))
         self.files=QListWidget()
         self.files.setSpacing(2)
@@ -174,7 +177,9 @@ class MainWindow(QMainWindow):
     def refresh_profiles(self,pid=None):
         self.ps_list=self.repo.list_profiles()
         for profile in self.ps_list:
-            if sync_profile_context(profile):self.repo.save_profile(profile)
+            changed=migrate_legacy_basic_workflow(profile.workflow)
+            if sync_profile_context(profile):changed=True
+            if changed:self.repo.save_profile(profile)
         self.profiles.blockSignals(True)
         self.profiles.clear()
         self.profiles.setIconSize(QSize(52,68))
@@ -213,8 +218,21 @@ class MainWindow(QMainWindow):
             self.goal_label.setText("ยังไม่ได้เลือกนิยาย")
             self.goal_bar.setRange(0,100)
             self.goal_bar.setValue(0)
+            self.latest_chapter_label.setText("เลือกนิยายเพื่อดูบทล่าสุดจาก Context")
             return
         today=daily_chapter_count(self.profile)
+        latest=None
+        if self.profile.context_path:
+            try:
+                context=Path(self.profile.context_path).expanduser()
+                if context.is_file():
+                    latest=latest_context_chapter(context.read_text(encoding="utf-8-sig",errors="replace"))
+            except OSError:
+                latest=None
+        self.latest_chapter_label.setText(
+            f"นิยายนี้แปลถึงบท {latest} แล้ว · จากไฟล์ Context" if latest is not None
+            else "ยังอ่านบทล่าสุดจากไฟล์ Context ไม่ได้"
+        )
         goal=goal_progress(self.profile)
         if goal:
             completed,target,percentage=goal
@@ -236,7 +254,7 @@ class MainWindow(QMainWindow):
         if i<0 or i>=len(getattr(self,"ps_list",[])):return
         self.profile=self.ps_list[i];self.settings.last_profile_id=self.profile.id
         self.novel.setToolTip(self.profile.name)
-        self.novel.setText(QFontMetrics(self.novel.font()).elidedText(self.profile.name,Qt.ElideRight,238))
+        self.novel.setText(QFontMetrics(self.novel.font()).elidedText(self.profile.name,Qt.ElideRight,428))
         self.refresh_steps()
         self.refresh_goal_indicator()
     def refresh_steps(self):
@@ -631,9 +649,12 @@ class MainWindow(QMainWindow):
             QApplication.clipboard().setMimeData(mime_data)
             self.statusBar().showMessage(f"Copied {len(paths)} file(s) from {step.name}. Paste with Ctrl+V.",5000)
             next_row=WorkflowService.next_index(self.si,self.steps.count())
+            self.si=next_row
+            self.steps.blockSignals(True)
             self.steps.setCurrentRow(next_row)
-            if self.si != next_row:
-                self.select_step(next_row)
+            self.steps.blockSignals(False)
+            self.update_step_indicator()
+            self.refresh_files()
         except Exception as e:QMessageBox.warning(self,"Copy failed",str(e))
     def settings_dialog(self):
         """Open a separate management page; keep the main workspace action-focused."""
