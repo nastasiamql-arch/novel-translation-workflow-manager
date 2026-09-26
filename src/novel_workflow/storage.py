@@ -38,7 +38,7 @@ class ProjectRepository:
         if not re.fullmatch(r"[a-fA-F0-9]{32}",pid): raise ValueError("Invalid profile ID")
         return self.profiles_dir/pid
     def list_profiles(self):
-        return [NovelProfile.from_dict(read_json(p/"profile.json",{})) for p in sorted(self.profiles_dir.iterdir()) if (p/"profile.json").is_file()]
+        return sorted([NovelProfile.from_dict(read_json(p/"profile.json",{})) for p in self.profiles_dir.iterdir() if (p/"profile.json").is_file()], key=lambda profile: profile.name.casefold())
     def save_profile(self,p):
         folder=self.profile_dir(p.id); folder.mkdir(parents=True,exist_ok=True)
         for c in self.CATEGORIES: (folder/c).mkdir(exist_ok=True)
