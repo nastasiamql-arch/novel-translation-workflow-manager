@@ -103,11 +103,11 @@ class MainWindow(QMainWindow):
         self.profiles=QListWidget()
         self.profiles.setSpacing(2)
         self.profiles.currentRowChanged.connect(self.select_profile)
-        splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),("ตั้งรูปปก",self.set_cover),("เอารูปปกออก",self.remove_cover),("เลือก Context",self.set_context_file),("เปลี่ยนชื่อ",self.rename_profile),("ตัวเปิดไฟล์",self.launcher_dialog),("ลบนิยาย",self.delete_profile)]))
+        splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[]))
         self.steps=QListWidget()
         self.steps.setSpacing(2)
-        self.steps.setMinimumHeight(205)
-        self.steps.setMaximumHeight(245)
+        self.steps.setFixedHeight(250)
+        self.steps.setSelectionMode(QAbstractItemView.NoSelection)
         self.steps.currentRowChanged.connect(self.select_step)
         self.goal_panel=QFrame()
         self.goal_panel.setStyleSheet("QFrame { background:#f7f9ff; border:1px solid #e7eaf2; border-radius:12px; }")
@@ -119,11 +119,11 @@ class MainWindow(QMainWindow):
         self.goal_bar.setFixedHeight(15)
         goal_layout.addWidget(self.goal_label)
         goal_layout.addWidget(self.goal_bar)
-        splitter.addWidget(self.column("ขั้นตอนงาน",self.steps,[("เพิ่มขั้นตอน",self.add_step),("เปลี่ยนชื่อ",self.rename_step),("ทำสำเนา",self.duplicate_step),("ลบขั้นตอน",self.delete_step),("เลื่อนขึ้น",lambda:self.move_step(-1)),("เลื่อนลง",lambda:self.move_step(1)),("บันทึกเป็นแม่แบบ",self.save_template)],below=self.goal_panel))
+        splitter.addWidget(self.column("ขั้นตอนงาน",self.steps,[],below=self.goal_panel))
         self.files=QListWidget()
         self.files.setSpacing(2)
         self.files.itemChanged.connect(self.toggle_file)
-        splitter.addWidget(self.column("ไฟล์ของขั้นตอน",self.files,[("เพิ่มไฟล์",self.add_file),("อ้างอิงบทปัจจุบัน",self.add_dynamic),("เอาออกจากขั้นตอน",self.remove_file),("เลื่อนขึ้น",lambda:self.move_file(-1)),("เลื่อนลง",lambda:self.move_file(1)),("เปลี่ยนชื่อที่แสดง",self.rename_file_label),("จัดการไฟล์",self.file_manager),("ดูตัวอย่าง",self.preview),("COPY FILES",self.copy_step)]))
+        splitter.addWidget(self.column("ไฟล์ของขั้นตอน",self.files,[("COPY STEP",self.copy_step)]))
         splitter.setSizes([260,340,650])
         self.statusBar().showMessage("เลือกนิยายและขั้นตอนเพื่อเริ่มทำงาน")
         self.shortcut("Ctrl+Shift+C",self.copy_step)
@@ -151,7 +151,7 @@ class MainWindow(QMainWindow):
         actions=QGridLayout()
         actions.setHorizontalSpacing(7)
         actions.setVerticalSpacing(7)
-        regular=[entry for entry in buttons if entry[0]!="COPY FILES"]
+        regular=[entry for entry in buttons if entry[0] not in ("COPY FILES","COPY STEP")]
         for index,(label,fn) in enumerate(regular):
             button=QPushButton(label)
             if label=="นำเข้าข้อมูลเดิม": button.setObjectName("accentButton")
@@ -159,10 +159,11 @@ class MainWindow(QMainWindow):
             button.clicked.connect(fn)
             actions.addWidget(button,index//2,index%2)
         for label,fn in buttons:
-            if label=="COPY FILES":
+            if label in ("COPY FILES","COPY STEP"):
                 button=QPushButton(label)
                 button.setObjectName("primaryButton")
-                button.setMinimumHeight(46)
+                button.setMinimumHeight(64)
+                button.setStyleSheet("font-size:14pt;font-weight:800;letter-spacing:1px")
                 button.clicked.connect(fn)
                 actions.addWidget(button,(len(regular)+1)//2,0,1,2)
         layout.addLayout(actions)
@@ -242,8 +243,23 @@ class MainWindow(QMainWindow):
         self.steps.blockSignals(True);self.steps.clear()
         if self.profile:
             for i,s in enumerate(self.profile.workflow.steps):self.steps.addItem(f"{i+1}. {s.name}")
-        self.steps.blockSignals(False);self.steps.setCurrentRow(0 if self.profile and self.profile.workflow.steps else -1);self.refresh_files()
-    def select_step(self,i):self.si=i;self.refresh_files()
+        self.steps.blockSignals(False)
+        self.si=0 if self.profile and self.profile.workflow.steps else -1
+        self.steps.setCurrentRow(self.si)
+        self.update_step_indicator()
+        self.refresh_files()
+    def select_step(self,i):
+        self.si=i
+        self.update_step_indicator()
+        self.refresh_files()
+    def update_step_indicator(self):
+        if not self.profile:
+            return
+        for index,step in enumerate(self.profile.workflow.steps):
+            item=self.steps.item(index)
+            if item:
+                prefix="▶  " if index==self.si else ""
+                item.setText(f"{prefix}{index+1}. {step.name}")
     def step(self):return self.profile.workflow.steps[self.si] if self.profile and 0<=self.si<len(self.profile.workflow.steps) else None
     def refresh_files(self):
         self.files.blockSignals(True);self.files.clear();s=self.step()
@@ -616,15 +632,113 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Copied {len(paths)} file(s) from {step.name}. Paste with Ctrl+V.",5000)
             next_row=WorkflowService.next_index(self.si,self.steps.count())
             self.steps.setCurrentRow(next_row)
+            if self.si != next_row:
+                self.select_step(next_row)
         except Exception as e:QMessageBox.warning(self,"Copy failed",str(e))
     def settings_dialog(self):
-        d=QDialog(self);d.setWindowTitle("Settings");l=QVBoxLayout(d);appearance=QComboBox();appearance.addItems(["System","Light","Dark"]);appearance.setCurrentText(self.settings.appearance);l.addWidget(QLabel("Appearance"));l.addWidget(appearance)
-        separator=QLineEdit(self.settings.separator);l.addWidget(QLabel("Separator (use {FILE_NAME})"));l.addWidget(separator)
+        """Open a separate management page; keep the main workspace action-focused."""
+        original_lists=(self.profiles,self.steps,self.files)
+        previous_profile_id=self.profile.id if self.profile else None
+        active_step=self.step()
+        active_step_id=active_step.id if active_step else None
+
+        dialog=QDialog(self)
+        dialog.setWindowTitle("ตั้งค่าและจัดการ")
+        dialog.resize(1040,720)
+        root=QVBoxLayout(dialog)
+        tabs=QTabWidget()
+        root.addWidget(tabs,1)
+
+        self.profiles=QListWidget()
+        self.profiles.setSpacing(2)
+        self.profiles.currentRowChanged.connect(self.select_profile)
+        self.steps=QListWidget()
+        self.steps.setSpacing(2)
+        self.steps.currentRowChanged.connect(self.select_step)
+        self.files=QListWidget()
+        self.files.setSpacing(2)
+        self.files.itemChanged.connect(self.toggle_file)
+
+        def management_tab(title,widget,buttons):
+            page=QWidget()
+            layout=QVBoxLayout(page)
+            layout.setContentsMargins(14,14,14,14)
+            layout.addWidget(widget,1)
+            grid=QGridLayout()
+            grid.setHorizontalSpacing(8)
+            grid.setVerticalSpacing(8)
+            for index,(label,callback) in enumerate(buttons):
+                button=QPushButton(label)
+                button.setMinimumHeight(40)
+                button.clicked.connect(callback)
+                grid.addWidget(button,index//2,index%2)
+            layout.addLayout(grid)
+            tabs.addTab(page,title)
+
+        profile_actions=[
+            ("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),
+            ("ตั้งรูปปก",self.set_cover),("เอารูปปกออก",self.remove_cover),
+            ("เลือก Context",self.set_context_file),("เปลี่ยนชื่อ",self.rename_profile),
+            ("ตัวเปิดไฟล์",self.launcher_dialog),("ลบนิยาย",self.delete_profile),
+        ]
+        step_actions=[
+            ("เพิ่มขั้นตอน",self.add_step),("เปลี่ยนชื่อ",self.rename_step),
+            ("ทำสำเนา",self.duplicate_step),("ลบขั้นตอน",self.delete_step),
+            ("เลื่อนขึ้น",lambda:self.move_step(-1)),("เลื่อนลง",lambda:self.move_step(1)),
+            ("บันทึกเป็นแม่แบบ",self.save_template),
+        ]
+        file_actions=[
+            ("เพิ่มไฟล์",self.add_file),("อ้างอิงบทปัจจุบัน",self.add_dynamic),
+            ("เอาออกจากขั้นตอน",self.remove_file),("เลื่อนขึ้น",lambda:self.move_file(-1)),
+            ("เลื่อนลง",lambda:self.move_file(1)),("เปลี่ยนชื่อที่แสดง",self.rename_file_label),
+            ("จัดการไฟล์",self.file_manager),("ดูตัวอย่าง",self.preview),
+        ]
+        management_tab("นิยาย",self.profiles,profile_actions)
+        management_tab("ขั้นตอน",self.steps,step_actions)
+        management_tab("ไฟล์ของขั้นตอน",self.files,file_actions)
+
+        preferences=QWidget()
+        prefs=QVBoxLayout(preferences)
+        appearance=QComboBox()
+        appearance.addItems(["System","Light","Dark"])
+        appearance.setCurrentText(self.settings.appearance)
+        prefs.addWidget(QLabel("รูปลักษณ์"))
+        prefs.addWidget(appearance)
+        separator=QLineEdit(self.settings.separator)
+        prefs.addWidget(QLabel("ตัวคั่นเนื้อหา (ใช้ {FILE_NAME})"))
+        prefs.addWidget(separator)
         checks=[]
-        for label,attr in (("Show filename heading","show_filename_heading"),("Confirm before deleting","confirm_before_deleting"),("Open last profile on startup","open_last_profile")):
-            c=QCheckBox(label);c.setChecked(getattr(self.settings,attr));l.addWidget(c);checks.append((c,attr))
-        b=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);b.accepted.connect(d.accept);b.rejected.connect(d.reject);l.addWidget(b)
-        if d.exec()==QDialog.Accepted:
-            self.settings.appearance=appearance.currentText();self.settings.separator=separator.text()
-            for c,a in checks:setattr(self.settings,a,c.isChecked())
-            self.save()
+        for label,attr in (("แสดงชื่อไฟล์","show_filename_heading"),("ยืนยันก่อนลบ","confirm_before_deleting"),("เปิดนิยายล่าสุดเมื่อเริ่มโปรแกรม","open_last_profile")):
+            check=QCheckBox(label)
+            check.setChecked(getattr(self.settings,attr))
+            prefs.addWidget(check)
+            checks.append((check,attr))
+        prefs.addStretch(1)
+        tabs.addTab(preferences,"ทั่วไป")
+
+        buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Close)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        root.addWidget(buttons)
+
+        result=QDialog.Rejected
+        try:
+            self.refresh_profiles(previous_profile_id)
+            result=dialog.exec()
+            if result==QDialog.Accepted:
+                self.settings.appearance=appearance.currentText()
+                self.settings.separator=separator.text()
+                for check,attr in checks:
+                    setattr(self.settings,attr,check.isChecked())
+                self.save()
+        finally:
+            self.profiles,self.steps,self.files=original_lists
+            self.refresh_profiles(self.profile.id if self.profile else previous_profile_id)
+            if self.profile and self.profile.workflow.steps:
+                restored=next((i for i,step in enumerate(self.profile.workflow.steps) if step.id==active_step_id),0)
+                self.steps.setCurrentRow(restored)
+                if self.si!=restored:
+                    self.select_step(restored)
+            else:
+                self.si=-1
+                self.refresh_files()
