@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "novel-translation-workflow-manager"
+name = "novelworkflow"
 version = "1.0.0"
-description = "Windows desktop workflow context manager for novel translation"
+description = "Windows desktop novel launcher and translation workflow manager"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["PySide6>=6.6"]
@@ -14,7 +14,7 @@ dependencies = ["PySide6>=6.6"]
 dev = ["pytest>=8", "pyinstaller>=6"]
 
 [project.scripts]
-novel-workflow-manager = "novel_workflow.main:main"
+novelworkflow = "novel_workflow.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

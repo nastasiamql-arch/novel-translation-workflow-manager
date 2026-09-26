@@ -1,6 +1,8 @@
-from novel_workflow.models import NovelProfile, StepFile, Workflow, WorkflowStep
+import json
+from novel_workflow.models import LaunchTarget, NovelGroup, NovelProfile, StepFile, Workflow, WorkflowStep
 from novel_workflow.services import AssemblyService, ProfileService, WorkflowService
 from novel_workflow.storage import ProjectRepository, read_json
+from novel_workflow.launcher import LauncherService
 import pytest
 
 def test_profiles_are_independent(tmp_path):
@@ -45,6 +47,60 @@ def test_traversal_and_json_recovery(tmp_path):
     f.write_text('{"ok":',encoding="utf-8")
     with pytest.raises(ValueError):read_json(f,{})
 
+
+def test_copy_advancement_cycles_through_workflow_steps():
+    assert WorkflowService.next_index(0,4)==1
+    assert WorkflowService.next_index(2,4)==3
+    assert WorkflowService.next_index(3,4)==0
+    assert WorkflowService.next_index(0,0)==-1
+
+
+def test_launcher_profile_and_groups_are_saved_independently(tmp_path):
+    repo=ProjectRepository(tmp_path)
+    first=NovelProfile(name="A",main_folder=str(tmp_path/"A"),launch_targets=[LaunchTarget(label="Docs",kind="website",target="https://example.com",order=0)])
+    second=NovelProfile(name="B")
+    repo.save_profile(first);repo.save_profile(second)
+    group=NovelGroup(name="Set",profile_ids=[first.id,second.id],description="work set")
+    repo.save_groups([group])
+    loaded={profile.id:profile for profile in repo.list_profiles()}
+    assert loaded[first.id].main_folder==str(tmp_path/"A")
+    assert loaded[first.id].launch_targets[0].target=="https://example.com"
+    assert repo.load_groups()[0].profile_ids==[first.id,second.id]
+
+def test_launcher_import_merges_targets_groups_and_preserves_source(tmp_path):
+    repo=ProjectRepository(tmp_path/"app")
+    existing=NovelProfile(name="Existing",main_folder=str(tmp_path/"novel"))
+    repo.save_profile(existing)
+    payload={
+        "schemaVersion":8,
+        "novels":[{"id":"old-novel-1","name":"Existing","mainFolder":str(tmp_path/"novel"),
+          "status":"paused","contextPath":None,"translationGoal":{"targetChapters":20,"baselineChapter":4},
+          "files":[{"id":"f1","name":"Glossary","path":str(tmp_path/"terms.md"),"enabled":True,"order":0}],
+          "applications":[{"id":"a1","name":"Editor","executablePath":str(tmp_path/"editor.exe"),"arguments":["--profile","novel"],"enabled":True,"order":1}],
+          "websites":[{"id":"w1","name":"Wiki","url":"https://example.com","enabled":False,"order":2}]}],
+        "groups":[{"id":"old-group-1","name":"Reading Set","novelIds":["old-novel-1"],"description":"group"}]
+    }
+    source=tmp_path/"launcher.json"
+    source.write_text(json.dumps(payload),encoding="utf-8")
+    original=source.read_text(encoding="utf-8")
+    result=repo.import_launcher_config(source)
+    loaded=repo.list_profiles()[0]
+    assert result=={"profiles":0,"groups":1,"launch_targets":3}
+    assert source.read_text(encoding="utf-8")==original
+    assert loaded.id==existing.id and loaded.status=="paused"
+    assert loaded.translation_goal_target==20 and loaded.translation_goal_baseline==4
+    assert [item.kind for item in loaded.launch_targets]==["file","application","website"]
+    assert loaded.launch_targets[1].arguments==["--profile","novel"]
+    assert repo.load_groups()[0].profile_ids==[existing.id]
+
+def test_launcher_plan_opens_main_folder_and_enabled_items_in_order(tmp_path):
+    profile=NovelProfile(main_folder=str(tmp_path/"novel"),launch_targets=[
+        LaunchTarget(label="last",kind="file",target="z.txt",enabled=True,order=2),
+        LaunchTarget(label="off",kind="file",target="off.txt",enabled=False,order=0),
+        LaunchTarget(label="first",kind="application",target="tool.exe",order=1)])
+    plan=LauncherService.build_plan(profile)
+    assert [(item.kind,item.label) for item in plan]==[
+        ("folder","โฟลเดอร์หลัก"),("application","first"),("file","last")]
 
 def test_copy_advancement_cycles_through_workflow_steps():
     assert WorkflowService.next_index(0,4)==1

@@ -1,9 +1,11 @@
 from pathlib import Path
+from dataclasses import asdict as asdict_target
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import *
-from .models import AppSettings, StepFile, Workflow
+from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow
 from .services import ProfileService, WorkflowService, AssemblyService
+from .launcher import LauncherService
 from .storage import ProjectRepository
 
 class Editor(QDialog):
@@ -16,15 +18,15 @@ class Editor(QDialog):
 
 class MainWindow(QMainWindow):
     def __init__(self,repo=None):
-        super().__init__();self.repo=repo or ProjectRepository();self.ps=ProfileService(self.repo);self.assembler=AssemblyService(self.repo);self.settings=self.repo.load_settings();self.profile=None;self.si=-1
-        self.setWindowTitle("Novel Translation Workflow Manager");self.resize(1180,720);self.build();self.refresh_profiles()
+        super().__init__();self.repo=repo or ProjectRepository();self.ps=ProfileService(self.repo);self.assembler=AssemblyService(self.repo);self.launcher=LauncherService();self.settings=self.repo.load_settings();self.profile=None;self.si=-1
+        self.setWindowTitle("NovelWorkflow");self.resize(1180,720);self.build();self.refresh_profiles()
     def build(self):
         bar=self.addToolBar("Navigation");bar.setMovable(False);bar.addWidget(QLabel("Novel: "));self.novel=QLabel("None");bar.addWidget(self.novel);bar.addSeparator();bar.addWidget(QLabel("Chapter: "))
         self.chapter=QSpinBox();self.chapter.setMinimum(1);self.chapter.valueChanged.connect(self.chapter_changed);bar.addWidget(self.chapter)
-        for label,fn in (("◀",lambda:self.chapter.setValue(max(1,self.chapter.value()-1))),("▶",lambda:self.chapter.setValue(self.chapter.value()+1)),("Settings",self.settings_dialog)):
+        for label,fn in (("◀",lambda:self.chapter.setValue(max(1,self.chapter.value()-1))),("▶",lambda:self.chapter.setValue(self.chapter.value()+1)),("Open Novel",self.launch_profile),("Groups",self.groups_dialog),("Import Launcher",self.import_launcher_config),("Settings",self.settings_dialog)):
             a=QAction(label,self);a.triggered.connect(fn);bar.addAction(a)
         splitter=QSplitter();self.setCentralWidget(splitter)
-        self.profiles=QListWidget();self.profiles.currentRowChanged.connect(self.select_profile);splitter.addWidget(self.column("PROFILES",self.profiles,[("New Profile",self.new_profile),("Duplicate",self.duplicate_profile),("Rename",self.rename_profile),("Delete",self.delete_profile)]))
+        self.profiles=QListWidget();self.profiles.currentRowChanged.connect(self.select_profile);splitter.addWidget(self.column("PROFILES",self.profiles,[("New Profile",self.new_profile),("Duplicate",self.duplicate_profile),("Rename",self.rename_profile),("Launcher Items",self.launcher_dialog),("Delete",self.delete_profile)]))
         self.steps=QListWidget();self.steps.currentRowChanged.connect(self.select_step);splitter.addWidget(self.column("WORKFLOW STEPS",self.steps,[("Add Step",self.add_step),("Rename",self.rename_step),("Duplicate",self.duplicate_step),("Delete",self.delete_step),("Move Up",lambda:self.move_step(-1)),("Move Down",lambda:self.move_step(1)),("Save as Template",self.save_template)]))
         self.files=QListWidget();self.files.itemChanged.connect(self.toggle_file);splitter.addWidget(self.column("STEP FILES",self.files,[("Add File",self.add_file),("Add Dynamic Chapter",self.add_dynamic),("Remove from Step",self.remove_file),("Move File Up",lambda:self.move_file(-1)),("Move File Down",lambda:self.move_file(1)),("Rename Label",self.rename_file_label),("File Manager",self.file_manager),("Preview",self.preview),("COPY FILES",self.copy_step)]));splitter.setSizes([240,300,640])
         self.statusBar();self.shortcut("Ctrl+Shift+C",self.copy_step);self.shortcut("Ctrl+P",self.preview);self.shortcut("Ctrl+R",self.refresh);self.shortcut("Ctrl+S",self.save)
@@ -62,6 +64,114 @@ class MainWindow(QMainWindow):
         self.repo.save_settings(self.settings);self.statusBar().showMessage("Saved",2000)
     def chapter_changed(self,n):
         if self.profile:self.profile.chapter_state.current_chapter=n;self.save()
+    def launch_profile(self):
+        if not self.profile:return
+        results=self.launcher.launch_profile(self.profile)
+        failures=[message for success,message in results if not success]
+        succeeded=sum(1 for success,_ in results if success)
+        if failures:QMessageBox.warning(self,"NovelWorkflow",f"เปิดสำเร็จ {succeeded} รายการ\n\n"+"\n".join(failures))
+        else:self.statusBar().showMessage(f"เปิด {self.profile.name} แล้ว ({succeeded} รายการ)",4000)
+
+    def launcher_dialog(self):
+        if not self.profile:return
+        dialog=QDialog(self);dialog.setWindowTitle("Launcher Items — "+self.profile.name);dialog.resize(760,560)
+        layout=QVBoxLayout(dialog);folder=QLineEdit(self.profile.main_folder);folder.setPlaceholderText("โฟลเดอร์หลักของนิยาย")
+        browse=QPushButton("Browse…");browse.clicked.connect(lambda:folder.setText(QFileDialog.getExistingDirectory(dialog,"เลือกโฟลเดอร์นิยาย",folder.text()) or folder.text()))
+        folder_row=QHBoxLayout();folder_row.addWidget(folder,1);folder_row.addWidget(browse)
+        layout.addWidget(QLabel("Main folder"));layout.addLayout(folder_row)
+        listing=QListWidget();layout.addWidget(listing,1)
+        targets=[LaunchTarget.from_dict(asdict_target(item)) for item in self.profile.launch_targets]
+        def refresh():
+            listing.clear()
+            for target in sorted(targets,key=lambda item:item.order):
+                row=QListWidgetItem(f"[{target.kind}] {target.label} — {target.target}")
+                row.setFlags(row.flags()|Qt.ItemIsUserCheckable);row.setCheckState(Qt.Checked if target.enabled else Qt.Unchecked);row.setData(Qt.UserRole,target.id);listing.addItem(row)
+        def add_target(kind):
+            if kind=="application":
+                path,_=QFileDialog.getOpenFileName(dialog,"เลือกโปรแกรม","","Applications (*.exe);;All files (*)")
+            elif kind=="folder":
+                path=QFileDialog.getExistingDirectory(dialog,"เลือกโฟลเดอร์")
+            elif kind=="website":
+                path,ok=QInputDialog.getText(dialog,"Add Website","URL (http/https):")
+                if not ok:return
+            else:
+                path,_=QFileDialog.getOpenFileName(dialog,"เลือกไฟล์","","All files (*)")
+            if not path:return
+            label=Path(path).stem if kind!="website" else path
+            if kind=="website":
+                label,ok=QInputDialog.getText(dialog,"Website Name","ชื่อเว็บไซต์:",text=path)
+                if not ok:return
+            targets.append(LaunchTarget(label=label,kind=kind,target=path,order=len(targets)));refresh()
+        actions=QHBoxLayout()
+        for label,kind in (("Add App","application"),("Add File","file"),("Add Folder","folder"),("Add Website","website")):
+            button=QPushButton(label);button.clicked.connect(lambda checked=False,k=kind:add_target(k));actions.addWidget(button)
+        remove=QPushButton("Remove");remove.clicked.connect(lambda:targets.__setitem__(slice(None),[target for target in targets if target.id!=listing.currentItem().data(Qt.UserRole)]) if listing.currentItem() else None);remove.clicked.connect(refresh)
+        actions.addWidget(remove);layout.addLayout(actions)
+        refresh()
+        buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);layout.addWidget(buttons)
+        if dialog.exec()==QDialog.Accepted:
+            for i in range(listing.count()):
+                row=listing.item(i)
+                target=next((entry for entry in targets if entry.id==row.data(Qt.UserRole)),None)
+                if target:target.enabled=row.checkState()==Qt.Checked;target.order=i
+            self.profile.main_folder=folder.text().strip();self.profile.launch_targets=targets;self.save()
+            self.statusBar().showMessage("บันทึก Launcher Items แล้ว",2500)
+
+    def groups_dialog(self):
+        groups=self.repo.load_groups();profiles=self.repo.list_profiles()
+        dialog=QDialog(self);dialog.setWindowTitle("Novel Groups");dialog.resize(560,560);layout=QVBoxLayout(dialog)
+        selector=QComboBox()
+        for group in groups:selector.addItem(group.name,group.id)
+        name=QLineEdit();members=QListWidget();layout.addWidget(QLabel("Group"));layout.addWidget(selector);layout.addWidget(name);layout.addWidget(QLabel("นิยายในกลุ่ม"));layout.addWidget(members,1)
+        def show_group(index):
+            members.clear()
+            current=next((group for group in groups if group.id==selector.itemData(index)),None)
+            name.setText(current.name if current else "")
+            for profile in profiles:
+                row=QListWidgetItem(profile.name);row.setData(Qt.UserRole,profile.id);row.setFlags(row.flags()|Qt.ItemIsUserCheckable)
+                row.setCheckState(Qt.Checked if current and profile.id in current.profile_ids else Qt.Unchecked);members.addItem(row)
+        def store_group():
+            current=next((group for group in groups if group.id==selector.currentData()),None)
+            if not current:return None
+            current.name=name.text().strip() or current.name
+            current.profile_ids=[members.item(i).data(Qt.UserRole) for i in range(members.count()) if members.item(i).checkState()==Qt.Checked]
+            self.repo.save_groups(groups);return current
+        def create_group():
+            group_name,ok=QInputDialog.getText(dialog,"New Group","ชื่อกลุ่ม:")
+            if not ok or not group_name.strip():return
+            group=NovelGroup(name=group_name.strip(),order=len(groups));groups.append(group);selector.addItem(group.name,group.id);selector.setCurrentIndex(selector.count()-1)
+        def delete_group():
+            current=next((group for group in groups if group.id==selector.currentData()),None)
+            if not current:return
+            if QMessageBox.question(dialog,"Delete Group",f"ลบกลุ่ม {current.name}?")!=QMessageBox.Yes:return
+            groups.remove(current);selector.removeItem(selector.currentIndex());show_group(selector.currentIndex())
+            self.repo.save_groups(groups)
+        def open_group():
+            current=store_group()
+            if not current:return
+            results=self.launcher.launch_group(current,profiles);failures=[message for success,message in results if not success]
+            succeeded=sum(1 for success,_ in results if success)
+            if failures:QMessageBox.warning(dialog,"Open Group",f"เปิดสำเร็จ {succeeded} รายการ\n\n"+"\n".join(failures))
+            else:self.statusBar().showMessage(f"เปิดกลุ่ม {current.name} แล้ว",4000)
+        selector.currentIndexChanged.connect(show_group)
+        if groups:show_group(0)
+        row=QHBoxLayout()
+        for label,fn in (("New Group",create_group),("Delete Group",delete_group),("Save",store_group),("Open Group",open_group)):
+            button=QPushButton(label);button.clicked.connect(fn);row.addWidget(button)
+        layout.addLayout(row)
+        close=QDialogButtonBox(QDialogButtonBox.Close);close.rejected.connect(dialog.reject);close.accepted.connect(dialog.accept);layout.addWidget(close)
+        dialog.exec()
+
+    def import_launcher_config(self):
+        default=Path.home()/"AppData"/"Roaming"/"com.novellauncher.desktop"/"config.json"
+        path,_=QFileDialog.getOpenFileName(self,"Import Novel Launcher Data",str(default),"JSON files (*.json)")
+        if not path:return
+        try:
+            result=self.repo.import_launcher_config(path)
+            self.refresh_profiles(self.profile.id if self.profile else None)
+            QMessageBox.information(self,"Import Complete",f"นำเข้าข้อมูล Launcher แล้ว\nโปรไฟล์ใหม่: {result['profiles']}\nกลุ่มใหม่: {result['groups']}\nรายการเปิดโปรแกรม/ไฟล์/เว็บไซต์: {result['launch_targets']}\n\nไฟล์ต้นฉบับไม่ได้ถูกแก้ไข")
+        except Exception as error:QMessageBox.warning(self,"Import Failed",str(error))
+
     def new_profile(self):
         name,ok=QInputDialog.getText(self,"New Profile","Novel name:")
         if not ok:return

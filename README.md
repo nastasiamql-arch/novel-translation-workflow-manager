@@ -1,6 +1,8 @@
-# Novel Translation Workflow Manager
+# NovelWorkflow
 
-A Windows desktop context manager for manual novel translation work. Create independent novel profiles, configure custom workflow steps, attach ordered files or dynamic chapter references, preview the assembled context, and copy it to the clipboard. Version 1 does not call AI or translation APIs and does not require GitHub authentication.
+NovelWorkflow is a Windows desktop app that combines Novel Launcher project launching with a configurable novel translation workflow. It keeps novel profiles independent, opens each profile's project folder and selected files, apps, and websites, launches groups, and remembers the ordered files used in each translation step.
+
+Version 1 does not call AI or translation APIs.
 
 ## Run from source
 
@@ -11,15 +13,27 @@ Requires Python 3.10 or newer.
     python -m pip install -e ".[dev]"
     python -m novel_workflow.main
 
-## Use
+## Launcher features
 
-Create a profile, choose the Novel Translation Basic workflow, and add files to a step. Add File lets you import a snapshot or link the original file so later edits are read immediately. Add CURRENT_SOURCE_CHAPTER (or translated/reviewed chapter) for chapter-specific files. Chapter files may use any filename that contains the chapter number (for example, source/Novel - 25.txt); translated and reviewed files work the same way. Text, Markdown, and JSON are supported. If multiple files match one chapter, the app asks you to resolve the ambiguity. Change the chapter number without editing the workflow step. Ctrl+P previews the exact output and Ctrl+Shift+C copies it.
+- Add a main folder plus application, file, folder, and website targets to each novel.
+- Open all enabled targets for the active profile.
+- Create groups of profiles, then open a group in one action.
+- Import Novel Launcher configuration JSON. The importer maps existing novels by folder or name, adds launcher targets and groups, and leaves the source configuration untouched.
+- Workflow data remains attached to each profile. Profiles imported from Launcher receive the default translation workflow; matching existing profiles keep their existing workflow and files.
 
-Profile data and settings live in %LOCALAPPDATA%/NovelTranslationWorkflowManager. Each profile has separate prompts, glossary, characters, style, source, translated, reviewed, notes, reference, and custom directories. Removing a step attachment does not delete the file. Paths are constrained to the profile folder. JSON recovery only retries unambiguous trailing commas against a temporary copy; original data is preserved.
+The previous application data folder remains `%LOCALAPPDATA%/NovelTranslationWorkflowManager` so existing profiles are reused after updating. Groups are stored in `groups.json` beside the profiles.
+
+## Workflow features
+
+Create independent novel profiles, configure custom workflow steps, attach ordered files or dynamic chapter references, preview assembled text, and copy selected files to the clipboard. Add File links the original file so edits made outside the app are read immediately. Add dynamic references for `CURRENT_SOURCE_CHAPTER`, `CURRENT_TRANSLATED_CHAPTER`, or `CURRENT_REVIEWED_CHAPTER`. Chapter files can have any name as long as the filename includes the chapter number.
+
+## Importing Launcher data
+
+Choose **Import Launcher** and select `config.json`, usually located at `%APPDATA%/com.novellauncher.desktop/config.json`. Import is additive: it does not edit that file or remove files from novel folders. Existing profiles are matched by main folder first and name second. Duplicate launch targets are skipped.
 
 ## Tests and Windows build
 
     python -m pytest
     .\build_windows.ps1
 
-The build creates dist/NovelTranslationWorkflowManager.exe. GitHub Actions runs pytest and builds the Windows executable on main updates and v* tags. Tagged builds publish the executable as a GitHub Release asset.
+The build creates `dist/NovelWorkflow.exe`. GitHub Actions runs the test suite and builds the Windows executable on updates to `main` and `v*` tags. Tagged builds publish the executable as a GitHub Release asset.
