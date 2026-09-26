@@ -18,7 +18,8 @@ Requires Python 3.10 or newer.
 - Add a main folder plus application, file, folder, and website targets to each novel.
 - Open all enabled targets for the active profile.
 - Create groups of profiles, then open a group in one action.
-- Import Novel Launcher configuration JSON. The importer maps existing novels by folder or punctuation-insensitive title, adds launcher targets and groups, skips duplicate entries, and leaves the source configuration untouched. Novel status, current chapter context, and translation goal metadata are preserved.
+- Import Novel Launcher configuration JSON. The importer maps existing novels by folder or punctuation-insensitive title, adds launcher targets and groups, copies each existing cover into that profile, skips duplicate entries, and leaves the source configuration untouched. Novel status, current chapter context, and translation goal metadata are preserved.
+- Set a separate cover image for each novel profile; cover images are copied into that profile's local data.
 - Workflow data remains attached to each profile. Profiles imported from Launcher receive the default translation workflow; matching existing profiles keep their existing workflow and files.
 
 The previous application data folder remains `%LOCALAPPDATA%/NovelTranslationWorkflowManager` so existing profiles are reused after updating. Groups are stored in `groups.json` beside the profiles.

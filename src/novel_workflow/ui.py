@@ -38,35 +38,33 @@ class MainWindow(QMainWindow):
     @staticmethod
     def theme_stylesheet():
         return """
-        QMainWindow { background:#f4f5f3; color:#1d2b3a; font-family:"Segoe UI"; font-size:10pt; }
-        QToolBar#mainToolbar { background:#ffffff; border:0; border-bottom:1px solid #dfe5e2; spacing:10px; padding:8px 14px; }
-        QToolBar#mainToolbar::separator { width:1px; background:#d9e0dc; margin:4px 5px; }
-        QLabel#brandTitle { color:#102a43; font-size:14pt; font-weight:700; }
-        QLabel#brandSubtitle { color:#718096; font-size:8pt; }
-        QLabel#toolbarHint { color:#657586; font-weight:600; }
-        QLabel#currentNovel { color:#102a43; font-size:11pt; font-weight:700; padding:3px 6px; }
-        QToolButton { color:#334e68; background:transparent; border:0; border-radius:7px; padding:7px 9px; font-weight:600; }
-        QToolButton:hover { background:#edf5f2; color:#087f72; }
-        QToolButton:pressed { background:#d9eee8; }
-        QFrame#columnPanel { background:#ffffff; border:1px solid #e0e6e2; border-radius:12px; }
-        QLabel#sectionHeading { color:#526577; font-size:9pt; font-weight:700; letter-spacing:1px; padding:2px 2px 5px 2px; }
-        QListWidget { background:#fbfcfb; border:1px solid #e7ece9; border-radius:9px; padding:5px; outline:0; }
-        QListWidget::item { color:#263746; padding:9px 10px; margin:2px 0; border-radius:6px; }
-        QListWidget::item:hover { background:#f0f6f3; }
-        QListWidget::item:selected { background:#e3f2ed; color:#075e56; font-weight:700; }
-        QPushButton { background:#ffffff; color:#34495e; border:1px solid #d8e0dc; border-radius:7px; padding:8px 10px; font-weight:600; }
-        QPushButton:hover { background:#f1f7f4; border-color:#a8cbc0; color:#087f72; }
-        QPushButton:pressed { background:#e2eee9; }
-        QPushButton#primaryButton { background:#087f72; color:#ffffff; border:1px solid #087f72; font-size:10pt; font-weight:700; padding:11px; }
-        QPushButton#primaryButton:hover { background:#06685e; border-color:#06685e; }
-        QPushButton#accentButton { color:#087f72; border-color:#b9d8cf; background:#f1f8f5; }
-        QSpinBox, QComboBox, QLineEdit { background:#ffffff; color:#243b53; border:1px solid #d8e0dc; border-radius:6px; padding:6px 8px; min-height:20px; }
-        QTextEdit, QPlainTextEdit { background:#ffffff; color:#243b53; border:1px solid #d8e0dc; border-radius:8px; padding:8px; selection-background-color:#b9e4d6; }
-        QDialog { background:#f7f8f6; }
-        QStatusBar { background:#ffffff; color:#536575; border-top:1px solid #e0e6e2; }
-        QSplitter::handle { background:#e5eae7; width:5px; }
+        QMainWindow { background:#f2f3f8; color:#1c1c1e; font-family:"Segoe UI Variable","Segoe UI"; font-size:10pt; }
+        QToolBar#mainToolbar { background:rgba(255,255,255,245); border:0; border-bottom:1px solid #e4e5eb; spacing:10px; padding:9px 16px; }
+        QToolBar#mainToolbar::separator { width:1px; background:#e1e2e8; margin:4px 6px; }
+        QLabel#brandTitle { color:#1c1c1e; font-size:14pt; font-weight:700; }
+        QLabel#currentNovel { color:#1c1c1e; font-size:11pt; font-weight:700; padding:3px 6px; }
+        QToolButton { color:#3a3a3c; background:transparent; border:0; border-radius:9px; padding:8px 10px; font-weight:600; }
+        QToolButton:hover { background:#f1f1f7; color:#007aff; }
+        QToolButton:pressed { background:#e5e5ef; }
+        QFrame#columnPanel { background:#ffffff; border:1px solid #e7e7ed; border-radius:18px; }
+        QLabel#sectionHeading { color:#8e8e93; font-size:9pt; font-weight:700; letter-spacing:1px; padding:2px 2px 5px 2px; }
+        QListWidget { background:#fafafd; border:1px solid #ececf1; border-radius:13px; padding:6px; outline:0; }
+        QListWidget::item { color:#242428; padding:7px; margin:3px 1px; border-radius:11px; }
+        QListWidget::item:hover { background:#f4f4f8; }
+        QListWidget::item:selected { background:#eaf2ff; color:#075ec7; font-weight:700; }
+        QPushButton { background:#ffffff; color:#3a3a3c; border:1px solid #e3e3e8; border-radius:10px; padding:8px 10px; font-weight:600; }
+        QPushButton:hover { background:#f5f8ff; border-color:#bfd7ff; color:#0066d6; }
+        QPushButton:pressed { background:#eaf2ff; }
+        QPushButton#primaryButton { background:#007aff; color:#ffffff; border:1px solid #007aff; font-size:10pt; font-weight:700; padding:11px; }
+        QPushButton#primaryButton:hover { background:#0068df; border-color:#0068df; }
+        QPushButton#accentButton { color:#6941c6; border-color:#e3dafb; background:#f7f4ff; }
+        QSpinBox, QComboBox, QLineEdit { background:#ffffff; color:#242428; border:1px solid #e2e2e8; border-radius:9px; padding:7px 9px; min-height:20px; }
+        QTextEdit, QPlainTextEdit { background:#ffffff; color:#242428; border:1px solid #e2e2e8; border-radius:11px; padding:9px; selection-background-color:#bfd7ff; }
+        QDialog { background:#f5f5fa; }
+        QStatusBar { background:#ffffff; color:#63636a; border-top:1px solid #e5e5eb; }
+        QSplitter::handle { background:transparent; width:8px; }
         QScrollBar:vertical { background:transparent; width:10px; margin:2px; }
-        QScrollBar::handle:vertical { background:#c9d5cf; border-radius:4px; min-height:26px; }
+        QScrollBar::handle:vertical { background:#d0d0d8; border-radius:5px; min-height:26px; }
         QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical { height:0; }
         """
     def build(self):
@@ -97,7 +95,7 @@ class MainWindow(QMainWindow):
         self.profiles=QListWidget()
         self.profiles.setSpacing(2)
         self.profiles.currentRowChanged.connect(self.select_profile)
-        splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),("เปลี่ยนชื่อ",self.rename_profile),("ตัวเปิดไฟล์",self.launcher_dialog),("ลบนิยาย",self.delete_profile)]))
+        splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),("ตั้งรูปปก",self.set_cover),("เอารูปปกออก",self.remove_cover),("เปลี่ยนชื่อ",self.rename_profile),("ตัวเปิดไฟล์",self.launcher_dialog),("ลบนิยาย",self.delete_profile)]))
         self.steps=QListWidget()
         self.steps.setSpacing(2)
         self.steps.currentRowChanged.connect(self.select_step)
@@ -146,9 +144,26 @@ class MainWindow(QMainWindow):
     def shortcut(self,key,fn):a=QAction(self);a.setShortcut(QKeySequence(key));a.triggered.connect(fn);self.addAction(a)
     def refresh(self):self.refresh_profiles(self.profile.id if self.profile else None)
     def refresh_profiles(self,pid=None):
-        self.ps_list=self.repo.list_profiles();self.profiles.blockSignals(True);self.profiles.clear()
-        for p in self.ps_list:self.profiles.addItem(p.name)
-        idx=next((i for i,p in enumerate(self.ps_list) if p.id==(pid or (self.settings.last_profile_id if self.settings.open_last_profile else None))),0 if self.ps_list else -1);self.profiles.setCurrentRow(idx);self.profiles.blockSignals(False)
+        self.ps_list=self.repo.list_profiles()
+        self.profiles.blockSignals(True)
+        self.profiles.clear()
+        self.profiles.setIconSize(QSize(52,68))
+        placeholder=Path(__file__).resolve().parent/"resources"/"novelworkflow.png"
+        for profile in self.ps_list:
+            item=QListWidgetItem(profile.name)
+            cover=placeholder
+            if profile.cover_image_path:
+                try:
+                    candidate=self.repo.resolve_project_path(profile.id,profile.cover_image_path)
+                    if candidate.is_file():cover=candidate
+                except ValueError:
+                    pass
+            if cover.is_file():item.setIcon(QIcon(str(cover)))
+            item.setSizeHint(QSize(220,82))
+            self.profiles.addItem(item)
+        idx=next((i for i,p in enumerate(self.ps_list) if p.id==(pid or (self.settings.last_profile_id if self.settings.open_last_profile else None))),0 if self.ps_list else -1)
+        self.profiles.setCurrentRow(idx)
+        self.profiles.blockSignals(False)
         if idx>=0:self.select_profile(idx)
         else:self.profile=None;self.novel.setText("None");self.refresh_steps()
     def select_profile(self,i):
@@ -278,6 +293,38 @@ class MainWindow(QMainWindow):
             self.refresh_profiles(self.profile.id if self.profile else None)
             QMessageBox.information(self,"Import Complete",f"นำเข้าข้อมูล Launcher แล้ว\nโปรไฟล์ใหม่: {result['profiles']}\nกลุ่มใหม่: {result['groups']}\nรายการเปิดโปรแกรม/ไฟล์/เว็บไซต์: {result['launch_targets']}\n\nไฟล์ต้นฉบับไม่ได้ถูกแก้ไข")
         except Exception as error:QMessageBox.warning(self,"Import Failed",str(error))
+
+    def set_cover(self):
+        if not self.profile:return
+        path,_=QFileDialog.getOpenFileName(self,"เลือกรูปปกนิยาย",str(Path.home()),"รูปภาพ (*.png *.jpg *.jpeg *.webp *.bmp)")
+        if not path:return
+        source=Path(path).expanduser()
+        if QPixmap(str(source)).isNull():
+            QMessageBox.warning(self,"เปิดรูปไม่ได้","กรุณาเลือกรูป PNG, JPG, WEBP หรือ BMP ที่ถูกต้อง")
+            return
+        suffix=source.suffix.lower()
+        root=self.repo.profile_dir(self.profile.id)
+        target=root/"covers"/("cover"+suffix)
+        target.parent.mkdir(parents=True,exist_ok=True)
+        import shutil
+        shutil.copy2(source,target)
+        self.profile.cover_image_path=target.relative_to(root).as_posix()
+        self.repo.save_profile(self.profile)
+        self.refresh_profiles(self.profile.id)
+        self.statusBar().showMessage("ตั้งรูปปกนิยายแล้ว",2500)
+
+    def remove_cover(self):
+        if not self.profile or not self.profile.cover_image_path:return
+        try:
+            target=self.repo.resolve_project_path(self.profile.id,self.profile.cover_image_path)
+            if target.is_file():target.unlink()
+        except (OSError,ValueError) as exc:
+            QMessageBox.warning(self,"เอารูปปกออกไม่ได้",str(exc))
+            return
+        self.profile.cover_image_path=None
+        self.repo.save_profile(self.profile)
+        self.refresh_profiles(self.profile.id)
+        self.statusBar().showMessage("เอารูปปกออกแล้ว",2500)
 
     def new_profile(self):
         name,ok=QInputDialog.getText(self,"New Profile","Novel name:")

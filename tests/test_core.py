@@ -71,9 +71,11 @@ def test_launcher_import_merges_targets_groups_and_preserves_source(tmp_path):
     repo=ProjectRepository(tmp_path/"app")
     existing=NovelProfile(name="Existing",main_folder=str(tmp_path/"novel"))
     repo.save_profile(existing)
+    cover=tmp_path/"cover.png"
+    cover.write_bytes(b"cover-image-data")
     payload={
         "schemaVersion":8,
-        "novels":[{"id":"old-novel-1","name":"Existing","mainFolder":str(tmp_path/"novel"),
+        "novels":[{"id":"old-novel-1","name":"Existing","mainFolder":str(tmp_path/"novel"),"coverPath":str(cover),
           "status":"paused","contextPath":None,"translationGoal":{"targetChapters":20,"baselineChapter":4},
           "files":[{"id":"f1","name":"Glossary","path":str(tmp_path/"terms.md"),"enabled":True,"order":0}],
           "applications":[{"id":"a1","name":"Editor","executablePath":str(tmp_path/"editor.exe"),"arguments":["--profile","novel"],"enabled":True,"order":1}],
@@ -89,6 +91,8 @@ def test_launcher_import_merges_targets_groups_and_preserves_source(tmp_path):
     assert source.read_text(encoding="utf-8")==original
     assert loaded.id==existing.id and loaded.status=="paused"
     assert loaded.translation_goal_target==20 and loaded.translation_goal_baseline==4
+    assert loaded.cover_image_path=="covers/cover.png"
+    assert repo.resolve_project_path(loaded.id,loaded.cover_image_path).read_bytes()==b"cover-image-data"
     assert [item.kind for item in loaded.launch_targets]==["file","application","website"]
     assert loaded.launch_targets[1].arguments==["--profile","novel"]
     assert repo.load_groups()[0].profile_ids==[existing.id]

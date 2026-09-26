@@ -62,6 +62,7 @@ class NovelProfile:
     status: str = "translating"
     translation_goal_target: int | None = None
     translation_goal_baseline: int | None = None
+    cover_image_path: str | None = None
     @classmethod
     def from_dict(cls,d):
         state=d.get("chapter_state",{})
@@ -76,6 +77,7 @@ class NovelProfile:
             status=str(d.get("status","translating")),
             translation_goal_target=d.get("translation_goal_target"),
             translation_goal_baseline=d.get("translation_goal_baseline"),
+            cover_image_path=d.get("cover_image_path"),
         )
 
 @dataclass

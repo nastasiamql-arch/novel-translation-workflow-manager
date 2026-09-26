@@ -121,6 +121,17 @@ class ProjectRepository:
                     chapter_numbers=re.findall(r"(?im)^\s*บทที่\s*(\d+)",context.read_text(encoding="utf-8",errors="replace"))
                     if chapter_numbers:profile.chapter_state.current_chapter=int(chapter_numbers[-1])
 
+            cover_source=novel.get("coverPath")
+            if isinstance(cover_source,str) and cover_source:
+                source=Path(cover_source).expanduser()
+                suffix=source.suffix.lower()
+                if suffix in {".png",".jpg",".jpeg",".webp",".bmp"} and source.is_file():
+                    profile_root=self.profile_dir(profile.id)
+                    cover_target=profile_root/"covers"/("cover"+suffix)
+                    cover_target.parent.mkdir(parents=True,exist_ok=True)
+                    import shutil
+                    if source.resolve()!=cover_target.resolve(): shutil.copy2(source,cover_target)
+                    profile.cover_image_path=cover_target.relative_to(profile_root).as_posix()
             old_id=str(novel.get("id",""))
             if old_id:id_map[old_id]=profile.id
             targets=[]
