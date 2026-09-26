@@ -28,6 +28,14 @@ The previous application data folder remains `%LOCALAPPDATA%/NovelTranslationWor
 
 Create independent novel profiles, configure custom workflow steps, attach ordered files or dynamic chapter references, preview assembled text, and copy selected files to the clipboard. Add File links the original file so edits made outside the app are read immediately. Add dynamic references for `CURRENT_SOURCE_CHAPTER`, `CURRENT_TRANSLATED_CHAPTER`, or `CURRENT_REVIEWED_CHAPTER`. Chapter files can have any name as long as the filename includes the chapter number.
 
+## Translation progress
+
+- The progress window shows chapters completed today, this week, and over the last seven days, with totals for each novel.
+- Set a chapter goal for each novel. The app keeps the original starting chapter when an existing goal is edited, so its progress is preserved.
+- NovelWorkflow checks each profile's Context file on startup and every 10 seconds. If the latest Context heading moves from `บทที่ 125` to `บทที่ 130`, it records five completed chapters.
+- Daily activity is assigned to the Context file's last-modified date using the computer's local clock. The app stores each profile's checkpoint and activity separately, avoids counting the same chapter twice on the same day, and re-baselines when the Context file changes or its chapter number is reduced.
+- The first scan establishes a baseline instead of treating a novel's entire existing history as today's work. If Context is edited on multiple different days while the app is closed, the file only retains its latest modification time, so those changes cannot be split back across earlier days.
+
 ## Importing Launcher data
 
 Choose **Import Launcher** and select `config.json`, usually located at `%APPDATA%/com.novellauncher.desktop/config.json`. Import is additive: it does not edit that file or remove files from novel folders. Existing profiles are matched by main folder first and name second. Duplicate launch targets are skipped.

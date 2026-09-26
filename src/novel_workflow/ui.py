@@ -1,12 +1,14 @@
 from pathlib import Path
 from dataclasses import asdict as asdict_target
-from PySide6.QtCore import Qt, QUrl, QSize
+from PySide6.QtCore import Qt, QUrl, QSize, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap
 from PySide6.QtWidgets import *
 from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow
 from .services import ProfileService, WorkflowService, AssemblyService
 from .launcher import LauncherService
 from .storage import ProjectRepository
+from .translation_progress import sync_profile_context
+from .progress_dialog import TranslationDashboardDialog
 
 class Editor(QDialog):
     def __init__(self,parent,title,text=""):
@@ -26,6 +28,7 @@ class MainWindow(QMainWindow):
         self.settings=self.repo.load_settings()
         self.profile=None
         self.si=-1
+        self.dashboard_dialog=None
         self.setWindowTitle("NovelWorkflow")
         self.setMinimumSize(1040,680)
         self.resize(1260,780)
@@ -86,7 +89,7 @@ class MainWindow(QMainWindow):
         bar.addWidget(self.novel)
         bar.addSeparator()
         bar.addSeparator()
-        for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("ตั้งค่า",self.settings_dialog)):
+        for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("ความคืบหน้า",self.translation_dashboard),("ตั้งค่า",self.settings_dialog)):
             a=QAction(label,self);a.triggered.connect(fn);bar.addAction(a)
 
         splitter=QSplitter()
@@ -110,6 +113,10 @@ class MainWindow(QMainWindow):
         self.shortcut("Ctrl+P",self.preview)
         self.shortcut("Ctrl+R",self.refresh)
         self.shortcut("Ctrl+S",self.save)
+        self.progress_timer=QTimer(self)
+        self.progress_timer.setInterval(10000)
+        self.progress_timer.timeout.connect(self.refresh_translation_progress)
+        self.progress_timer.start()
 
     def column(self,title,widget,buttons):
         panel=QFrame()
@@ -145,6 +152,8 @@ class MainWindow(QMainWindow):
     def refresh(self):self.refresh_profiles(self.profile.id if self.profile else None)
     def refresh_profiles(self,pid=None):
         self.ps_list=self.repo.list_profiles()
+        for profile in self.ps_list:
+            if sync_profile_context(profile):self.repo.save_profile(profile)
         self.profiles.blockSignals(True)
         self.profiles.clear()
         self.profiles.setIconSize(QSize(52,68))
@@ -166,6 +175,20 @@ class MainWindow(QMainWindow):
         self.profiles.blockSignals(False)
         if idx>=0:self.select_profile(idx)
         else:self.profile=None;self.novel.setText("None");self.refresh_steps()
+    def refresh_translation_progress(self):
+        profiles=getattr(self,"ps_list",[])
+        for profile in profiles:
+            if sync_profile_context(profile):self.repo.save_profile(profile)
+        if self.profile:
+            self.profile=next((profile for profile in profiles if profile.id==self.profile.id),self.profile)
+        dashboard=getattr(self,"dashboard_dialog",None)
+        if dashboard is not None and dashboard.isVisible():dashboard.set_profiles(profiles)
+        return profiles
+    def translation_dashboard(self):
+        profiles=self.refresh_translation_progress()
+        self.dashboard_dialog=TranslationDashboardDialog(self,profiles,self.repo,self.refresh_translation_progress)
+        self.dashboard_dialog.exec()
+        self.dashboard_dialog=None
     def select_profile(self,i):
         if i<0 or i>=len(getattr(self,"ps_list",[])):return
         self.profile=self.ps_list[i];self.settings.last_profile_id=self.profile.id;self.novel.setText(self.profile.name)
