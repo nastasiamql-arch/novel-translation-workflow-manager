@@ -1,7 +1,7 @@
 from pathlib import Path
 from dataclasses import asdict as asdict_target
 from PySide6.QtCore import Qt, QUrl, QSize, QTimer, QMimeData
-from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QFontMetrics
+from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QPainter, QColor, QLinearGradient, QBrush, QFont
 from PySide6.QtWidgets import *
 from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow, migrate_legacy_basic_workflow
 from .services import ProfileService, WorkflowService, AssemblyService
@@ -17,6 +17,31 @@ class Editor(QDialog):
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);lay.addWidget(buttons)
         self.edit.addAction(QAction(self.edit,shortcut=QKeySequence.Save,triggered=self.accept))
     def text(self):return self.edit.toPlainText()
+
+class FantasyStepDelegate(QStyledItemDelegate):
+    """Paint workflow labels as raised, jewel-toned fantasy title text."""
+    def paint(self,painter,option,index):
+        painter.save()
+        rect=option.rect.adjusted(3,3,-3,-3)
+        active=index.row()==getattr(self.parent(),"currentRow",lambda:-1)()
+        gradient=QLinearGradient(rect.topLeft(),rect.bottomLeft())
+        if active:
+            gradient.setColorAt(0,QColor("#594078"));gradient.setColorAt(0.48,QColor("#352752"));gradient.setColorAt(1,QColor("#241b38"))
+        else:
+            gradient.setColorAt(0,QColor("#27213a"));gradient.setColorAt(1,QColor("#19162a"))
+        painter.setPen(QColor("#e3c887") if active else QColor("#514268"))
+        painter.setBrush(QBrush(gradient));painter.drawRoundedRect(rect,12,12)
+        font=QFont(option.font);font.setBold(True);font.setPointSize(max(font.pointSize(),11));painter.setFont(font)
+        text=index.data(Qt.DisplayRole) or ""
+        x=rect.left()+18;y=rect.center().y()+font.pointSize()//2
+        painter.setPen(QColor("#0d0918"));painter.drawText(x+2,y+3,text)
+        painter.setPen(QColor("#a57add") if active else QColor("#66517e"));painter.drawText(x,y+2,text)
+        painter.setPen(QColor("#fff0c7") if active else QColor("#ddd0ee"));painter.drawText(x,y,text)
+        painter.restore()
+    def sizeHint(self,option,index):
+        size=super().sizeHint(option,index)
+        return QSize(size.width(),58)
+
 
 class MainWindow(QMainWindow):
     def __init__(self,repo=None):
@@ -41,33 +66,33 @@ class MainWindow(QMainWindow):
     @staticmethod
     def theme_stylesheet():
         return """
-        QMainWindow { background:#f2f3f8; color:#1c1c1e; font-family:"Segoe UI Variable","Segoe UI"; font-size:10pt; }
-        QToolBar#mainToolbar { background:rgba(255,255,255,245); border:0; border-bottom:1px solid #e4e5eb; spacing:10px; padding:9px 16px; }
-        QToolBar#mainToolbar::separator { width:1px; background:#e1e2e8; margin:4px 6px; }
-        QLabel#brandTitle { color:#1c1c1e; font-size:14pt; font-weight:700; }
-        QLabel#currentNovel { color:#1c1c1e; font-size:11pt; font-weight:700; padding:3px 6px; }
-        QToolButton { color:#3a3a3c; background:transparent; border:0; border-radius:9px; padding:8px 10px; font-weight:600; }
-        QToolButton:hover { background:#f1f1f7; color:#007aff; }
-        QToolButton:pressed { background:#e5e5ef; }
-        QFrame#columnPanel { background:#ffffff; border:1px solid #e7e7ed; border-radius:18px; }
-        QLabel#sectionHeading { color:#8e8e93; font-size:9pt; font-weight:700; letter-spacing:1px; padding:2px 2px 5px 2px; }
-        QListWidget { background:#fafafd; border:1px solid #ececf1; border-radius:13px; padding:6px; outline:0; }
-        QListWidget::item { color:#242428; padding:7px; margin:3px 1px; border-radius:11px; }
-        QListWidget::item:hover { background:#f4f4f8; }
-        QListWidget::item:selected { background:#eaf2ff; color:#075ec7; font-weight:700; }
-        QPushButton { background:#ffffff; color:#3a3a3c; border:1px solid #e3e3e8; border-radius:10px; padding:8px 10px; font-weight:600; }
-        QPushButton:hover { background:#f5f8ff; border-color:#bfd7ff; color:#0066d6; }
-        QPushButton:pressed { background:#eaf2ff; }
-        QPushButton#primaryButton { background:#007aff; color:#ffffff; border:1px solid #007aff; font-size:10pt; font-weight:700; padding:11px; }
-        QPushButton#primaryButton:hover { background:#0068df; border-color:#0068df; }
-        QPushButton#accentButton { color:#6941c6; border-color:#e3dafb; background:#f7f4ff; }
-        QSpinBox, QComboBox, QLineEdit { background:#ffffff; color:#242428; border:1px solid #e2e2e8; border-radius:9px; padding:7px 9px; min-height:20px; }
-        QTextEdit, QPlainTextEdit { background:#ffffff; color:#242428; border:1px solid #e2e2e8; border-radius:11px; padding:9px; selection-background-color:#bfd7ff; }
-        QDialog { background:#f5f5fa; }
-        QStatusBar { background:#ffffff; color:#63636a; border-top:1px solid #e5e5eb; }
+        QMainWindow { background:#100d22; color:#f6efff; font-family:"Segoe UI Variable","Segoe UI"; font-size:10pt; }
+        QToolBar#mainToolbar { background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #21183d,stop:0.55 #17152f,stop:1 #102439); border:0; border-bottom:1px solid #7055a8; spacing:10px; padding:9px 16px; }
+        QToolBar#mainToolbar::separator { width:1px; background:#69558f; margin:4px 6px; }
+        QLabel#brandTitle { color:#fff4d1; font-size:14pt; font-weight:800; }
+        QLabel#currentNovel { color:#fff4d1; font-size:19pt; font-weight:800; padding:14px 20px; }
+        QToolButton { color:#eee5ff; background:transparent; border:1px solid transparent; border-radius:10px; padding:8px 10px; font-weight:700; }
+        QToolButton:hover { background:#352653; color:#ffe39a; border-color:#9276c3; }
+        QToolButton:pressed { background:#49346d; }
+        QFrame#columnPanel { background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #211a39,stop:1 #141326); border:1px solid #594578; border-top:2px solid #a984df; border-radius:18px; }
+        QLabel#sectionHeading { color:#d8baff; font-size:9pt; font-weight:800; letter-spacing:1px; padding:2px 2px 5px 2px; }
+        QListWidget { background:#100e20; color:#f6efff; border:1px solid #594578; border-radius:13px; padding:6px; outline:0; }
+        QListWidget::item { color:#f4ecff; padding:7px; margin:3px 1px; border-radius:11px; }
+        QListWidget::item:hover { background:#2a2143; }
+        QListWidget::item:selected { background:#36295a; color:#ffe39a; font-weight:800; }
+        QPushButton { background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #34284f,stop:1 #211b38); color:#f6efff; border:1px solid #6f5a91; border-bottom:2px solid #4b3c68; border-radius:10px; padding:8px 10px; font-weight:700; }
+        QPushButton:hover { background:#483567; border-color:#d0a8ff; color:#fff0bd; }
+        QPushButton:pressed { background:#20182f; border-top:2px solid #241a36; border-bottom:1px solid #9172b9; padding-top:9px; }
+        QPushButton#primaryButton { background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #ffe49a,stop:0.42 #efb84c,stop:1 #b97820); color:#201433; border:1px solid #fff0be; border-bottom:4px solid #8c551c; font-size:12pt; font-weight:900; padding:13px; }
+        QPushButton#primaryButton:hover { background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #fff0b8,stop:1 #df962c); }
+        QPushButton#accentButton { color:#ffe5a0; border-color:#9474c0; background:#332650; }
+        QSpinBox, QComboBox, QLineEdit { background:#100e20; color:#fff4df; border:1px solid #685487; border-radius:9px; padding:7px 9px; min-height:20px; }
+        QTextEdit, QPlainTextEdit { background:#100e20; color:#f6efff; border:1px solid #685487; border-radius:11px; padding:9px; selection-background-color:#644b92; }
+        QDialog { background:#171329; color:#f6efff; }
+        QStatusBar { background:#171329; color:#d9c9ee; border-top:1px solid #594578; }
         QSplitter::handle { background:transparent; width:8px; }
         QScrollBar:vertical { background:transparent; width:10px; margin:2px; }
-        QScrollBar::handle:vertical { background:#d0d0d8; border-radius:5px; min-height:26px; }
+        QScrollBar::handle:vertical { background:#735c96; border-radius:5px; min-height:26px; }
         QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical { height:0; }
         """
     def build(self):
@@ -82,24 +107,27 @@ class MainWindow(QMainWindow):
         brand=QLabel("<b>NovelWorkflow</b><br><span style='color:#718096;font-size:8pt'>พื้นที่ทำงานนิยาย</span>")
         brand.setObjectName("brandTitle")
         bar.addWidget(brand)
-        bar.addSeparator()
-        bar.addWidget(QLabel("นิยาย"))
-        self.novel=QLabel("ยังไม่ได้เลือก")
-        self.novel.setObjectName("currentNovel")
-        self.novel.setMinimumWidth(210)
-        self.novel.setMaximumWidth(440)
-        self.novel.setSizePolicy(QSizePolicy.Preferred,QSizePolicy.Fixed)
-        bar.addWidget(self.novel)
-        bar.addSeparator()
         spacer=QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred)
         bar.addWidget(spacer)
         for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("ความคืบหน้า",self.translation_dashboard),("ตั้งค่า",self.settings_dialog)):
             a=QAction(label,self);a.triggered.connect(fn);bar.addAction(a)
 
+        root=QWidget()
+        root_layout=QVBoxLayout(root)
+        root_layout.setContentsMargins(12,10,12,12)
+        root_layout.setSpacing(10)
+        self.novel=QLabel("ยังไม่ได้เลือกนิยาย")
+        self.novel.setObjectName("currentNovel")
+        self.novel.setWordWrap(True)
+        self.novel.setMinimumHeight(62)
+        self.novel.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Minimum)
+        self.novel.setStyleSheet("QLabel#currentNovel { background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #30234c,stop:0.58 #20203e,stop:1 #153044); border:1px solid #8465ad; border-top:2px solid #e7c478; border-radius:16px; }")
+        root_layout.addWidget(self.novel)
         splitter=QSplitter()
         splitter.setChildrenCollapsible(False)
-        self.setCentralWidget(splitter)
+        root_layout.addWidget(splitter,1)
+        self.setCentralWidget(root)
         self.profiles=QListWidget()
         self.profiles.setSpacing(2)
         self.profiles.currentRowChanged.connect(self.select_profile)
@@ -108,9 +136,10 @@ class MainWindow(QMainWindow):
         self.steps.setSpacing(2)
         self.steps.setFixedHeight(250)
         self.steps.setSelectionMode(QAbstractItemView.NoSelection)
+        self.steps.setItemDelegate(FantasyStepDelegate(self.steps))
         self.steps.currentRowChanged.connect(self.select_step)
         self.goal_panel=QFrame()
-        self.goal_panel.setStyleSheet("QFrame { background:#f7f9ff; border:1px solid #e7eaf2; border-radius:12px; }")
+        self.goal_panel.setStyleSheet("QFrame { background:#241c3c; border:1px solid #8065a7; border-top:2px solid #d8b768; border-radius:12px; }")
         goal_layout=QVBoxLayout(self.goal_panel)
         goal_layout.setContentsMargins(10,7,10,7)
         goal_layout.setSpacing(4)
@@ -200,7 +229,7 @@ class MainWindow(QMainWindow):
         self.profiles.setCurrentRow(idx)
         self.profiles.blockSignals(False)
         if idx>=0:self.select_profile(idx)
-        else:self.profile=None;self.novel.setText("None");self.refresh_steps()
+        else:self.profile=None;self.novel.setText("ยังไม่ได้เลือกนิยาย");self.refresh_steps()
     def refresh_translation_progress(self):
         profiles=getattr(self,"ps_list",[])
         for profile in profiles:
@@ -254,7 +283,7 @@ class MainWindow(QMainWindow):
         if i<0 or i>=len(getattr(self,"ps_list",[])):return
         self.profile=self.ps_list[i];self.settings.last_profile_id=self.profile.id
         self.novel.setToolTip(self.profile.name)
-        self.novel.setText(QFontMetrics(self.novel.font()).elidedText(self.profile.name,Qt.ElideRight,428))
+        self.novel.setText("✦  "+self.profile.name)
         self.refresh_steps()
         self.refresh_goal_indicator()
     def refresh_steps(self):
