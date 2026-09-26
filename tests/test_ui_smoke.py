@@ -15,7 +15,9 @@ from novel_workflow.ui import MainWindow
 
 
 def _application():
-    return QApplication.instance() or QApplication(["NovelWorkflowTests"])
+    app = QApplication.instance() or QApplication(["NovelWorkflowTests"])
+    app.setQuitOnLastWindowClosed(False)
+    return app
 
 
 def test_workspace_click_copy_and_step_cycle(tmp_path):
@@ -62,7 +64,9 @@ def test_workspace_click_copy_and_step_cycle(tmp_path):
     window.resize(900, 600)
     app.processEvents()
     assert window.width() == 900
-    window.close()
+    window.hide()
+    window.deleteLater()
+    app.processEvents()
 
 
 def test_theme_appearance_modes_are_real_stylesheets(tmp_path):
