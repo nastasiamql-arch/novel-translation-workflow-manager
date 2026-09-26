@@ -1,5 +1,5 @@
 from pathlib import Path
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl, QMimeData
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import *
 from .models import AppSettings, StepFile, Workflow
@@ -26,7 +26,7 @@ class MainWindow(QMainWindow):
         splitter=QSplitter();self.setCentralWidget(splitter)
         self.profiles=QListWidget();self.profiles.currentRowChanged.connect(self.select_profile);splitter.addWidget(self.column("PROFILES",self.profiles,[("New Profile",self.new_profile),("Duplicate",self.duplicate_profile),("Rename",self.rename_profile),("Delete",self.delete_profile)]))
         self.steps=QListWidget();self.steps.currentRowChanged.connect(self.select_step);splitter.addWidget(self.column("WORKFLOW STEPS",self.steps,[("Add Step",self.add_step),("Rename",self.rename_step),("Duplicate",self.duplicate_step),("Delete",self.delete_step),("Move Up",lambda:self.move_step(-1)),("Move Down",lambda:self.move_step(1)),("Save as Template",self.save_template)]))
-        self.files=QListWidget();self.files.itemChanged.connect(self.toggle_file);splitter.addWidget(self.column("STEP FILES",self.files,[("Add File",self.add_file),("Add Dynamic Chapter",self.add_dynamic),("Remove from Step",self.remove_file),("Move File Up",lambda:self.move_file(-1)),("Move File Down",lambda:self.move_file(1)),("Rename Label",self.rename_file_label),("File Manager",self.file_manager),("Preview",self.preview),("COPY STEP",self.copy_step)]));splitter.setSizes([240,300,640])
+        self.files=QListWidget();self.files.itemChanged.connect(self.toggle_file);splitter.addWidget(self.column("STEP FILES",self.files,[("Add File",self.add_file),("Add Dynamic Chapter",self.add_dynamic),("Remove from Step",self.remove_file),("Move File Up",lambda:self.move_file(-1)),("Move File Down",lambda:self.move_file(1)),("Rename Label",self.rename_file_label),("File Manager",self.file_manager),("Preview",self.preview),("COPY FILES",self.copy_step)]));splitter.setSizes([240,300,640])
         self.statusBar();self.shortcut("Ctrl+Shift+C",self.copy_step);self.shortcut("Ctrl+P",self.preview);self.shortcut("Ctrl+R",self.refresh);self.shortcut("Ctrl+S",self.save)
     def column(self,title,widget,buttons):
         w=QWidget();l=QVBoxLayout(w);l.addWidget(QLabel("<b>"+title+"</b>"));l.addWidget(widget,1)
@@ -222,12 +222,28 @@ class MainWindow(QMainWindow):
         try:text=self.assembler.assemble(self.profile,self.step(),self.settings.separator,self.settings.show_filename_heading)
         except Exception as e:QMessageBox.warning(self,"Preview unavailable",str(e));return
         dlg=QDialog(self);dlg.setWindowTitle("Preview: "+self.step().name);dlg.resize(850,650);l=QVBoxLayout(dlg);view=QTextEdit();view.setReadOnly(True);view.setPlainText(text);l.addWidget(view);l.addWidget(QLabel(f"{len(text):,} characters"))
-        buttons=QDialogButtonBox(QDialogButtonBox.Close);copy=buttons.addButton("Copy All",QDialogButtonBox.ActionRole);copy.clicked.connect(lambda:self.copy_text(text));buttons.rejected.connect(dlg.reject);l.addWidget(buttons);dlg.exec()
+        buttons=QDialogButtonBox(QDialogButtonBox.Close);copy=buttons.addButton("Copy Contents",QDialogButtonBox.ActionRole);copy.clicked.connect(lambda:self.copy_text(text));buttons.rejected.connect(dlg.reject);l.addWidget(buttons);dlg.exec()
     def copy_text(self,text):QApplication.clipboard().setText(text);self.statusBar().showMessage("Copied to clipboard",2500)
     def copy_step(self):
-        if not self.step():return
+        step=self.step()
+        if not step:return
         try:
-            text=self.assembler.assemble(self.profile,self.step(),self.settings.separator,self.settings.show_filename_heading);self.copy_text(text);self.statusBar().showMessage(f"Copied: {self.step().name} · {len(text):,} characters",4000)
+            paths=[]
+            for item in sorted(step.files,key=lambda x:x.order):
+                if not item.enabled:continue
+                if item.reference_type=="dynamic":
+                    path=self.assembler.resolve(self.profile,item.dynamic_reference)
+                else:
+                    if not item.path:raise ValueError(f"Missing file path for {item.label}")
+                    path=self.repo.resolve_project_path(self.profile.id,item.path)
+                if not path.is_file():raise FileNotFoundError(path)
+                resolved=path.resolve()
+                if resolved not in paths:paths.append(resolved)
+            if not paths:
+                self.statusBar().showMessage("No enabled files to copy",3000);return
+            mime=QMimeData();mime.setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
+            QApplication.clipboard().setMimeData(mime)
+            self.statusBar().showMessage(f"Copied {len(paths)} file(s) from {step.name}. Paste with Ctrl+V.",5000)
         except Exception as e:QMessageBox.warning(self,"Copy failed",str(e))
     def settings_dialog(self):
         d=QDialog(self);d.setWindowTitle("Settings");l=QVBoxLayout(d);appearance=QComboBox();appearance.addItems(["System","Light","Dark"]);appearance.setCurrentText(self.settings.appearance);l.addWidget(QLabel("Appearance"));l.addWidget(appearance)
