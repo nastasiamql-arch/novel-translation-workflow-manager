@@ -85,4 +85,6 @@ def test_theme_appearance_modes_are_real_stylesheets(tmp_path):
     assert "#F4F5F7" in app.styleSheet()
     window.settings.appearance = "Dark"
     window.apply_theme()
-    window.close()
+    window.hide()
+    window.deleteLater()
+    app.processEvents()
