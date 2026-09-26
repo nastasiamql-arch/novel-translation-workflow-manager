@@ -97,7 +97,7 @@ class MainWindow(QMainWindow):
         self.profiles=QListWidget()
         self.profiles.setSpacing(2)
         self.profiles.currentRowChanged.connect(self.select_profile)
-        splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),("เลือกบท",self.chapter_dialog),("เปลี่ยนชื่อ",self.rename_profile),("ตัวเปิดไฟล์",self.launcher_dialog),("ลบนิยาย",self.delete_profile)]))
+        splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),("เปลี่ยนชื่อ",self.rename_profile),("ตัวเปิดไฟล์",self.launcher_dialog),("ลบนิยาย",self.delete_profile)]))
         self.steps=QListWidget()
         self.steps.setSpacing(2)
         self.steps.currentRowChanged.connect(self.select_step)
@@ -154,7 +154,6 @@ class MainWindow(QMainWindow):
     def select_profile(self,i):
         if i<0 or i>=len(getattr(self,"ps_list",[])):return
         self.profile=self.ps_list[i];self.settings.last_profile_id=self.profile.id;self.novel.setText(self.profile.name)
-        self.statusBar().showMessage(f"{self.profile.name} · บท {self.profile.chapter_state.current_chapter}")
         self.refresh_steps()
     def refresh_steps(self):
         self.steps.blockSignals(True);self.steps.clear()
@@ -172,13 +171,6 @@ class MainWindow(QMainWindow):
     def save(self):
         if self.profile:self.repo.save_profile(self.profile)
         self.repo.save_settings(self.settings);self.statusBar().showMessage("Saved",2000)
-    def chapter_dialog(self):
-        if not self.profile:return
-        chapter,ok=QInputDialog.getInt(self,"เลือกบทปัจจุบัน",self.profile.name,self.profile.chapter_state.current_chapter,1,999999)
-        if ok:self.chapter_changed(chapter)
-
-    def chapter_changed(self,n):
-        if self.profile:self.profile.chapter_state.current_chapter=n;self.save()
     def launch_profile(self):
         if not self.profile:return
         results=self.launcher.launch_profile(self.profile)
