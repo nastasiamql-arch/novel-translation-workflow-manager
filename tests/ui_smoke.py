@@ -8,6 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton
+import shiboken6
 
 from novel_workflow.models import StepFile, Workflow
 from novel_workflow.services import ProfileService
@@ -84,7 +85,10 @@ def main() -> int:
         QTimer.singleShot(100, exercise_workspace)
         event_result = app.exec()
         print(f"Qt event loop exit status: {event_result}")
-        return 0 if smoke_passed else (event_result or 1)
+        result = 0 if smoke_passed else (event_result or 1)
+        shiboken6.delete(window)
+        shiboken6.delete(app)
+        return result
 
 
 if __name__ == "__main__":
