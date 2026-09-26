@@ -1,7 +1,7 @@
 from pathlib import Path
 from dataclasses import asdict as asdict_target
 from PySide6.QtCore import Qt, QUrl, QSize, QTimer, QMimeData
-from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QPainter, QColor, QLinearGradient, QBrush, QFont
+from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap
 from PySide6.QtWidgets import *
 from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow, migrate_legacy_basic_workflow
 from .services import ProfileService, WorkflowService, AssemblyService
@@ -9,6 +9,7 @@ from .launcher import LauncherService
 from .storage import ProjectRepository
 from .translation_progress import latest_context_chapter, sync_profile_context, daily_chapter_count, goal_progress
 from .progress_dialog import TranslationDashboardDialog
+from .theme import application_stylesheet
 
 class Editor(QDialog):
     def __init__(self,parent,title,text=""):
@@ -17,31 +18,6 @@ class Editor(QDialog):
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);lay.addWidget(buttons)
         self.edit.addAction(QAction(self.edit,shortcut=QKeySequence.Save,triggered=self.accept))
     def text(self):return self.edit.toPlainText()
-
-class FantasyStepDelegate(QStyledItemDelegate):
-    """Paint workflow labels as raised, jewel-toned fantasy title text."""
-    def paint(self,painter,option,index):
-        painter.save()
-        rect=option.rect.adjusted(3,3,-3,-3)
-        active=index.row()==getattr(self.parent(),"currentRow",lambda:-1)()
-        gradient=QLinearGradient(rect.topLeft(),rect.bottomLeft())
-        if active:
-            gradient.setColorAt(0,QColor("#594078"));gradient.setColorAt(0.48,QColor("#352752"));gradient.setColorAt(1,QColor("#241b38"))
-        else:
-            gradient.setColorAt(0,QColor("#27213a"));gradient.setColorAt(1,QColor("#19162a"))
-        painter.setPen(QColor("#e3c887") if active else QColor("#514268"))
-        painter.setBrush(QBrush(gradient));painter.drawRoundedRect(rect,12,12)
-        font=QFont(option.font);font.setBold(True);font.setPointSize(max(font.pointSize(),11));painter.setFont(font)
-        text=index.data(Qt.DisplayRole) or ""
-        x=rect.left()+18;y=rect.center().y()+font.pointSize()//2
-        painter.setPen(QColor("#0d0918"));painter.drawText(x+2,y+3,text)
-        painter.setPen(QColor("#a57add") if active else QColor("#66517e"));painter.drawText(x,y+2,text)
-        painter.setPen(QColor("#fff0c7") if active else QColor("#ddd0ee"));painter.drawText(x,y,text)
-        painter.restore()
-    def sizeHint(self,option,index):
-        size=super().sizeHint(option,index)
-        return QSize(size.width(),58)
-
 
 class MainWindow(QMainWindow):
     def __init__(self,repo=None):
@@ -55,46 +31,22 @@ class MainWindow(QMainWindow):
         self.si=-1
         self.dashboard_dialog=None
         self.setWindowTitle("NovelWorkflow")
-        self.setMinimumSize(1040,680)
+        self.setMinimumSize(900,600)
         self.resize(1260,780)
         logo=Path(__file__).resolve().parent/"resources"/"novelworkflow.png"
         if logo.is_file(): self.setWindowIcon(QIcon(str(logo)))
-        self.setStyleSheet(self.theme_stylesheet())
+        self.apply_theme()
         self.build()
         self.refresh_profiles()
 
     @staticmethod
-    def theme_stylesheet():
-        return """
-        QMainWindow { background:#100d22; color:#f6efff; font-family:"Segoe UI Variable","Segoe UI"; font-size:10pt; }
-        QToolBar#mainToolbar { background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #21183d,stop:0.55 #17152f,stop:1 #102439); border:0; border-bottom:1px solid #7055a8; spacing:10px; padding:9px 16px; }
-        QToolBar#mainToolbar::separator { width:1px; background:#69558f; margin:4px 6px; }
-        QLabel#brandTitle { color:#fff4d1; font-size:14pt; font-weight:800; }
-        QLabel#currentNovel { color:#fff4d1; font-size:19pt; font-weight:800; padding:14px 20px; }
-        QToolButton { color:#eee5ff; background:transparent; border:1px solid transparent; border-radius:10px; padding:8px 10px; font-weight:700; }
-        QToolButton:hover { background:#352653; color:#ffe39a; border-color:#9276c3; }
-        QToolButton:pressed { background:#49346d; }
-        QFrame#columnPanel { background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #211a39,stop:1 #141326); border:1px solid #594578; border-top:2px solid #a984df; border-radius:18px; }
-        QLabel#sectionHeading { color:#d8baff; font-size:9pt; font-weight:800; letter-spacing:1px; padding:2px 2px 5px 2px; }
-        QListWidget { background:#100e20; color:#f6efff; border:1px solid #594578; border-radius:13px; padding:6px; outline:0; }
-        QListWidget::item { color:#f4ecff; padding:7px; margin:3px 1px; border-radius:11px; }
-        QListWidget::item:hover { background:#2a2143; }
-        QListWidget::item:selected { background:#36295a; color:#ffe39a; font-weight:800; }
-        QPushButton { background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #34284f,stop:1 #211b38); color:#f6efff; border:1px solid #6f5a91; border-bottom:2px solid #4b3c68; border-radius:10px; padding:8px 10px; font-weight:700; }
-        QPushButton:hover { background:#483567; border-color:#d0a8ff; color:#fff0bd; }
-        QPushButton:pressed { background:#20182f; border-top:2px solid #241a36; border-bottom:1px solid #9172b9; padding-top:9px; }
-        QPushButton#primaryButton { background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #ffe49a,stop:0.42 #efb84c,stop:1 #b97820); color:#201433; border:1px solid #fff0be; border-bottom:4px solid #8c551c; font-size:12pt; font-weight:900; padding:13px; }
-        QPushButton#primaryButton:hover { background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #fff0b8,stop:1 #df962c); }
-        QPushButton#accentButton { color:#ffe5a0; border-color:#9474c0; background:#332650; }
-        QSpinBox, QComboBox, QLineEdit { background:#100e20; color:#fff4df; border:1px solid #685487; border-radius:9px; padding:7px 9px; min-height:20px; }
-        QTextEdit, QPlainTextEdit { background:#100e20; color:#f6efff; border:1px solid #685487; border-radius:11px; padding:9px; selection-background-color:#644b92; }
-        QDialog { background:#171329; color:#f6efff; }
-        QStatusBar { background:#171329; color:#d9c9ee; border-top:1px solid #594578; }
-        QSplitter::handle { background:transparent; width:8px; }
-        QScrollBar:vertical { background:transparent; width:10px; margin:2px; }
-        QScrollBar::handle:vertical { background:#735c96; border-radius:5px; min-height:26px; }
-        QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical { height:0; }
-        """
+    def theme_stylesheet(appearance="Dark"):
+        return application_stylesheet(appearance)
+    def apply_theme(self):
+        app=QApplication.instance()
+        if app:
+            app.setStyleSheet(application_stylesheet(self.settings.appearance))
+
     def build(self):
         bar=self.addToolBar("Main")
         bar.setObjectName("mainToolbar")
@@ -104,7 +56,7 @@ class MainWindow(QMainWindow):
         mark=QLabel()
         if logo.is_file(): mark.setPixmap(QPixmap(str(logo)).scaled(30,30,Qt.KeepAspectRatio,Qt.SmoothTransformation))
         bar.addWidget(mark)
-        brand=QLabel("<b>NovelWorkflow</b><br><span style='color:#718096;font-size:8pt'>พื้นที่ทำงานนิยาย</span>")
+        brand=QLabel("<b>NovelWorkflow</b>")
         brand.setObjectName("brandTitle")
         bar.addWidget(brand)
         spacer=QWidget()
@@ -115,31 +67,33 @@ class MainWindow(QMainWindow):
 
         root=QWidget()
         root_layout=QVBoxLayout(root)
-        root_layout.setContentsMargins(12,10,12,12)
-        root_layout.setSpacing(10)
+        root_layout.setContentsMargins(8,8,8,8)
+        root_layout.setSpacing(8)
         self.novel=QLabel("ยังไม่ได้เลือกนิยาย")
         self.novel.setObjectName("currentNovel")
         self.novel.setWordWrap(True)
         self.novel.setMinimumHeight(62)
         self.novel.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Minimum)
-        self.novel.setStyleSheet("QLabel#currentNovel { background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #30234c,stop:0.58 #20203e,stop:1 #153044); border:1px solid #8465ad; border-top:2px solid #e7c478; border-radius:16px; }")
         root_layout.addWidget(self.novel)
         splitter=QSplitter()
         splitter.setChildrenCollapsible(False)
         root_layout.addWidget(splitter,1)
         self.setCentralWidget(root)
         self.profiles=QListWidget()
-        self.profiles.setSpacing(2)
+        self.profiles.setSpacing(1)
+        self.profiles.setCursor(Qt.PointingHandCursor)
+        self.profiles.setAccessibleName("รายการนิยาย")
         self.profiles.currentRowChanged.connect(self.select_profile)
         splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[]))
         self.steps=QListWidget()
-        self.steps.setSpacing(2)
-        self.steps.setFixedHeight(250)
-        self.steps.setSelectionMode(QAbstractItemView.NoSelection)
-        self.steps.setItemDelegate(FantasyStepDelegate(self.steps))
+        self.steps.setSpacing(1)
+        self.steps.setMinimumHeight(164)
+        self.steps.setCursor(Qt.PointingHandCursor)
+        self.steps.setAccessibleName("ขั้นตอนงาน")
+        self.steps.setSelectionMode(QAbstractItemView.SingleSelection)
         self.steps.currentRowChanged.connect(self.select_step)
         self.goal_panel=QFrame()
-        self.goal_panel.setStyleSheet("QFrame { background:#241c3c; border:1px solid #8065a7; border-top:2px solid #d8b768; border-radius:12px; }")
+        self.goal_panel.setObjectName("goalPanel")
         goal_layout=QVBoxLayout(self.goal_panel)
         goal_layout.setContentsMargins(10,7,10,7)
         goal_layout.setSpacing(4)
@@ -147,13 +101,15 @@ class MainWindow(QMainWindow):
         self.goal_bar=QProgressBar()
         self.goal_bar.setFixedHeight(15)
         self.latest_chapter_label=QLabel("บทล่าสุดจากไฟล์ Context")
-        self.latest_chapter_label.setStyleSheet("color:#777780;font-size:9pt;background:transparent;border:0")
+        self.latest_chapter_label.setObjectName("mutedLabel")
         goal_layout.addWidget(self.goal_label)
         goal_layout.addWidget(self.goal_bar)
         goal_layout.addWidget(self.latest_chapter_label)
         splitter.addWidget(self.column("ขั้นตอนงาน",self.steps,[],below=self.goal_panel))
         self.files=QListWidget()
-        self.files.setSpacing(2)
+        self.files.setSpacing(1)
+        self.files.setCursor(Qt.PointingHandCursor)
+        self.files.setAccessibleName("ไฟล์ของขั้นตอน")
         self.files.itemChanged.connect(self.toggle_file)
         splitter.addWidget(self.column("ไฟล์ของขั้นตอน",self.files,[("COPY STEP",self.copy_step)]))
         splitter.setSizes([260,340,650])
@@ -171,31 +127,28 @@ class MainWindow(QMainWindow):
         panel=QFrame()
         panel.setObjectName("columnPanel")
         layout=QVBoxLayout(panel)
-        layout.setContentsMargins(14,14,14,14)
-        layout.setSpacing(9)
+        layout.setContentsMargins(12,12,12,12)
+        layout.setSpacing(8)
         heading=QLabel(title.upper())
         heading.setObjectName("sectionHeading")
         layout.addWidget(heading)
-        layout.addWidget(widget,0 if below else 1)
+        layout.addWidget(widget,1)
         if below is not None:
             layout.addWidget(below)
-            layout.addStretch(1)
         actions=QGridLayout()
         actions.setHorizontalSpacing(7)
         actions.setVerticalSpacing(7)
         regular=[entry for entry in buttons if entry[0] not in ("COPY FILES","COPY STEP")]
         for index,(label,fn) in enumerate(regular):
             button=QPushButton(label)
-            if label=="นำเข้าข้อมูลเดิม": button.setObjectName("accentButton")
-            button.setMinimumHeight(34)
+            button.setMinimumHeight(32)
             button.clicked.connect(fn)
             actions.addWidget(button,index//2,index%2)
         for label,fn in buttons:
             if label in ("COPY FILES","COPY STEP"):
                 button=QPushButton(label)
                 button.setObjectName("primaryButton")
-                button.setMinimumHeight(64)
-                button.setStyleSheet("font-size:14pt;font-weight:800;letter-spacing:1px")
+                button.setMinimumHeight(40)
                 button.clicked.connect(fn)
                 actions.addWidget(button,(len(regular)+1)//2,0,1,2)
         layout.addLayout(actions)
@@ -215,6 +168,8 @@ class MainWindow(QMainWindow):
         placeholder=Path(__file__).resolve().parent/"resources"/"novelworkflow.png"
         for profile in self.ps_list:
             item=QListWidgetItem(profile.name)
+            item.setToolTip(profile.name)
+            item.setSizeHint(QSize(0,70))
             cover=placeholder
             if profile.cover_image_path:
                 try:
@@ -223,8 +178,13 @@ class MainWindow(QMainWindow):
                 except ValueError:
                     pass
             if cover.is_file():item.setIcon(QIcon(str(cover)))
-            item.setSizeHint(QSize(220,82))
+            item.setSizeHint(QSize(220,76))
             self.profiles.addItem(item)
+        if not self.ps_list:
+            empty=QListWidgetItem("ยังไม่มีนิยาย\nเพิ่มนิยายได้ที่ ตั้งค่า → นิยาย")
+            empty.setFlags(Qt.NoItemFlags)
+            empty.setTextAlignment(Qt.AlignCenter)
+            self.profiles.addItem(empty)
         idx=next((i for i,p in enumerate(self.ps_list) if p.id==(pid or (self.settings.last_profile_id if self.settings.open_last_profile else None))),0 if self.ps_list else -1)
         self.profiles.setCurrentRow(idx)
         self.profiles.blockSignals(False)
@@ -283,13 +243,19 @@ class MainWindow(QMainWindow):
         if i<0 or i>=len(getattr(self,"ps_list",[])):return
         self.profile=self.ps_list[i];self.settings.last_profile_id=self.profile.id
         self.novel.setToolTip(self.profile.name)
-        self.novel.setText("✦  "+self.profile.name)
+        self.novel.setText(self.profile.name)
         self.refresh_steps()
         self.refresh_goal_indicator()
     def refresh_steps(self):
         self.steps.blockSignals(True);self.steps.clear()
         if self.profile:
             for i,s in enumerate(self.profile.workflow.steps):self.steps.addItem(f"{i+1}. {s.name}")
+            if not self.profile.workflow.steps:
+                empty=QListWidgetItem("ยังไม่มีขั้นตอน\nเพิ่มได้ที่ ตั้งค่า → ขั้นตอน")
+                empty.setFlags(Qt.NoItemFlags);empty.setTextAlignment(Qt.AlignCenter);self.steps.addItem(empty)
+        else:
+            empty=QListWidgetItem("เลือกนิยายเพื่อดูขั้นตอน")
+            empty.setFlags(Qt.NoItemFlags);empty.setTextAlignment(Qt.AlignCenter);empty;self.steps.addItem(empty)
         self.steps.blockSignals(False)
         self.si=0 if self.profile and self.profile.workflow.steps else -1
         self.steps.setCurrentRow(self.si)
@@ -305,14 +271,20 @@ class MainWindow(QMainWindow):
         for index,step in enumerate(self.profile.workflow.steps):
             item=self.steps.item(index)
             if item:
-                prefix="▶  " if index==self.si else ""
-                item.setText(f"{prefix}{index+1}. {step.name}")
+                item.setText(f"{index+1}. {step.name}")
+                item.setToolTip(step.name)
     def step(self):return self.profile.workflow.steps[self.si] if self.profile and 0<=self.si<len(self.profile.workflow.steps) else None
     def refresh_files(self):
         self.files.blockSignals(True);self.files.clear();s=self.step()
         if s:
             for f in sorted(s.files,key=lambda x:x.order):
-                row=QListWidgetItem(f.label or f.path or f.dynamic_reference);row.setFlags(row.flags()|Qt.ItemIsUserCheckable);row.setCheckState(Qt.Checked if f.enabled else Qt.Unchecked);row.setData(Qt.UserRole,f.id);self.files.addItem(row)
+                row=QListWidgetItem(f.label or f.path or f.dynamic_reference);row.setFlags(row.flags()|Qt.ItemIsUserCheckable);row.setCheckState(Qt.Checked if f.enabled else Qt.Unchecked);row.setData(Qt.UserRole,f.id);row.setToolTip(f.label or f.path or f.dynamic_reference);self.files.addItem(row)
+            if not s.files:
+                empty=QListWidgetItem("ขั้นตอนนี้ยังไม่มีไฟล์\nเพิ่มได้ที่ ตั้งค่า → ไฟล์ของขั้นตอน")
+                empty.setFlags(Qt.NoItemFlags);empty.setTextAlignment(Qt.AlignCenter);empty;self.files.addItem(empty)
+        else:
+            empty=QListWidgetItem("เลือกนิยายและขั้นตอนเพื่อดูไฟล์")
+            empty.setFlags(Qt.NoItemFlags);empty.setTextAlignment(Qt.AlignCenter);empty;self.files.addItem(empty)
         self.files.blockSignals(False)
     def save(self):
         if self.profile:self.repo.save_profile(self.profile)
@@ -700,13 +672,20 @@ class MainWindow(QMainWindow):
         root.addWidget(tabs,1)
 
         self.profiles=QListWidget()
-        self.profiles.setSpacing(2)
+        self.profiles.setSpacing(1)
+        self.profiles.setCursor(Qt.PointingHandCursor)
+        self.profiles.setAccessibleName("รายการนิยาย")
         self.profiles.currentRowChanged.connect(self.select_profile)
         self.steps=QListWidget()
-        self.steps.setSpacing(2)
+        self.steps.setSpacing(1)
+        self.steps.setCursor(Qt.PointingHandCursor)
+        self.steps.setAccessibleName("ขั้นตอนงาน")
+        self.steps.setSelectionMode(QAbstractItemView.SingleSelection)
         self.steps.currentRowChanged.connect(self.select_step)
         self.files=QListWidget()
-        self.files.setSpacing(2)
+        self.files.setSpacing(1)
+        self.files.setCursor(Qt.PointingHandCursor)
+        self.files.setAccessibleName("ไฟล์ของขั้นตอน")
         self.files.itemChanged.connect(self.toggle_file)
 
         def management_tab(title,widget,buttons):
@@ -781,6 +760,7 @@ class MainWindow(QMainWindow):
                 for check,attr in checks:
                     setattr(self.settings,attr,check.isChecked())
                 self.save()
+                self.apply_theme()
         finally:
             self.profiles,self.steps,self.files=original_lists
             self.refresh_profiles(self.profile.id if self.profile else previous_profile_id)

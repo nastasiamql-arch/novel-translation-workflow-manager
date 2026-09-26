@@ -124,7 +124,7 @@ class NovelGroup:
 
 @dataclass
 class AppSettings:
-    appearance: str = "System"
+    appearance: str = "Dark"
     separator: str = "==============================\n{FILE_NAME}\n=============================="
     show_filename_heading: bool = True
     confirm_before_deleting: bool = True
