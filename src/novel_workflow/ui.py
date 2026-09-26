@@ -188,7 +188,7 @@ class MainWindow(QMainWindow):
             dest=self.repo.resolve_project_path(self.profile.id,rel)
             if dest.exists():QMessageBox.warning(dialog,"Exists","Destination already exists.");return
             import shutil;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(src,dest);refresh()
-        for label,fn in (("New",create),("Import",import_file),("Edit",edit),("Rename",rename),("Delete",delete)):
+        for label,fn in (("New",create),("Import",import_file),("Add to Step",attach),("Edit",edit),("Rename",rename),("Delete",delete)):
             button=QPushButton(label);button.clicked.connect(fn);actions.addWidget(button)
         search.textChanged.connect(refresh);refresh();dialog.exec()
     def remove_file(self):

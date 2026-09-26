@@ -1,5 +1,6 @@
 from copy import deepcopy
 from pathlib import Path
+import re
 from .models import NovelProfile, Workflow, WorkflowStep, StepFile, uid
 from .storage import ProjectRepository
 
@@ -38,10 +39,15 @@ class AssemblyService:
     def resolve(self,p,ref):
         cat={"CURRENT_SOURCE_CHAPTER":"source","CURRENT_TRANSLATED_CHAPTER":"translated","CURRENT_REVIEWED_CHAPTER":"reviewed"}[ref]
         folder=self.repo.profile_dir(p.id)/cat; n=p.chapter_state.current_chapter
-        for ext in (".txt",".md",".json"):
-            f=folder/f"chapter_{n}{ext}"
-            if f.is_file():return f
-        raise FileNotFoundError(f"No {cat} chapter file for chapter {n}")
+        if not folder.exists(): raise FileNotFoundError(f"No {cat} folder exists for chapter {n}")
+        supported={".txt",".md",".json"}
+        matches=[f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in supported
+                 and re.search(rf"(?<!\d){n}(?!\d)",f.stem)]
+        exact=[f for f in matches if f.stem.casefold()==f"chapter_{n}".casefold()]
+        matches=exact or matches
+        if len(matches)==1:return matches[0]
+        if len(matches)>1:raise ValueError(f"Multiple {cat} files match chapter {n}: "+", ".join(f.name for f in matches))
+        raise FileNotFoundError(f"No {cat} file contains chapter number {n}")
     def assemble(self,p,step,separator,show_heading=True):
         parts=[]
         for item in sorted(step.files,key=lambda x:x.order):

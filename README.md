@@ -13,7 +13,7 @@ Requires Python 3.10 or newer.
 
 ## Use
 
-Create a profile, choose the Novel Translation Basic workflow, add files to the step, and add CURRENT_SOURCE_CHAPTER (or translated/reviewed chapter). Chapter files resolve as source/chapter_25.txt, translated/chapter_25.txt, and reviewed/chapter_25.txt; Markdown and JSON extensions are also supported. Change the chapter number without editing the workflow step. Ctrl+P previews the exact output and Ctrl+Shift+C copies it.
+Create a profile, choose the Novel Translation Basic workflow, add files to the step, and add CURRENT_SOURCE_CHAPTER (or translated/reviewed chapter). Chapter files may use any filename that contains the chapter number (for example, source/Novel - 25.txt); translated and reviewed files work the same way. Text, Markdown, and JSON are supported. If multiple files match one chapter, the app asks you to resolve the ambiguity. Change the chapter number without editing the workflow step. Ctrl+P previews the exact output and Ctrl+Shift+C copies it.
 
 Profile data and settings live in %LOCALAPPDATA%/NovelTranslationWorkflowManager. Each profile has separate prompts, glossary, characters, style, source, translated, reviewed, notes, reference, and custom directories. Removing a step attachment does not delete the file. Paths are constrained to the profile folder. JSON recovery only retries unambiguous trailing commas against a temporary copy; original data is preserved.
 
