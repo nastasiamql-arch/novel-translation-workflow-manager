@@ -1,7 +1,7 @@
 import json, os, re, tempfile
 from pathlib import Path
 from dataclasses import asdict
-from .models import AppSettings, LaunchTarget, NovelGroup, NovelProfile, Workflow, WorkflowTemplate
+from .models import AppSettings, LaunchTarget, NovelGroup, NovelProfile, Workflow, WorkflowTemplate, migrate_legacy_basic_workflow
 from .translation_progress import latest_context_chapter
 
 def data_root():
@@ -62,8 +62,17 @@ class ProjectRepository:
     def load_templates(self):
         data=read_json(self.templates_path,None)
         if data is None:
-            t=[WorkflowTemplate("Novel Translation Basic",Workflow.defaults())]; self.save_templates(t); return t
-        return [WorkflowTemplate(x["name"],Workflow.from_dict(x.get("workflow",{}))) for x in data]
+            templates=[WorkflowTemplate("Novel Translation Basic",Workflow.defaults())]
+            self.save_templates(templates)
+            return templates
+        templates=[WorkflowTemplate(x["name"],Workflow.from_dict(x.get("workflow",{}))) for x in data]
+        changed=False
+        for template in templates:
+            if template.name.strip().casefold()=="novel translation basic":
+                changed=migrate_legacy_basic_workflow(template.workflow) or changed
+        if changed:
+            self.save_templates(templates)
+        return templates
     def save_templates(self,items): write_json(self.templates_path,[{"name":x.name,"workflow":asdict(x.workflow)} for x in items])
     def load_groups(self):
         data=read_json(self.groups_path,[])
