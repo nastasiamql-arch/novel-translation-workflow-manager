@@ -25,6 +25,18 @@ def test_chapter_reference_resolves_without_editing_step(tmp_path):
     p.chapter_state.current_chapter=26;(root/"source"/"Novel - 26.txt").write_text("chapter 26",encoding="utf-8")
     assert "chapter 26" in service.assemble(p,step,"## {FILE_NAME}")
 
+def test_linked_source_uses_latest_contents(tmp_path):
+    repo=ProjectRepository(tmp_path/"app");profile=NovelProfile(name="Linked")
+    repo.save_profile(profile)
+    source=tmp_path/"outside"/"chapter-25.txt";source.parent.mkdir();source.write_text("old chapter",encoding="utf-8")
+    step=WorkflowStep(name="translate",files=[StepFile(label="Source",reference_type="external_file",path=str(source),order=0)])
+    service=AssemblyService(repo)
+    before=service.assemble(profile,step,"## {FILE_NAME}")
+    source.write_text("updated chapter",encoding="utf-8")
+    after=service.assemble(profile,step,"## {FILE_NAME}")
+    assert "old chapter" in before and "updated chapter" not in before
+    assert "updated chapter" in after and "old chapter" not in after
+
 def test_traversal_and_json_recovery(tmp_path):
     repo=ProjectRepository(tmp_path);p=NovelProfile()
     with pytest.raises(ValueError):repo.resolve_project_path(p.id,"../../outside")

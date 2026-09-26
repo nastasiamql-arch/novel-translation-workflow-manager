@@ -55,6 +55,9 @@ class AssemblyService:
             if item.reference_type=="dynamic":
                 if item.dynamic_reference not in DYNAMIC:raise ValueError("Unsupported dynamic chapter reference")
                 path=self.resolve(p,item.dynamic_reference); label=item.label or f"Chapter {p.chapter_state.current_chapter}"
+            elif item.reference_type=="external_file":
+                if not item.path:raise ValueError(f"Missing linked file path for {item.label}")
+                path=Path(item.path).expanduser().resolve();label=item.label or path.name
             else:
                 if not item.path:raise ValueError(f"Missing file path for {item.label}")
                 path=self.repo.resolve_project_path(p.id,item.path);label=item.label or path.name

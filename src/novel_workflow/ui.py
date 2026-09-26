@@ -106,18 +106,29 @@ class MainWindow(QMainWindow):
         row=self.files.currentItem();return next((f for f in self.step().files if f.id==row.data(Qt.UserRole)),None) if row and self.step() else None
     def add_file(self):
         if not self.profile or not self.step():return
-        src,_=QFileDialog.getOpenFileName(self,"Import file","","Text files (*.txt *.md *.json)")
+        mode,ok=QInputDialog.getItem(self,"Add File","Choose how to use this file:",["Import a copy","Link original (follow updates)"],0,False)
+        if not ok:return
+        src,_=QFileDialog.getOpenFileName(self,"Choose file","","Text files (*.txt *.md *.json)")
         if not src:return
         p=Path(src)
         if p.suffix.lower() not in (".txt",".md",".json"):QMessageBox.warning(self,"Unsupported","Choose .txt, .md, or .json.");return
         label,ok=QInputDialog.getText(self,"File label","Display name:",text=p.stem)
         if not ok:return
+        if mode=="Link original (follow updates)":
+            source=str(p.resolve())
+            if any(item.reference_type=="external_file" and Path(item.path).resolve()==p.resolve() for item in self.step().files):
+                QMessageBox.information(self,"Already added","This linked file is already attached to the selected step.");return
+            self.step().files.append(StepFile(label=label or p.stem,reference_type="external_file",path=source,file_type="reference",order=len(self.step().files)))
+            self.save();self.refresh_files();self.statusBar().showMessage("Linked to original file; future changes will be used",4000);return
         rel="reference/"+p.name;dst=self.repo.resolve_project_path(self.profile.id,rel);dst.parent.mkdir(parents=True,exist_ok=True)
         if dst.exists():
-            if any(item.path==rel for item in self.step().files):
-                QMessageBox.information(self,"Already added","This file is already attached to the selected step.");return
-            self.step().files.append(StepFile(label=label or p.stem,path=rel,file_type="reference",order=len(self.step().files)))
-            self.save();self.refresh_files();self.statusBar().showMessage("Attached existing project file",2500);return
+            choice=QMessageBox.question(self,"File already imported","Replace the stored copy with this latest version? Choose No to attach the existing stored copy.",QMessageBox.Yes|QMessageBox.No|QMessageBox.Cancel,QMessageBox.Yes)
+            if choice==QMessageBox.Cancel:return
+            if choice==QMessageBox.Yes:
+                import shutil;shutil.copy2(p,dst)
+            already=any(item.path==rel for item in self.step().files)
+            if not already:self.step().files.append(StepFile(label=label or p.stem,path=rel,file_type="reference",order=len(self.step().files)))
+            self.save();self.refresh_files();return
         import shutil;shutil.copy2(p,dst);self.step().files.append(StepFile(label=label or p.stem,path=rel,file_type="reference",order=len(self.step().files)));self.save();self.refresh_files()
     def add_dynamic(self):
         if not self.step():return
@@ -180,7 +191,7 @@ class MainWindow(QMainWindow):
             if QMessageBox.question(dialog,"Delete File",f"Permanently delete {path.name}?")==QMessageBox.Yes:
                 path.unlink()
                 for step in self.profile.workflow.steps:
-                    step.files=[item for item in step.files if not item.path or self.repo.resolve_project_path(self.profile.id,item.path)!=path]
+                    step.files=[item for item in step.files if item.reference_type=="external_file" or not item.path or self.repo.resolve_project_path(self.profile.id,item.path)!=path]
                 self.save();refresh();self.refresh_files()
         def import_file():
             source,_=QFileDialog.getOpenFileName(dialog,"Import file","","Text files (*.txt *.md *.json)")
@@ -215,7 +226,7 @@ class MainWindow(QMainWindow):
         f=self.file()
         if not f:return
         if f.reference_type=="dynamic":return
-        path=self.repo.resolve_project_path(self.profile.id,f.path);dlg=Editor(self,"Edit "+f.label,path.read_text(encoding="utf-8") if path.exists() else "")
+        path=Path(f.path).expanduser().resolve() if f.reference_type=="external_file" else self.repo.resolve_project_path(self.profile.id,f.path);dlg=Editor(self,"Edit "+f.label,path.read_text(encoding="utf-8") if path.exists() else "")
         if dlg.exec()==QDialog.Accepted:path.write_text(dlg.text(),encoding="utf-8");self.save()
     def preview(self):
         if not self.step():return
@@ -233,6 +244,9 @@ class MainWindow(QMainWindow):
                 if not item.enabled:continue
                 if item.reference_type=="dynamic":
                     path=self.assembler.resolve(self.profile,item.dynamic_reference)
+                elif item.reference_type=="external_file":
+                    if not item.path:raise ValueError(f"Missing linked file path for {item.label}")
+                    path=Path(item.path).expanduser().resolve()
                 else:
                     if not item.path:raise ValueError(f"Missing file path for {item.label}")
                     path=self.repo.resolve_project_path(self.profile.id,item.path)
