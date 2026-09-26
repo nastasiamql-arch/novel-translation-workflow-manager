@@ -25,7 +25,7 @@ class MainWindow(QMainWindow):
             a=QAction(label,self);a.triggered.connect(fn);bar.addAction(a)
         splitter=QSplitter();self.setCentralWidget(splitter)
         self.profiles=QListWidget();self.profiles.currentRowChanged.connect(self.select_profile);splitter.addWidget(self.column("PROFILES",self.profiles,[("New Profile",self.new_profile),("Duplicate",self.duplicate_profile),("Rename",self.rename_profile),("Delete",self.delete_profile)]))
-        self.steps=QListWidget();self.steps.currentRowChanged.connect(self.select_step);splitter.addWidget(self.column("WORKFLOW STEPS",self.steps,[("Add Step",self.add_step),("Rename",self.rename_step),("Duplicate",self.duplicate_step),("Delete",self.delete_step),("Move Up",lambda:self.move_step(-1)),("Move Down",lambda:self.move_step(1)),("Save as Template",self.save_template)]))
+        self.steps=QListWidget();self.steps.currentRowChanged.connect(self.select_step);splitter.addWidget(self.column("WORKFLOW STEPS",self.steps,[("Add Step",self.add_step),("Rename",self.rename_step),("Duplicate",self.duplicate_step),("Delete",self.delete_step),("Move Up",lambda:self.move_step(-1)),("Move Down",lambda:self.move_step(1)),("ข้อความประกอบ",self.edit_step_text),("Save as Template",self.save_template)]))
         self.files=QListWidget();self.files.itemChanged.connect(self.toggle_file);splitter.addWidget(self.column("STEP FILES",self.files,[("Add File",self.add_file),("Add Dynamic Chapter",self.add_dynamic),("Remove from Step",self.remove_file),("Move File Up",lambda:self.move_file(-1)),("Move File Down",lambda:self.move_file(1)),("Rename Label",self.rename_file_label),("File Manager",self.file_manager),("Preview",self.preview),("COPY FILES",self.copy_step)]));splitter.setSizes([240,300,640])
         self.statusBar();self.shortcut("Ctrl+Shift+C",self.copy_step);self.shortcut("Ctrl+P",self.preview);self.shortcut("Ctrl+R",self.refresh);self.shortcut("Ctrl+S",self.save)
     def column(self,title,widget,buttons):
@@ -80,6 +80,14 @@ class MainWindow(QMainWindow):
     def delete_profile(self):
         if self.profile and QMessageBox.question(self,"Delete","Delete this profile and all its files?")==QMessageBox.Yes:
             self.repo.delete_profile(self.profile.id);self.profile=None;self.refresh_profiles()
+    def edit_step_text(self):
+        step=self.step()
+        if not step:return
+        dialog=Editor(self,"ข้อความประกอบ: "+step.name,step.companion_text)
+        if dialog.exec()==QDialog.Accepted:
+            step.companion_text=dialog.text()
+            self.save()
+            self.statusBar().showMessage("บันทึกข้อความประกอบของขั้นตอนแล้ว",2500)
     def save_template(self):
         if not self.profile:return
         name,ok=QInputDialog.getText(self,"Save Workflow Template","Template name:",text=self.profile.name+" workflow")
@@ -256,11 +264,16 @@ class MainWindow(QMainWindow):
                 if not path.is_file():raise FileNotFoundError(path)
                 resolved=path.resolve()
                 if resolved not in paths:paths.append(resolved)
-            if not paths:
-                self.statusBar().showMessage("No enabled files to copy",3000);return
-            mime=QMimeData();mime.setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
+            if not paths and not step.companion_text.strip():
+                self.statusBar().showMessage("No enabled files or companion text to copy",3000);return
+            mime=QMimeData()
+            if paths:mime.setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
+            if step.companion_text.strip():mime.setText(step.companion_text)
             QApplication.clipboard().setMimeData(mime)
-            self.statusBar().showMessage(f"Copied {len(paths)} file(s) from {step.name}. Paste with Ctrl+V.",5000)
+            detail=[]
+            if paths:detail.append(f"{len(paths)} file(s)")
+            if step.companion_text.strip():detail.append("companion text")
+            self.statusBar().showMessage(f"Copied {' + '.join(detail)} from {step.name}. Paste with Ctrl+V.",5000)
         except Exception as e:QMessageBox.warning(self,"Copy failed",str(e))
     def settings_dialog(self):
         d=QDialog(self);d.setWindowTitle("Settings");l=QVBoxLayout(d);appearance=QComboBox();appearance.addItems(["System","Light","Dark"]);appearance.setCurrentText(self.settings.appearance);l.addWidget(QLabel("Appearance"));l.addWidget(appearance)

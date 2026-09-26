@@ -22,8 +22,15 @@ class WorkflowStep:
     id: str = field(default_factory=uid)
     name: str = "New step"
     files: list[StepFile] = field(default_factory=list)
+    companion_text: str = ""
     @classmethod
-    def from_dict(cls,d): return cls(d.get("id",uid()),d.get("name","New step"),[StepFile.from_dict(x) for x in d.get("files",[])])
+    def from_dict(cls,d):
+        return cls(
+            id=d.get("id",uid()),
+            name=d.get("name","New step"),
+            files=[StepFile.from_dict(x) for x in d.get("files",[])],
+            companion_text=str(d.get("companion_text","")),
+        )
 
 @dataclass
 class Workflow:

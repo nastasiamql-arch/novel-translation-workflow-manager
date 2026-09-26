@@ -44,3 +44,16 @@ def test_traversal_and_json_recovery(tmp_path):
     assert read_json(f,{})=={"ok":True} and f.read_text(encoding="utf-8")==raw
     f.write_text('{"ok":',encoding="utf-8")
     with pytest.raises(ValueError):read_json(f,{})
+
+
+def test_step_companion_text_round_trips_and_old_profiles_default_empty(tmp_path):
+    repo=ProjectRepository(tmp_path)
+    profile=NovelProfile(name="A",workflow=Workflow([WorkflowStep(name="translate",companion_text="Translate with this instruction.")]))
+    repo.save_profile(profile)
+    loaded=repo.list_profiles()[0]
+    assert loaded.workflow.steps[0].companion_text=="Translate with this instruction."
+
+    raw={"id":profile.id,"name":"Legacy","workflow":{"steps":[{"id":"old-step","name":"old","files":[]}]}}
+    from novel_workflow.models import NovelProfile as ProfileModel
+    legacy=ProfileModel.from_dict(raw)
+    assert legacy.workflow.steps[0].companion_text==""
