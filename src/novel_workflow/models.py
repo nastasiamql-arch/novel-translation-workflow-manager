@@ -42,9 +42,20 @@ class WorkflowStep:
 class Workflow:
     steps: list[WorkflowStep] = field(default_factory=list)
     @classmethod
-    def defaults(cls): return cls([WorkflowStep(name=n) for n in ("หาศัพท์","แปล","ตรวจคำแปล","เกลาสำนวน")])
+    def defaults(cls): return cls([WorkflowStep(name=n) for n in ("หาศัพท์","แปล","ตรวจคำแปล")])
     @classmethod
     def from_dict(cls,d): return cls([WorkflowStep.from_dict(x) for x in d.get("steps",[])])
+
+
+_LEGACY_BASIC_STEP_NAMES = ("หาศัพท์","แปล","ตรวจคำแปล","เกลาสำนวน")
+
+
+def migrate_legacy_basic_workflow(workflow: Workflow) -> bool:
+    """Remove only the old built-in fourth step, leaving custom workflows intact."""
+    if tuple(step.name for step in workflow.steps) != _LEGACY_BASIC_STEP_NAMES:
+        return False
+    workflow.steps.pop()
+    return True
 
 @dataclass
 class ChapterState:
