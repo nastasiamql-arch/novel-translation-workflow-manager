@@ -17,7 +17,7 @@ def test_workflow_and_ordering():
     assert WorkflowService.move(s.files,0,1)==1 and s.files[1].order==1
 
 def test_chapter_reference_resolves_without_editing_step(tmp_path):
-    repo=ProjectRepository(tmp_path);p=NovelProfile(name="A");repo.save_profile(p);root=repo.profile_dir(p.id)
+    repo=ProjectRepository(tmp_path);p=NovelProfile(name="A");p.chapter_state.current_chapter=25;repo.save_profile(p);root=repo.profile_dir(p.id)
     step=WorkflowStep(name="terms",files=[StepFile(label="chapter",reference_type="dynamic",dynamic_reference="CURRENT_SOURCE_CHAPTER")])
     service=AssemblyService(repo)
     (root/"source"/"chapter_25.txt").write_text("chapter 25",encoding="utf-8")
