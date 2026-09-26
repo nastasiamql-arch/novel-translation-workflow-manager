@@ -686,7 +686,7 @@ class MainWindow(QMainWindow):
             ("เพิ่มขั้นตอน",self.add_step),("เปลี่ยนชื่อ",self.rename_step),
             ("ทำสำเนา",self.duplicate_step),("ลบขั้นตอน",self.delete_step),
             ("เลื่อนขึ้น",lambda:self.move_step(-1)),("เลื่อนลง",lambda:self.move_step(1)),
-            ("บันทึก كแม่แบบ",self.save_template),
+            ("บันทึกเป็นแม่แบบ",self.save_template),
         ]
         file_actions=[
             ("เพิ่มไฟล์",self.add_file),("อ้างอิงบทปัจจุบัน",self.add_dynamic),
