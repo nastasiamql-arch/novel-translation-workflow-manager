@@ -44,3 +44,10 @@ def test_traversal_and_json_recovery(tmp_path):
     assert read_json(f,{})=={"ok":True} and f.read_text(encoding="utf-8")==raw
     f.write_text('{"ok":',encoding="utf-8")
     with pytest.raises(ValueError):read_json(f,{})
+
+
+def test_copy_advancement_cycles_through_workflow_steps():
+    assert WorkflowService.next_index(0,4)==1
+    assert WorkflowService.next_index(2,4)==3
+    assert WorkflowService.next_index(3,4)==0
+    assert WorkflowService.next_index(0,0)==-1

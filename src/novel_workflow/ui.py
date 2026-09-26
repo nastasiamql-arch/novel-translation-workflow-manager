@@ -260,6 +260,8 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage("No enabled files to copy",3000);return
             QApplication.clipboard().setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
             self.statusBar().showMessage(f"Copied {len(paths)} file(s) from {step.name}. Paste with Ctrl+V.",5000)
+            next_row=WorkflowService.next_index(self.si,self.steps.count())
+            self.steps.setCurrentRow(next_row)
         except Exception as e:QMessageBox.warning(self,"Copy failed",str(e))
     def settings_dialog(self):
         d=QDialog(self);d.setWindowTitle("Settings");l=QVBoxLayout(d);appearance=QComboBox();appearance.addItems(["System","Light","Dark"]);appearance.setCurrentText(self.settings.appearance);l.addWidget(QLabel("Appearance"));l.addWidget(appearance)

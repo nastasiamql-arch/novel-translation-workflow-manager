@@ -28,6 +28,9 @@ class WorkflowService:
         for f in s.files:f.id=uid()
         s.name+=" copy";w.steps.insert(i+1,s);return s
     @staticmethod
+    def next_index(i,count):
+        return (i+1)%count if count>0 else -1
+    @staticmethod
     def move(items,i,d):
         j=max(0,min(len(items)-1,i+d));items.insert(j,items.pop(i))
         for n,x in enumerate(items):
