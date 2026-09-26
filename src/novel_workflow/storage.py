@@ -2,6 +2,7 @@ import json, os, re, tempfile
 from pathlib import Path
 from dataclasses import asdict
 from .models import AppSettings, LaunchTarget, NovelGroup, NovelProfile, Workflow, WorkflowTemplate
+from .translation_progress import latest_context_chapter
 
 def data_root():
     # Keep the existing location so current NovelTranslationWorkflowManager data is reused.
@@ -84,6 +85,12 @@ class ProjectRepository:
         launcher_groups=data.get("groups",[])
         if not isinstance(launcher_groups,list) or not all(isinstance(group,dict) for group in launcher_groups):
             raise ValueError("Novel Launcher config contains invalid groups")
+        translation_stats=data.get("translationStats",{})
+        raw_checkpoints=translation_stats.get("checkpoints",[]) if isinstance(translation_stats,dict) else []
+        checkpoints_by_novel={
+            str(item.get("novelId")):item for item in raw_checkpoints
+            if isinstance(item,dict) and item.get("novelId")
+        } if isinstance(raw_checkpoints,list) else {}
 
         profiles=self.list_profiles()
         folder_key=lambda value: str(Path(value).expanduser()).replace("\\","/").rstrip("/").casefold()
@@ -150,6 +157,37 @@ class ProjectRepository:
                 if (target.kind,target.target) not in existing:
                     target.order=len(profile.launch_targets);profile.launch_targets.append(target);new_targets+=1
                     existing.add((target.kind,target.target))
+
+            checkpoint=checkpoints_by_novel.get(old_id)
+            legacy_context=Path(str(checkpoint.get("contextPath",""))).expanduser() if checkpoint and checkpoint.get("contextPath") else None
+            if legacy_context and legacy_context.is_file() and not (profile.context_path and Path(profile.context_path).expanduser().is_file()):
+                profile.context_path=str(legacy_context.resolve())
+            if not profile.context_path:
+                candidates=[]
+                for entry in profile.launch_targets:
+                    candidate=Path(entry.target).expanduser()
+                    if entry.kind=="file" and "context" in candidate.stem.casefold() and candidate.is_file():
+                        resolved=candidate.resolve()
+                        if resolved not in candidates:candidates.append(resolved)
+                if len(candidates)==1:profile.context_path=str(candidates[0])
+            if profile.context_path:
+                context=Path(profile.context_path).expanduser()
+                if context.is_file():
+                    canonical=os.path.normcase(str(context.resolve()))
+                    if profile.translation_checkpoint_path is None:
+                        checkpoint_matches=False
+                        if legacy_context and checkpoint and legacy_context.is_file():
+                            checkpoint_matches=os.path.normcase(str(legacy_context.resolve()))==canonical
+                        latest_known=None
+                        if checkpoint_matches:
+                            try:latest_known=int(checkpoint.get("latestChapter"))
+                            except (TypeError,ValueError):latest_known=None
+                        if latest_known is not None and latest_known > 0:
+                            profile.chapter_state.current_chapter=latest_known
+                        else:
+                            latest=latest_context_chapter(context.read_text(encoding="utf-8-sig",errors="replace"))
+                            if latest is not None:profile.chapter_state.current_chapter=latest
+                        profile.translation_checkpoint_path=canonical
             if folder:by_folder[key]=profile
             by_name.setdefault(name_key(profile.name),profile)
             by_name.setdefault(name_key(name),profile)
