@@ -6,6 +6,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton
+import pytest
+import shiboken6
 
 from novel_workflow.models import StepFile, Workflow
 from novel_workflow.services import ProfileService
@@ -18,6 +20,16 @@ def _application():
     app = QApplication.instance() or QApplication(["NovelWorkflowTests"])
     app.setQuitOnLastWindowClosed(False)
     return app
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _qt_application_lifecycle():
+    app = _application()
+    yield app
+    app.closeAllWindows()
+    app.quit()
+    app.processEvents()
+    shiboken6.delete(app)
 
 
 def test_workspace_click_copy_and_step_cycle(tmp_path):
