@@ -38,6 +38,18 @@ def test_context_125_to_130_counts_five_on_file_modified_day(tmp_path):
     assert daily_chapter_count(profile, changed_day) == 5
 
 
+def test_existing_chapter_state_is_a_migration_checkpoint(tmp_path):
+    context = tmp_path / "StoryContext.md"
+    profile = make_profile(context, chapter=125)
+    profile.translation_checkpoint_path = None
+    changed_day = write_context(context, 130, datetime(2026, 8, 12, 14, 30))
+
+    sync_profile_context(profile)
+
+    assert profile.translation_daily_activity[changed_day] == [126, 127, 128, 129, 130]
+    assert daily_chapter_count(profile, changed_day) == 5
+
+
 def test_repeated_scan_does_not_double_count(tmp_path):
     context = tmp_path / "StoryContext.md"
     profile = make_profile(context)
