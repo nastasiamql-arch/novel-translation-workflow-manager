@@ -26,7 +26,7 @@ class MainWindow(QMainWindow):
         splitter=QSplitter();self.setCentralWidget(splitter)
         self.profiles=QListWidget();self.profiles.currentRowChanged.connect(self.select_profile);splitter.addWidget(self.column("PROFILES",self.profiles,[("New Profile",self.new_profile),("Duplicate",self.duplicate_profile),("Rename",self.rename_profile),("Delete",self.delete_profile)]))
         self.steps=QListWidget();self.steps.currentRowChanged.connect(self.select_step);splitter.addWidget(self.column("WORKFLOW STEPS",self.steps,[("Add Step",self.add_step),("Rename",self.rename_step),("Duplicate",self.duplicate_step),("Delete",self.delete_step),("Move Up",lambda:self.move_step(-1)),("Move Down",lambda:self.move_step(1))]))
-        self.files=QListWidget();self.files.itemChanged.connect(self.toggle_file);splitter.addWidget(self.column("STEP FILES",self.files,[("Add File",self.add_file),("Add Dynamic Chapter",self.add_dynamic),("Remove from Step",self.remove_file),("Edit",self.edit_file),("Preview",self.preview),("COPY STEP",self.copy_step)]));splitter.setSizes([240,300,640])
+        self.files=QListWidget();self.files.itemChanged.connect(self.toggle_file);splitter.addWidget(self.column("STEP FILES",self.files,[("Add File",self.add_file),("Add Dynamic Chapter",self.add_dynamic),("Remove from Step",self.remove_file),("Move File Up",lambda:self.move_file(-1)),("Move File Down",lambda:self.move_file(1)),("Rename Label",self.rename_file_label),("File Manager",self.file_manager),("Preview",self.preview),("COPY STEP",self.copy_step)]));splitter.setSizes([240,300,640])
         self.statusBar();self.shortcut("Ctrl+Shift+C",self.copy_step);self.shortcut("Ctrl+P",self.preview);self.shortcut("Ctrl+R",self.refresh);self.shortcut("Ctrl+S",self.save)
     def column(self,title,widget,buttons):
         w=QWidget();l=QVBoxLayout(w);l.addWidget(QLabel("<b>"+title+"</b>"));l.addWidget(widget,1)
@@ -112,6 +112,78 @@ class MainWindow(QMainWindow):
         if not self.step():return
         ref,ok=QInputDialog.getItem(self,"Dynamic chapter","Reference:",["CURRENT_SOURCE_CHAPTER","CURRENT_TRANSLATED_CHAPTER","CURRENT_REVIEWED_CHAPTER"],0,False)
         if ok:self.step().files.append(StepFile(label=ref.replace("CURRENT_","").replace("_"," ").title(),reference_type="dynamic",dynamic_reference=ref,file_type="chapter",order=len(self.step().files)));self.save();self.refresh_files()
+    def move_file(self,d):
+        f=self.file()
+        if f:
+            i=next(n for n,x in enumerate(self.step().files) if x.id==f.id)
+            j=WorkflowService.move(self.step().files,i,d);self.save();self.refresh_files();self.files.setCurrentRow(j)
+    def rename_file_label(self):
+        f=self.file()
+        if f:
+            name,ok=QInputDialog.getText(self,"Rename Display Label","Label:",text=f.label)
+            if ok:f.label=name.strip() or f.label;self.save();self.refresh_files()
+    def file_manager(self):
+        if not self.profile:return
+        dialog=QDialog(self);dialog.setWindowTitle("Project File Manager");dialog.resize(780,560);layout=QVBoxLayout(dialog)
+        search=QLineEdit();search.setPlaceholderText("Search filename or path");layout.addWidget(search)
+        listing=QListWidget();layout.addWidget(listing,1)
+        actions=QHBoxLayout();layout.addLayout(actions)
+        def refresh():
+            listing.clear();root=self.repo.profile_dir(self.profile.id)
+            for path in sorted(root.rglob("*")):
+                rel=str(path.relative_to(root)).replace("\\\\","/")
+                if path.is_file() and path.name!="profile.json" and (not search.text() or search.text().lower() in rel.lower()):listing.addItem(rel)
+        def selected():
+            return self.repo.resolve_project_path(self.profile.id,listing.currentItem().text()) if listing.currentItem() else None
+        def create():
+            rel,ok=QInputDialog.getText(dialog,"Create Text File","Relative path (for example prompts/find_terms.txt):")
+            if not ok or not rel:return
+            if Path(rel).suffix.lower() not in (".txt",".md",".json"):QMessageBox.warning(dialog,"Unsupported","Use .txt, .md, or .json.");return
+            path=self.repo.resolve_project_path(self.profile.id,rel)
+            if path.exists():QMessageBox.warning(dialog,"Exists","File already exists.");return
+            editor=Editor(dialog,"New text file")
+            if editor.exec()==QDialog.Accepted:path.parent.mkdir(parents=True,exist_ok=True);path.write_text(editor.text(),encoding="utf-8");refresh()
+        def edit():
+            path=selected()
+            if not path:return
+            if path.suffix.lower() not in (".txt",".md",".json"):QMessageBox.warning(dialog,"Unsupported","Only text, Markdown, and JSON can be edited.");return
+            editor=Editor(dialog,"Edit "+path.name,path.read_text(encoding="utf-8"))
+            if editor.exec()==QDialog.Accepted:path.write_text(editor.text(),encoding="utf-8");refresh()
+        def rename():
+            path=selected()
+            if not path:return
+            root=self.repo.profile_dir(self.profile.id)
+            rel,ok=QInputDialog.getText(dialog,"Rename File","New relative path:",text=str(path.relative_to(root)))
+            if not ok:return
+            dest=self.repo.resolve_project_path(self.profile.id,rel)
+            if dest.exists():QMessageBox.warning(dialog,"Exists","Destination already exists.");return
+            old=str(path.relative_to(root)).replace("\\\\","/");dest.parent.mkdir(parents=True,exist_ok=True);path.rename(dest)
+            new=str(dest.relative_to(root)).replace("\\\\","/")
+            for step in self.profile.workflow.steps:
+                for item in step.files:
+                    if item.path==old:item.path=new
+            self.save();refresh()
+        def delete():
+            path=selected()
+            if not path:return
+            if QMessageBox.question(dialog,"Delete File",f"Permanently delete {path.name}?")==QMessageBox.Yes:
+                path.unlink()
+                for step in self.profile.workflow.steps:
+                    step.files=[item for item in step.files if not item.path or self.repo.resolve_project_path(self.profile.id,item.path)!=path]
+                self.save();refresh();self.refresh_files()
+        def import_file():
+            source,_=QFileDialog.getOpenFileName(dialog,"Import file","","Text files (*.txt *.md *.json)")
+            if not source:return
+            src=Path(source)
+            if src.suffix.lower() not in (".txt",".md",".json"):QMessageBox.warning(dialog,"Unsupported","Use .txt, .md, or .json.");return
+            rel,ok=QInputDialog.getText(dialog,"Import File","Destination relative path:",text="reference/"+src.name)
+            if not ok:return
+            dest=self.repo.resolve_project_path(self.profile.id,rel)
+            if dest.exists():QMessageBox.warning(dialog,"Exists","Destination already exists.");return
+            import shutil;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(src,dest);refresh()
+        for label,fn in (("New",create),("Import",import_file),("Edit",edit),("Rename",rename),("Delete",delete)):
+            button=QPushButton(label);button.clicked.connect(fn);actions.addWidget(button)
+        search.textChanged.connect(refresh);refresh();dialog.exec()
     def remove_file(self):
         f=self.file()
         if f:self.step().files.remove(f);self.save();self.refresh_files()
