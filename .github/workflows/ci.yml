@@ -15,7 +15,14 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: python -m pip install -e ".[dev]"
-      - run: python -m pytest -q
+      - name: Test profile isolation
+        run: python -m pytest -q tests/test_core.py::test_profiles_are_independent
+      - name: Test workflow operations
+        run: python -m pytest -q tests/test_core.py::test_workflow_and_ordering
+      - name: Test dynamic chapter assembly
+        run: python -m pytest -q tests/test_core.py::test_chapter_reference_resolves_without_editing_step
+      - name: Test paths and JSON recovery
+        run: python -m pytest -q tests/test_core.py::test_traversal_and_json_recovery
   windows-build:
     needs: test
     runs-on: windows-latest
