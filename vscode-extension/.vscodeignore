@@ -1,0 +1,9 @@
+.vscode/**
+.gitignore
+.vsix
+ci/**
+docs/**
+test/**
+**/*.test.js
+node_modules/**
+coverage/**
