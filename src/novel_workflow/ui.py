@@ -113,7 +113,11 @@ class MainWindow(QMainWindow):
         label,ok=QInputDialog.getText(self,"File label","Display name:",text=p.stem)
         if not ok:return
         rel="reference/"+p.name;dst=self.repo.resolve_project_path(self.profile.id,rel);dst.parent.mkdir(parents=True,exist_ok=True)
-        if dst.exists():QMessageBox.warning(self,"Exists","That filename already exists.");return
+        if dst.exists():
+            if any(item.path==rel for item in self.step().files):
+                QMessageBox.information(self,"Already added","This file is already attached to the selected step.");return
+            self.step().files.append(StepFile(label=label or p.stem,path=rel,file_type="reference",order=len(self.step().files)))
+            self.save();self.refresh_files();self.statusBar().showMessage("Attached existing project file",2500);return
         import shutil;shutil.copy2(p,dst);self.step().files.append(StepFile(label=label or p.stem,path=rel,file_type="reference",order=len(self.step().files)));self.save();self.refresh_files()
     def add_dynamic(self):
         if not self.step():return
@@ -188,6 +192,16 @@ class MainWindow(QMainWindow):
             dest=self.repo.resolve_project_path(self.profile.id,rel)
             if dest.exists():QMessageBox.warning(dialog,"Exists","Destination already exists.");return
             import shutil;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(src,dest);refresh()
+        def attach():
+            path=selected()
+            if not path or not self.step():return
+            rel=path.relative_to(self.repo.profile_dir(self.profile.id)).as_posix()
+            if any(item.path==rel for item in self.step().files):
+                QMessageBox.information(dialog,"Already added","This file is already attached to the selected step.");return
+            label,ok=QInputDialog.getText(dialog,"Attach File","Display label:",text=path.stem)
+            if not ok:return
+            self.step().files.append(StepFile(label=label or path.stem,path=rel,file_type=path.parent.name,order=len(self.step().files)))
+            self.save();self.refresh_files();self.statusBar().showMessage("File attached to selected step",2500)
         for label,fn in (("New",create),("Import",import_file),("Add to Step",attach),("Edit",edit),("Rename",rename),("Delete",delete)):
             button=QPushButton(label);button.clicked.connect(fn);actions.addWidget(button)
         search.textChanged.connect(refresh);refresh();dialog.exec()
@@ -213,7 +227,7 @@ class MainWindow(QMainWindow):
     def copy_step(self):
         if not self.step():return
         try:
-            text=self.assembler.assemble(self.profile,self.step(),self.settings.separator,self.settings.show_filename_heading);self.copy_text(text);QMessageBox.information(self,"Copied",f"Copied: {self.step().name}\n{len(text):,} characters")
+            text=self.assembler.assemble(self.profile,self.step(),self.settings.separator,self.settings.show_filename_heading);self.copy_text(text);self.statusBar().showMessage(f"Copied: {self.step().name} · {len(text):,} characters",4000)
         except Exception as e:QMessageBox.warning(self,"Copy failed",str(e))
     def settings_dialog(self):
         d=QDialog(self);d.setWindowTitle("Settings");l=QVBoxLayout(d);appearance=QComboBox();appearance.addItems(["System","Light","Dark"]);appearance.setCurrentText(self.settings.appearance);l.addWidget(QLabel("Appearance"));l.addWidget(appearance)
