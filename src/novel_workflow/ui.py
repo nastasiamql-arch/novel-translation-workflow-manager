@@ -107,30 +107,32 @@ class MainWindow(QMainWindow):
     def add_file(self):
         if not self.profile or not self.step():return
         root=self.repo.profile_dir(self.profile.id).resolve()
-        src,_=QFileDialog.getOpenFileName(self,"Link original file",str(root),"Text files (*.txt *.md *.json)")
-        if not src:return
-        source=Path(src).resolve()
-        if source.suffix.lower() not in (".txt",".md",".json"):QMessageBox.warning(self,"Unsupported","Choose .txt, .md, or .json.");return
-        label,ok=QInputDialog.getText(self,"File label","Display label:",text=source.stem)
-        if not ok:return
-        try:
-            relative=source.relative_to(root).as_posix()
-            reference_type="repository_file";stored_path=relative
-        except ValueError:
-            reference_type="external_file";stored_path=str(source)
-        old_copy="reference/"+source.name
-        linked=False
-        for workflow_step in self.profile.workflow.steps:
-            for item in workflow_step.files:
-                if item.reference_type=="repository_file" and item.path==old_copy:
-                    item.reference_type=reference_type;item.path=stored_path;linked=True
-        already=any(item.reference_type==reference_type and item.path==stored_path for item in self.step().files)
-        if not already:
-            self.step().files.append(StepFile(label=label or source.stem,reference_type=reference_type,path=stored_path,file_type=source.parent.name,order=len(self.step().files)))
+        sources,_=QFileDialog.getOpenFileNames(self,"Link original files",str(root),"Text files (*.txt *.md *.json)")
+        if not sources:return
+        added=0;updated=0;skipped=0
+        for src in sources:
+            source=Path(src).resolve()
+            if source.suffix.lower() not in (".txt",".md",".json"):
+                skipped+=1
+                continue
+            try:
+                relative=source.relative_to(root).as_posix()
+                reference_type="repository_file";stored_path=relative
+            except ValueError:
+                reference_type="external_file";stored_path=str(source)
+            old_copy="reference/"+source.name
+            for workflow_step in self.profile.workflow.steps:
+                for item in workflow_step.files:
+                    if item.reference_type=="repository_file" and item.path==old_copy:
+                        item.reference_type=reference_type;item.path=stored_path;updated+=1
+            already=any(item.reference_type==reference_type and item.path==stored_path for item in self.step().files)
+            if not already:
+                self.step().files.append(StepFile(label=source.stem,reference_type=reference_type,path=stored_path,file_type=source.parent.name,order=len(self.step().files)))
+                added+=1
         self.save();self.refresh_files()
-        message="Linked to original file; future edits will be used"
-        if linked:message="Updated existing workflow references to use the original file"
-        self.statusBar().showMessage(message,5000)
+        message=f"Linked {added} file(s); updated {updated} old reference(s)"
+        if skipped:message+=f"; skipped {skipped} unsupported file(s)"
+        self.statusBar().showMessage(message,6000)
     def add_dynamic(self):
         if not self.step():return
         ref,ok=QInputDialog.getItem(self,"Dynamic chapter","Reference:",["CURRENT_SOURCE_CHAPTER","CURRENT_TRANSLATED_CHAPTER","CURRENT_REVIEWED_CHAPTER"],0,False)
