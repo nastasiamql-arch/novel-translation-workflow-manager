@@ -1,7 +1,7 @@
 from pathlib import Path
 from dataclasses import asdict as asdict_target
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtCore import Qt, QUrl, QSize
+from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap
 from PySide6.QtWidgets import *
 from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow
 from .services import ProfileService, WorkflowService, AssemblyService
@@ -18,22 +18,139 @@ class Editor(QDialog):
 
 class MainWindow(QMainWindow):
     def __init__(self,repo=None):
-        super().__init__();self.repo=repo or ProjectRepository();self.ps=ProfileService(self.repo);self.assembler=AssemblyService(self.repo);self.launcher=LauncherService();self.settings=self.repo.load_settings();self.profile=None;self.si=-1
-        self.setWindowTitle("NovelWorkflow");self.resize(1180,720);self.build();self.refresh_profiles()
+        super().__init__()
+        self.repo=repo or ProjectRepository()
+        self.ps=ProfileService(self.repo)
+        self.assembler=AssemblyService(self.repo)
+        self.launcher=LauncherService()
+        self.settings=self.repo.load_settings()
+        self.profile=None
+        self.si=-1
+        self.setWindowTitle("NovelWorkflow")
+        self.setMinimumSize(1040,680)
+        self.resize(1260,780)
+        logo=Path(__file__).resolve().parent/"resources"/"novelworkflow.png"
+        if logo.is_file(): self.setWindowIcon(QIcon(str(logo)))
+        self.setStyleSheet(self.theme_stylesheet())
+        self.build()
+        self.refresh_profiles()
+
+    @staticmethod
+    def theme_stylesheet():
+        return """
+        QMainWindow { background:#f4f5f3; color:#1d2b3a; font-family:"Segoe UI"; font-size:10pt; }
+        QToolBar#mainToolbar { background:#ffffff; border:0; border-bottom:1px solid #dfe5e2; spacing:10px; padding:8px 14px; }
+        QToolBar#mainToolbar::separator { width:1px; background:#d9e0dc; margin:4px 5px; }
+        QLabel#brandTitle { color:#102a43; font-size:14pt; font-weight:700; }
+        QLabel#brandSubtitle { color:#718096; font-size:8pt; }
+        QLabel#toolbarHint { color:#657586; font-weight:600; }
+        QLabel#currentNovel { color:#102a43; font-size:11pt; font-weight:700; padding:3px 6px; }
+        QToolButton { color:#334e68; background:transparent; border:0; border-radius:7px; padding:7px 9px; font-weight:600; }
+        QToolButton:hover { background:#edf5f2; color:#087f72; }
+        QToolButton:pressed { background:#d9eee8; }
+        QFrame#columnPanel { background:#ffffff; border:1px solid #e0e6e2; border-radius:12px; }
+        QLabel#sectionHeading { color:#526577; font-size:9pt; font-weight:700; letter-spacing:1px; padding:2px 2px 5px 2px; }
+        QListWidget { background:#fbfcfb; border:1px solid #e7ece9; border-radius:9px; padding:5px; outline:0; }
+        QListWidget::item { color:#263746; padding:9px 10px; margin:2px 0; border-radius:6px; }
+        QListWidget::item:hover { background:#f0f6f3; }
+        QListWidget::item:selected { background:#e3f2ed; color:#075e56; font-weight:700; }
+        QPushButton { background:#ffffff; color:#34495e; border:1px solid #d8e0dc; border-radius:7px; padding:8px 10px; font-weight:600; }
+        QPushButton:hover { background:#f1f7f4; border-color:#a8cbc0; color:#087f72; }
+        QPushButton:pressed { background:#e2eee9; }
+        QPushButton#primaryButton { background:#087f72; color:#ffffff; border:1px solid #087f72; font-size:10pt; font-weight:700; padding:11px; }
+        QPushButton#primaryButton:hover { background:#06685e; border-color:#06685e; }
+        QPushButton#accentButton { color:#087f72; border-color:#b9d8cf; background:#f1f8f5; }
+        QSpinBox, QComboBox, QLineEdit { background:#ffffff; color:#243b53; border:1px solid #d8e0dc; border-radius:6px; padding:6px 8px; min-height:20px; }
+        QTextEdit, QPlainTextEdit { background:#ffffff; color:#243b53; border:1px solid #d8e0dc; border-radius:8px; padding:8px; selection-background-color:#b9e4d6; }
+        QDialog { background:#f7f8f6; }
+        QStatusBar { background:#ffffff; color:#536575; border-top:1px solid #e0e6e2; }
+        QSplitter::handle { background:#e5eae7; width:5px; }
+        QScrollBar:vertical { background:transparent; width:10px; margin:2px; }
+        QScrollBar::handle:vertical { background:#c9d5cf; border-radius:4px; min-height:26px; }
+        QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical { height:0; }
+        """
     def build(self):
-        bar=self.addToolBar("Navigation");bar.setMovable(False);bar.addWidget(QLabel("Novel: "));self.novel=QLabel("None");bar.addWidget(self.novel);bar.addSeparator();bar.addWidget(QLabel("Chapter: "))
-        self.chapter=QSpinBox();self.chapter.setMinimum(1);self.chapter.valueChanged.connect(self.chapter_changed);bar.addWidget(self.chapter)
-        for label,fn in (("◀",lambda:self.chapter.setValue(max(1,self.chapter.value()-1))),("▶",lambda:self.chapter.setValue(self.chapter.value()+1)),("Open Novel",self.launch_profile),("Groups",self.groups_dialog),("Import Launcher",self.import_launcher_config),("Settings",self.settings_dialog)):
+        bar=self.addToolBar("Main")
+        bar.setObjectName("mainToolbar")
+        bar.setMovable(False)
+        bar.setIconSize(QSize(30,30))
+        logo=Path(__file__).resolve().parent/"resources"/"novelworkflow.png"
+        mark=QLabel()
+        if logo.is_file(): mark.setPixmap(QPixmap(str(logo)).scaled(30,30,Qt.KeepAspectRatio,Qt.SmoothTransformation))
+        bar.addWidget(mark)
+        brand=QLabel("<b>NovelWorkflow</b><br><span style='color:#718096;font-size:8pt'>พื้นที่ทำงานนิยาย</span>")
+        brand.setObjectName("brandTitle")
+        bar.addWidget(brand)
+        bar.addSeparator()
+        bar.addWidget(QLabel("นิยาย"))
+        self.novel=QLabel("ยังไม่ได้เลือก")
+        self.novel.setObjectName("currentNovel")
+        bar.addWidget(self.novel)
+        bar.addSeparator()
+        bar.addWidget(QLabel("บท"))
+        self.chapter=QSpinBox()
+        self.chapter.setMinimum(1)
+        self.chapter.setFixedWidth(92)
+        self.chapter.valueChanged.connect(self.chapter_changed)
+        bar.addWidget(self.chapter)
+        for label,fn in (("◀",lambda:self.chapter.setValue(max(1,self.chapter.value()-1))),("▶",lambda:self.chapter.setValue(self.chapter.value()+1))):
+            a=QAction(label,self);a.setToolTip("ไปบทก่อนหน้า" if label=="◀" else "ไปบทถัดไป");a.triggered.connect(fn);bar.addAction(a)
+        bar.addSeparator()
+        for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("ตั้งค่า",self.settings_dialog)):
             a=QAction(label,self);a.triggered.connect(fn);bar.addAction(a)
-        splitter=QSplitter();self.setCentralWidget(splitter)
-        self.profiles=QListWidget();self.profiles.currentRowChanged.connect(self.select_profile);splitter.addWidget(self.column("PROFILES",self.profiles,[("New Profile",self.new_profile),("Duplicate",self.duplicate_profile),("Rename",self.rename_profile),("Launcher Items",self.launcher_dialog),("Delete",self.delete_profile)]))
-        self.steps=QListWidget();self.steps.currentRowChanged.connect(self.select_step);splitter.addWidget(self.column("WORKFLOW STEPS",self.steps,[("Add Step",self.add_step),("Rename",self.rename_step),("Duplicate",self.duplicate_step),("Delete",self.delete_step),("Move Up",lambda:self.move_step(-1)),("Move Down",lambda:self.move_step(1)),("Save as Template",self.save_template)]))
-        self.files=QListWidget();self.files.itemChanged.connect(self.toggle_file);splitter.addWidget(self.column("STEP FILES",self.files,[("Add File",self.add_file),("Add Dynamic Chapter",self.add_dynamic),("Remove from Step",self.remove_file),("Move File Up",lambda:self.move_file(-1)),("Move File Down",lambda:self.move_file(1)),("Rename Label",self.rename_file_label),("File Manager",self.file_manager),("Preview",self.preview),("COPY FILES",self.copy_step)]));splitter.setSizes([240,300,640])
-        self.statusBar();self.shortcut("Ctrl+Shift+C",self.copy_step);self.shortcut("Ctrl+P",self.preview);self.shortcut("Ctrl+R",self.refresh);self.shortcut("Ctrl+S",self.save)
+
+        splitter=QSplitter()
+        splitter.setChildrenCollapsible(False)
+        self.setCentralWidget(splitter)
+        self.profiles=QListWidget()
+        self.profiles.setSpacing(2)
+        self.profiles.currentRowChanged.connect(self.select_profile)
+        splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),("เปลี่ยนชื่อ",self.rename_profile),("ตัวเปิดไฟล์",self.launcher_dialog),("ลบนิยาย",self.delete_profile)]))
+        self.steps=QListWidget()
+        self.steps.setSpacing(2)
+        self.steps.currentRowChanged.connect(self.select_step)
+        splitter.addWidget(self.column("ขั้นตอนงาน",self.steps,[("เพิ่มขั้นตอน",self.add_step),("เปลี่ยนชื่อ",self.rename_step),("ทำสำเนา",self.duplicate_step),("ลบขั้นตอน",self.delete_step),("เลื่อนขึ้น",lambda:self.move_step(-1)),("เลื่อนลง",lambda:self.move_step(1)),("บันทึกเป็นแม่แบบ",self.save_template)]))
+        self.files=QListWidget()
+        self.files.setSpacing(2)
+        self.files.itemChanged.connect(self.toggle_file)
+        splitter.addWidget(self.column("ไฟล์ของขั้นตอน",self.files,[("เพิ่มไฟล์",self.add_file),("อ้างอิงบทปัจจุบัน",self.add_dynamic),("เอาออกจากขั้นตอน",self.remove_file),("เลื่อนขึ้น",lambda:self.move_file(-1)),("เลื่อนลง",lambda:self.move_file(1)),("เปลี่ยนชื่อที่แสดง",self.rename_file_label),("จัดการไฟล์",self.file_manager),("ดูตัวอย่าง",self.preview),("COPY FILES",self.copy_step)]))
+        splitter.setSizes([260,340,650])
+        self.statusBar().showMessage("เลือกนิยายและขั้นตอนเพื่อเริ่มทำงาน")
+        self.shortcut("Ctrl+Shift+C",self.copy_step)
+        self.shortcut("Ctrl+P",self.preview)
+        self.shortcut("Ctrl+R",self.refresh)
+        self.shortcut("Ctrl+S",self.save)
+
     def column(self,title,widget,buttons):
-        w=QWidget();l=QVBoxLayout(w);l.addWidget(QLabel("<b>"+title+"</b>"));l.addWidget(widget,1)
-        for label,fn in buttons:b=QPushButton(label);b.clicked.connect(fn);l.addWidget(b)
-        return w
+        panel=QFrame()
+        panel.setObjectName("columnPanel")
+        layout=QVBoxLayout(panel)
+        layout.setContentsMargins(14,14,14,14)
+        layout.setSpacing(9)
+        heading=QLabel(title.upper())
+        heading.setObjectName("sectionHeading")
+        layout.addWidget(heading)
+        layout.addWidget(widget,1)
+        actions=QGridLayout()
+        actions.setHorizontalSpacing(7)
+        actions.setVerticalSpacing(7)
+        regular=[entry for entry in buttons if entry[0]!="COPY FILES"]
+        for index,(label,fn) in enumerate(regular):
+            button=QPushButton(label)
+            if label=="นำเข้าข้อมูลเดิม": button.setObjectName("accentButton")
+            button.setMinimumHeight(34)
+            button.clicked.connect(fn)
+            actions.addWidget(button,index//2,index%2)
+        for label,fn in buttons:
+            if label=="COPY FILES":
+                button=QPushButton(label)
+                button.setObjectName("primaryButton")
+                button.setMinimumHeight(46)
+                button.clicked.connect(fn)
+                actions.addWidget(button,(len(regular)+1)//2,0,1,2)
+        layout.addLayout(actions)
+        return panel
+
     def shortcut(self,key,fn):a=QAction(self);a.setShortcut(QKeySequence(key));a.triggered.connect(fn);self.addAction(a)
     def refresh(self):self.refresh_profiles(self.profile.id if self.profile else None)
     def refresh_profiles(self,pid=None):

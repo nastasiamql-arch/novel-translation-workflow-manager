@@ -86,16 +86,21 @@ class ProjectRepository:
             raise ValueError("Novel Launcher config contains invalid groups")
 
         profiles=self.list_profiles()
-        by_folder={str(Path(p.main_folder).expanduser()).casefold():p for p in profiles if p.main_folder}
-        by_name={p.name.casefold():p for p in profiles}
+        folder_key=lambda value: str(Path(value).expanduser()).replace("\\","/").rstrip("/").casefold()
+        name_key=lambda value: re.sub(r"[^\w]+","",str(value),flags=re.UNICODE).casefold()
+        by_folder={folder_key(p.main_folder):p for p in profiles if p.main_folder}
+        by_name={}
+        for profile in profiles: by_name.setdefault(name_key(profile.name),profile)
         id_map={};new_profiles=0;new_targets=0
         staged=[]
         for novel in data["novels"]:
             name=str(novel.get("name","Novel")).strip() or "Novel"
             folder=str(novel.get("mainFolder","") or "").strip()
-            key=str(Path(folder).expanduser()).casefold() if folder else ""
+            key=folder_key(folder) if folder else ""
             profile=by_folder.get(key) if key else None
-            profile=profile or by_name.get(name.casefold())
+            if profile is None:
+                candidate=by_name.get(name_key(name))
+                if candidate and (not folder or not candidate.main_folder or folder_key(candidate.main_folder)==key): profile=candidate
             if profile is None:
                 profile=NovelProfile(name=name,main_folder=folder)
                 new_profiles+=1
@@ -135,7 +140,8 @@ class ProjectRepository:
                     target.order=len(profile.launch_targets);profile.launch_targets.append(target);new_targets+=1
                     existing.add((target.kind,target.target))
             if folder:by_folder[key]=profile
-            by_name[name.casefold()]=profile
+            by_name.setdefault(name_key(profile.name),profile)
+            by_name.setdefault(name_key(name),profile)
             staged.append(profile)
 
         for profile in staged:self.save_profile(profile)

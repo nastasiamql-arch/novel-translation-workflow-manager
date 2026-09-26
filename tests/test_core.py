@@ -93,6 +93,25 @@ def test_launcher_import_merges_targets_groups_and_preserves_source(tmp_path):
     assert loaded.launch_targets[1].arguments==["--profile","novel"]
     assert repo.load_groups()[0].profile_ids==[existing.id]
 
+def test_launcher_import_matches_existing_title_variant_without_duplicates(tmp_path):
+    repo=ProjectRepository(tmp_path/"app")
+    existing=NovelProfile(name="ย้อนเวลาสู่ปี 1985  สยบวอลล์สตรีท")
+    repo.save_profile(existing)
+    source=tmp_path/"launcher.json"
+    source.write_text(json.dumps({
+        "novels":[{"id":"old-1","name":"ย้อนเวลาสู่ปี 1985 : สยบวอลล์สตรีท","mainFolder":str(tmp_path/"novel"),"files":[]}],
+        "groups":[]
+    }),encoding="utf-8")
+    first=repo.import_launcher_config(source)
+    second=repo.import_launcher_config(source)
+    assert first["profiles"]==0
+    assert second=={"profiles":0,"groups":0,"launch_targets":0}
+    assert len(repo.list_profiles())==1
+    merged=repo.list_profiles()[0]
+    assert merged.id==existing.id
+    assert merged.main_folder==str(tmp_path/"novel")
+
+
 def test_launcher_plan_opens_main_folder_and_enabled_items_in_order(tmp_path):
     profile=NovelProfile(main_folder=str(tmp_path/"novel"),launch_targets=[
         LaunchTarget(label="last",kind="file",target="z.txt",enabled=True,order=2),
