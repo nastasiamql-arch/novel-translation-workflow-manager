@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -117,7 +118,7 @@ class TranslationDashboardDialog(QDialog):
         header = QHBoxLayout()
         title = QLabel(profile.name)
         title.setStyleSheet("font-size:12pt;font-weight:700;border:0")
-        latest = QLabel(f"ถึงบท {profile.chapter_state.current_chapter}")
+        latest = QLabel(f"ถึงบท {profile.chapter_state.current_chapter}" if profile.context_path else "ยังไม่ได้เชื่อม Context")
         latest.setStyleSheet("color:#777780;border:0")
         header.addWidget(title, 1)
         header.addWidget(latest)
@@ -145,6 +146,9 @@ class TranslationDashboardDialog(QDialog):
             hint.setStyleSheet("color:#777780;border:0")
             controls.addWidget(hint, 1)
         set_goal = QPushButton("แก้เป้าหมาย" if goal else "ตั้งเป้าหมาย")
+        has_context = bool(profile.context_path and Path(profile.context_path).expanduser().is_file())
+        set_goal.setEnabled(has_context)
+        if not has_context:set_goal.setToolTip("เลือกไฟล์ Context ของนิยายก่อน จึงจะติดตามเป้าหมายได้")
         set_goal.clicked.connect(lambda checked=False, item=profile: self._set_goal(item))
         controls.addWidget(set_goal)
         layout.addLayout(controls)
