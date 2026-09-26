@@ -7,6 +7,7 @@ from novel_workflow.translation_progress import (
     daily_chapter_count,
     goal_progress,
     local_day,
+    reset_goal_progress,
     sync_profile_context,
 )
 
@@ -100,3 +101,17 @@ def test_goal_progress_uses_profile_baseline_and_caps_visual_percentage(tmp_path
     assert goal_progress(profile) == (5, 5, 100)
     profile.chapter_state.current_chapter = 132
     assert goal_progress(profile) == (7, 5, 100)
+
+
+def test_reset_goal_progress_keeps_target_and_daily_activity():
+    profile = NovelProfile(name="เรื่องทดสอบ")
+    profile.translation_goal_baseline = 125
+    profile.translation_goal_target = 10
+    profile.chapter_state.current_chapter = 132
+    profile.translation_daily_activity = {"2026-09-27": [126, 127, 128, 129, 130, 131, 132]}
+
+    assert reset_goal_progress(profile)
+    assert profile.translation_goal_baseline == 132
+    assert profile.translation_goal_target == 10
+    assert goal_progress(profile) == (0, 10, 0)
+    assert daily_chapter_count(profile, "2026-09-27") == 7

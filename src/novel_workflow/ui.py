@@ -1,13 +1,13 @@
 from pathlib import Path
 from dataclasses import asdict as asdict_target
-from PySide6.QtCore import Qt, QUrl, QSize, QTimer
-from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap
+from PySide6.QtCore import Qt, QUrl, QSize, QTimer, QMimeData
+from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QFontMetrics
 from PySide6.QtWidgets import *
 from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow
 from .services import ProfileService, WorkflowService, AssemblyService
 from .launcher import LauncherService
 from .storage import ProjectRepository
-from .translation_progress import latest_context_chapter, sync_profile_context
+from .translation_progress import latest_context_chapter, sync_profile_context, daily_chapter_count, goal_progress
 from .progress_dialog import TranslationDashboardDialog
 
 class Editor(QDialog):
@@ -86,9 +86,14 @@ class MainWindow(QMainWindow):
         bar.addWidget(QLabel("นิยาย"))
         self.novel=QLabel("ยังไม่ได้เลือก")
         self.novel.setObjectName("currentNovel")
+        self.novel.setMinimumWidth(80)
+        self.novel.setMaximumWidth(250)
+        self.novel.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Fixed)
         bar.addWidget(self.novel)
         bar.addSeparator()
-        bar.addSeparator()
+        spacer=QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred)
+        bar.addWidget(spacer)
         for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("ความคืบหน้า",self.translation_dashboard),("ตั้งค่า",self.settings_dialog)):
             a=QAction(label,self);a.triggered.connect(fn);bar.addAction(a)
 
@@ -101,8 +106,20 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),("ตั้งรูปปก",self.set_cover),("เอารูปปกออก",self.remove_cover),("เลือก Context",self.set_context_file),("เปลี่ยนชื่อ",self.rename_profile),("ตัวเปิดไฟล์",self.launcher_dialog),("ลบนิยาย",self.delete_profile)]))
         self.steps=QListWidget()
         self.steps.setSpacing(2)
+        self.steps.setMinimumHeight(205)
+        self.steps.setMaximumHeight(245)
         self.steps.currentRowChanged.connect(self.select_step)
-        splitter.addWidget(self.column("ขั้นตอนงาน",self.steps,[("เพิ่มขั้นตอน",self.add_step),("เปลี่ยนชื่อ",self.rename_step),("ทำสำเนา",self.duplicate_step),("ลบขั้นตอน",self.delete_step),("เลื่อนขึ้น",lambda:self.move_step(-1)),("เลื่อนลง",lambda:self.move_step(1)),("บันทึกเป็นแม่แบบ",self.save_template)]))
+        self.goal_panel=QFrame()
+        self.goal_panel.setStyleSheet("QFrame { background:#f7f9ff; border:1px solid #e7eaf2; border-radius:12px; }")
+        goal_layout=QVBoxLayout(self.goal_panel)
+        goal_layout.setContentsMargins(10,7,10,7)
+        goal_layout.setSpacing(4)
+        self.goal_label=QLabel("เป้าหมายวันนี้")
+        self.goal_bar=QProgressBar()
+        self.goal_bar.setFixedHeight(15)
+        goal_layout.addWidget(self.goal_label)
+        goal_layout.addWidget(self.goal_bar)
+        splitter.addWidget(self.column("ขั้นตอนงาน",self.steps,[("เพิ่มขั้นตอน",self.add_step),("เปลี่ยนชื่อ",self.rename_step),("ทำสำเนา",self.duplicate_step),("ลบขั้นตอน",self.delete_step),("เลื่อนขึ้น",lambda:self.move_step(-1)),("เลื่อนลง",lambda:self.move_step(1)),("บันทึกเป็นแม่แบบ",self.save_template)],below=self.goal_panel))
         self.files=QListWidget()
         self.files.setSpacing(2)
         self.files.itemChanged.connect(self.toggle_file)
@@ -118,7 +135,7 @@ class MainWindow(QMainWindow):
         self.progress_timer.timeout.connect(self.refresh_translation_progress)
         self.progress_timer.start()
 
-    def column(self,title,widget,buttons):
+    def column(self,title,widget,buttons,below=None):
         panel=QFrame()
         panel.setObjectName("columnPanel")
         layout=QVBoxLayout(panel)
@@ -127,7 +144,10 @@ class MainWindow(QMainWindow):
         heading=QLabel(title.upper())
         heading.setObjectName("sectionHeading")
         layout.addWidget(heading)
-        layout.addWidget(widget,1)
+        layout.addWidget(widget,0 if below else 1)
+        if below is not None:
+            layout.addWidget(below)
+            layout.addStretch(1)
         actions=QGridLayout()
         actions.setHorizontalSpacing(7)
         actions.setVerticalSpacing(7)
@@ -183,7 +203,29 @@ class MainWindow(QMainWindow):
             self.profile=next((profile for profile in profiles if profile.id==self.profile.id),self.profile)
         dashboard=getattr(self,"dashboard_dialog",None)
         if dashboard is not None and dashboard.isVisible():dashboard.set_profiles(profiles)
+        self.refresh_goal_indicator()
         return profiles
+    def refresh_goal_indicator(self):
+        if not hasattr(self,"goal_label"):
+            return
+        if not self.profile:
+            self.goal_label.setText("ยังไม่ได้เลือกนิยาย")
+            self.goal_bar.setRange(0,100)
+            self.goal_bar.setValue(0)
+            return
+        today=daily_chapter_count(self.profile)
+        goal=goal_progress(self.profile)
+        if goal:
+            completed,target,percentage=goal
+            self.goal_label.setText(f"เป้าหมาย {completed}/{target} บท · วันนี้ +{today} บท")
+            self.goal_bar.setRange(0,100)
+            self.goal_bar.setValue(percentage)
+            self.goal_bar.setFormat(f"{percentage}%")
+        else:
+            self.goal_label.setText(f"วันนี้แปลเพิ่ม {today} บท · ยังไม่ได้ตั้งเป้าหมาย")
+            self.goal_bar.setRange(0,1)
+            self.goal_bar.setValue(0)
+            self.goal_bar.setFormat("")
     def translation_dashboard(self):
         profiles=self.refresh_translation_progress()
         self.dashboard_dialog=TranslationDashboardDialog(self,profiles,self.repo,self.refresh_translation_progress)
@@ -191,8 +233,11 @@ class MainWindow(QMainWindow):
         self.dashboard_dialog=None
     def select_profile(self,i):
         if i<0 or i>=len(getattr(self,"ps_list",[])):return
-        self.profile=self.ps_list[i];self.settings.last_profile_id=self.profile.id;self.novel.setText(self.profile.name)
+        self.profile=self.ps_list[i];self.settings.last_profile_id=self.profile.id
+        self.novel.setToolTip(self.profile.name)
+        self.novel.setText(QFontMetrics(self.novel.font()).elidedText(self.profile.name,Qt.ElideRight,238))
         self.refresh_steps()
+        self.refresh_goal_indicator()
     def refresh_steps(self):
         self.steps.blockSignals(True);self.steps.clear()
         if self.profile:
@@ -565,7 +610,9 @@ class MainWindow(QMainWindow):
                 if resolved not in paths:paths.append(resolved)
             if not paths:
                 self.statusBar().showMessage("No enabled files to copy",3000);return
-            QApplication.clipboard().setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
+            mime_data=QMimeData()
+            mime_data.setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
+            QApplication.clipboard().setMimeData(mime_data)
             self.statusBar().showMessage(f"Copied {len(paths)} file(s) from {step.name}. Paste with Ctrl+V.",5000)
             next_row=WorkflowService.next_index(self.si,self.steps.count())
             self.steps.setCurrentRow(next_row)
