@@ -244,9 +244,8 @@ class MainWindow(QMainWindow):
         if self.profile:
             for i,s in enumerate(self.profile.workflow.steps):self.steps.addItem(f"{i+1}. {s.name}")
         self.steps.blockSignals(False)
-        self.steps.setCurrentRow(0 if self.profile and self.profile.workflow.steps else -1)
-        if not self.profile or not self.profile.workflow.steps:
-            self.si=-1
+        self.si=0 if self.profile and self.profile.workflow.steps else -1
+        self.steps.setCurrentRow(self.si)
         self.update_step_indicator()
         self.refresh_files()
     def select_step(self,i):
