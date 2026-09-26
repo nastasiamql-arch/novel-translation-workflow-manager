@@ -14,8 +14,9 @@ def test_profiles_are_independent(tmp_path):
 def test_workflow_and_ordering():
     w=Workflow.defaults();s=WorkflowService.add_step(w,"custom")
     s.files=[StepFile(label="a",order=0),StepFile(label="b",order=1)];s.files[0].enabled=False
-    copy=WorkflowService.duplicate_step(w,4);assert copy.id!=s.id and copy.files[0].id!=s.files[0].id
-    assert WorkflowService.move(w.steps,5,-1)==4
+    step_index=w.steps.index(s)
+    copy=WorkflowService.duplicate_step(w,step_index);assert copy.id!=s.id and copy.files[0].id!=s.files[0].id
+    assert WorkflowService.move(w.steps,step_index+1,-1)==step_index
     assert WorkflowService.move(s.files,0,1)==1 and s.files[1].order==1
 
 def test_chapter_reference_resolves_without_editing_step(tmp_path):
@@ -49,9 +50,9 @@ def test_traversal_and_json_recovery(tmp_path):
 
 
 def test_copy_advancement_cycles_through_workflow_steps():
-    assert WorkflowService.next_index(0,4)==1
-    assert WorkflowService.next_index(2,4)==3
-    assert WorkflowService.next_index(3,4)==0
+    assert WorkflowService.next_index(0,3)==1
+    assert WorkflowService.next_index(1,3)==2
+    assert WorkflowService.next_index(2,3)==0
     assert WorkflowService.next_index(0,0)==-1
 
 
