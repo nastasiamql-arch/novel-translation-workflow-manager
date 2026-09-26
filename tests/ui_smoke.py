@@ -1,6 +1,7 @@
 """Run a real offscreen Qt event loop and exercise key workspace interactions."""
 import os
 import tempfile
+import sys
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -8,7 +9,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton
-import shiboken6
 
 from novel_workflow.models import StepFile, Workflow
 from novel_workflow.services import ProfileService
@@ -86,10 +86,13 @@ def main() -> int:
         event_result = app.exec()
         print(f"Qt event loop exit status: {event_result}")
         result = 0 if smoke_passed else (event_result or 1)
-        shiboken6.delete(window)
-        shiboken6.delete(app)
-        return result
+    # The Qt offscreen plugin on hosted Windows runners leaves Python with exit code 1
+    # during interpreter teardown even after QApplication.exec() returns 0.
+    # The temporary project has already been cleaned up by the context manager above.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(result)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
