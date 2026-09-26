@@ -138,7 +138,7 @@ class MainWindow(QMainWindow):
         def refresh():
             listing.clear();root=self.repo.profile_dir(self.profile.id)
             for path in sorted(root.rglob("*")):
-                rel=str(path.relative_to(root)).replace("\\\\","/")
+                rel=path.relative_to(root).as_posix()
                 if path.is_file() and path.name!="profile.json" and (not search.text() or search.text().lower() in rel.lower()):listing.addItem(rel)
         def selected():
             return self.repo.resolve_project_path(self.profile.id,listing.currentItem().text()) if listing.currentItem() else None
@@ -164,8 +164,8 @@ class MainWindow(QMainWindow):
             if not ok:return
             dest=self.repo.resolve_project_path(self.profile.id,rel)
             if dest.exists():QMessageBox.warning(dialog,"Exists","Destination already exists.");return
-            old=str(path.relative_to(root)).replace("\\\\","/");dest.parent.mkdir(parents=True,exist_ok=True);path.rename(dest)
-            new=str(dest.relative_to(root)).replace("\\\\","/")
+            old=path.relative_to(root).as_posix();dest.parent.mkdir(parents=True,exist_ok=True);path.rename(dest)
+            new=dest.relative_to(root).as_posix()
             for step in self.profile.workflow.steps:
                 for item in step.files:
                     if item.path==old:item.path=new
