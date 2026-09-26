@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 
 from .models import NovelProfile
 from .storage import ProjectRepository
-from .translation_progress import daily_chapter_count, goal_progress, profile_week_count
+from .translation_progress import daily_chapter_count, goal_progress, profile_week_count, reset_goal_progress
 
 
 class TranslationDashboardDialog(QDialog):
@@ -151,8 +151,32 @@ class TranslationDashboardDialog(QDialog):
         if not has_context:set_goal.setToolTip("เลือกไฟล์ Context ของนิยายก่อน จึงจะติดตามเป้าหมายได้")
         set_goal.clicked.connect(lambda checked=False, item=profile: self._set_goal(item))
         controls.addWidget(set_goal)
+        if goal:
+            reset = QPushButton("รีเซ็ตความคืบหน้า")
+            reset.setToolTip("เริ่มนับเป้าหมายใหม่จากบทปัจจุบัน โดยเก็บจำนวนเป้าหมายเดิมไว้")
+            reset.clicked.connect(lambda checked=False, item=profile: self._reset_goal(item))
+            controls.addWidget(reset)
         layout.addLayout(controls)
         return row
+
+    def _reset_goal(self, profile: NovelProfile):
+        if not goal_progress(profile):
+            return
+        answer = QMessageBox.question(
+            self,
+            "รีเซ็ตความคืบหน้าเป้าหมาย",
+            f"เริ่มเป้าหมาย {profile.translation_goal_target} บทใหม่จากบท {profile.chapter_state.current_chapter} ใช่ไหม?\n\nจำนวนบทที่แปลรายวันจะไม่ถูกลบ",
+        )
+        if answer != QMessageBox.Yes:
+            return
+        reset_goal_progress(profile)
+        try:
+            self.repo.save_profile(profile)
+        except OSError as exc:
+            QMessageBox.warning(self, "รีเซ็ตเป้าหมายไม่สำเร็จ", str(exc))
+            return
+        self.profiles = self.refresh_callback()
+        self.refresh()
 
     def _set_goal(self, profile: NovelProfile):
         current_goal = profile.translation_goal_target
