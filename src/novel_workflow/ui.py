@@ -37,7 +37,7 @@ class MainWindow(QMainWindow):
     def refresh_profiles(self,pid=None):
         self.ps_list=self.repo.list_profiles();self.profiles.blockSignals(True);self.profiles.clear()
         for p in self.ps_list:self.profiles.addItem(p.name)
-        idx=next((i for i,p in enumerate(self.ps_list) if p.id==(pid or self.settings.last_profile_id)),0 if self.ps_list else -1);self.profiles.setCurrentRow(idx);self.profiles.blockSignals(False)
+        idx=next((i for i,p in enumerate(self.ps_list) if p.id==(pid or (self.settings.last_profile_id if self.settings.open_last_profile else None))),0 if self.ps_list else -1);self.profiles.setCurrentRow(idx);self.profiles.blockSignals(False)
         if idx>=0:self.select_profile(idx)
         else:self.profile=None;self.novel.setText("None");self.refresh_steps()
     def select_profile(self,i):
