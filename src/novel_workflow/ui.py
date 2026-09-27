@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         spacer=QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred)
         bar.addWidget(spacer)
-        for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("ความคืบหน้า",self.translation_dashboard),("จัดเลขบท 4 หลัก",self.rename_chapter_files),("ตั้งค่า",self.settings_dialog)):
+        for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("ความคืบหน้า",self.translation_dashboard),("ตั้งค่า",self.settings_dialog)):
             a=QAction(label,self);a.triggered.connect(fn);bar.addAction(a)
 
         root=QWidget()
@@ -112,7 +112,7 @@ class MainWindow(QMainWindow):
         self.files.setCursor(Qt.PointingHandCursor)
         self.files.setAccessibleName("ไฟล์ของขั้นตอน")
         self.files.itemChanged.connect(self.toggle_file)
-        splitter.addWidget(self.column("ไฟล์ของขั้นตอน",self.files,[("COPY STEP",self.copy_step)]))
+        splitter.addWidget(self.column("ไฟล์ของขั้นตอน",self.files,[("จัดเลขบท 4 หลัก",self.rename_chapter_files),("COPY STEP",self.copy_step)]))
         splitter.setSizes([260,340,650])
         self.statusBar().showMessage("เลือกนิยายและขั้นตอนเพื่อเริ่มทำงาน")
         self.shortcut("Ctrl+Shift+C",self.copy_step)
