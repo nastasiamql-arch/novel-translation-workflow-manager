@@ -12,7 +12,7 @@ from pathlib import Path
 import re
 import time
 
-from .models import NovelProfile
+from .models import NovelGroup, NovelProfile
 
 _CHAPTER_LINE = re.compile(r"(?im)^\s*บทที่\s*(\d+)\b")
 
@@ -99,12 +99,47 @@ def goal_progress(profile: NovelProfile) -> tuple[int, int, int] | None:
     return completed, target, min(100, round(completed * 100 / target))
 
 
-def reset_goal_progress(profile: NovelProfile) -> bool:
-    """Start a fresh goal cycle at the profile's current Context chapter."""
-    if profile.translation_goal_target is None or profile.translation_goal_baseline is None:
+def reset_goal_progress(profile: NovelProfile, target: int | None = None) -> bool:
+    """Start a fresh goal cycle, optionally restoring a group's shared target."""
+    next_target = target if target is not None else profile.translation_goal_target
+    if isinstance(next_target, bool) or not isinstance(next_target, int) or next_target <= 0:
         return False
+    profile.translation_goal_target = next_target
     profile.translation_goal_baseline = profile.chapter_state.current_chapter
     return True
+
+
+def apply_group_goal(group: NovelGroup, profiles: list[NovelProfile], target: int) -> list[NovelProfile]:
+    """Apply a shared target to every existing profile in a group.
+
+    Existing baselines are preserved so changing a target does not erase progress.
+    Profiles without a baseline start from their latest saved chapter.
+    """
+    if isinstance(target, bool) or not isinstance(target, int) or target <= 0:
+        raise ValueError("เป้าหมายต้องเป็นจำนวนบทที่มากกว่า 0")
+    member_ids = set(group.profile_ids)
+    members = [profile for profile in profiles if profile.id in member_ids]
+    group.default_goal_chapters = target
+    group.caught_up_profile_ids = []
+    for profile in members:
+        if profile.translation_goal_baseline is None:
+            profile.translation_goal_baseline = profile.chapter_state.current_chapter
+        profile.translation_goal_target = target
+    return members
+
+
+def reset_group_goal_progress(group: NovelGroup, profiles: list[NovelProfile]) -> list[NovelProfile]:
+    """Reset every member to its current chapter while preserving the group target."""
+    target = group.default_goal_chapters
+    if isinstance(target, bool) or not isinstance(target, int) or target <= 0:
+        return []
+    member_ids = set(group.profile_ids)
+    members = [profile for profile in profiles if profile.id in member_ids]
+    for profile in members:
+        reset_goal_progress(profile, target)
+    group.caught_up_profile_ids = []
+    group.last_goal_reset_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    return members
 
 
 def week_start(day: date | None = None) -> date:

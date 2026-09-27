@@ -2,12 +2,14 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from novel_workflow.models import ChapterState, NovelProfile
+from novel_workflow.models import ChapterState, NovelGroup, NovelProfile
 from novel_workflow.translation_progress import (
     daily_chapter_count,
     goal_progress,
     local_day,
+    apply_group_goal,
     reset_goal_progress,
+    reset_group_goal_progress,
     sync_profile_context,
 )
 
@@ -115,3 +117,61 @@ def test_reset_goal_progress_keeps_target_and_daily_activity():
     assert profile.translation_goal_target == 10
     assert goal_progress(profile) == (0, 10, 0)
     assert daily_chapter_count(profile, "2026-09-27") == 7
+
+
+
+def test_apply_group_goal_sets_all_members_and_preserves_existing_progress():
+    first = NovelProfile(name="A", chapter_state=ChapterState(current_chapter=130))
+    first.translation_goal_target = 8
+    first.translation_goal_baseline = 125
+    second = NovelProfile(name="B", chapter_state=ChapterState(current_chapter=42))
+    other = NovelProfile(name="Other", chapter_state=ChapterState(current_chapter=12))
+    group = NovelGroup(name="Group", profile_ids=[first.id, second.id])
+
+    members = apply_group_goal(group, [first, second, other], 15)
+
+    assert members == [first, second]
+    assert group.default_goal_chapters == 15
+    assert (first.translation_goal_target, first.translation_goal_baseline) == (15, 125)
+    assert (second.translation_goal_target, second.translation_goal_baseline) == (15, 42)
+    assert other.translation_goal_target is None
+
+
+def test_reset_group_goal_restarts_every_member_at_current_chapter_and_keeps_daily_counts():
+    first = NovelProfile(name="A", chapter_state=ChapterState(current_chapter=130))
+    second = NovelProfile(name="B", chapter_state=ChapterState(current_chapter=42))
+    other = NovelProfile(name="Other", chapter_state=ChapterState(current_chapter=12))
+    for profile in (first, second, other):
+        profile.translation_goal_target = 15
+        profile.translation_goal_baseline = 10
+        profile.translation_daily_activity = {"2026-09-27": [11, 12]}
+    group = NovelGroup(name="Group", profile_ids=[first.id, second.id], default_goal_chapters=15)
+
+    members = reset_group_goal_progress(group, [first, second, other])
+
+    assert members == [first, second]
+    assert first.translation_goal_baseline == 130
+    assert second.translation_goal_baseline == 42
+    assert first.translation_goal_target == second.translation_goal_target == 15
+    assert first.translation_daily_activity == {"2026-09-27": [11, 12]}
+    assert other.translation_goal_baseline == 10
+    assert group.last_goal_reset_at is not None
+
+
+def test_individual_reset_can_restore_group_target():
+    profile = NovelProfile(name="A", chapter_state=ChapterState(current_chapter=130))
+    profile.translation_goal_target = 7
+    profile.translation_goal_baseline = 125
+
+    assert reset_goal_progress(profile, target=15)
+    assert profile.translation_goal_target == 15
+    assert profile.translation_goal_baseline == 130
+
+
+def test_group_goal_requires_a_positive_integer():
+    import pytest
+
+    profile = NovelProfile(name="A")
+    group = NovelGroup(name="Group", profile_ids=[profile.id])
+    with pytest.raises(ValueError):
+        apply_group_goal(group, [profile], 0)

@@ -410,9 +410,15 @@ class MainWindow(QMainWindow):
         if chapter is None:
             QMessageBox.warning(self,"ไม่พบเลขบท","ไฟล์นี้ไม่พบหัวข้อที่ขึ้นต้นด้วย “บทที่ <เลขบท>”")
             return
-        self.profile.context_path=str(context.resolve())
-        self.profile.translation_checkpoint_path=str(context.resolve())
+        resolved_context=str(context.resolve())
+        previous_context=str(Path(self.profile.context_path).expanduser().resolve()) if self.profile.context_path else None
+        self.profile.context_path=resolved_context
+        self.profile.translation_checkpoint_path=resolved_context
         self.profile.chapter_state.current_chapter=chapter
+        if self.profile.translation_goal_target is not None and (
+            self.profile.translation_goal_baseline is None or previous_context != resolved_context
+        ):
+            self.profile.translation_goal_baseline=chapter
         self.repo.save_profile(self.profile)
         self.statusBar().showMessage(f"เชื่อม Context แล้ว · บทล่าสุด {chapter}",3500)
         self.refresh_translation_progress()
