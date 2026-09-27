@@ -9,6 +9,7 @@ from .launcher import LauncherService
 from .storage import ProjectRepository
 from .translation_progress import latest_context_chapter, sync_profile_context, daily_chapter_count, goal_progress
 from .progress_dialog import TranslationDashboardDialog
+from .chapter_renamer import ChapterRenameDialog
 from .theme import application_stylesheet
 
 class Editor(QDialog):
@@ -62,7 +63,7 @@ class MainWindow(QMainWindow):
         spacer=QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred)
         bar.addWidget(spacer)
-        for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("ความคืบหน้า",self.translation_dashboard),("ตั้งค่า",self.settings_dialog)):
+        for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("ความคืบหน้า",self.translation_dashboard),("จัดเลขบท 4 หลัก",self.rename_chapter_files),("ตั้งค่า",self.settings_dialog)):
             a=QAction(label,self);a.triggered.connect(fn);bar.addAction(a)
 
         root=QWidget()
@@ -520,6 +521,72 @@ class MainWindow(QMainWindow):
         message=f"Linked {added} file(s); updated {updated} old reference(s)"
         if skipped:message+=f"; skipped {skipped} unsupported file(s)"
         self.statusBar().showMessage(message,6000)
+    def rename_chapter_files(self):
+        if not self.profile:
+            QMessageBox.information(self, "จัดเลขบท", "เลือกนิยายก่อนครับ")
+            return
+        start = self.profile.main_folder or str(Path.home())
+        folder = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์ที่มีไฟล์บท", start)
+        if not folder:
+            return
+        try:
+            dialog = ChapterRenameDialog(folder, self)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "จัดเลขบท", str(exc))
+            return
+        if not dialog.exec() or not dialog.renamed:
+            return
+
+        profile_root = self.repo.profile_dir(self.profile.id).resolve()
+        updated = 0
+        for step in self.profile.workflow.steps:
+            for item in step.files:
+                try:
+                    if item.reference_type == "repository_file" and item.path:
+                        old_path = self.repo.resolve_project_path(self.profile.id, item.path).resolve()
+                    elif item.reference_type == "external_file" and item.path:
+                        old_path = Path(item.path).expanduser().resolve()
+                    else:
+                        continue
+                    new_path = dialog.renamed.get(old_path)
+                    if new_path is None:
+                        continue
+                    if item.reference_type == "repository_file":
+                        item.path = new_path.relative_to(profile_root).as_posix()
+                    else:
+                        item.path = str(new_path)
+                    updated += 1
+                except (OSError, ValueError):
+                    continue
+
+        for target in self.profile.launch_targets:
+            if target.kind != "file" or not target.target:
+                continue
+            try:
+                new_path = dialog.renamed.get(Path(target.target).expanduser().resolve())
+                if new_path is not None:
+                    target.target = str(new_path)
+                    updated += 1
+            except (OSError, ValueError):
+                continue
+
+        for attribute in ("context_path", "translation_checkpoint_path"):
+            value = getattr(self.profile, attribute, None)
+            if not value:
+                continue
+            try:
+                new_path = dialog.renamed.get(Path(value).expanduser().resolve())
+                if new_path is not None:
+                    setattr(self.profile, attribute, str(new_path))
+            except (OSError, ValueError):
+                continue
+
+        self.save()
+        self.statusBar().showMessage(
+            f"เปลี่ยนชื่อ {len(dialog.renamed)} ไฟล์ · อัปเดตลิงก์ในโปรแกรม {updated} รายการ",
+            7000,
+        )
+
     def add_dynamic(self):
         if not self.step():return
         ref,ok=QInputDialog.getItem(self,"Dynamic chapter","Reference:",["CURRENT_SOURCE_CHAPTER","CURRENT_TRANSLATED_CHAPTER","CURRENT_REVIEWED_CHAPTER"],0,False)
