@@ -6,8 +6,8 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QFrame, QHBoxLayout, QInputDialog, QLabel, QMessageBox,
-    QPushButton, QProgressBar, QScrollArea, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPushButton,
+    QProgressBar, QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from .models import NovelGroup, NovelProfile
@@ -18,7 +18,7 @@ from .translation_progress import (
 )
 
 
-class TranslationDashboardDialog(QDialog):
+class TranslationDashboardPage(QWidget):
     """Compact overview of chapter activity and goals for all novel profiles."""
 
     def __init__(self, parent, profiles: list[NovelProfile], repo: ProjectRepository, refresh_callback):
@@ -27,34 +27,46 @@ class TranslationDashboardDialog(QDialog):
         self.repo = repo
         self.refresh_callback = refresh_callback
         self.groups = repo.load_groups()
-        self.setWindowTitle("ความคืบหน้าการแปล")
-        self.resize(760, 760)
-
         self.root = QVBoxLayout(self)
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.root.addWidget(self.tabs, 1)
+        self.feedback = QLabel("")
+        self.feedback.setObjectName("mutedLabel")
+        self.root.addWidget(self.feedback)
+
+        overview = QWidget()
+        overview_layout = QVBoxLayout(overview)
         self.summary = QHBoxLayout()
-        self.root.addLayout(self.summary)
+        overview_layout.addLayout(self.summary)
+        history_title = QLabel("ผลงานย้อนหลัง 7 วัน")
+        history_title.setObjectName("sectionHeading")
+        overview_layout.addWidget(history_title)
         self.days_panel = QFrame()
         self.days_layout = QVBoxLayout(self.days_panel)
-        history_title=QLabel("ผลงานย้อนหลัง 7 วัน")
-        history_title.setObjectName("sectionHeading")
-        self.root.addWidget(history_title)
-        self.root.addWidget(self.days_panel)
+        overview_layout.addWidget(self.days_panel)
+        overview_layout.addStretch(1)
+        self.tabs.addTab(overview, "ภาพรวม")
 
-        progress_title=QLabel("เป้าหมายกลุ่มและความคืบหน้ารายเรื่อง")
-        progress_title.setObjectName("sectionHeading")
-        self.root.addWidget(progress_title)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.rows_host = QWidget()
-        self.rows = QVBoxLayout(self.rows_host)
-        self.rows.setAlignment(Qt.AlignTop)
-        self.scroll.setWidget(self.rows_host)
-        self.root.addWidget(self.scroll, 1)
-
-        close = QPushButton("ปิด")
-        close.clicked.connect(self.accept)
-        self.root.addWidget(close, alignment=Qt.AlignRight)
+        goals_page = QWidget()
+        goals_layout = QVBoxLayout(goals_page)
+        self.goal_tabs = QTabWidget()
+        self.goal_tabs.setDocumentMode(True)
+        goals_layout.addWidget(self.goal_tabs)
+        self.group_scroll, self.group_rows = self._rows_tab("กลุ่ม")
+        self.profile_scroll, self.profile_rows = self._rows_tab("รายเรื่อง")
+        self.tabs.addTab(goals_page, "เป้าหมาย")
         self.refresh()
+
+    def _rows_tab(self, title: str):
+        host = QWidget()
+        rows = QVBoxLayout(host)
+        rows.setAlignment(Qt.AlignTop)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(host)
+        self.goal_tabs.addTab(scroll, title)
+        return scroll, rows
 
     def set_profiles(self, profiles: list[NovelProfile]):
         self.profiles = profiles
@@ -88,7 +100,8 @@ class TranslationDashboardDialog(QDialog):
     def refresh(self):
         self._clear(self.summary)
         self._clear(self.days_layout)
-        self._clear(self.rows)
+        self._clear(self.group_rows)
+        self._clear(self.profile_rows)
         self.groups = self.repo.load_groups()
         today = date.today()
         today_key = today.isoformat()
@@ -117,17 +130,16 @@ class TranslationDashboardDialog(QDialog):
             line.addWidget(bar, 1)
             self.days_layout.addLayout(line)
 
-        if self.groups:
-            group_heading = QLabel("เป้าหมายรายกลุ่ม")
-            group_heading.setObjectName("sectionHeading")
-            self.rows.addWidget(group_heading)
+        if not self.groups:
+            self.group_rows.addWidget(QLabel("ยังไม่มีกลุ่มนิยาย · สร้างกลุ่มจากเมนู “กลุ่มนิยาย”"))
+        else:
             for group in sorted(self.groups, key=lambda item: (item.order, item.name.casefold())):
-                self.rows.addWidget(self._group_row(group))
+                self.group_rows.addWidget(self._group_row(group))
         if not self.profiles:
-            self.rows.addWidget(QLabel("ยังไม่มีนิยาย"))
-            return
-        for profile in self.profiles:
-            self.rows.addWidget(self._profile_row(profile, today_key))
+            self.profile_rows.addWidget(QLabel("ยังไม่มีนิยาย"))
+        else:
+            for profile in self.profiles:
+                self.profile_rows.addWidget(self._profile_row(profile, today_key))
 
     def _group_members(self, group: NovelGroup) -> list[NovelProfile]:
         member_ids = set(group.profile_ids)
@@ -165,8 +177,20 @@ class TranslationDashboardDialog(QDialog):
         info.addWidget(summary)
         layout.addLayout(info, 1)
 
-        set_button = QPushButton("ตั้งเป้าทั้งกลุ่ม" if not has_goal else "แก้เป้ากลุ่ม")
-        set_button.clicked.connect(lambda checked=False, group_id=group.id: self._set_group_goal(group_id))
+        target = QSpinBox()
+        target.setRange(1, 100000)
+        target.setValue(goal if has_goal else 10)
+        target.setSuffix(" บท")
+        target.setFixedWidth(118)
+        target.setAccessibleName(f"เป้าหมายต่อเรื่อง กลุ่ม {group.name}")
+        layout.addWidget(target)
+        set_button = QPushButton("บันทึกเป้ากลุ่ม" if not has_goal else "ปรับเป้ากลุ่ม")
+        set_button.setObjectName("primaryButton")
+        set_button.setEnabled(bool(members))
+        set_button.clicked.connect(
+            lambda checked=False, group_id=group.id, spin=target:
+                self._set_group_goal(group_id, spin.value())
+        )
         layout.addWidget(set_button)
         if has_goal and members:
             reset_button = QPushButton("รีเซ็ตทั้งกลุ่ม")
@@ -260,23 +284,11 @@ class TranslationDashboardDialog(QDialog):
         self.refresh()
         return True
 
-    def _set_group_goal(self, group_id: str):
+    def _set_group_goal(self, group_id: str, target: int):
         group = next((item for item in self.groups if item.id == group_id), None)
-        if group is None:
+        if group is None or target <= 0:
             return
         members = self._group_members(group)
-        target, accepted = QInputDialog.getInt(
-            self, "ตั้งเป้าหมายทั้งกลุ่ม",
-            f"เป้าหมายกี่บทต่อเรื่องสำหรับกลุ่ม “{group.name}”?",
-            value=(
-                group.default_goal_chapters
-                if isinstance(group.default_goal_chapters, int)
-                and not isinstance(group.default_goal_chapters, bool)
-                and group.default_goal_chapters > 0 else 10
-            ), min=1, max=100000,
-        )
-        if not accepted:
-            return
         for profile in members:
             sync_profile_context(profile)
         previous_profiles = {profile.id: deepcopy(profile) for profile in members}
@@ -287,7 +299,7 @@ class TranslationDashboardDialog(QDialog):
             QMessageBox.warning(self, "ตั้งเป้ากลุ่มไม่สำเร็จ", str(exc))
             return
         if self._commit_group_change(group, members, previous_profiles, previous_groups):
-            QMessageBox.information(self, "ตั้งเป้ากลุ่มแล้ว", f"ตั้งเป้า {target} บทต่อเรื่องให้ {len(members)} เรื่องในกลุ่ม “{group.name}” แล้ว")
+            self.feedback.setText("บันทึกเป้าหมายกลุ่มแล้ว")
 
     def _reset_group_goal(self, group_id: str):
         group = next((item for item in self.groups if item.id == group_id), None)
@@ -312,7 +324,7 @@ class TranslationDashboardDialog(QDialog):
         previous_groups = deepcopy(self.groups)
         reset_group_goal_progress(group, members)
         if self._commit_group_change(group, members, previous_profiles, previous_groups):
-            QMessageBox.information(self, "รีเซ็ตกลุ่มแล้ว", f"รีเซ็ตความคืบหน้า {len(members)} เรื่องแล้ว โดยคงเป้ากลุ่มไว้")
+            self.feedback.setText("เริ่มเป้ากลุ่มใหม่แล้ว")
 
     def _reset_goal(self, profile: NovelProfile):
         group = self._group_for_profile(profile)
