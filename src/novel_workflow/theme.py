@@ -15,7 +15,7 @@ _DARK = {
     "border_strong": "#343B47", "text": "#F1F3F5", "secondary": "#A1A8B3",
     "muted": "#858D99", "accent": "#6C7CFF", "accent_hover": "#7C8AFF",
     "success": "#3FA67A", "warning": "#D5A94E", "danger": "#E25D68",
-    "selection": "#252B38", "input": "#11141A", "on_accent": "#FFFFFF",
+    "selection": "#252B38", "input": "#11141A", "on_accent": "#FFFFFF", "progress": "#7585BB",
 }
 _LIGHT = {
     "app": "#F4F5F7", "surface": "#FFFFFF", "surface2": "#F7F8FA",
@@ -23,7 +23,7 @@ _LIGHT = {
     "border_strong": "#C9CED7", "text": "#20242B", "secondary": "#59616D",
     "muted": "#737C88", "accent": "#5265E8", "accent_hover": "#4255D8",
     "success": "#27845D", "warning": "#9B6C12", "danger": "#C9414C",
-    "selection": "#E8EBF8", "input": "#FFFFFF", "on_accent": "#FFFFFF",
+    "selection": "#E8EBF8", "input": "#FFFFFF", "on_accent": "#FFFFFF", "progress": "#7182B2",
 }
 
 
@@ -176,6 +176,8 @@ def application_stylesheet(appearance: str = "Dark") -> str:
         border: 0; border-radius: 4px; text-align: center; min-height: 10px;
     }}
     QProgressBar::chunk {{ background: {c["accent"]}; border-radius: 4px; }}
+    QProgressBar#activityHistoryBar {{ background: {c["surface2"]}; }}
+    QProgressBar#activityHistoryBar::chunk {{ background: {c["progress"]}; }}
     QStatusBar {{ background: {c["surface"]}; color: {c["secondary"]}; border-top: 1px solid {c["border"]}; }}
     QStatusBar::item {{ border: 0; }}
     QMenu {{
