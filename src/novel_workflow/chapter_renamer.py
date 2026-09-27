@@ -24,12 +24,14 @@ class ChapterRename:
     status: str = "พร้อมเปลี่ยน"
 
 
-def plan_chapter_renames(folder):
-    """Preview four-digit padding for chapter filenames directly inside folder."""
+def plan_chapter_renames(folder, mode="pad"):
+    """Preview chapter number padding or leading-zero removal in one folder."""
     root = Path(folder).expanduser().resolve()
     if not root.is_dir():
         raise NotADirectoryError(root)
 
+    if mode not in ("pad", "strip"):
+        raise ValueError("Unsupported chapter number format")
     pattern = re.compile(r"^บทที่\s*(\d+)(.*)$")
     plans = []
     for source in sorted(root.iterdir(), key=lambda path: path.name.casefold()):
@@ -39,8 +41,8 @@ def plan_chapter_renames(folder):
         if not match:
             continue
         number, suffix = match.groups()
-        padded = number.zfill(4)
-        new_name = f"บทที่ {padded}{suffix}{source.suffix}"
+        formatted = number.zfill(4) if mode == "pad" else (number.lstrip("0") or "0")
+        new_name = f"บทที่ {formatted}{suffix}{source.suffix}"
         if new_name == source.name:
             continue
         plans.append(ChapterRename(source, source.with_name(new_name)))
@@ -98,12 +100,13 @@ def apply_chapter_renames(plans):
 
 
 class ChapterRenameDialog(QDialog):
-    def __init__(self, folder, parent=None):
+    def __init__(self, folder, parent=None, mode="pad"):
         super().__init__(parent)
         self.setWindowTitle("จัดเลขบทในชื่อไฟล์")
         self.resize(900, 560)
         self.renamed = {}
-        self.plans = plan_chapter_renames(folder)
+        self.mode = mode
+        self.plans = plan_chapter_renames(folder, mode)
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(f"โฟลเดอร์: {Path(folder)}"))
