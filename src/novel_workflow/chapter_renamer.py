@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import os
 from pathlib import Path
 import re
 import uuid
@@ -7,10 +6,11 @@ import uuid
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
+    QAbstractItemView,
     QDialogButtonBox,
-    QFileDialog,
     QLabel,
     QMessageBox,
+    QHeaderView,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -49,13 +49,12 @@ def plan_chapter_renames(folder):
     for index, item in enumerate(plans):
         target_groups.setdefault(item.new_path.name.casefold(), []).append(index)
 
-    moving_sources = {item.old_path.name.casefold() for item in plans}
     blocked = set()
     for indices in target_groups.values():
         if len(indices) > 1:
             blocked.update(indices)
     for index, item in enumerate(plans):
-        if item.new_path.exists() and item.new_path.name.casefold() not in moving_sources:
+        if item.new_path.exists():
             blocked.add(index)
 
     return [
@@ -117,12 +116,12 @@ class ChapterRenameDialog(QDialog):
 
         self.table = QTableWidget(len(self.plans), 3)
         self.table.setHorizontalHeaderLabels(["ชื่อเดิม", "ชื่อใหม่", "สถานะ"])
-        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.horizontalHeader().setSectionResizeMode(0, self.table.horizontalHeader().ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(1, self.table.horizontalHeader().Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         for row, item in enumerate(self.plans):
             for column, value in enumerate((item.old_path.name, item.new_path.name, item.status)):
                 cell = QTableWidgetItem(value)
