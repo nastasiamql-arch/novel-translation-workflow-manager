@@ -112,7 +112,7 @@ class MainWindow(QMainWindow):
         self.files.setCursor(Qt.PointingHandCursor)
         self.files.setAccessibleName("ไฟล์ของขั้นตอน")
         self.files.itemChanged.connect(self.toggle_file)
-        splitter.addWidget(self.column("ไฟล์ของขั้นตอน",self.files,[("จัดเลขบท 4 หลัก",self.rename_chapter_files),("COPY STEP",self.copy_step)]))
+        splitter.addWidget(self.column("ไฟล์ของขั้นตอน",self.files,[("จัดรูปแบบเลขบท",self.rename_chapter_files),("COPY STEP",self.copy_step)]))
         splitter.setSizes([260,340,650])
         self.statusBar().showMessage("เลือกนิยายและขั้นตอนเพื่อเริ่มทำงาน")
         self.shortcut("Ctrl+Shift+C",self.copy_step)
@@ -526,11 +526,16 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "จัดเลขบท", "เลือกนิยายก่อนครับ")
             return
         start = self.profile.main_folder or str(Path.home())
+        mode_labels = ["เติม 0 ให้ครบ 4 หลัก", "ตัด 0 ด้านหน้า"]
+        mode_label, ok = QInputDialog.getItem(self, "รูปแบบเลขบท", "เลือกวิธีจัดเลข:", mode_labels, 0, False)
+        if not ok:
+            return
+        mode = "pad" if mode_label == mode_labels[0] else "strip"
         folder = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์ที่มีไฟล์บท", start)
         if not folder:
             return
         try:
-            dialog = ChapterRenameDialog(folder, self)
+            dialog = ChapterRenameDialog(folder, self, mode)
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "จัดเลขบท", str(exc))
             return
