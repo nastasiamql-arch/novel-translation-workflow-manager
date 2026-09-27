@@ -62,7 +62,7 @@ class MainWindow(QMainWindow):
         spacer=QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred)
         bar.addWidget(spacer)
-        for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("ความคืบหน้า",self.translation_dashboard),("ตั้งค่า",self.settings_dialog)):
+        for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("เป้าหมายและสถิติ",self.translation_dashboard),("ตั้งค่า",self.settings_dialog)):
             a=QAction(label,self);a.triggered.connect(fn);bar.addAction(a)
 
         root=QWidget()
@@ -247,6 +247,8 @@ class MainWindow(QMainWindow):
         profiles=self.refresh_translation_progress()
         self.dashboard_page.set_profiles(profiles)
         self.main_tabs.setCurrentWidget(self.dashboard_page)
+        self.dashboard_page.tabs.setCurrentIndex(1)
+        self.dashboard_page.goal_tabs.setCurrentIndex(0)
     def select_profile(self,i):
         if i<0 or i>=len(getattr(self,"ps_list",[])):return
         self.profile=self.ps_list[i];self.settings.last_profile_id=self.profile.id
