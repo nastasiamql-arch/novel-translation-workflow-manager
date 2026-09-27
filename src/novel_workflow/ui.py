@@ -3,7 +3,7 @@ from dataclasses import asdict as asdict_target
 from PySide6.QtCore import Qt, QUrl, QSize, QTimer, QMimeData
 from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap
 from PySide6.QtWidgets import *
-from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow, migrate_legacy_basic_workflow
+from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow, migrate_legacy_basic_workflow, order_profiles
 from .services import ProfileService, WorkflowService, AssemblyService
 from .launcher import LauncherService
 from .storage import ProjectRepository
@@ -83,7 +83,15 @@ class MainWindow(QMainWindow):
         self.profiles.setSpacing(1)
         self.profiles.setCursor(Qt.PointingHandCursor)
         self.profiles.setAccessibleName("รายการนิยาย")
+        self.profiles.setToolTip("ลากนิยายขึ้นหรือลงเพื่อเปลี่ยนลำดับ")
+        self.profiles.setDragDropMode(QAbstractItemView.InternalMove)
+        self.profiles.setDefaultDropAction(Qt.MoveAction)
+        self.profiles.setDropIndicatorShown(True)
+        self.profiles.setDragEnabled(True)
+        self.profiles.setAcceptDrops(True)
+        self.profiles.setDragDropOverwriteMode(False)
         self.profiles.currentRowChanged.connect(self.select_profile)
+        self.profiles.model().rowsMoved.connect(self._profile_rows_moved)
         splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[]))
         self.steps=QListWidget()
         self.steps.setSpacing(1)
@@ -166,7 +174,16 @@ class MainWindow(QMainWindow):
     def shortcut(self,key,fn):a=QAction(self);a.setShortcut(QKeySequence(key));a.triggered.connect(fn);self.addAction(a)
     def refresh(self):self.refresh_profiles(self.profile.id if self.profile else None)
     def refresh_profiles(self,pid=None):
-        self.ps_list=self.repo.list_profiles()
+        stored_order=getattr(self.settings,"profile_order",[])
+        if not isinstance(stored_order,list):stored_order=[]
+        stored_order=[profile_id for profile_id in stored_order if isinstance(profile_id,str)]
+        self.ps_list=order_profiles(self.repo.list_profiles(),stored_order)
+        normalized_order=[profile.id for profile in self.ps_list]
+        if normalized_order!=stored_order:
+            self.settings.profile_order=normalized_order
+            try:self.repo.save_settings(self.settings)
+            except OSError as exc:
+                if hasattr(self,"statusBar"):self.statusBar().showMessage(f"บันทึกลำดับนิยายไม่สำเร็จ: {exc}",6000)
         for profile in self.ps_list:
             changed=migrate_legacy_basic_workflow(profile.workflow)
             if sync_profile_context(profile):changed=True
@@ -177,7 +194,8 @@ class MainWindow(QMainWindow):
         placeholder=Path(__file__).resolve().parent/"resources"/"novelworkflow.png"
         for profile in self.ps_list:
             item=QListWidgetItem(profile.name)
-            item.setToolTip(profile.name)
+            item.setData(Qt.UserRole,profile.id)
+            item.setToolTip(f"{profile.name}\\nลากเพื่อเปลี่ยนลำดับ")
             item.setSizeHint(QSize(0,70))
             cover=placeholder
             if profile.cover_image_path:
@@ -199,6 +217,29 @@ class MainWindow(QMainWindow):
         self.profiles.blockSignals(False)
         if idx>=0:self.select_profile(idx)
         else:self.profile=None;self.novel.setText("ยังไม่ได้เลือกนิยาย");self.refresh_steps()
+    def _profile_rows_moved(self,*_):
+        ordered_ids=[
+            self.profiles.item(index).data(Qt.UserRole)
+            for index in range(self.profiles.count())
+            if self.profiles.item(index).data(Qt.UserRole)
+        ]
+        if len(ordered_ids)!=len(self.ps_list):return
+        previous_order=list(self.settings.profile_order)
+        self.ps_list=order_profiles(self.ps_list,ordered_ids)
+        self.settings.profile_order=ordered_ids
+        try:
+            self.repo.save_settings(self.settings)
+        except OSError as exc:
+            self.settings.profile_order=previous_order
+            self.statusBar().showMessage(f"บันทึกลำดับนิยายไม่สำเร็จ: {exc}",6000)
+            self.refresh_profiles(self.profile.id if self.profile else None)
+            return
+        selected=self.profiles.currentItem()
+        if selected is not None:
+            profile_id=selected.data(Qt.UserRole)
+            self.profile=next((profile for profile in self.ps_list if profile.id==profile_id),self.profile)
+        self.statusBar().showMessage("บันทึกลำดับนิยายแล้ว",2500)
+
     def refresh_translation_progress(self):
         profiles=getattr(self,"ps_list",[])
         for profile in profiles:
