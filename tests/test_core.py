@@ -1,5 +1,5 @@
 import json
-from novel_workflow.models import LaunchTarget, NovelGroup, NovelProfile, StepFile, Workflow, WorkflowStep
+from novel_workflow.models import LaunchTarget, NovelGroup, NovelProfile, StepFile, Workflow, WorkflowStep, order_profiles
 from novel_workflow.services import AssemblyService, ProfileService, WorkflowService
 from novel_workflow.storage import ProjectRepository, read_json
 from novel_workflow.launcher import LauncherService
@@ -131,3 +131,13 @@ def test_copy_advancement_cycles_through_workflow_steps():
     assert WorkflowService.next_index(2,4)==3
     assert WorkflowService.next_index(3,4)==0
     assert WorkflowService.next_index(0,0)==-1
+
+
+def test_profile_order_uses_saved_ids_and_appends_new_profiles():
+    first = NovelProfile(name="First")
+    second = NovelProfile(name="Second")
+    third = NovelProfile(name="Third")
+
+    ordered = order_profiles([first, second, third], [third.id, first.id, "deleted-profile"])
+
+    assert ordered == [third, first, second]

@@ -15,7 +15,7 @@ _DARK = {
     "border_strong": "#343B47", "text": "#F1F3F5", "secondary": "#A1A8B3",
     "muted": "#858D99", "accent": "#6C7CFF", "accent_hover": "#7C8AFF",
     "success": "#3FA67A", "warning": "#D5A94E", "danger": "#E25D68",
-    "selection": "#252B38", "input": "#11141A", "on_accent": "#FFFFFF",
+    "selection": "#252B38", "input": "#11141A", "on_accent": "#FFFFFF", "progress": "#7585BB",
 }
 _LIGHT = {
     "app": "#F4F5F7", "surface": "#FFFFFF", "surface2": "#F7F8FA",
@@ -23,7 +23,7 @@ _LIGHT = {
     "border_strong": "#C9CED7", "text": "#20242B", "secondary": "#59616D",
     "muted": "#737C88", "accent": "#5265E8", "accent_hover": "#4255D8",
     "success": "#27845D", "warning": "#9B6C12", "danger": "#C9414C",
-    "selection": "#E8EBF8", "input": "#FFFFFF", "on_accent": "#FFFFFF",
+    "selection": "#E8EBF8", "input": "#FFFFFF", "on_accent": "#FFFFFF", "progress": "#7182B2",
 }
 
 
@@ -48,6 +48,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
         font-size: 10pt;
     }}
     QMainWindow, QDialog {{ background: {c["app"]}; }}
+    QFrame#appSidebar {{ background: {c["surface"]}; border: 0; border-right: 1px solid {c["border"]}; }}
     QToolBar#mainToolbar {{
         background: {c["surface"]};
         border: 0;
@@ -59,6 +60,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
         width: 1px; background: {c["border"]}; margin: 5px 8px;
     }}
     QLabel#brandTitle {{ color: {c["text"]}; font-size: 13pt; font-weight: 600; }}
+    QLabel#pageTitle {{ color: {c["text"]}; font-size: 16pt; font-weight: 600; padding-bottom: 4px; }}
     QLabel#currentNovel {{
         color: {c["text"]}; background: {c["surface"]};
         border: 1px solid {c["border"]}; border-radius: 8px;
@@ -79,6 +81,17 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QToolButton:hover {{ color: {c["text"]}; background: {c["hover"]}; }}
     QToolButton:pressed {{ background: {c["elevated"]}; }}
     QToolButton:focus {{ border-color: {c["accent"]}; }}
+    QToolButton#navItem {{ text-align: left; padding: 7px 10px; border-radius: 5px; color: {c["secondary"]}; }}
+    QToolButton#navItem:hover {{ background: {c["hover"]}; color: {c["text"]}; }}
+    QToolButton#navItem:checked {{ background: {c["selection"]}; color: {c["text"]}; border-left: 2px solid {c["accent"]}; font-weight: 600; }}
+    QTabWidget#workspaceTabs::pane {{ border: 0; background: {c["app"]}; }}
+    QTabWidget#workspaceTabs QTabBar::tab {{ background: {c["surface"]}; color: {c["secondary"]}; border: 0; border-right: 1px solid {c["border"]}; padding: 8px 12px; min-width: 72px; }}
+    QTabWidget#workspaceTabs QTabBar::tab:selected {{ background: {c["app"]}; color: {c["text"]}; border-top: 2px solid {c["accent"]}; }}
+    QTabWidget#workspaceTabs QTabBar::tab:hover {{ background: {c["hover"]}; color: {c["text"]}; }}
+    QToolButton#tabCloseButton {{ color: {c["secondary"]}; border: 0; border-radius: 4px; font-size: 17px; font-weight: 600; padding: 0; }}
+    QToolButton#tabCloseButton:hover {{ color: {c["text"]}; background: {c["hover"]}; }}
+    QPlainTextEdit {{ background: {c["surface"]}; color: {c["text"]}; border: 1px solid {c["border"]}; border-radius: 6px; padding: 8px; selection-background-color: {c["selection"]}; }}
+    QPlainTextEdit:focus {{ border-color: {c["accent"]}; }}
     QFrame#columnPanel, QFrame#goalPanel, QFrame#metricCard, QFrame#progressRow {{
         background: {c["surface"]}; border: 1px solid {c["border"]}; border-radius: 8px;
     }}
@@ -176,6 +189,8 @@ def application_stylesheet(appearance: str = "Dark") -> str:
         border: 0; border-radius: 4px; text-align: center; min-height: 10px;
     }}
     QProgressBar::chunk {{ background: {c["accent"]}; border-radius: 4px; }}
+    QProgressBar#activityHistoryBar {{ background: {c["surface2"]}; }}
+    QProgressBar#activityHistoryBar::chunk {{ background: {c["progress"]}; }}
     QStatusBar {{ background: {c["surface"]}; color: {c["secondary"]}; border-top: 1px solid {c["border"]}; }}
     QStatusBar::item {{ border: 0; }}
     QMenu {{

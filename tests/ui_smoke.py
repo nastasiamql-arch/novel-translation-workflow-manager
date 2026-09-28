@@ -3,14 +3,15 @@ import os
 import tempfile
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QPushButton, QPlainTextEdit
 
-from novel_workflow.models import StepFile, Workflow
+from novel_workflow.models import NovelGroup, StepFile, Workflow
 from novel_workflow.services import ProfileService
 from novel_workflow.storage import ProjectRepository
 from novel_workflow.ui import MainWindow
@@ -24,10 +25,14 @@ def main() -> int:
         profile = ProfileService(repo).create("ชื่อเรื่องยาวสำหรับตรวจการแสดงผล", Workflow.defaults())
         source = repo.profile_dir(profile.id) / "prompts" / "find_terms.txt"
         source.write_text("Find terms", encoding="utf-8")
+        second_source = repo.profile_dir(profile.id) / "reference" / "second.txt"
+        second_source.parent.mkdir(parents=True, exist_ok=True)
+        second_source.write_text("Second file", encoding="utf-8")
         profile.workflow.steps[0].files.append(
             StepFile(label="Find Terms Prompt", path="prompts/find_terms.txt", file_type="prompt", order=0)
         )
         repo.save_profile(profile)
+        repo.save_groups([NovelGroup(name="กลุ่มหลัก", profile_ids=[profile.id])])
 
         window = MainWindow(repo)
         window.show()
@@ -37,8 +42,39 @@ def main() -> int:
         def exercise_workspace():
             nonlocal smoke_passed
             try:
+                assert set(window.nav_buttons) == {"home", "novels", "groups", "files", "progress", "settings"}
                 assert window.novel.text() == profile.name
                 assert window.steps.currentRow() == 0
+
+                window.open_novel_workspace(profile.id)
+                novel_tab_key = f"novel:{profile.id}"
+                novel_tab_count = window.main_tabs.count()
+                window.open_novel_workspace(profile.id)
+                assert window.main_tabs.count() == novel_tab_count
+                novel_tab_index = window.main_tabs.indexOf(window.pages[novel_tab_key])
+                window.close_workspace_tab(novel_tab_index)
+                assert novel_tab_key not in window.pages
+                window.open_destination("workflow")
+
+                window.open_destination("groups")
+                app.processEvents()
+                assert window.main_tabs.currentWidget() is window.groups_page
+                tab_count = window.main_tabs.count()
+                window.open_destination("groups")
+                assert window.main_tabs.count() == tab_count
+
+                window.translation_dashboard()
+                app.processEvents()
+                assert window.main_tabs.currentWidget() is window.dashboard_page
+                assert not window.dashboard_page.isWindow()
+                assert window.dashboard_page.tabs.currentIndex() == 1
+                assert window.dashboard_page.goal_tabs.currentIndex() == 0
+                assert any(
+                    button.text() == "บันทึกเป้ากลุ่ม"
+                    for button in window.dashboard_page.findChildren(QPushButton)
+                )
+                window.main_tabs.setCurrentWidget(window.workspace_page)
+                app.processEvents()
 
                 second = window.steps.visualItemRect(window.steps.item(1))
                 QTest.mouseClick(window.steps.viewport(), Qt.LeftButton, pos=second.center())
@@ -62,6 +98,38 @@ def main() -> int:
                 urls = app.clipboard().mimeData().urls()
                 assert [Path(url.toLocalFile()) for url in urls] == [source.resolve()]
                 assert window.steps.currentRow() == 1
+
+                window.open_destination("files")
+                app.processEvents()
+                assert window.main_tabs.currentWidget() is window.pages[f"files:{profile.id}"]
+                state = window._files_states[f"files:{profile.id}"]
+                assert state["list"].count() >= 1
+                assert state["list"].selectionMode().name == "ExtendedSelection"
+                file_row = next(i for i in range(state["list"].count()) if state["list"].item(i).text() == "prompts/find_terms.txt")
+                second_row = next(i for i in range(state["list"].count()) if state["list"].item(i).text() == "reference/second.txt")
+                state["list"].item(file_row).setSelected(True)
+                state["list"].item(second_row).setSelected(True)
+                assert len(state["list"].selectedItems()) == 2
+                with patch("novel_workflow.ui.QDesktopServices.openUrl", return_value=True) as open_url:
+                    window._files_open_selected(f"files:{profile.id}")
+                    assert open_url.call_count == 2
+                other_profile = ProfileService(repo).create("นิยายอีกเรื่อง", Workflow.defaults())
+                window.refresh_profiles(profile.id)
+                window.open_novel_workspace(other_profile.id)
+                window.main_tabs.setCurrentWidget(window.pages[f"files:{profile.id}"])
+                app.processEvents()
+                assert window.profile.id == profile.id
+                window.open_destination("settings")
+                assert window.main_tabs.currentWidget() is window.pages["settings"]
+                window.set_profile_by_id(profile.id)
+                window.open_destination("workflow")
+                window.steps.setCurrentRow(0)
+                window.preview()
+                assert window.main_tabs.currentWidget() is window.pages[f"preview:{profile.id}:{profile.workflow.steps[0].id}"]
+                preview_editor = window.pages[f"preview:{profile.id}:{profile.workflow.steps[0].id}"].findChild(QPlainTextEdit)
+                assert preview_editor is not None and preview_editor.isReadOnly()
+                window.launcher_dialog()
+                assert window.main_tabs.currentWidget() is window.pages[f"launcher:{profile.id}"]
 
                 window.settings.appearance = "Light"
                 window.apply_theme()

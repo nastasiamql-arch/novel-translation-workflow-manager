@@ -3,6 +3,14 @@ import uuid
 
 def uid(): return uuid.uuid4().hex
 
+def order_profiles(profiles, profile_ids):
+    """Apply a saved profile order, keeping new profiles at the end."""
+    by_id = {profile.id: profile for profile in profiles}
+    ordered = [by_id[profile_id] for profile_id in profile_ids if profile_id in by_id]
+    seen = {profile.id for profile in ordered}
+    ordered.extend(profile for profile in profiles if profile.id not in seen)
+    return ordered
+
 def _daily_activity_from_dict(value):
     if not isinstance(value, dict): return {}
     activity = {}
@@ -130,6 +138,7 @@ class AppSettings:
     confirm_before_deleting: bool = True
     open_last_profile: bool = True
     last_profile_id: str | None = None
+    profile_order: list[str] = field(default_factory=list)
 
 @dataclass
 class WorkflowTemplate:
