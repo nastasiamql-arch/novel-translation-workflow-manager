@@ -3,12 +3,13 @@ import os
 import tempfile
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QPushButton, QPlainTextEdit
 
 from novel_workflow.models import NovelGroup, StepFile, Workflow
 from novel_workflow.services import ProfileService
@@ -24,6 +25,9 @@ def main() -> int:
         profile = ProfileService(repo).create("ชื่อเรื่องยาวสำหรับตรวจการแสดงผล", Workflow.defaults())
         source = repo.profile_dir(profile.id) / "prompts" / "find_terms.txt"
         source.write_text("Find terms", encoding="utf-8")
+        second_source = repo.profile_dir(profile.id) / "reference" / "second.txt"
+        second_source.parent.mkdir(parents=True, exist_ok=True)
+        second_source.write_text("Second file", encoding="utf-8")
         profile.workflow.steps[0].files.append(
             StepFile(label="Find Terms Prompt", path="prompts/find_terms.txt", file_type="prompt", order=0)
         )
@@ -100,12 +104,15 @@ def main() -> int:
                 assert window.main_tabs.currentWidget() is window.pages[f"files:{profile.id}"]
                 state = window._files_states[f"files:{profile.id}"]
                 assert state["list"].count() >= 1
+                assert state["list"].selectionMode().name == "ExtendedSelection"
                 file_row = next(i for i in range(state["list"].count()) if state["list"].item(i).text() == "prompts/find_terms.txt")
-                state["list"].setCurrentRow(file_row)
-                state["editor"].setPlainText("Find terms updated")
-                assert window._files_dirty(state)
-                window.save()
-                assert source.read_text(encoding="utf-8") == "Find terms updated"
+                second_row = next(i for i in range(state["list"].count()) if state["list"].item(i).text() == "reference/second.txt")
+                state["list"].item(file_row).setSelected(True)
+                state["list"].item(second_row).setSelected(True)
+                assert len(state["list"].selectedItems()) == 2
+                with patch("novel_workflow.ui.QDesktopServices.openUrl", return_value=True) as open_url:
+                    window._files_open_selected(f"files:{profile.id}")
+                    assert open_url.call_count == 2
                 other_profile = ProfileService(repo).create("นิยายอีกเรื่อง", Workflow.defaults())
                 window.refresh_profiles(profile.id)
                 window.open_novel_workspace(other_profile.id)
@@ -119,7 +126,7 @@ def main() -> int:
                 window.steps.setCurrentRow(0)
                 window.preview()
                 assert window.main_tabs.currentWidget() is window.pages[f"preview:{profile.id}:{profile.workflow.steps[0].id}"]
-                preview_editor = window.pages[f"preview:{profile.id}:{profile.workflow.steps[0].id}"].findChild(type(state["editor"]))
+                preview_editor = window.pages[f"preview:{profile.id}:{profile.workflow.steps[0].id}"].findChild(QPlainTextEdit)
                 assert preview_editor is not None and preview_editor.isReadOnly()
                 window.launcher_dialog()
                 assert window.main_tabs.currentWidget() is window.pages[f"launcher:{profile.id}"]
