@@ -106,6 +106,12 @@ def main() -> int:
                 assert window._files_dirty(state)
                 window.save()
                 assert source.read_text(encoding="utf-8") == "Find terms updated"
+                other_profile = ProfileService(repo).create("นิยายอีกเรื่อง", Workflow.defaults())
+                window.refresh_profiles(profile.id)
+                window.open_novel_workspace(other_profile.id)
+                window.main_tabs.setCurrentWidget(window.pages[f"files:{profile.id}"])
+                app.processEvents()
+                assert window.profile.id == profile.id
                 window.open_destination("settings")
                 assert window.main_tabs.currentWidget() is window.pages["settings"]
                 window.set_profile_by_id(profile.id)

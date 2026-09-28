@@ -1051,6 +1051,9 @@ class MainWindow(QMainWindow):
     def on_main_tab_changed(self,index):
         current=self.main_tabs.widget(index)
         key=self.page_keys.get(id(current),"")
+        if key.startswith(("novel:","files:","launcher:","preview:")):
+            profile_id=key.split(":",2)[1]
+            self.set_profile_by_id(profile_id)
         nav_key=key.split(":",1)[0] if key.startswith(("novel:","files:","launcher:","preview:")) else key
         if nav_key in ("workflow","novel"):nav_key="novels"
         if nav_key in self.nav_buttons:self.nav_buttons[nav_key].setChecked(True)
