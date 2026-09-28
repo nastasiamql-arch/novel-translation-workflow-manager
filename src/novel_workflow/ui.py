@@ -65,6 +65,10 @@ class MainWindow(QMainWindow):
         bar.addWidget(spacer)
         for label,fn in (("+ เพิ่มนิยาย",self.new_profile),("เปิดนิยาย",self.launch_profile),("นำเข้าข้อมูลเดิม",self.import_launcher_config)):
             a=QAction(label,self);a.triggered.connect(fn);bar.addAction(a)
+        page_menu=QMenu(self)
+        for label,key in (("หน้าหลัก","home"),("นิยาย","novels"),("ขั้นตอนงาน","workflow"),("ความคืบหน้า","progress"),("กลุ่มนิยาย","groups"),("ไฟล์","files"),("ตั้งค่า","settings")):
+            action=page_menu.addAction(label);action.triggered.connect(lambda checked=False,k=key:self.open_destination(k))
+        page_button=QToolButton();page_button.setText("เปิดหน้า");page_button.setPopupMode(QToolButton.InstantPopup);page_button.setMenu(page_menu);bar.addWidget(page_button)
 
         root=QWidget()
         root_layout=QHBoxLayout(root)
