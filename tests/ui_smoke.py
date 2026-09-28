@@ -10,7 +10,7 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton
 
-from novel_workflow.models import StepFile, Workflow
+from novel_workflow.models import NovelGroup, StepFile, Workflow
 from novel_workflow.services import ProfileService
 from novel_workflow.storage import ProjectRepository
 from novel_workflow.ui import MainWindow
@@ -28,6 +28,7 @@ def main() -> int:
             StepFile(label="Find Terms Prompt", path="prompts/find_terms.txt", file_type="prompt", order=0)
         )
         repo.save_profile(profile)
+        repo.save_groups([NovelGroup(name="กลุ่มหลัก", profile_ids=[profile.id])])
 
         window = MainWindow(repo)
         window.show()
@@ -39,6 +40,19 @@ def main() -> int:
             try:
                 assert window.novel.text() == profile.name
                 assert window.steps.currentRow() == 0
+
+                window.translation_dashboard()
+                app.processEvents()
+                assert window.main_tabs.currentWidget() is window.dashboard_page
+                assert not window.dashboard_page.isWindow()
+                assert window.dashboard_page.tabs.currentIndex() == 1
+                assert window.dashboard_page.goal_tabs.currentIndex() == 0
+                assert any(
+                    button.text() == "บันทึกเป้ากลุ่ม"
+                    for button in window.dashboard_page.findChildren(QPushButton)
+                )
+                window.main_tabs.setCurrentWidget(window.workspace_page)
+                app.processEvents()
 
                 second = window.steps.visualItemRect(window.steps.item(1))
                 QTest.mouseClick(window.steps.viewport(), Qt.LeftButton, pos=second.center())

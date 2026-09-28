@@ -3,12 +3,12 @@ from dataclasses import asdict as asdict_target
 from PySide6.QtCore import Qt, QUrl, QSize, QTimer, QMimeData
 from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap
 from PySide6.QtWidgets import *
-from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow, migrate_legacy_basic_workflow
+from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow, migrate_legacy_basic_workflow, order_profiles
 from .services import ProfileService, WorkflowService, AssemblyService
 from .launcher import LauncherService
 from .storage import ProjectRepository
 from .translation_progress import latest_context_chapter, sync_profile_context, daily_chapter_count, goal_progress
-from .progress_dialog import TranslationDashboardDialog
+from .progress_dialog import TranslationDashboardPage
 from .theme import application_stylesheet
 
 class Editor(QDialog):
@@ -29,7 +29,7 @@ class MainWindow(QMainWindow):
         self.settings=self.repo.load_settings()
         self.profile=None
         self.si=-1
-        self.dashboard_dialog=None
+        self.dashboard_page=None
         self.setWindowTitle("NovelWorkflow")
         self.setMinimumSize(900,600)
         self.resize(1260,780)
@@ -62,7 +62,7 @@ class MainWindow(QMainWindow):
         spacer=QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred)
         bar.addWidget(spacer)
-        for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("ความคืบหน้า",self.translation_dashboard),("ตั้งค่า",self.settings_dialog)):
+        for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("เป้าหมายและสถิติ",self.translation_dashboard),("ตั้งค่า",self.settings_dialog)):
             a=QAction(label,self);a.triggered.connect(fn);bar.addAction(a)
 
         root=QWidget()
@@ -78,12 +78,20 @@ class MainWindow(QMainWindow):
         splitter=QSplitter()
         splitter.setChildrenCollapsible(False)
         root_layout.addWidget(splitter,1)
-        self.setCentralWidget(root)
+        self.workspace_page=root
         self.profiles=QListWidget()
         self.profiles.setSpacing(1)
         self.profiles.setCursor(Qt.PointingHandCursor)
         self.profiles.setAccessibleName("รายการนิยาย")
+        self.profiles.setToolTip("ลากนิยายขึ้นหรือลงเพื่อเปลี่ยนลำดับ")
+        self.profiles.setDragDropMode(QAbstractItemView.InternalMove)
+        self.profiles.setDefaultDropAction(Qt.MoveAction)
+        self.profiles.setDropIndicatorShown(True)
+        self.profiles.setDragEnabled(True)
+        self.profiles.setAcceptDrops(True)
+        self.profiles.setDragDropOverwriteMode(False)
         self.profiles.currentRowChanged.connect(self.select_profile)
+        self.profiles.model().rowsMoved.connect(self._profile_rows_moved)
         splitter.addWidget(self.column("นิยายของฉัน",self.profiles,[]))
         self.steps=QListWidget()
         self.steps.setSpacing(1)
@@ -113,6 +121,15 @@ class MainWindow(QMainWindow):
         self.files.itemChanged.connect(self.toggle_file)
         splitter.addWidget(self.column("ไฟล์ของขั้นตอน",self.files,[("COPY STEP",self.copy_step)]))
         splitter.setSizes([260,340,650])
+        self.workspace_lists=(self.profiles,self.steps,self.files)
+        self.dashboard_page=TranslationDashboardPage(self,[],self.repo,self.refresh_translation_progress)
+        self.main_tabs=QTabWidget()
+        self.main_tabs.setObjectName("mainNavigationTabs")
+        self.main_tabs.setDocumentMode(True)
+        self.main_tabs.addTab(self.workspace_page,"ทำงาน")
+        self.main_tabs.addTab(self.dashboard_page,"ความคืบหน้า")
+        self.setCentralWidget(self.main_tabs)
+        self.main_tabs.currentChanged.connect(self.on_main_tab_changed)
         self.statusBar().showMessage("เลือกนิยายและขั้นตอนเพื่อเริ่มทำงาน")
         self.shortcut("Ctrl+Shift+C",self.copy_step)
         self.shortcut("Ctrl+P",self.preview)
@@ -157,7 +174,16 @@ class MainWindow(QMainWindow):
     def shortcut(self,key,fn):a=QAction(self);a.setShortcut(QKeySequence(key));a.triggered.connect(fn);self.addAction(a)
     def refresh(self):self.refresh_profiles(self.profile.id if self.profile else None)
     def refresh_profiles(self,pid=None):
-        self.ps_list=self.repo.list_profiles()
+        stored_order=getattr(self.settings,"profile_order",[])
+        if not isinstance(stored_order,list):stored_order=[]
+        stored_order=[profile_id for profile_id in stored_order if isinstance(profile_id,str)]
+        self.ps_list=order_profiles(self.repo.list_profiles(),stored_order)
+        normalized_order=[profile.id for profile in self.ps_list]
+        if normalized_order!=stored_order:
+            self.settings.profile_order=normalized_order
+            try:self.repo.save_settings(self.settings)
+            except OSError as exc:
+                if hasattr(self,"statusBar"):self.statusBar().showMessage(f"บันทึกลำดับนิยายไม่สำเร็จ: {exc}",6000)
         for profile in self.ps_list:
             changed=migrate_legacy_basic_workflow(profile.workflow)
             if sync_profile_context(profile):changed=True
@@ -168,7 +194,8 @@ class MainWindow(QMainWindow):
         placeholder=Path(__file__).resolve().parent/"resources"/"novelworkflow.png"
         for profile in self.ps_list:
             item=QListWidgetItem(profile.name)
-            item.setToolTip(profile.name)
+            item.setData(Qt.UserRole,profile.id)
+            item.setToolTip(f"{profile.name}\\nลากเพื่อเปลี่ยนลำดับ")
             item.setSizeHint(QSize(0,70))
             cover=placeholder
             if profile.cover_image_path:
@@ -190,14 +217,37 @@ class MainWindow(QMainWindow):
         self.profiles.blockSignals(False)
         if idx>=0:self.select_profile(idx)
         else:self.profile=None;self.novel.setText("ยังไม่ได้เลือกนิยาย");self.refresh_steps()
+    def _profile_rows_moved(self,*_):
+        ordered_ids=[
+            self.profiles.item(index).data(Qt.UserRole)
+            for index in range(self.profiles.count())
+            if self.profiles.item(index).data(Qt.UserRole)
+        ]
+        if len(ordered_ids)!=len(self.ps_list):return
+        previous_order=list(self.settings.profile_order)
+        self.ps_list=order_profiles(self.ps_list,ordered_ids)
+        self.settings.profile_order=ordered_ids
+        try:
+            self.repo.save_settings(self.settings)
+        except OSError as exc:
+            self.settings.profile_order=previous_order
+            self.statusBar().showMessage(f"บันทึกลำดับนิยายไม่สำเร็จ: {exc}",6000)
+            self.refresh_profiles(self.profile.id if self.profile else None)
+            return
+        selected=self.profiles.currentItem()
+        if selected is not None:
+            profile_id=selected.data(Qt.UserRole)
+            self.profile=next((profile for profile in self.ps_list if profile.id==profile_id),self.profile)
+        self.statusBar().showMessage("บันทึกลำดับนิยายแล้ว",2500)
+
     def refresh_translation_progress(self):
         profiles=getattr(self,"ps_list",[])
         for profile in profiles:
             if sync_profile_context(profile):self.repo.save_profile(profile)
         if self.profile:
             self.profile=next((profile for profile in profiles if profile.id==self.profile.id),self.profile)
-        dashboard=getattr(self,"dashboard_dialog",None)
-        if dashboard is not None and dashboard.isVisible():dashboard.set_profiles(profiles)
+        dashboard=getattr(self,"dashboard_page",None)
+        if dashboard is not None and self.main_tabs.currentWidget() is dashboard:dashboard.set_profiles(profiles)
         self.refresh_goal_indicator()
         return profiles
     def refresh_goal_indicator(self):
@@ -236,9 +286,10 @@ class MainWindow(QMainWindow):
             self.goal_bar.setFormat("")
     def translation_dashboard(self):
         profiles=self.refresh_translation_progress()
-        self.dashboard_dialog=TranslationDashboardDialog(self,profiles,self.repo,self.refresh_translation_progress)
-        self.dashboard_dialog.exec()
-        self.dashboard_dialog=None
+        self.dashboard_page.set_profiles(profiles)
+        self.main_tabs.setCurrentWidget(self.dashboard_page)
+        self.dashboard_page.tabs.setCurrentIndex(1)
+        self.dashboard_page.goal_tabs.setCurrentIndex(0)
     def select_profile(self,i):
         if i<0 or i>=len(getattr(self,"ps_list",[])):return
         self.profile=self.ps_list[i];self.settings.last_profile_id=self.profile.id
@@ -410,9 +461,15 @@ class MainWindow(QMainWindow):
         if chapter is None:
             QMessageBox.warning(self,"ไม่พบเลขบท","ไฟล์นี้ไม่พบหัวข้อที่ขึ้นต้นด้วย “บทที่ <เลขบท>”")
             return
-        self.profile.context_path=str(context.resolve())
-        self.profile.translation_checkpoint_path=str(context.resolve())
+        resolved_context=str(context.resolve())
+        previous_context=str(Path(self.profile.context_path).expanduser().resolve()) if self.profile.context_path else None
+        self.profile.context_path=resolved_context
+        self.profile.translation_checkpoint_path=resolved_context
         self.profile.chapter_state.current_chapter=chapter
+        if self.profile.translation_goal_target is not None and (
+            self.profile.translation_goal_baseline is None or previous_context != resolved_context
+        ):
+            self.profile.translation_goal_baseline=chapter
         self.repo.save_profile(self.profile)
         self.statusBar().showMessage(f"เชื่อม Context แล้ว · บทล่าสุด {chapter}",3500)
         self.refresh_translation_progress()
@@ -658,39 +715,44 @@ class MainWindow(QMainWindow):
             self.refresh_files()
         except Exception as e:QMessageBox.warning(self,"Copy failed",str(e))
     def settings_dialog(self):
-        """Open a separate management page; keep the main workspace action-focused."""
-        original_lists=(self.profiles,self.steps,self.files)
+        """Open settings as an in-window tab, creating it on first use."""
+        if getattr(self,"settings_page",None) is not None:
+            self.main_tabs.setCurrentWidget(self.settings_page)
+            return
+
         previous_profile_id=self.profile.id if self.profile else None
         active_step=self.step()
         active_step_id=active_step.id if active_step else None
-
-        dialog=QDialog(self)
-        dialog.setWindowTitle("ตั้งค่าและจัดการ")
-        dialog.resize(1040,720)
-        root=QVBoxLayout(dialog)
+        page=QWidget()
+        root=QVBoxLayout(page)
+        intro=QLabel("จัดการนิยาย ขั้นตอน และไฟล์จากแท็บด้านล่าง · ค่าทั่วไปบันทึกเมื่อกดบันทึก")
+        intro.setObjectName("mutedLabel")
+        root.addWidget(intro)
         tabs=QTabWidget()
+        tabs.setDocumentMode(True)
         root.addWidget(tabs,1)
 
-        self.profiles=QListWidget()
-        self.profiles.setSpacing(1)
-        self.profiles.setCursor(Qt.PointingHandCursor)
-        self.profiles.setAccessibleName("รายการนิยาย")
-        self.profiles.currentRowChanged.connect(self.select_profile)
-        self.steps=QListWidget()
-        self.steps.setSpacing(1)
-        self.steps.setCursor(Qt.PointingHandCursor)
-        self.steps.setAccessibleName("ขั้นตอนงาน")
-        self.steps.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.steps.currentRowChanged.connect(self.select_step)
-        self.files=QListWidget()
-        self.files.setSpacing(1)
-        self.files.setCursor(Qt.PointingHandCursor)
-        self.files.setAccessibleName("ไฟล์ของขั้นตอน")
-        self.files.itemChanged.connect(self.toggle_file)
+        self.settings_profiles=QListWidget()
+        self.settings_profiles.setSpacing(1)
+        self.settings_profiles.setCursor(Qt.PointingHandCursor)
+        self.settings_profiles.setAccessibleName("รายการนิยาย")
+        self.settings_profiles.currentRowChanged.connect(self.select_profile)
+        self.settings_steps=QListWidget()
+        self.settings_steps.setSpacing(1)
+        self.settings_steps.setCursor(Qt.PointingHandCursor)
+        self.settings_steps.setAccessibleName("ขั้นตอนงาน")
+        self.settings_steps.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.settings_steps.currentRowChanged.connect(self.select_step)
+        self.settings_files=QListWidget()
+        self.settings_files.setSpacing(1)
+        self.settings_files.setCursor(Qt.PointingHandCursor)
+        self.settings_files.setAccessibleName("ไฟล์ของขั้นตอน")
+        self.settings_files.itemChanged.connect(self.toggle_file)
+        self.settings_lists=(self.settings_profiles,self.settings_steps,self.settings_files)
 
         def management_tab(title,widget,buttons):
-            page=QWidget()
-            layout=QVBoxLayout(page)
+            tab=QWidget()
+            layout=QVBoxLayout(tab)
             layout.setContentsMargins(14,14,14,14)
             layout.addWidget(widget,1)
             grid=QGridLayout()
@@ -702,7 +764,7 @@ class MainWindow(QMainWindow):
                 button.clicked.connect(callback)
                 grid.addWidget(button,index//2,index%2)
             layout.addLayout(grid)
-            tabs.addTab(page,title)
+            tabs.addTab(tab,title)
 
         profile_actions=[
             ("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),
@@ -722,9 +784,9 @@ class MainWindow(QMainWindow):
             ("เลื่อนลง",lambda:self.move_file(1)),("เปลี่ยนชื่อที่แสดง",self.rename_file_label),
             ("จัดการไฟล์",self.file_manager),("ดูตัวอย่าง",self.preview),
         ]
-        management_tab("นิยาย",self.profiles,profile_actions)
-        management_tab("ขั้นตอน",self.steps,step_actions)
-        management_tab("ไฟล์ของขั้นตอน",self.files,file_actions)
+        management_tab("นิยาย",self.settings_profiles,profile_actions)
+        management_tab("ขั้นตอน",self.settings_steps,step_actions)
+        management_tab("ไฟล์ของขั้นตอน",self.settings_files,file_actions)
 
         preferences=QWidget()
         prefs=QVBoxLayout(preferences)
@@ -746,29 +808,59 @@ class MainWindow(QMainWindow):
         tabs.addTab(preferences,"ทั่วไป")
 
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Close)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
+        buttons.accepted.connect(lambda:self._save_settings_page(appearance,separator,checks))
+        buttons.rejected.connect(lambda:self.main_tabs.setCurrentWidget(self.workspace_page))
+        buttons.button(QDialogButtonBox.Save).setText("บันทึกการตั้งค่า")
+        buttons.button(QDialogButtonBox.Close).setText("กลับไปทำงาน")
         root.addWidget(buttons)
 
-        result=QDialog.Rejected
+        self.settings_page=page
+        self.main_tabs.addTab(page,"ตั้งค่า")
+        self.refresh_profiles(previous_profile_id)
+        if self.profile and self.profile.workflow.steps:
+            restored=next((i for i,step in enumerate(self.profile.workflow.steps) if step.id==active_step_id),0)
+            self.steps.setCurrentRow(restored)
+        self.main_tabs.setCurrentWidget(page)
+
+    def _save_settings_page(self,appearance,separator,checks):
+        self.settings.appearance=appearance.currentText()
+        self.settings.separator=separator.text()
+        for check,attr in checks:
+            setattr(self.settings,attr,check.isChecked())
         try:
-            self.refresh_profiles(previous_profile_id)
-            result=dialog.exec()
-            if result==QDialog.Accepted:
-                self.settings.appearance=appearance.currentText()
-                self.settings.separator=separator.text()
-                for check,attr in checks:
-                    setattr(self.settings,attr,check.isChecked())
-                self.save()
-                self.apply_theme()
-        finally:
-            self.profiles,self.steps,self.files=original_lists
-            self.refresh_profiles(self.profile.id if self.profile else previous_profile_id)
-            if self.profile and self.profile.workflow.steps:
-                restored=next((i for i,step in enumerate(self.profile.workflow.steps) if step.id==active_step_id),0)
-                self.steps.setCurrentRow(restored)
-                if self.si!=restored:
-                    self.select_step(restored)
-            else:
-                self.si=-1
-                self.refresh_files()
+            self.repo.save_settings(self.settings)
+        except OSError as exc:
+            QMessageBox.warning(self,"บันทึกการตั้งค่าไม่สำเร็จ",str(exc))
+            return
+        self.apply_theme()
+        self.statusBar().showMessage("บันทึกการตั้งค่าแล้ว",2500)
+
+    def _restore_active_step(self,step_id=None):
+        if not self.profile or not self.profile.workflow.steps:
+            self.si=-1
+            self.refresh_files()
+            return
+        row=next((i for i,step in enumerate(self.profile.workflow.steps) if step.id==step_id),0)
+        self.steps.setCurrentRow(row)
+
+    def on_main_tab_changed(self,index):
+        current=self.main_tabs.widget(index)
+        settings_lists=getattr(self,"settings_lists",None)
+        if settings_lists is not None:
+            using_settings=self.profiles is settings_lists[0]
+            if current is self.settings_page and not using_settings:
+                profile_id=self.profile.id if self.profile else None
+                active=self.step()
+                step_id=active.id if active else None
+                self.profiles,self.steps,self.files=settings_lists
+                self.refresh_profiles(profile_id)
+                self._restore_active_step(step_id)
+            elif current is not self.settings_page and using_settings:
+                profile_id=self.profile.id if self.profile else None
+                active=self.step()
+                step_id=active.id if active else None
+                self.profiles,self.steps,self.files=self.workspace_lists
+                self.refresh_profiles(profile_id)
+                self._restore_active_step(step_id)
+        if current is self.dashboard_page:
+            self.refresh_translation_progress()
