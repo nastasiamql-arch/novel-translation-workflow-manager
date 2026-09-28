@@ -4,14 +4,27 @@ NovelWorkflow is a Windows desktop app that combines Novel Launcher project laun
 
 Version 1 does not call AI or translation APIs.
 
+## Download and run on Windows
+
+1. Open the [GitHub Releases page](https://github.com/nastasiamql-arch/novel-translation-workflow-manager/releases).
+2. Download `NovelWorkflow-windows.zip` from the latest release and extract the entire archive.
+3. Open `NovelWorkflow.exe` from the extracted folder. Keep the `_internal` folder beside the executable.
+
+The release package includes the app and its Qt runtime files; Python is not required. The **Code → Download ZIP** button downloads source code for developers, not the ready-to-run app. Builds from updates to `main` are also available in the corresponding GitHub Actions run under **Artifacts**.
+
 ## Run from source
 
-Requires Python 3.10 or newer.
+Requires Python 3.10 or newer. From PowerShell in the repository folder, run:
+
+    .\build_windows.ps1
+
+This creates `dist/NovelWorkflow-windows.zip` and `dist/NovelWorkflow/NovelWorkflow.exe`. Extract the zip to use the app. The executable must remain beside its `_internal` folder.
+
+To run directly from Python instead, create an environment, install the app, then launch it:
 
     py -m venv .venv
-    .\.venv\Scripts\Activate.ps1
-    python -m pip install -e ".[dev]"
-    python -m novel_workflow.main
+    .\.venv\Scripts\python.exe -m pip install -e .
+    .\.venv\Scripts\python.exe -m novel_workflow.main
 
 ## Launcher features
 
@@ -45,4 +58,4 @@ Choose **Import Launcher** and select `config.json`, usually located at `%APPDAT
     python -m pytest
     .\build_windows.ps1
 
-The build creates `dist/NovelWorkflow.exe`. GitHub Actions runs the test suite and builds the Windows executable on updates to `main` and `v*` tags. Tagged builds publish the executable as a GitHub Release asset.
+GitHub Actions runs the test suite and creates a portable Windows build when changes are pushed to `main`. Tagged builds publish `NovelWorkflow-windows.zip` as a GitHub Release asset.
