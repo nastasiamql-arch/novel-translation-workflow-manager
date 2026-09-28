@@ -29,6 +29,9 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -e ".[dev]"
       - run: python -m PyInstaller --noconfirm --clean NovelWorkflow.spec
+      - name: Verify packaged Windows app starts
+        shell: pwsh
+        run: ./tests/package_smoke.ps1
       - name: Package Windows folder build
         run: Compress-Archive -Path dist\NovelWorkflow\* -DestinationPath dist\NovelWorkflow-windows.zip -Force
         shell: pwsh
