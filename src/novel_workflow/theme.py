@@ -48,6 +48,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
         font-size: 10pt;
     }}
     QMainWindow, QDialog {{ background: {c["app"]}; }}
+    QFrame#appSidebar {{ background: {c["surface"]}; border: 0; border-right: 1px solid {c["border"]}; }}
     QToolBar#mainToolbar {{
         background: {c["surface"]};
         border: 0;
@@ -59,6 +60,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
         width: 1px; background: {c["border"]}; margin: 5px 8px;
     }}
     QLabel#brandTitle {{ color: {c["text"]}; font-size: 13pt; font-weight: 600; }}
+    QLabel#pageTitle {{ color: {c["text"]}; font-size: 16pt; font-weight: 600; padding-bottom: 4px; }}
     QLabel#currentNovel {{
         color: {c["text"]}; background: {c["surface"]};
         border: 1px solid {c["border"]}; border-radius: 8px;
@@ -79,6 +81,15 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QToolButton:hover {{ color: {c["text"]}; background: {c["hover"]}; }}
     QToolButton:pressed {{ background: {c["elevated"]}; }}
     QToolButton:focus {{ border-color: {c["accent"]}; }}
+    QToolButton#navItem {{ text-align: left; padding: 7px 10px; border-radius: 5px; color: {c["secondary"]}; }}
+    QToolButton#navItem:hover {{ background: {c["hover"]}; color: {c["text"]}; }}
+    QToolButton#navItem:checked {{ background: {c["selection"]}; color: {c["text"]}; border-left: 2px solid {c["accent"]}; font-weight: 600; }}
+    QTabWidget#workspaceTabs::pane {{ border: 0; background: {c["app"]}; }}
+    QTabWidget#workspaceTabs QTabBar::tab {{ background: {c["surface"]}; color: {c["secondary"]}; border: 0; border-right: 1px solid {c["border"]}; padding: 8px 12px; min-width: 72px; }}
+    QTabWidget#workspaceTabs QTabBar::tab:selected {{ background: {c["app"]}; color: {c["text"]}; border-top: 2px solid {c["accent"]}; }}
+    QTabWidget#workspaceTabs QTabBar::tab:hover {{ background: {c["hover"]}; color: {c["text"]}; }}
+    QPlainTextEdit {{ background: {c["surface"]}; color: {c["text"]}; border: 1px solid {c["border"]}; border-radius: 6px; padding: 8px; selection-background-color: {c["selection"]}; }}
+    QPlainTextEdit:focus {{ border-color: {c["accent"]}; }}
     QFrame#columnPanel, QFrame#goalPanel, QFrame#metricCard, QFrame#progressRow {{
         background: {c["surface"]}; border: 1px solid {c["border"]}; border-radius: 8px;
     }}
