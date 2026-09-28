@@ -45,4 +45,4 @@ Choose **Import Launcher** and select `config.json`, usually located at `%APPDAT
     python -m pytest
     .\build_windows.ps1
 
-The build creates `dist/NovelWorkflow.exe`. GitHub Actions runs the test suite and builds the Windows executable on updates to `main` and `v*` tags. Tagged builds publish the executable as a GitHub Release asset.
+The build creates the `dist/NovelWorkflow` application folder and `dist/NovelWorkflow-windows.zip`. Keep the executable together with its `_internal` folder; this folder-based build avoids extracting application DLLs to a temporary directory at startup. GitHub Actions runs the test suite and builds the Windows application on updates to `main` and `v*` tags. Tagged builds publish the ZIP as a GitHub Release asset.
