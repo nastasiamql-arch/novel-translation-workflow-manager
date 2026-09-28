@@ -1,7 +1,7 @@
 from pathlib import Path
 from dataclasses import asdict as asdict_target
 from PySide6.QtCore import Qt, QUrl, QSize, QTimer, QMimeData
-from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap
+from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QDesktopServices
 from PySide6.QtWidgets import *
 from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow, migrate_legacy_basic_workflow, order_profiles
 from .services import ProfileService, WorkflowService, AssemblyService
@@ -79,6 +79,9 @@ class MainWindow(QMainWindow):
         side_layout.addStretch(1)
         self.sidebar_status=QLabel("พร้อมทำงาน");self.sidebar_status.setObjectName("mutedLabel");self.sidebar_status.setWordWrap(True);side_layout.addWidget(self.sidebar_status)
         root_layout.addWidget(sidebar)
+        # The workspace tabs already provide the complete navigation menu.
+        # Keep a single navigation surface instead of showing the same items twice.
+        sidebar.hide()
         self.main_tabs=QTabWidget();self.main_tabs.setObjectName("workspaceTabs");self.main_tabs.setDocumentMode(True);self.main_tabs.setTabsClosable(True);self.main_tabs.tabCloseRequested.connect(self.close_workspace_tab);root_layout.addWidget(self.main_tabs,1)
         self.novel=QLabel("ยังไม่ได้เลือกนิยาย")
         self.novel.setObjectName("currentNovel")
@@ -163,12 +166,21 @@ class MainWindow(QMainWindow):
 
     def add_workspace_tab(self,key,title,widget,closable=True):
         if key in self.pages:
-            self.main_tabs.setCurrentWidget(self.pages[key]);return self.pages[key]
+            existing=self.pages[key]
+            if self.main_tabs.indexOf(existing)<0:
+                index=self.main_tabs.addTab(existing,title)
+                self.main_tabs.setTabWhatsThis(index,key)
+                self._add_tab_close_button(existing)
+            self.main_tabs.setCurrentWidget(existing);return existing
         index=self.main_tabs.addTab(widget,title);self.pages[key]=widget;self.page_keys[id(widget)]=key
-        self.main_tabs.tabBar().setTabButton(index,QTabBar.RightSide if not closable else QTabBar.RightSide,self.main_tabs.tabBar().tabButton(index,QTabBar.RightSide))
         self.main_tabs.setTabWhatsThis(index,key)
-        if not closable:self.main_tabs.tabBar().setTabButton(index,QTabBar.RightSide,None)
+        self._add_tab_close_button(widget)
         self.main_tabs.setCurrentIndex(index);return widget
+
+    def _add_tab_close_button(self,widget):
+        button=QToolButton();button.setText("×");button.setObjectName("tabCloseButton");button.setToolTip("ปิดแท็บนี้");button.setAccessibleName("ปิดแท็บนี้");button.setFixedSize(20,20);button.clicked.connect(lambda checked=False,w=widget:self.close_workspace_tab(self.main_tabs.indexOf(w)) if self.main_tabs.indexOf(w)>=0 else None)
+        index=self.main_tabs.indexOf(widget)
+        if index>=0:self.main_tabs.tabBar().setTabButton(index,QTabBar.RightSide,button)
 
     def close_workspace_tab(self,index):
         widget=self.main_tabs.widget(index);key=self.page_keys.get(id(widget))
@@ -178,7 +190,10 @@ class MainWindow(QMainWindow):
             answer=QMessageBox.question(self,"ปิดแท็บไฟล์","บันทึกการแก้ไขก่อนปิดแท็บหรือไม่?",QMessageBox.Save|QMessageBox.Discard|QMessageBox.Cancel)
             if answer==QMessageBox.Cancel:return
             if answer==QMessageBox.Save and not self._files_save(key):return
-        self.main_tabs.removeTab(index);self.pages.pop(key,None);self.page_keys.pop(id(widget),None);widget.deleteLater()
+        self.main_tabs.removeTab(index)
+        if key in ("home","novels","workflow","progress"):
+            return
+        self.pages.pop(key,None);self.page_keys.pop(id(widget),None);widget.deleteLater()
 
     def build_home_page(self):
         page=QWidget();layout=QVBoxLayout(page);layout.setContentsMargins(22,20,22,20);layout.setSpacing(12)
@@ -234,7 +249,9 @@ class MainWindow(QMainWindow):
 
     def open_destination(self,key):
         if key in ("home","novels","workflow","progress"):
-            self.main_tabs.setCurrentWidget({"home":self.home_page,"novels":self.novels_page,"workflow":self.workflow_page,"progress":self.dashboard_page}[key])
+            title={"home":"หน้าหลัก","novels":"นิยาย","workflow":"ขั้นตอนงาน","progress":"ความคืบหน้า"}[key]
+            widget={"home":self.home_page,"novels":self.novels_page,"workflow":self.workflow_page,"progress":self.dashboard_page}[key]
+            self.add_workspace_tab(key,title,widget,True)
         elif key=="groups":self.groups_dialog()
         elif key=="files":self.file_manager()
         elif key=="settings":self.settings_dialog()
@@ -1146,23 +1163,16 @@ class MainWindow(QMainWindow):
         page=QWidget();root=QVBoxLayout(page);root.setContentsMargins(16,14,16,14);root.setSpacing(8)
         title=QLabel("ไฟล์ · "+self.profile.name);title.setObjectName("pageTitle");root.addWidget(title)
         split=QSplitter();split.setChildrenCollapsible(False)
-        left=QWidget();ll=QVBoxLayout(left);ll.setContentsMargins(0,0,8,0);search=QLineEdit();search.setPlaceholderText("ค้นหาไฟล์");listing=QListWidget();ll.addWidget(search);ll.addWidget(listing,1)
-        right=QWidget();rl=QVBoxLayout(right);rl.setContentsMargins(8,0,0,0);path_label=QLabel("เลือกไฟล์");path_label.setObjectName("mutedLabel");editor=QPlainTextEdit();editor.setPlaceholderText("เลือกไฟล์ .txt, .md หรือ .json เพื่อแก้ไข");rl.addWidget(path_label);rl.addWidget(editor,1)
-        editor_bar=QHBoxLayout();dirty=QLabel("");dirty.setObjectName("mutedLabel");save=QPushButton("บันทึก");editor_bar.addWidget(dirty,1);editor_bar.addWidget(save);rl.addLayout(editor_bar)
-        split.addWidget(left);split.addWidget(right);split.setSizes([280,800]);root.addWidget(split,1)
+        left=QWidget();ll=QVBoxLayout(left);ll.setContentsMargins(0,0,0,0);search=QLineEdit();search.setPlaceholderText("ค้นหาไฟล์");listing=QListWidget();listing.setSelectionMode(QAbstractItemView.ExtendedSelection);ll.addWidget(search);ll.addWidget(listing,1)
+        right=QWidget();rl=QVBoxLayout(right);rl.setContentsMargins(16,8,0,8);path_label=QLabel("เลือกไฟล์ที่ต้องการเปิด");path_label.setObjectName("pageTitle");rl.addWidget(path_label);hint=QLabel("เลือกได้หลายไฟล์พร้อมกัน แล้วกด “เปิดไฟล์ที่เลือก” เพื่อเปิดด้วยโปรแกรมเริ่มต้นของ Windows.");hint.setObjectName("mutedLabel");hint.setWordWrap(True);rl.addWidget(hint);rl.addStretch(1)
+        split.addWidget(left);split.addWidget(right);split.setSizes([520,560]);root.addWidget(split,1)
         actions=QHBoxLayout()
-        for label,fn in (("สร้างไฟล์",lambda:self._files_create(key)),("นำเข้าไฟล์",lambda:self._files_import(key)),("แนบกับขั้นตอน",lambda:self._files_attach(key))):
+        for label,fn in (("เปิดไฟล์ที่เลือก",lambda:self._files_open_selected(key)),("ลบไฟล์ที่เลือก",lambda:self._files_delete_selected(key)),("สร้างไฟล์",lambda:self._files_create(key)),("นำเข้าไฟล์",lambda:self._files_import(key)),("แนบกับขั้นตอน",lambda:self._files_attach(key))):
             button=QPushButton(label);button.clicked.connect(fn);actions.addWidget(button)
         actions.addStretch(1);root.addLayout(actions)
-        state={"key":key,"profile_id":self.profile.id,"page":page,"title":title,"search":search,"list":listing,"path":path_label,"editor":editor,"dirty":dirty,"selected":None,"original_content":"","loading":False}
+        state={"key":key,"profile_id":self.profile.id,"page":page,"title":title,"search":search,"list":listing,"path":path_label,"selected":None}
         self._files_states=getattr(self,"_files_states",{});self._files_states[key]=state
-        def changed():
-            if state["loading"]:return
-            dirty.setText("ยังไม่ได้บันทึก" if editor.toPlainText()!=state["original_content"] else "บันทึกแล้ว")
-        editor.textChanged.connect(changed)
-        save.clicked.connect(lambda:self._files_save(key))
-        editor.addAction(QAction(editor,shortcut=QKeySequence.Save,triggered=lambda:self._files_save(key)))
-        search.textChanged.connect(lambda:self._refresh_files_page(key));listing.currentRowChanged.connect(lambda _:self._files_select(key))
+        search.textChanged.connect(lambda:self._refresh_files_page(key));listing.currentItemChanged.connect(lambda *_:self._files_select(key))
         listing.setContextMenuPolicy(Qt.CustomContextMenu);listing.customContextMenuRequested.connect(lambda point:self._files_context_menu(key,point))
         self.add_workspace_tab(key,"ไฟล์ · "+self.profile.name,page,True);self._refresh_files_page(key)
 
@@ -1172,7 +1182,6 @@ class MainWindow(QMainWindow):
     def _refresh_files_page(self,key):
         state=getattr(self,"_files_states",{}).get(key)
         if not state:return
-        if self._files_dirty(state) and not self._files_save(key,ask=True):return
         listing=state["list"];selected=state.get("selected");listing.blockSignals(True);listing.clear();root=self._files_root(key);query=state["search"].text().lower()
         if root and root.exists():
             for path in sorted(root.rglob("*")):
@@ -1183,19 +1192,31 @@ class MainWindow(QMainWindow):
                         if rel==selected:listing.setCurrentItem(item)
         listing.blockSignals(False)
         if listing.currentItem():self._files_select(key)
-        elif selected:state["selected"]=None;state["path"].setText("เลือกไฟล์");state["editor"].clear()
+        elif selected:state["selected"]=None;state["path"].setText("เลือกไฟล์ที่ต้องการเปิด")
 
     def _files_select(self,key):
         state=self._files_states.get(key);row=state["list"].currentItem() if state else None
         if not state or not row:return
-        if self._files_dirty(state) and not self._files_save(key,ask=True):return
-        rel=row.data(Qt.UserRole);path=self.repo.resolve_project_path(state["profile_id"],rel);state["selected"]=rel;state["path"].setText(rel)
-        state["loading"]=True
-        try:state["editor"].setPlainText(path.read_text(encoding="utf-8") if path.suffix.lower() in (".txt",".md",".json") else "ไฟล์นี้ไม่รองรับการแก้ไขข้อความ");state["editor"].setReadOnly(path.suffix.lower() not in (".txt",".md",".json"));state["original_content"]=state["editor"].toPlainText();state["dirty"].setText("")
-        except (OSError,UnicodeError) as exc:state["editor"].setPlainText(f"เปิดไฟล์ไม่สำเร็จ: {exc}");state["editor"].setReadOnly(True)
-        finally:state["loading"]=False
+        rel=row.data(Qt.UserRole);state["selected"]=rel
+        count=len(state["list"].selectedItems())
+        state["path"].setText(f"เลือกแล้ว {count} ไฟล์" if count>1 else rel)
 
-    def _files_dirty(self,state):return state["editor"].toPlainText()!=state["original_content"]
+    def _files_open_selected(self,key):
+        state=self._files_states.get(key)
+        if not state:return
+        selected=state["list"].selectedItems()
+        if not selected:
+            self.statusBar().showMessage("เลือกไฟล์ที่ต้องการเปิดก่อน",2500);return
+        opened=0
+        for item in selected:
+            try:
+                path=self.repo.resolve_project_path(state["profile_id"],item.data(Qt.UserRole))
+                if QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):opened+=1
+            except (OSError,ValueError):
+                continue
+        self.statusBar().showMessage(f"เปิดไฟล์แล้ว {opened} จาก {len(selected)} ไฟล์",3500)
+
+    def _files_dirty(self,state):return False
 
     def _files_save(self,key,ask=False):
         state=self._files_states.get(key)
@@ -1260,6 +1281,33 @@ class MainWindow(QMainWindow):
             for step in profile.workflow.steps:step.files=[f for f in step.files if f.reference_type=="external_file" or not f.path or self.repo.resolve_project_path(profile.id,f.path)!=path]
             self.repo.save_profile(profile)
         state["selected"]=None;self.refresh_files_page(key);self.refresh_files()
+
+    def _files_delete_selected(self,key):
+        state=self._files_states.get(key)
+        if not state:return
+        rows=state["list"].selectedItems()
+        if not rows:
+            self.statusBar().showMessage("เลือกไฟล์ที่ต้องการลบก่อน",2500);return
+        paths=[]
+        for row in rows:
+            try:paths.append(self.repo.resolve_project_path(state["profile_id"],row.data(Qt.UserRole)))
+            except ValueError:continue
+        if not paths:return
+        answer=QMessageBox.question(self,"ลบไฟล์ที่เลือก",f"ยืนยันลบ {len(paths)} ไฟล์ที่เลือกหรือไม่?",QMessageBox.Yes|QMessageBox.No)
+        if answer!=QMessageBox.Yes:return
+        profile=next((p for p in self.ps_list if p.id==state["profile_id"]),None)
+        removed=set()
+        for path in paths:
+            try:
+                path.unlink(missing_ok=True);removed.add(path)
+            except OSError as exc:
+                QMessageBox.warning(self,"ลบไฟล์ไม่สำเร็จ",f"{path.name}: {exc}")
+        if profile and removed:
+            for step in profile.workflow.steps:
+                step.files=[item for item in step.files if item.reference_type=="external_file" or not item.path or self.repo.resolve_project_path(profile.id,item.path) not in removed]
+            self.repo.save_profile(profile)
+        state["selected"]=None;self._refresh_files_page(key);self.refresh_files()
+        self.statusBar().showMessage(f"ลบไฟล์แล้ว {len(removed)} ไฟล์",3000)
 
     def _files_attach(self,key):
         state=self._files_states.get(key);rel=state.get("selected") if state else None
