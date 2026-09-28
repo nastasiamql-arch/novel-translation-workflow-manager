@@ -88,6 +88,8 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QTabWidget#workspaceTabs QTabBar::tab {{ background: {c["surface"]}; color: {c["secondary"]}; border: 0; border-right: 1px solid {c["border"]}; padding: 8px 12px; min-width: 72px; }}
     QTabWidget#workspaceTabs QTabBar::tab:selected {{ background: {c["app"]}; color: {c["text"]}; border-top: 2px solid {c["accent"]}; }}
     QTabWidget#workspaceTabs QTabBar::tab:hover {{ background: {c["hover"]}; color: {c["text"]}; }}
+    QToolButton#tabCloseButton {{ color: {c["secondary"]}; border: 0; border-radius: 4px; font-size: 17px; font-weight: 600; padding: 0; }}
+    QToolButton#tabCloseButton:hover {{ color: {c["text"]}; background: {c["hover"]}; }}
     QPlainTextEdit {{ background: {c["surface"]}; color: {c["text"]}; border: 1px solid {c["border"]}; border-radius: 6px; padding: 8px; selection-background-color: {c["selection"]}; }}
     QPlainTextEdit:focus {{ border-color: {c["accent"]}; }}
     QFrame#columnPanel, QFrame#goalPanel, QFrame#metricCard, QFrame#progressRow {{
