@@ -57,6 +57,30 @@ _LIGHT = {
     "primary_text": "#FFFFFF",
 }
 
+_EDITOR_DARK = {
+    "background": "#1E1E1E",
+    "foreground": "#D4D4D4",
+    "gutter": "#18191B",
+    "gutter_text": "#858B95",
+    "current_line": "#252A32",
+    "selection": "#264F78",
+    "selection_text": "#FFFFFF",
+    "find": "#665523",
+    "find_text": "#FFF4CE",
+}
+
+_EDITOR_LIGHT = {
+    "background": "#FFFFFF",
+    "foreground": "#24262B",
+    "gutter": "#F7F7F8",
+    "gutter_text": "#697386",
+    "current_line": "#F1F5FA",
+    "selection": "#B9D7F5",
+    "selection_text": "#202123",
+    "find": "#FFE08A",
+    "find_text": "#202123",
+}
+
 
 def _use_dark(appearance: str) -> bool:
     if appearance.lower() == "dark":
@@ -69,8 +93,13 @@ def _use_dark(appearance: str) -> bool:
     return app.palette().color(QPalette.Window).lightness() < 128
 
 
-def application_stylesheet(appearance: str = "Dark") -> str:
-    """Return a softer ChatGPT-like shell with VS Code-like dark work surfaces."""
+def editor_colors(appearance: str = "Light") -> dict[str, str]:
+    """Colors for the writing surface and its line-number gutter."""
+    return _EDITOR_DARK if _use_dark(appearance) else _EDITOR_LIGHT
+
+
+def application_stylesheet(appearance: str = "Light") -> str:
+    """Return a softer, readable shell with adaptive light or dark work surfaces."""
     c = _DARK if _use_dark(appearance) else _LIGHT
     return f"""
     QWidget {{
@@ -177,6 +206,22 @@ def application_stylesheet(appearance: str = "Dark") -> str:
         background: {c["surface"]};
         padding: 2px 10px;
     }}
+    QLabel#progressStatusBar, QLabel#goalStatusBar {{
+        color: {c["secondary"]};
+        background: {c["surface"]};
+        padding: 2px 8px;
+    }}
+    QProgressBar#goalProgressStatusBar {{
+        background: {c["surface2"]};
+        border: 0;
+        border-radius: 6px;
+        min-height: 12px;
+        max-height: 12px;
+    }}
+    QProgressBar#goalProgressStatusBar::chunk {{
+        background: {c["accent"]};
+        border-radius: 6px;
+    }}
     QTreeView#fileTree {{
         border: 0;
         border-radius: 6px;
@@ -253,6 +298,13 @@ def application_stylesheet(appearance: str = "Dark") -> str:
         padding: 7px 9px;
         selection-background-color: {c["selection"]};
         min-height: 20px;
+    }}
+    QPlainTextEdit {{
+        background: {c["surface"]};
+        color: {c["text"]};
+        border: 1px solid {c["border"]};
+        selection-background-color: {c["selection"]};
+        selection-color: {c["text"]};
     }}
     QLineEdit:hover, QTextEdit:hover, QSpinBox:hover,
     QDoubleSpinBox:hover, QComboBox:hover {{ border-color: {c["border_strong"]}; }}
@@ -360,20 +412,21 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QSplitter::handle {{ background: transparent; width: 6px; }}
     QScrollArea, QAbstractScrollArea {{ background: transparent; border: 0; }}
     QScrollBar:vertical, QScrollBar:horizontal {{
-        background: transparent;
+        background: {c["surface2"]};
         border: 0;
-        margin: 2px;
-        width: 10px;
-        height: 10px;
+        margin: 1px;
+        width: 16px;
+        height: 16px;
     }}
     QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
         background: {c["border_strong"]};
-        border-radius: 5px;
-        min-height: 28px;
-        min-width: 28px;
+        border: 2px solid {c["surface2"]};
+        border-radius: 7px;
+        min-height: 42px;
+        min-width: 42px;
     }}
     QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {{
-        background: {c["muted"]};
+        background: {c["accent"]};
     }}
     QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
     """

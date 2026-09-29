@@ -44,7 +44,10 @@ class ProfileWorkspace(QWidget):
             self.file_tree.hideColumn(column)
         self.file_tree.doubleClicked.connect(self._open_tree_index)
 
-        self.editor = EditorTabs(font_size=owner.settings.editor_font_size)
+        self.editor = EditorTabs(
+            font_size=owner.settings.editor_font_size,
+            appearance=owner.settings.appearance,
+        )
         self.steps = QListWidget()
         self.steps.setSelectionMode(QAbstractItemView.SingleSelection)
         self.steps.setSpacing(2)
@@ -320,6 +323,34 @@ class ProfileWorkspace(QWidget):
 class MainWindow(LegacyMainWindow):
     """Novel Library with a focused workflow sidebar and full-size editor."""
 
+    def __init__(self, repo=None):
+        super().__init__(repo)
+        changed = False
+        if not self.settings.appearance_migrated:
+            # Dark was the old default. Honor the user's newer request for the
+            # readable light workspace once, while preserving future choices.
+            if self.settings.appearance == "Dark":
+                self.settings.appearance = "Light"
+                changed = True
+            self.settings.appearance_migrated = True
+            changed = True
+        if not self.settings.editor_style_migrated:
+            # The previous default was 11 pt; move unusually enlarged legacy
+            # settings back to the requested compact reference size once.
+            if self.settings.editor_font_size > 12.0:
+                self.settings.editor_font_size = 11.0
+                changed = True
+            self.settings.editor_style_migrated = True
+            changed = True
+        if changed:
+            self.apply_theme()
+            self.repo.save_settings(self.settings)
+
+    def apply_theme(self):
+        super().apply_theme()
+        for workspace in getattr(self, "workspaces", {}).values():
+            workspace.editor.set_appearance(self.settings.appearance)
+
     def build(self):
         self._settings_open = False
         self.workspaces = {}
@@ -422,7 +453,25 @@ class MainWindow(LegacyMainWindow):
         self.statusBar().showMessage("เลือกเรื่องเพื่อเริ่มทำงาน")
         self.editor_status = QLabel("พร้อมใช้งาน  ·  0 คำ  ·  0 อักขระ")
         self.editor_status.setObjectName("editorStatusBar")
+        self.editor_status.setMinimumWidth(360)
+        self.editor_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.statusBar().addPermanentWidget(self.editor_status, 1)
+        self.progress_status = QLabel("วันนี้ +0 บท")
+        self.progress_status.setObjectName("progressStatusBar")
+        self.progress_status.setMinimumWidth(140)
+        self.progress_status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.statusBar().addPermanentWidget(self.progress_status)
+        self.goal_status = QLabel("ยังไม่ได้ตั้งเป้าหมาย")
+        self.goal_status.setObjectName("goalStatusBar")
+        self.goal_status.setMinimumWidth(150)
+        self.goal_status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.statusBar().addPermanentWidget(self.goal_status)
+        self.goal_status_bar = QProgressBar()
+        self.goal_status_bar.setObjectName("goalProgressStatusBar")
+        self.goal_status_bar.setRange(0, 100)
+        self.goal_status_bar.setFixedSize(92, 12)
+        self.goal_status_bar.setTextVisible(False)
+        self.statusBar().addPermanentWidget(self.goal_status_bar)
         self.shortcut("Ctrl+Shift+C", self.copy_step)
         self.shortcut("Ctrl+P", self.preview)
         self.shortcut("Ctrl+R", self.refresh)
@@ -542,7 +591,10 @@ class MainWindow(LegacyMainWindow):
             self.workspaces[profile.id] = workspace
             self.workspace_stack.addWidget(workspace)
 
-            workspace.editor.statusChanged.connect(self._update_editor_status)
+            workspace.editor.statusChanged.connect(
+                lambda text, editor=workspace.editor:
+                    self._workspace_editor_status_changed(editor, text)
+            )
             workspace.editor.fontSizeChanged.connect(self.set_editor_font_size)
             workspace.editor.documentSaved.connect(self._document_saved)
             workspace.editor.restore_paths(
@@ -840,6 +892,7 @@ class MainWindow(LegacyMainWindow):
             except OSError:
                 latest = None
 
+        self._latest_context_chapter = latest
         self._latest_chapter_status = (
             f"  ·  ล่าสุดบท {latest}" if latest is not None else ""
         )
@@ -873,18 +926,47 @@ class MainWindow(LegacyMainWindow):
         self._capture_sessions()
         super().save()
 
-    def _update_editor_status(self, text=""):
-        progress = ""
-        if self.profile:
-            progress = f"  ·  วันนี้ +{daily_chapter_count(self.profile)} บท"
-            goal = goal_progress(self.profile)
-            if goal:
-                completed, target, percentage = goal
-                progress += f"  ·  เป้าหมาย {completed}/{target} ({percentage}%)"
-        self.editor_status.setText(
-            (text or "พร้อมใช้งาน  ·  0 คำ  ·  0 อักขระ")
-            + progress + getattr(self, "_latest_chapter_status", "")
-        )
+    def _workspace_editor_status_changed(self, editor, text):
+        if not self.profile:
+            return
+        workspace = self.workspaces.get(self.profile.id)
+        if workspace is not None and workspace.editor is editor:
+            self._update_editor_status(text)
+
+    def _update_editor_status(self, text=None):
+        workspace = self.workspaces.get(self.profile.id) if self.profile else None
+        if text is None:
+            text = (
+                workspace.editor.current_status_text()
+                if workspace else "พร้อมใช้งาน  ·  0 คำ  ·  0 อักขระ"
+            )
+        self.editor_status.setText(text)
+
+        if not self.profile:
+            self.progress_status.setText("วันนี้ +0 บท")
+            self.goal_status.setText("ยังไม่ได้ตั้งเป้าหมาย")
+            self.goal_status.setToolTip("")
+            self.goal_status_bar.hide()
+            return
+
+        today = daily_chapter_count(self.profile)
+        latest = getattr(self, "_latest_context_chapter", None)
+        today_text = f"วันนี้ +{today} บท"
+        if latest is not None:
+            today_text += f"  ·  ล่าสุด {latest}"
+        self.progress_status.setText(today_text)
+
+        goal = goal_progress(self.profile)
+        if goal:
+            completed, target, percentage = goal
+            self.goal_status.setText(f"เป้าหมาย {completed}/{target} บท · {percentage}%")
+            self.goal_status_bar.setValue(percentage)
+            self.goal_status_bar.show()
+            self.goal_status.setToolTip(f"{self.profile.name}: {completed} จาก {target} บท")
+        else:
+            self.goal_status.setText("ยังไม่ได้ตั้งเป้าหมาย")
+            self.goal_status_bar.hide()
+            self.goal_status.setToolTip(f"{self.profile.name}: ยังไม่ได้ตั้งเป้าหมาย")
 
     def closeEvent(self, event):
         for workspace in self.workspaces.values():

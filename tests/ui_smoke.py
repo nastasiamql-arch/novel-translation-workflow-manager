@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("NOVELWORKFLOW_DISABLE_WEBENGINE", "1")
 
 from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QTextCursor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton, QToolBar
 
@@ -30,14 +31,17 @@ def main() -> int:
         novel_folder.mkdir()
         chapter = novel_folder / "126.txt"
         context = novel_folder / "Context.md"
-        chapter.write_text("ตอนที่ 126\nเนื้อหาทดสอบ", encoding="utf-8")
-        context.write_text("บทที่ 126\nContext", encoding="utf-8")
+        chapter.write_text("ตอนที่ 156\nเนื้อหาทดสอบ", encoding="utf-8")
+        context.write_text("บทที่ 156\nContext", encoding="utf-8")
 
         profile = ProfileService(repo).create("เรื่อง A", Workflow.defaults())
         profile.main_folder = str(novel_folder)
+        profile.context_path = str(context)
+        profile.translation_goal_baseline = 156
+        profile.translation_goal_target = 10
         profile.workflow.steps[0].files.append(
             StepFile(
-                label="Chapter 126",
+                label="Chapter 156",
                 reference_type="external_file",
                 path=str(chapter),
                 file_type="chapter",
@@ -63,6 +67,7 @@ def main() -> int:
                 assert window.profile.id == profile.id
                 assert window.main_pages.currentWidget() is window.workspace_stack
                 workspace = window.workspaces[profile.id]
+                assert window.settings.appearance == "Light"
                 assert workspace.root_path == novel_folder.resolve()
                 assert workspace.steps.count() == 3
                 assert [workspace.steps.item(i).text() for i in range(3)] == [
@@ -92,6 +97,7 @@ def main() -> int:
 
                 editor = workspace.editor.tabs.currentWidget()
                 assert editor.objectName() == "codeEditor"
+                assert editor.colors["background"] == "#FFFFFF"
                 assert editor.font().pointSizeF() >= 10.5
                 window.adjust_editor_font_size(1)
                 assert round(editor.font().pointSizeF(), 2) == 12.0, editor.font().pointSizeF()
@@ -107,11 +113,11 @@ def main() -> int:
                 assert "บันทึกอัตโนมัติแล้ว" in workspace.editor.status.text()
                 assert "อักขระ" in window.editor_status.text()
 
-                assert editor.find("126")
+                assert editor.find("156")
                 QTest.keyClick(editor, Qt.Key_H, Qt.ControlModifier)
                 app.processEvents()
                 assert workspace.editor.find_panel.isVisible()
-                assert workspace.editor.find_input.text() == "126"
+                assert workspace.editor.find_input.text() == "156"
                 assert workspace.editor.find_count.text() == "1/1"
                 editor.appendPlainText("\nแก้ไขอีกครั้ง")
                 workspace.editor.find_input.setText("แก้ไข")
@@ -120,6 +126,34 @@ def main() -> int:
                 assert workspace.editor.find_count.text() == "2/2"
                 workspace.editor._find_next(backward=True)
                 assert workspace.editor.find_count.text() == "1/2"
+
+                cursor = editor.textCursor()
+                cursor.movePosition(QTextCursor.Start)
+                editor.setTextCursor(cursor)
+                clicked_position = editor.textCursor().position()
+                workspace.editor._update_find_matches()
+                assert editor.textCursor().position() == clicked_position
+                assert workspace.editor.find_count.text() == "0/2"
+                workspace.editor._find_next()
+                assert workspace.editor.find_count.text() == "1/2"
+                workspace.editor.replace_input.setText("EDITED")
+                workspace.editor.replace_current_button.click()
+                assert "EDITED" in editor.toPlainText()
+                workspace.editor.replace_input.setText("REPLACED")
+                workspace.editor.replace_all_button.click()
+                assert "แก้ไข" not in editor.toPlainText()
+                assert workspace.editor.find_count.text() == "0/0"
+
+                context_editor = workspace.editor.open_file(context)
+                assert context_editor is not None
+                context_editor.setPlainText("บทที่ 157-159\nContext updated")
+                assert workspace.editor.save_current()
+                app.processEvents()
+                assert "วันนี้ +3 บท" in window.progress_status.text()
+                assert "เป้าหมาย 3/10 บท · 30%" == window.goal_status.text()
+                assert window.goal_status_bar.value() == 30
+                workspace.editor.tabs.setCurrentWidget(editor)
+                app.processEvents()
                 QTest.keyClick(workspace.editor.find_input, Qt.Key_Escape)
                 workspace.editor.close_find()
                 assert not workspace.editor.find_panel.isVisible()
@@ -143,6 +177,11 @@ def main() -> int:
                 app.processEvents()
                 assert window.profile.id == second.id
                 assert window.workspaces[second.id] is not workspace
+                status_for_second = window.editor_status.text()
+                window._workspace_editor_status_changed(
+                    workspace.editor, "stale  ·  0 คำ  ·  0 อักขระ"
+                )
+                assert window.editor_status.text() == status_for_second
 
                 window.show_library()
                 window._open_profile_card(window.profile_cards.item(0))
@@ -156,7 +195,7 @@ def main() -> int:
 
                 smoke_passed = True
                 app.exit(0)
-                print("UI smoke passed: Novel Library, workflow sidebar, Auto Save, Find, COPY STEP")
+                print("UI smoke passed: light workspace, progress, Find/Replace, Auto Save, COPY STEP")
             except Exception as exc:
                 traceback.print_exc()
                 print(f"UI smoke failed: {type(exc).__name__}: {exc}")

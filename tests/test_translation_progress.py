@@ -26,6 +26,9 @@ def test_context_chapter_headings_support_thai_chinese_and_english():
     assert latest_context_chapter("บทที่ 12 ชื่อเรื่อง") == 12
     assert latest_context_chapter("第 176 章 标题") == 176
     assert latest_context_chapter("Chapter 42: Title") == 42
+    assert latest_context_chapter("บทที่ 157-159") == 159
+    assert latest_context_chapter("第 157–159 章") == 159
+    assert latest_context_chapter("Chapter 157 to 159") == 159
 
 
 def write_context(path: Path, chapter: int, modified: datetime) -> str:
@@ -44,6 +47,24 @@ def test_context_125_to_130_counts_five_on_file_modified_day(tmp_path):
     assert profile.chapter_state.current_chapter == 130
     assert profile.translation_daily_activity[changed_day] == [126, 127, 128, 129, 130]
     assert daily_chapter_count(profile, changed_day) == 5
+
+
+def test_context_range_156_to_157_through_159_updates_daily_and_goal_counts(tmp_path):
+    context = tmp_path / "StoryContext.md"
+    context.write_text("บทที่ 156\n", encoding="utf-8")
+    profile = make_profile(context, chapter=156)
+    profile.translation_goal_baseline = 156
+    profile.translation_goal_target = 10
+    sync_profile_context(profile)
+
+    context.write_text("บทที่ 157-159\n", encoding="utf-8")
+
+    assert sync_profile_context(profile)
+    today = local_day(context.stat().st_mtime)
+    assert profile.chapter_state.current_chapter == 159
+    assert profile.translation_daily_activity[today] == [157, 158, 159]
+    assert daily_chapter_count(profile, today) == 3
+    assert goal_progress(profile) == (3, 10, 30)
 
 
 def test_existing_chapter_state_is_a_migration_checkpoint(tmp_path):

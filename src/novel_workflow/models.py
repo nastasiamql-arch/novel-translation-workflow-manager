@@ -126,7 +126,9 @@ class NovelGroup:
 
 @dataclass
 class AppSettings:
-    appearance: str = "Dark"
+    appearance: str = "Light"
+    appearance_migrated: bool = False
+    editor_style_migrated: bool = False
     separator: str = "==============================\n{FILE_NAME}\n=============================="
     show_filename_heading: bool = True
     confirm_before_deleting: bool = True

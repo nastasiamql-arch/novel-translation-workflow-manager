@@ -15,7 +15,11 @@ import time
 from .models import NovelProfile
 
 _CHAPTER_LINE = re.compile(
-    r"(?im)^\s*(?:บทที่\s*(\d+)|第\s*(\d+)\s*章|chapter\s+(\d+))"
+    r"(?im)^\s*(?:"
+    r"บทที่\s*(\d+)(?:\s*[-–—~至]\s*(\d+))?"
+    r"|第\s*(\d+)(?:\s*[-–—~至]\s*(\d+))?\s*章"
+    r"|chapter\s+(\d+)(?:(?:\s*[-–—~]\s*|\s+to\s+)(\d+))?"
+    r")"
 )
 
 
@@ -25,7 +29,19 @@ def local_day(timestamp: float | None = None) -> str:
 
 
 def latest_context_chapter(text: str) -> int | None:
-    chapters = [int(next(group for group in match.groups() if group)) for match in _CHAPTER_LINE.finditer(text)]
+    chapters = []
+    for match in _CHAPTER_LINE.finditer(text):
+        groups = match.groups()
+        chapter = next(
+            (groups[index] for index in (0, 2, 4) if groups[index]),
+            None,
+        )
+        end_of_range = next(
+            (groups[index] for index in (1, 3, 5) if groups[index]),
+            None,
+        )
+        if end_of_range or chapter:
+            chapters.append(int(end_of_range or chapter))
     return chapters[-1] if chapters else None
 
 
