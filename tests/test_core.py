@@ -4,7 +4,7 @@ from novel_workflow.services import AssemblyService, ProfileService, WorkflowSer
 from novel_workflow.storage import ProjectRepository, read_json
 from novel_workflow.launcher import LauncherService
 import pytest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 def test_profiles_are_independent(tmp_path):
     repo=ProjectRepository(tmp_path);svc=ProfileService(repo);a=svc.create("A");b=svc.create("B")
@@ -235,7 +235,7 @@ def test_vscode_arguments_force_one_new_window(arguments):
     assert "--profile" in normalized and "Novel" in normalized
 
 
-def test_vscode_profile_groups_folder_and_enabled_files_without_reopening(tmp_path):
+def test_vscode_profile_groups_folder_and_enabled_files_without_reopening_files(tmp_path):
     folder=tmp_path/"A";folder.mkdir()
     executable=tmp_path/"Code.exe";executable.touch()
     first=folder/"a.md";first.touch()
@@ -253,7 +253,7 @@ def test_vscode_profile_groups_folder_and_enabled_files_without_reopening(tmp_pa
     command=popen.call_args.args[0]
     assert command == [str(executable),"--profile","Novel","--new-window",str(folder),str(first),str(second)]
     assert all(success for success,_ in results)
-    startfile.assert_not_called()
+    startfile.assert_called_once_with(str(folder))
 
 
 def test_default_vscode_file_association_groups_existing_profile_without_app_target(tmp_path):
@@ -273,7 +273,22 @@ def test_default_vscode_file_association_groups_existing_profile_without_app_tar
     assert popen.call_count==1
     command=popen.call_args.args[0]
     assert command==[str(executable),"--new-window",str(folder),str(first),str(second)]
-    startfile.assert_not_called()
+    startfile.assert_called_once_with(str(folder))
+
+
+def test_vscode_profile_opens_main_folder_in_windows_file_explorer(tmp_path):
+    folder=tmp_path/"novel";folder.mkdir()
+    executable=tmp_path/"Code.exe";executable.touch()
+    profile=NovelProfile(main_folder=str(folder),launch_targets=[
+        LaunchTarget(label="Code",kind="application",target=str(executable),order=0),
+    ])
+    with patch("novel_workflow.launcher.subprocess.Popen") as popen, \
+         patch("novel_workflow.launcher.os.startfile",create=True) as startfile:
+        results=LauncherService().launch_profile(profile)
+    assert all(success for success,_ in results)
+    assert popen.call_count==1
+    assert str(folder) in popen.call_args.args[0]
+    startfile.assert_called_once_with(str(folder))
 
 
 def test_default_non_vscode_association_keeps_file_association_behavior(tmp_path):
@@ -341,7 +356,8 @@ def test_open_group_launches_one_isolated_vscode_invocation_per_profile(tmp_path
             files.append(LaunchTarget(kind="file",target=str(path),order=len(files)+1))
         profiles.append(NovelProfile(name=name,main_folder=str(folder),launch_targets=[LaunchTarget(kind="application",target=str(code),order=0),*files]))
     group=NovelGroup(name="AB",profile_ids=[profile.id for profile in profiles])
-    with patch("novel_workflow.launcher.subprocess.Popen") as popen:
+    with patch("novel_workflow.launcher.subprocess.Popen") as popen, \
+         patch("novel_workflow.launcher.os.startfile",create=True) as startfile:
         results=LauncherService().launch_group(group,profiles)
     assert all(success for success,_ in results)
     assert popen.call_count==2
@@ -349,6 +365,9 @@ def test_open_group_launches_one_isolated_vscode_invocation_per_profile(tmp_path
     assert str(tmp_path/"A") in command_a and all("\\B\\" not in arg for arg in command_a)
     assert str(tmp_path/"B") in command_b and all("\\A\\" not in arg for arg in command_b)
     assert "--new-window" in command_a and "--new-window" in command_b
+    assert startfile.call_args_list==[
+        call(str(tmp_path/"A")),call(str(tmp_path/"B"))
+    ]
 
 def test_copy_advancement_cycles_through_workflow_steps():
     assert WorkflowService.next_index(0,4)==1

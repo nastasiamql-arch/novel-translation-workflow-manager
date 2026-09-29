@@ -169,8 +169,15 @@ class LauncherService:
         except Exception as exc:
             results.append((False, f"{primary.label or primary.target}: {exc}"))
 
-        # The profile's implicit folder and bundled files were consumed by VS Code.
-        # Explicit folder targets and every other application/site keep their behavior.
+        # The main folder is also a user-facing File Explorer target. VS Code
+        # receives it as the workspace while Explorer shows the folder itself.
+        if folder_arg:
+            results.append(self.launch_target(LaunchTarget(
+                label="โฟลเดอร์หลัก", kind="folder", target=folder_arg
+            )))
+
+        # The bundled files were consumed by VS Code. Explicit folder targets and
+        # every other application/site keep their existing behavior.
         for entry in enabled_targets:
             if entry is primary or entry.id in grouped_file_ids:
                 continue
