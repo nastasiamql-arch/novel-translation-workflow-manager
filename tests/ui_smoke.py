@@ -145,7 +145,9 @@ def main() -> int:
             except Exception as exc:
                 traceback.print_exc()
                 print(f"UI smoke failed: {type(exc).__name__}: {exc}")
-                window.close()
+                # Do not call close() here: an assertion may have failed while an
+                # editor is dirty, and closeEvent intentionally asks the user
+                # whether to save. CI has nobody available to answer that dialog.
                 app.exit(1)
 
         QTimer.singleShot(100, exercise_workspace)
