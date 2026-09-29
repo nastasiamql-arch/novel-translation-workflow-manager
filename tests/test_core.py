@@ -256,6 +256,38 @@ def test_vscode_profile_groups_folder_and_enabled_files_without_reopening(tmp_pa
     startfile.assert_not_called()
 
 
+def test_default_vscode_file_association_groups_existing_profile_without_app_target(tmp_path):
+    folder=tmp_path/"novel";folder.mkdir()
+    executable=tmp_path/"Code.exe";executable.touch()
+    first=folder/"chapter.md";first.touch()
+    second=folder/"glossary.txt";second.touch()
+    profile=NovelProfile(main_folder=str(folder),launch_targets=[
+        LaunchTarget(label="chapter",kind="file",target=str(first),order=0),
+        LaunchTarget(label="glossary",kind="file",target=str(second),order=1),
+    ])
+    with patch.object(LauncherService,"default_open_application",return_value=executable), \
+         patch("novel_workflow.launcher.subprocess.Popen") as popen, \
+         patch("novel_workflow.launcher.os.startfile",create=True) as startfile:
+        results=LauncherService().launch_profile(profile)
+    assert all(success for success,_ in results)
+    assert popen.call_count==1
+    command=popen.call_args.args[0]
+    assert command==[str(executable),"--new-window",str(folder),str(first),str(second)]
+    startfile.assert_not_called()
+
+
+def test_default_non_vscode_association_keeps_file_association_behavior(tmp_path):
+    file=tmp_path/"notes.md";file.touch()
+    editor=tmp_path/"other-editor.exe";editor.touch()
+    profile=NovelProfile(launch_targets=[LaunchTarget(kind="file",target=str(file))])
+    with patch.object(LauncherService,"default_open_application",return_value=editor), \
+         patch("novel_workflow.launcher.os.startfile",create=True) as startfile, \
+         patch("novel_workflow.launcher.subprocess.Popen") as popen:
+        LauncherService().launch_profile(profile)
+    startfile.assert_called_once_with(str(file))
+    popen.assert_not_called()
+
+
 def test_vscode_primary_is_first_by_order_and_explicit_folder_stays_separate(tmp_path):
     code=tmp_path/"code";code.touch()
     other_code=tmp_path/"code.cmd";other_code.touch()
@@ -290,7 +322,8 @@ def test_non_vscode_targets_and_website_keep_existing_behavior(tmp_path):
 def test_profile_without_vscode_keeps_file_association_behavior(tmp_path):
     file=tmp_path/"notes.md";file.touch()
     profile=NovelProfile(launch_targets=[LaunchTarget(kind="file",target=str(file))])
-    with patch("novel_workflow.launcher.os.startfile",create=True) as startfile, \
+    with patch.object(LauncherService,"default_open_application",return_value=None), \
+         patch("novel_workflow.launcher.os.startfile",create=True) as startfile, \
          patch("novel_workflow.launcher.subprocess.Popen") as popen:
         LauncherService().launch_profile(profile)
     startfile.assert_called_once_with(str(file))

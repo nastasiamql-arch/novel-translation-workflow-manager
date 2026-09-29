@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import webbrowser
+import ctypes
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -52,6 +53,55 @@ class LauncherService:
         return command
 
     @staticmethod
+    def default_open_application(target: str) -> Path | None:
+        """Return Windows' registered open handler for a file, if available."""
+        if os.name != "nt":
+            return None
+        extension = Path(target).suffix
+        if not extension:
+            return None
+        try:
+            query = ctypes.WinDLL("Shlwapi.dll").AssocQueryStringW
+            query.argtypes = [
+                ctypes.c_uint, ctypes.c_uint, ctypes.c_wchar_p, ctypes.c_wchar_p,
+                ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_uint),
+            ]
+            query.restype = ctypes.c_long
+            length = ctypes.c_uint(0)
+            query(0, 2, extension, "open", None, ctypes.byref(length))
+            if not length.value:
+                return None
+            buffer = ctypes.create_unicode_buffer(length.value)
+            if query(0, 2, extension, "open", buffer, ctypes.byref(length)) != 0:
+                return None
+            return Path(buffer.value).expanduser()
+        except (AttributeError, OSError, ValueError):
+            return None
+
+    @classmethod
+    def vscode_association_launch(
+        cls, files: list[LaunchTarget]
+    ) -> tuple[LaunchTarget | None, list[LaunchTarget]]:
+        """Find files whose actual Windows open handler is VS Code."""
+        for entry in files:
+            application = cls.default_open_application(entry.target)
+            if application is None:
+                continue
+            candidate = LaunchTarget(
+                label="Visual Studio Code", kind="application", target=str(application)
+            )
+            if not cls.is_vscode_target(candidate):
+                continue
+            primary_path = os.path.normcase(os.path.abspath(application))
+            grouped_files = []
+            for file_entry in files:
+                handler = cls.default_open_application(file_entry.target)
+                if handler and os.path.normcase(os.path.abspath(handler)) == primary_path:
+                    grouped_files.append(file_entry)
+            return candidate, grouped_files
+        return None, []
+
+    @staticmethod
     def launch_target(entry: LaunchTarget) -> tuple[bool,str]:
         try:
             if entry.kind=="website":
@@ -86,22 +136,29 @@ class LauncherService:
         )
         vscode_targets = [entry for entry in enabled_targets if self.is_vscode_target(entry)]
         if not vscode_targets:
-            return [self.launch_target(entry) for entry in self.build_plan(profile)]
+            enabled_files = [entry for entry in enabled_targets if entry.kind == "file"]
+            primary, launchable_files = self.vscode_association_launch(enabled_files)
+            if primary is None:
+                return [self.launch_target(entry) for entry in self.build_plan(profile)]
+        else:
+            primary = vscode_targets[0]
+            launchable_files = [entry for entry in enabled_targets if entry.kind == "file"]
+        grouped_file_ids = {entry.id for entry in launchable_files}
 
-        primary = vscode_targets[0]
         main_folder = Path(profile.main_folder).expanduser() if profile.main_folder.strip() else None
         folder_arg = str(main_folder) if main_folder and main_folder.is_dir() else None
-        files = [entry for entry in enabled_targets if entry.kind == "file"]
-        launchable_files = []
         results = []
         if main_folder and not main_folder.is_dir():
             results.append((False, f"โฟลเดอร์หลัก: ไม่พบโฟลเดอร์: {main_folder}"))
-        for entry in files:
+        for entry in launchable_files:
             path = Path(entry.target).expanduser()
             if path.is_file():
-                launchable_files.append(entry)
+                continue
             else:
                 results.append((False, f"{entry.label or entry.target}: ไม่พบไฟล์: {path}"))
+        launchable_files = [
+            entry for entry in launchable_files if Path(entry.target).expanduser().is_file()
+        ]
 
         try:
             executable = Path(primary.target).expanduser()
@@ -115,7 +172,7 @@ class LauncherService:
         # The profile's implicit folder and bundled files were consumed by VS Code.
         # Explicit folder targets and every other application/site keep their behavior.
         for entry in enabled_targets:
-            if entry is primary or entry.kind == "file":
+            if entry is primary or entry.id in grouped_file_ids:
                 continue
             results.append(self.launch_target(entry))
         return results
