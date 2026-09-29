@@ -5,8 +5,8 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QFrame, QHBoxLayout, QInputDialog, QLabel, QMessageBox,
-    QPushButton, QProgressBar, QScrollArea, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QLabel, QMessageBox,
+    QPushButton, QProgressBar, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from .models import NovelProfile
@@ -14,17 +14,14 @@ from .storage import ProjectRepository
 from .translation_progress import daily_chapter_count, goal_progress, profile_week_count, reset_goal_progress
 
 
-class TranslationDashboardDialog(QDialog):
-    """Compact overview of chapter activity and goals for all novel profiles."""
+class TranslationDashboardDialog(QWidget):
+    """Embedded overview of chapter activity and goals for all novels."""
 
     def __init__(self, parent, profiles: list[NovelProfile], repo: ProjectRepository, refresh_callback):
         super().__init__(parent)
         self.profiles = profiles
         self.repo = repo
         self.refresh_callback = refresh_callback
-        self.setWindowTitle("ความคืบหน้าการแปล")
-        self.resize(760, 760)
-
         self.root = QVBoxLayout(self)
         self.summary = QHBoxLayout()
         self.root.addLayout(self.summary)
@@ -46,9 +43,6 @@ class TranslationDashboardDialog(QDialog):
         self.scroll.setWidget(self.rows_host)
         self.root.addWidget(self.scroll, 1)
 
-        close = QPushButton("ปิด")
-        close.clicked.connect(self.accept)
-        self.root.addWidget(close, alignment=Qt.AlignRight)
         self.refresh()
 
     def set_profiles(self, profiles: list[NovelProfile]):
@@ -155,8 +149,25 @@ class TranslationDashboardDialog(QDialog):
         has_context = bool(profile.context_path and Path(profile.context_path).expanduser().is_file())
         set_goal.setEnabled(has_context)
         if not has_context:set_goal.setToolTip("เลือกไฟล์ Context ของนิยายก่อน จึงจะติดตามเป้าหมายได้")
-        set_goal.clicked.connect(lambda checked=False, item=profile: self._set_goal(item))
+        target_input = QSpinBox()
+        target_input.setRange(1, 100000)
+        target_input.setValue(profile.translation_goal_target or 10)
+        target_input.setPrefix("เป้าหมาย ")
+        target_input.setSuffix(" บท")
+        save_goal = QPushButton("บันทึก")
+        target_input.hide()
+        save_goal.hide()
+        set_goal.clicked.connect(
+            lambda checked=False, field=target_input, save=save_goal:
+                (field.show(), save.show(), set_goal.hide())
+        )
+        save_goal.clicked.connect(
+            lambda checked=False, item=profile, field=target_input:
+                self._save_goal(item, field.value())
+        )
         controls.addWidget(set_goal)
+        controls.addWidget(target_input)
+        controls.addWidget(save_goal)
         if goal:
             reset = QPushButton("รีเซ็ตความคืบหน้า")
             reset.setToolTip("เริ่มนับเป้าหมายใหม่จากบทปัจจุบัน โดยเก็บจำนวนเป้าหมายเดิมไว้")
@@ -184,18 +195,7 @@ class TranslationDashboardDialog(QDialog):
         self.profiles = self.refresh_callback()
         self.refresh()
 
-    def _set_goal(self, profile: NovelProfile):
-        current_goal = profile.translation_goal_target
-        target, accepted = QInputDialog.getInt(
-            self,
-            "ตั้งเป้าหมายการแปล",
-            f"ต้องการแปลเพิ่มกี่บทสำหรับ “{profile.name}”?",
-            value=current_goal or 10,
-            min=1,
-            max=100000,
-        )
-        if not accepted:
-            return
+    def _save_goal(self, profile: NovelProfile, target: int):
         if profile.translation_goal_target is None or profile.translation_goal_baseline is None:
             profile.translation_goal_baseline = profile.chapter_state.current_chapter
         profile.translation_goal_target = target

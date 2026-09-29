@@ -43,9 +43,9 @@ _LIGHT = {
     "border": "#E5E5E5",
     "border_strong": "#D1D1D1",
     "text": "#202123",
-    "secondary": "#5D5D63",
-    "muted": "#8B8B91",
-    "accent": "#0E639C",
+    "secondary": "#4B4F56",
+    "muted": "#62666D",
+    "accent": "#0969A6",
     "accent_hover": "#1177BB",
     "success": "#168B67",
     "warning": "#8A6D1F",
@@ -155,12 +155,12 @@ def application_stylesheet(appearance: str = "Light") -> str:
     }}
 
     QToolButton {{
-        color: {c["secondary"]};
+        color: {c["text"]};
         background: transparent;
         border: 1px solid transparent;
         border-radius: 8px;
         padding: 7px 9px;
-        font-weight: 500;
+        font-weight: 550;
     }}
     QToolButton:hover {{ color: {c["text"]}; background: {c["hover"]}; }}
     QToolButton:pressed {{ background: {c["elevated"]}; }}

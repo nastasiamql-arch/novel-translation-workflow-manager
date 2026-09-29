@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QApplication, QPushButton, QToolBar
 from novel_workflow.models import LaunchTarget, StepFile, Workflow
 from novel_workflow.services import ProfileService
 from novel_workflow.storage import ProjectRepository
-from novel_workflow.workspace_window import MainWindow
+from novel_workflow.workspace_window import ElidingStatusLabel, MainWindow
 
 
 def main() -> int:
@@ -112,6 +112,13 @@ def main() -> int:
                 assert "แก้ไขจาก Auto Save" in chapter.read_text(encoding="utf-8")
                 assert "บันทึกอัตโนมัติแล้ว" in workspace.editor.status.text()
                 assert "อักขระ" in window.editor_status.text()
+                assert window.editor_status.minimumWidth() == 0
+                assert "UTF-8" in window.editor_status.toolTip()
+                compact_status = ElidingStatusLabel()
+                compact_status.setFixedWidth(70)
+                compact_status.setFullText("บันทึกแล้ว · 922 คำ · 29,580 อักขระ · Ln 264, Col 8 · UTF-8 MD")
+                assert compact_status.text().endswith("…")
+                assert compact_status.toolTip().endswith("UTF-8 MD")
 
                 assert editor.find("156")
                 QTest.keyClick(editor, Qt.Key_H, Qt.ControlModifier)
@@ -152,6 +159,11 @@ def main() -> int:
                 assert "วันนี้ +3 บท" in window.progress_status.text()
                 assert "เป้าหมาย 3/10 บท · 30%" == window.goal_status.text()
                 assert window.goal_status_bar.value() == 30
+                context.write_text("บทที่ 160-161\nExternal Context update", encoding="utf-8")
+                QTest.qWait(450)
+                app.processEvents()
+                assert "วันนี้ +5 บท" in window.progress_status.text()
+                assert "เป้าหมาย 5/10 บท · 50%" == window.goal_status.text()
                 workspace.editor.tabs.setCurrentWidget(editor)
                 app.processEvents()
                 QTest.keyClick(workspace.editor.find_input, Qt.Key_Escape)
@@ -189,13 +201,57 @@ def main() -> int:
                 assert window.profile.id == profile.id
                 assert window.workspaces[profile.id] is workspace
 
+                window.groups_dialog()
+                assert window.main_pages.currentWidget() is window.utility_page
+                assert window.utility_title.text() == "กลุ่มนิยาย"
+                groups_page = window._utility_pages["groups"]
+                groups_page.new_name.setText("ทดสอบกลุ่ม")
+                groups_page.create_group()
+                assert groups_page.selector.currentText() == "ทดสอบกลุ่ม"
+                groups_page.members.item(0).setCheckState(Qt.Checked)
+                groups_page.store_group()
+                window.return_from_utility_page()
+                assert window.main_pages.currentWidget() is window.workspace_stack
+
+                window.translation_dashboard()
+                assert window.main_pages.currentWidget() is window.utility_page
+                assert window._utility_pages["progress"].isVisible()
+                window.return_from_utility_page()
+
+                window.settings_dialog()
+                assert window.main_pages.currentWidget() is window.utility_page
+                assert window._settings_open
+                window.return_from_utility_page()
+                assert not window._settings_open
+                assert window.main_pages.currentWidget() is window.workspace_stack
+
+                window.file_manager()
+                assert window.main_pages.currentWidget() is window.utility_page
+                assert window.utility_title.text() == "จัดการไฟล์โครงการ"
+                window.return_from_utility_page()
+
+                window.preview()
+                assert window.main_pages.currentWidget() is window.utility_page
+                assert window.utility_title.text().startswith("ตัวอย่าง ·")
+                window.return_from_utility_page()
+
+                window.launcher_dialog()
+                assert window.main_pages.currentWidget() is window.utility_page
+                assert window.utility_title.text().startswith("รายการที่เปิด ·")
+                window.return_from_utility_page()
+
                 window.resize(1100, 700)
                 app.processEvents()
                 assert window.width() == 1100
+                status_bar = window.statusBar()
+                assert window.editor_status.geometry().right() < window.progress_status.geometry().left()
+                assert window.progress_status.geometry().right() < window.goal_status.geometry().left()
+                assert window.goal_status.geometry().right() < window.goal_status_bar.geometry().left()
+                assert window.goal_status_bar.geometry().right() <= status_bar.width()
 
                 smoke_passed = True
                 app.exit(0)
-                print("UI smoke passed: light workspace, progress, Find/Replace, Auto Save, COPY STEP")
+                print("UI smoke passed: status, Context watcher, in-app utility pages, Find/Replace, Auto Save, COPY STEP")
             except Exception as exc:
                 traceback.print_exc()
                 print(f"UI smoke failed: {type(exc).__name__}: {exc}")
