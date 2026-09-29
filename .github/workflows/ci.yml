@@ -1,3 +1,4 @@
+# NovelWorkflow CI - v1.3 release validation
 name: CI
 on:
   push:
