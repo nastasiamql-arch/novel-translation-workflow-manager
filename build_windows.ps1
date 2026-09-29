@@ -53,7 +53,29 @@ if (-not (Test-Path -LiteralPath $appExe)) {
     throw "The Windows app executable was not created."
 }
 
-& $appExe --check-runtime
+$runtimeCheck = @'
+import ctypes
+import os
+import sys
+from pathlib import Path
+
+bundle = Path(sys.argv[1]).resolve()
+handles = [os.add_dll_directory(str(bundle / name)) for name in ("PySide6", "shiboken6")]
+ctypes.WinDLL(str(bundle / "PySide6" / "Qt6Core.dll"))
+import PySide6
+import shiboken6
+PySide6.__path__.insert(0, str(bundle / "PySide6"))
+shiboken6.__path__.insert(0, str(bundle / "shiboken6"))
+from PySide6 import QtCore, QtGui, QtWidgets
+print("Packaged Qt runtime OK:", QtCore.qVersion(), QtCore.__file__)
+'@
+$runtimeCheckScript = Join-Path $PSScriptRoot "build\qt_runtime_check.py"
+[System.IO.File]::WriteAllText(
+    $runtimeCheckScript,
+    $runtimeCheck,
+    [System.Text.UTF8Encoding]::new($false)
+)
+& $venvPython $runtimeCheckScript (Join-Path $PSScriptRoot "dist\NovelWorkflow\_internal")
 if ($LASTEXITCODE -ne 0) {
     throw "The packaged Qt runtime could not import PySide6 modules."
 }
