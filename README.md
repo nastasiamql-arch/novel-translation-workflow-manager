@@ -1,61 +1,67 @@
 # NovelWorkflow
 
-NovelWorkflow is a Windows desktop app that combines Novel Launcher project launching with a configurable novel translation workflow. It keeps novel profiles independent, opens each profile's project folder and selected files, apps, and websites, launches groups, and remembers the ordered files used in each translation step.
+NovelWorkflow คือโปรแกรมเดสก์ท็อปสำหรับ Windows ที่รวมการเปิดโปรเจกต์แบบ Novel Launcher เข้ากับระบบเวิร์กโฟลว์สำหรับงานแปลนิยายที่ปรับแต่งได้ แต่ละเรื่องจะแยกโปรไฟล์ออกจากกัน และโปรแกรมสามารถเปิดโฟลเดอร์โปรเจกต์ ไฟล์ โปรแกรม และเว็บไซต์ที่กำหนดไว้สำหรับแต่ละเรื่อง รวมถึงเปิดเป็นกลุ่ม และจดจำลำดับไฟล์ที่ใช้ในแต่ละขั้นตอนการแปล
 
-Version 1 does not call AI or translation APIs.
+เวอร์ชัน 1 ยังไม่มีการเรียกใช้ AI API หรือ Translation API โดยตรง
 
-## Download and run on Windows
+## ดาวน์โหลดและใช้งานบน Windows
 
-1. Open the [GitHub Releases page](https://github.com/nastasiamql-arch/novel-translation-workflow-manager/releases).
-2. Download `NovelWorkflow-windows.zip` from the latest release and extract the entire archive.
-3. Open `NovelWorkflow.exe` from the extracted folder. Keep the `_internal` folder beside the executable.
+1. เปิดหน้า [GitHub Releases](https://github.com/nastasiamql-arch/novel-translation-workflow-manager/releases)
+2. ดาวน์โหลดไฟล์ `NovelWorkflow-windows.zip` จาก Release ล่าสุด แล้วแตกไฟล์ ZIP ทั้งหมด
+3. เปิด `NovelWorkflow.exe` จากโฟลเดอร์ที่แตกไฟล์แล้ว โดยต้องเก็บโฟลเดอร์ `_internal` ไว้ข้าง ๆ ไฟล์โปรแกรม
 
-The release package includes the app and its Qt runtime files; Python is not required. The **Code → Download ZIP** button downloads source code for developers, not the ready-to-run app. Builds from updates to `main` are also available in the corresponding GitHub Actions run under **Artifacts**.
+แพ็กเกจ Release มีตัวโปรแกรมและไฟล์ Qt runtime ที่จำเป็นรวมมาให้แล้ว จึงไม่ต้องติดตั้ง Python เพิ่ม ปุ่ม **Code → Download ZIP** ใช้ดาวน์โหลดซอร์สโค้ดสำหรับนักพัฒนา ไม่ใช่ตัวโปรแกรมที่พร้อมเปิดใช้งาน ส่วน Build ล่าสุดจากการอัปเดต branch `main` สามารถดาวน์โหลดได้จาก GitHub Actions ในหัวข้อ **Artifacts**
 
-## Run from source
+## รันจากซอร์สโค้ด
 
-Requires Python 3.10 or newer. From PowerShell in the repository folder, run:
+ต้องใช้ Python 3.10 หรือใหม่กว่า เปิด PowerShell ในโฟลเดอร์ repository แล้วรัน:
 
     .\build_windows.ps1
 
-This creates `dist/NovelWorkflow-windows.zip` and `dist/NovelWorkflow/NovelWorkflow.exe`. Extract the zip to use the app. The executable must remain beside its `_internal` folder.
+คำสั่งนี้จะสร้างไฟล์ `dist/NovelWorkflow-windows.zip` และ `dist/NovelWorkflow/NovelWorkflow.exe` ให้แตกไฟล์ ZIP ก่อนใช้งาน และไฟล์โปรแกรมต้องอยู่ข้างโฟลเดอร์ `_internal` เสมอ
 
-To run directly from Python instead, create an environment, install the app, then launch it:
+ถ้าต้องการรันจาก Python โดยตรง ให้สร้าง environment ติดตั้งโปรแกรม แล้วจึงเปิดใช้งาน:
 
     py -m venv .venv
     .\.venv\Scripts\python.exe -m pip install -e .
     .\.venv\Scripts\python.exe -m novel_workflow.main
 
-## Launcher features
+## ฟีเจอร์ Launcher
 
-- Add a main folder plus application, file, folder, and website targets to each novel.
-- Open all enabled targets for the active profile.
-- Create groups of profiles, then open a group in one action.
-- Import Novel Launcher configuration JSON. The importer maps existing novels by folder or punctuation-insensitive title, adds launcher targets and groups, copies each existing cover into that profile, skips duplicate entries, and leaves the source configuration untouched. Novel status, current chapter context, and translation goal metadata are preserved.
-- Set a separate cover image for each novel profile; cover images are copied into that profile's local data.
-- Workflow data remains attached to each profile. Profiles imported from Launcher receive the default translation workflow; matching existing profiles keep their existing workflow and files.
+- กำหนดโฟลเดอร์หลัก รวมถึงโปรแกรม ไฟล์ โฟลเดอร์ และเว็บไซต์สำหรับนิยายแต่ละเรื่องได้
+- เปิดรายการที่เปิดใช้งานอยู่ทั้งหมดของเรื่องปัจจุบันได้ในครั้งเดียว
+- สร้างกลุ่มนิยาย แล้วเปิดทั้งกลุ่มได้ด้วยคำสั่งเดียว
+- นำเข้าไฟล์ตั้งค่า JSON จาก Novel Launcher ได้ ระบบจะจับคู่นิยายเดิมจากโฟลเดอร์หรือชื่อเรื่องที่ไม่สนใจเครื่องหมายวรรคตอน เพิ่มรายการ Launcher และกลุ่ม คัดลอกรูปปกเดิมเข้าไปในโปรไฟล์ ข้ามรายการที่ซ้ำ และไม่แก้ไขไฟล์ต้นฉบับ สถานะนิยาย Context ของบทปัจจุบัน และข้อมูลเป้าหมายการแปลจะยังถูกเก็บไว้
+- ตั้งรูปปกแยกสำหรับนิยายแต่ละเรื่องได้ โดยรูปปกจะถูกคัดลอกไปเก็บในข้อมูลของโปรไฟล์นั้น
+- ข้อมูล Workflow จะผูกอยู่กับแต่ละโปรไฟล์ นิยายที่นำเข้าจาก Launcher จะได้รับ Workflow เริ่มต้น ส่วนโปรไฟล์เดิมที่ตรงกันจะยังคง Workflow และไฟล์เดิมไว้
 
-The previous application data folder remains `%LOCALAPPDATA%/NovelTranslationWorkflowManager` so existing profiles are reused after updating. Groups are stored in `groups.json` beside the profiles.
+โปรแกรมยังใช้โฟลเดอร์ข้อมูลเดิมที่ `%LOCALAPPDATA%/NovelTranslationWorkflowManager` ดังนั้นโปรไฟล์เดิมจะถูกนำกลับมาใช้ต่อหลังอัปเดตโปรแกรม ส่วนข้อมูลกลุ่มจะเก็บไว้ในไฟล์ `groups.json` ข้างโปรไฟล์
 
-## Workflow features
+## ฟีเจอร์ Workflow
 
-Create independent novel profiles, configure custom workflow steps, attach ordered files or dynamic chapter references, preview assembled text, and copy selected files to the clipboard. Add File links the original file so edits made outside the app are read immediately. Add dynamic references for `CURRENT_SOURCE_CHAPTER`, `CURRENT_TRANSLATED_CHAPTER`, or `CURRENT_REVIEWED_CHAPTER`. Chapter files can have any name as long as the filename includes the chapter number.
+สามารถสร้างโปรไฟล์นิยายแยกกัน ปรับแต่งขั้นตอน Workflow แนบไฟล์ตามลำดับหรืออ้างอิงบทแบบ Dynamic ดูตัวอย่างข้อความที่ประกอบแล้ว และคัดลอกไฟล์ที่เลือกไปยัง Clipboard ได้
 
-## Translation progress
+การเพิ่มไฟล์ด้วย **Add File** จะลิงก์ไปยังไฟล์ต้นฉบับโดยตรง ดังนั้นหากแก้ไฟล์จากภายนอกโปรแกรม การเปลี่ยนแปลงจะถูกอ่านเข้ามาทันที
 
-- The progress window shows chapters completed today, this week, and over the last seven days, with totals for each novel.
-- Set a chapter goal for each novel. The app keeps the original starting chapter when an existing goal is edited, so its progress is preserved.
-- NovelWorkflow checks each profile's Context file on startup and every 10 seconds. If the latest Context heading moves from `บทที่ 125` to `บทที่ 130`, it records five completed chapters.
-- Daily activity is assigned to the Context file's last-modified date using the computer's local clock. The app stores each profile's checkpoint and activity separately, avoids counting the same chapter twice on the same day, and re-baselines when the Context file changes or its chapter number is reduced.
-- The first scan establishes a baseline instead of treating a novel's entire existing history as today's work. If Context is edited on multiple different days while the app is closed, the file only retains its latest modification time, so those changes cannot be split back across earlier days.
+รองรับ Dynamic Reference ได้แก่ `CURRENT_SOURCE_CHAPTER`, `CURRENT_TRANSLATED_CHAPTER` และ `CURRENT_REVIEWED_CHAPTER` โดยไฟล์บทสามารถใช้ชื่ออะไรก็ได้ ตราบใดที่ชื่อไฟล์มีเลขบทอยู่
 
-## Importing Launcher data
+## ความคืบหน้าการแปล
 
-Choose **Import Launcher** and select `config.json`, usually located at `%APPDATA%/com.novellauncher.desktop/config.json`. Import is additive: it does not edit that file or remove files from novel folders. Existing profiles are matched by main folder first and name second. Duplicate launch targets are skipped.
+- หน้าความคืบหน้าจะแสดงจำนวนบทที่ทำเสร็จวันนี้ สัปดาห์นี้ และในช่วง 7 วันที่ผ่านมา พร้อมยอดรวมแยกตามนิยายแต่ละเรื่อง
+- ตั้งเป้าหมายจำนวนบทสำหรับนิยายแต่ละเรื่องได้ หากแก้ไขเป้าหมายเดิม โปรแกรมจะเก็บเลขบทเริ่มต้นไว้เพื่อไม่ให้ความคืบหน้าที่มีอยู่หายไป
+- NovelWorkflow จะตรวจไฟล์ Context ของแต่ละโปรไฟล์ตอนเปิดโปรแกรมและทุก ๆ 10 วินาที หากหัวข้อล่าสุดใน Context เปลี่ยนจาก `บทที่ 125` เป็น `บทที่ 130` โปรแกรมจะบันทึกว่าแปลเพิ่มแล้ว 5 บท
+- กิจกรรมรายวันจะอิงจากเวลาที่ไฟล์ Context ถูกแก้ไขล่าสุดตามเวลาท้องถิ่นของคอมพิวเตอร์ โปรแกรมจะเก็บ checkpoint และกิจกรรมแยกตามแต่ละโปรไฟล์ ป้องกันการนับบทเดิมซ้ำในวันเดียวกัน และจะตั้งฐานใหม่เมื่อเปลี่ยนไฟล์ Context หรือเลขบทลดลง
+- การตรวจครั้งแรกจะใช้สำหรับตั้งค่าเริ่มต้น ไม่ได้นับประวัติทั้งหมดของนิยายเป็นผลงานของวันนี้ หากมีการแก้ Context หลายวันในช่วงที่โปรแกรมปิดอยู่ ไฟล์จะเก็บเวลาแก้ไขล่าสุดเพียงครั้งเดียว จึงไม่สามารถแยกย้อนหลังได้ว่าการเปลี่ยนแปลงเกิดขึ้นในวันใดบ้าง
 
-## Tests and Windows build
+## การนำเข้าข้อมูลจาก Launcher
+
+เลือก **Import Launcher** แล้วเลือกไฟล์ `config.json` ซึ่งโดยปกติจะอยู่ที่ `%APPDATA%/com.novellauncher.desktop/config.json`
+
+การนำเข้าเป็นแบบเพิ่มข้อมูลเท่านั้น โปรแกรมจะไม่แก้ไฟล์ดังกล่าวและไม่ลบไฟล์ใด ๆ ในโฟลเดอร์นิยาย โปรไฟล์เดิมจะถูกจับคู่จากโฟลเดอร์หลักก่อน แล้วจึงเทียบจากชื่อเรื่อง และรายการ Launch Target ที่ซ้ำจะถูกข้าม
+
+## การทดสอบและ Build สำหรับ Windows
 
     python -m pytest
     .\build_windows.ps1
 
-GitHub Actions runs the test suite and creates a portable Windows build when changes are pushed to `main`. Tagged builds publish `NovelWorkflow-windows.zip` as a GitHub Release asset.
+GitHub Actions จะรันชุดทดสอบและสร้าง Windows portable build ทุกครั้งที่มีการอัปเดตเข้า `main` ส่วน Build ที่มีการติด Tag จะเผยแพร่ไฟล์ `NovelWorkflow-windows.zip` เป็นไฟล์ดาวน์โหลดใน GitHub Release
