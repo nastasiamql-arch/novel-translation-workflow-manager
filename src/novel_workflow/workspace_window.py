@@ -588,6 +588,13 @@ class MainWindow(LegacyMainWindow):
         if workspace and workspace.editor.save_current():
             self.statusBar().showMessage("บันทึกไฟล์แล้ว", 2000)
 
+    def copy_step(self):
+        super().copy_step()
+        if self.profile:
+            workspace = self.workspaces.get(self.profile.id)
+            if workspace and self.si >= 0:
+                workspace.step_index = self.si
+
     def launch_profile(self):
         """Open supported profile targets inside the current workspace."""
         if not self.profile:
