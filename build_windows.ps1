@@ -48,6 +48,11 @@ if (-not (Test-Path -LiteralPath $appExe)) {
     throw "The Windows app executable was not created."
 }
 
+& $appExe --check-runtime
+if ($LASTEXITCODE -ne 0) {
+    throw "The packaged Qt runtime could not import PySide6 modules."
+}
+
 $isccCandidates = @(
     (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
     (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"),

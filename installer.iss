@@ -27,6 +27,12 @@ PrivilegesRequired=lowest
 [Files]
 Source: "dist\NovelWorkflow\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+; Remove Qt files from older flat-layout builds before installing the isolated bundle.
+Type: files; Name: "{app}\Qt6*.dll"
+Type: files; Name: "{app}\shiboken6*.dll"
+Type: filesandordirs; Name: "{app}\PySide6"
+
 [Icons]
 Name: "{autoprograms}\NovelWorkflow"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\NovelWorkflow"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
