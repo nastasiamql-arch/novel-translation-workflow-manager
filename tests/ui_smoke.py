@@ -2,6 +2,7 @@
 import os
 import tempfile
 import sys
+import traceback
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -41,11 +42,12 @@ def main() -> int:
                 assert window.steps.currentRow() == 0
                 toolbar = window.findChild(QToolBar, "mainToolbar")
                 logo = window.findChild(QLabel, "toolbarLogo")
-                assert logo is not None and logo.pixmap() is not None and not logo.pixmap().isNull()
-                assert window.findChild(QLabel, "brandTitle") is None
+                assert toolbar is not None, "main toolbar is missing"
+                assert logo is not None and logo.pixmap() is not None and not logo.pixmap().isNull(), "toolbar logo is missing"
+                assert window.findChild(QLabel, "brandTitle") is None, "toolbar still contains the program name"
                 assert {action.text() for action in toolbar.actions()} >= {
                     "เปิดนิยาย", "กลุ่มนิยาย", "นำเข้าข้อมูลเดิม", "ความคืบหน้า", "ตั้งค่า"
-                }
+                }, "toolbar actions changed unexpectedly"
 
                 second = window.steps.visualItemRect(window.steps.item(1))
                 QTest.mouseClick(window.steps.viewport(), Qt.LeftButton, pos=second.center())
@@ -80,13 +82,14 @@ def main() -> int:
                 browse = Path(temp_dir) / "selected-folder"
                 browse.mkdir()
                 ProfileService.remember_browse_directory(repo, window.profile, browse / "context.md")
-                assert window.profile_browse_directory() == browse
+                assert window.profile_browse_directory() == browse, "profile browse directory was not remembered"
 
                 second = ProfileService(repo).create("Second novel")
                 window.refresh_profiles(profile.id)
                 window.move_profile(1)
-                assert [item.id for item in repo.list_profiles()] == [second.id, profile.id]
-                assert [item.id for item in ProjectRepository(temp_dir).list_profiles()] == [second.id, profile.id]
+                expected_order = [second.id, profile.id]
+                assert [item.id for item in repo.list_profiles()] == expected_order, "profile move did not reorder the list"
+                assert [item.id for item in ProjectRepository(temp_dir).list_profiles()] == expected_order, "profile move did not persist"
 
                 window.resize(900, 600)
                 app.processEvents()
@@ -96,6 +99,7 @@ def main() -> int:
                 smoke_passed = True
                 print("UI smoke passed: toolbar branding, profile order persistence, browse memory, workspace interactions, theme, resize")
             except Exception as exc:
+                traceback.print_exc()
                 print(f"UI smoke failed: {type(exc).__name__}: {exc}")
                 window.close()
                 app.exit(1)
