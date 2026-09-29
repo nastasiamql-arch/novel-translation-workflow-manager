@@ -79,13 +79,14 @@ class ProfileWorkspace(QWidget):
         self.steps = QListWidget()
         self.steps.setSelectionMode(QAbstractItemView.SingleSelection)
         self.steps.setSpacing(2)
+        self.stage_buttons = []
         self.vocabulary_mode = False
         self.vocabulary_button = QPushButton("หาศัพท์")
         self.vocabulary_button.setObjectName("vocabularyButton")
         self.vocabulary_button.setCheckable(True)
-        self.vocabulary_button.setToolTip("เปิดรายการไฟล์สำหรับขั้นตอนหาศัพท์")
-        self.vocabulary_button.toggled.connect(
-            lambda checked: self.owner.set_vocabulary_mode(self.profile_id, checked)
+        self.vocabulary_button.setToolTip("คัดลอกไฟล์ของขั้นตอนหาศัพท์ไปยังคลิปบอร์ด")
+        self.vocabulary_button.clicked.connect(
+            lambda checked=False: self.owner.copy_named_stage(self.profile_id, "vocabulary")
         )
         self.files = QListWidget()
         self.files.setSpacing(1)
@@ -1388,10 +1389,27 @@ class MainWindow(LegacyMainWindow):
         desired = workspace.step_index if workspace else 0
         self.steps.blockSignals(True)
         self.steps.clear()
+        if workspace:
+            workspace.stage_buttons = []
 
         if self.profile:
-            for step in self.profile.workflow.steps:
-                self.steps.addItem(step.name)
+            for index, step in enumerate(self.profile.workflow.steps):
+                item = QListWidgetItem(step.name)
+                item.setSizeHint(QSize(0, 42))
+                self.steps.addItem(item)
+                if workspace:
+                    button = QPushButton(step.name)
+                    button.setObjectName("workflowStageButton")
+                    button.setCheckable(True)
+                    button.setMinimumHeight(38)
+                    button.setCursor(Qt.PointingHandCursor)
+                    button.setToolTip(f"เลือกและคัดลอกไฟล์ของขั้นตอน{step.name}")
+                    button.clicked.connect(
+                        lambda checked=False, row=index, pid=self.profile.id:
+                            self.copy_named_stage(pid, row)
+                    )
+                    self.steps.setItemWidget(item, button)
+                    workspace.stage_buttons.append(button)
 
         self.steps.blockSignals(False)
         if self.profile and self.profile.workflow.steps:
@@ -1408,6 +1426,8 @@ class MainWindow(LegacyMainWindow):
             if workspace:
                 workspace.copy_step_button.setEnabled(False)
         self.refresh_files()
+        if workspace:
+            self._sync_stage_buttons(workspace)
 
     def refresh_files(self):
         super().refresh_files()
@@ -1434,6 +1454,44 @@ class MainWindow(LegacyMainWindow):
             self.settings.workspace_step_indices[profile_id] = row
         self.si = row
         self.refresh_files()
+        if workspace:
+            self._sync_stage_buttons(workspace)
+
+    @staticmethod
+    def _sync_stage_buttons(workspace):
+        for index, button in enumerate(workspace.stage_buttons):
+            button.blockSignals(True)
+            button.setChecked(not workspace.vocabulary_mode and index == workspace.step_index)
+            button.blockSignals(False)
+        workspace.vocabulary_button.blockSignals(True)
+        workspace.vocabulary_button.setChecked(workspace.vocabulary_mode)
+        workspace.vocabulary_button.blockSignals(False)
+
+    def copy_named_stage(self, profile_id, stage):
+        """Select a named stage and copy only its files without advancing."""
+        if not self.profile or self.profile.id != profile_id:
+            return
+        workspace = self.workspaces.get(profile_id)
+        if not workspace or not workspace.editor.save_all():
+            self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงคัดลอกไฟล์ไม่ได้", 5000)
+            return
+        if stage == "vocabulary":
+            workspace.vocabulary_mode = True
+            self.si = workspace.step_index
+        else:
+            row = int(stage)
+            if not 0 <= row < len(self.profile.workflow.steps):
+                return
+            workspace.vocabulary_mode = False
+            workspace.step_index = row
+            self.si = row
+            self.settings.workspace_step_indices[profile_id] = row
+            self.steps.blockSignals(True)
+            self.steps.setCurrentRow(row)
+            self.steps.blockSignals(False)
+        self._sync_stage_buttons(workspace)
+        self.refresh_files()
+        self.copy_step(advance=False)
 
     def step(self):
         """Return the currently active vocabulary or translation step."""
@@ -1465,6 +1523,7 @@ class MainWindow(LegacyMainWindow):
         workspace.vocabulary_mode = enabled
         self.si = workspace.step_index
         self.refresh_files()
+        self._sync_stage_buttons(workspace)
         workspace.copy_step_button.setEnabled(bool(self.step()))
         stage = "หาศัพท์" if enabled else self.profile.workflow.steps[self.si].name if self.si >= 0 else ""
         self.statusBar().showMessage(f"ขั้นตอน: {stage}", 2500)
@@ -1514,12 +1573,14 @@ class MainWindow(LegacyMainWindow):
             workspace.breadcrumb.setText(f"{profile.name}  ›  {step.name}  ›  {path.name}")
 
 
-    def copy_step(self):
+    def copy_step(self, advance=True):
         workspace = self.workspaces.get(self.profile.id) if self.profile else None
         vocabulary_mode = bool(workspace and workspace.vocabulary_mode)
-        super().copy_step()
-        if self.profile and workspace and not vocabulary_mode and self.si >= 0:
+        super().copy_step(advance=advance)
+        if advance and self.profile and workspace and not vocabulary_mode and self.si >= 0:
             workspace.step_index = self.si
+        if workspace:
+            self._sync_stage_buttons(workspace)
 
     def set_editor_font_size(self, size):
         size = max(8.0, min(28.0, float(size)))

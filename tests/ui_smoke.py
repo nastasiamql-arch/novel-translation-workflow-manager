@@ -31,8 +31,10 @@ def main() -> int:
         novel_folder.mkdir()
         chapter = novel_folder / "126.txt"
         context = novel_folder / "Context.md"
+        review = novel_folder / "review.txt"
         chapter.write_text("ตอนที่ 156\nเนื้อหาทดสอบ", encoding="utf-8")
         context.write_text("บทที่ 156\nContext", encoding="utf-8")
+        review.write_text("ตรวจคำแปล", encoding="utf-8")
 
         profile = ProfileService(repo).create("เรื่อง A", Workflow.defaults())
         profile.main_folder = str(novel_folder)
@@ -44,6 +46,15 @@ def main() -> int:
                 label="Chapter 156",
                 reference_type="external_file",
                 path=str(chapter),
+                file_type="chapter",
+                order=0,
+            )
+        )
+        profile.workflow.steps[1].files.append(
+            StepFile(
+                label="Review",
+                reference_type="external_file",
+                path=str(review),
                 file_type="chapter",
                 order=0,
             )
@@ -83,6 +94,10 @@ def main() -> int:
                 assert [workspace.steps.item(i).text() for i in range(2)] == [
                     "แปล", "ตรวจคำแปล",
                 ]
+                assert all(workspace.steps.itemWidget(workspace.steps.item(i)) for i in range(2))
+                assert [workspace.steps.itemWidget(workspace.steps.item(i)).text() for i in range(2)] == [
+                    "แปล", "ตรวจคำแปล",
+                ]
                 assert workspace.vocabulary_button.text() == "หาศัพท์"
                 assert window.profile.workflow.steps[0].name == "แปล"
                 assert window.profile.vocabulary_step.files[0].id == legacy_vocabulary_file.id
@@ -93,9 +108,20 @@ def main() -> int:
                 assert workspace.vocabulary_mode
                 assert window.step().name == "หาศัพท์"
                 assert workspace.files.item(0).text() == "Find Terms"
-                workspace.vocabulary_button.click()
+                assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [context.resolve()]
+                translation_button = workspace.steps.itemWidget(workspace.steps.item(0))
+                translation_button.click()
                 app.processEvents()
                 assert not workspace.vocabulary_mode
+                assert workspace.steps.currentRow() == 0
+                assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [chapter.resolve()]
+                review_button = workspace.steps.itemWidget(workspace.steps.item(1))
+                review_button.click()
+                app.processEvents()
+                assert workspace.steps.currentRow() == 1
+                assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [review.resolve()]
+                translation_button.click()
+                app.processEvents()
 
                 assert workspace.content_stack.currentWidget() is workspace.workflow_page
                 assert not hasattr(workspace, "browser")
@@ -277,6 +303,8 @@ def main() -> int:
                 assert window.width() == 1100
                 status_bar = window.statusBar()
                 assert window.editor_status.geometry().right() < window.progress_status.geometry().left()
+                assert status_bar.height() >= 27
+                assert window.editor_status.height() >= 20
                 assert window.progress_status.geometry().right() < window.goal_status.geometry().left()
                 assert window.goal_status.geometry().right() < window.goal_status_bar.geometry().left()
                 assert window.goal_status_bar.geometry().right() <= status_bar.width()

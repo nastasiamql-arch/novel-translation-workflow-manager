@@ -201,15 +201,43 @@ def application_stylesheet(appearance: str = "Light") -> str:
         border: 1px solid {c["border"]};
         border-radius: 10px;
     }}
+    QPushButton#workflowStageButton, QPushButton#vocabularyButton {{
+        color: {c["text"]};
+        background: {c["surface2"]};
+        border: 1px solid {c["border_strong"]};
+        border-radius: 8px;
+        padding: 7px 12px;
+        text-align: left;
+        font-weight: 600;
+    }}
+    QPushButton#workflowStageButton:hover, QPushButton#vocabularyButton:hover {{
+        background: {c["hover"]};
+        border-color: {c["accent"]};
+    }}
+    QPushButton#workflowStageButton:checked, QPushButton#vocabularyButton:checked {{
+        background: {c["selection"]};
+        border: 2px solid {c["accent"]};
+        color: {c["text"]};
+    }}
+    QPushButton#copyStepButton {{
+        color: {c["text"]};
+        background: {c["selection"]};
+        border: 1px solid {c["accent"]};
+        border-radius: 8px;
+        padding: 7px 12px;
+        font-weight: 700;
+    }}
     QLabel#editorStatusBar {{
         color: {c["secondary"]};
         background: {c["surface"]};
-        padding: 2px 10px;
+        padding: 3px 10px;
+        min-height: 20px;
     }}
     QLabel#progressStatusBar, QLabel#goalStatusBar {{
         color: {c["secondary"]};
         background: {c["surface"]};
-        padding: 2px 8px;
+        padding: 3px 8px;
+        min-height: 20px;
     }}
     QProgressBar#goalProgressStatusBar {{
         background: {c["surface2"]};
@@ -388,7 +416,9 @@ def application_stylesheet(appearance: str = "Light") -> str:
         background: {c["surface"]};
         color: {c["secondary"]};
         border-top: 1px solid {c["border"]};
-        min-height: 22px;
+        min-height: 28px;
+        padding-top: 2px;
+        padding-bottom: 2px;
     }}
     QStatusBar::item {{ border: 0; }}
 
