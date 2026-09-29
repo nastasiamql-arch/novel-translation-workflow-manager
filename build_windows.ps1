@@ -45,8 +45,22 @@ if ($LASTEXITCODE -ne 0 -or -not $version) {
 }
 $version = $version.Trim()
 
-& $venvPython -m PyInstaller --noconfirm --clean (Join-Path $PSScriptRoot "NovelWorkflow.spec")
-if ($LASTEXITCODE -ne 0) { throw "Could not build NovelWorkflow." }
+$buildPath = $env:PATH
+try {
+    # PyInstaller resolves Qt's ICU imports using PATH. Keep unrelated tools
+    # (for example Poppler's ICU 78 DLLs) out of that lookup so they cannot be
+    # copied into the app bundle in place of Windows' compatible ICU runtime.
+    $env:PATH = @(
+        (Split-Path -Parent $venvPython),
+        (Join-Path $env:SystemRoot "System32"),
+        $env:SystemRoot
+    ) -join [System.IO.Path]::PathSeparator
+    & $venvPython -m PyInstaller --noconfirm --clean (Join-Path $PSScriptRoot "NovelWorkflow.spec")
+    $pyInstallerExitCode = $LASTEXITCODE
+} finally {
+    $env:PATH = $buildPath
+}
+if ($pyInstallerExitCode -ne 0) { throw "Could not build NovelWorkflow." }
 
 $appExe = Join-Path $PSScriptRoot "dist\NovelWorkflow\NovelWorkflow.exe"
 if (-not (Test-Path -LiteralPath $appExe)) {
@@ -60,7 +74,8 @@ import sys
 from pathlib import Path
 
 bundle = Path(sys.argv[1]).resolve()
-handles = [os.add_dll_directory(str(bundle / name)) for name in ("PySide6", "shiboken6")]
+directories = (bundle / "PySide6", bundle / "shiboken6")
+handles = [os.add_dll_directory(str(directory)) for directory in directories if directory.is_dir()]
 ctypes.WinDLL(str(bundle / "PySide6" / "Qt6Core.dll"))
 import PySide6
 import shiboken6
@@ -78,6 +93,10 @@ $runtimeCheckScript = Join-Path $PSScriptRoot "build\qt_runtime_check.py"
 & $venvPython $runtimeCheckScript (Join-Path $PSScriptRoot "dist\NovelWorkflow\_internal")
 if ($LASTEXITCODE -ne 0) {
     throw "The packaged Qt runtime could not import PySide6 modules."
+}
+$runtimeProbe = Start-Process -FilePath $appExe -ArgumentList "--check-runtime" -PassThru -Wait -WindowStyle Hidden
+if ($runtimeProbe.ExitCode -ne 0) {
+    throw "The frozen app could not load its Qt runtime (exit $($runtimeProbe.ExitCode))."
 }
 
 $isccCandidates = @(

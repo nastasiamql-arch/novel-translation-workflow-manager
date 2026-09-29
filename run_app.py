@@ -14,6 +14,9 @@ def _prepare_bundled_qt_dlls():
         return
 
     bundle_root = Path(sys._MEIPASS)
+    # Prefer this bundle's Qt and shiboken DLLs. Do not add the bundle root:
+    # PyInstaller can collect unrelated ICU DLLs from the build machine's PATH
+    # there, which can shadow the compatible ICU runtime provided by Windows.
     for directory in (bundle_root / "PySide6", bundle_root / "shiboken6"):
         if not directory.is_dir():
             continue
@@ -21,8 +24,7 @@ def _prepare_bundled_qt_dlls():
             _dll_directory_handles.append(os.add_dll_directory(str(directory)))
         os.environ["PATH"] = str(directory) + os.pathsep + os.environ.get("PATH", "")
 
-    # Keep the bundle root on PATH for OpenSSL, but do not add it as a DLL
-    # directory: Windows may then pick its ICU DLL ahead of the compatible OS ICU.
+    # Keep the bundle root on PATH for native libraries that still consult it.
     os.environ["PATH"] = str(bundle_root) + os.pathsep + os.environ.get("PATH", "")
 
     # A system-wide Qt installation can win Windows' DLL lookup before the
