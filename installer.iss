@@ -1,5 +1,7 @@
 #define MyAppName "NovelWorkflow"
-#define MyAppVersion "1.1.0"
+#ifndef MyAppVersion
+  #define MyAppVersion "0.0.0"
+#endif
 #define MyAppPublisher "NovelWorkflow"
 #define MyAppExeName "NovelWorkflow.exe"
 

@@ -23,6 +23,12 @@ if ($LASTEXITCODE -ne 0) { throw "Could not install pip." }
 & $venvPython -m pip install -e ".[dev]"
 if ($LASTEXITCODE -ne 0) { throw "Could not install the app dependencies." }
 
+$version = & $venvPython -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
+if ($LASTEXITCODE -ne 0 -or -not $version) {
+    throw "Could not read the project version from pyproject.toml."
+}
+$version = $version.Trim()
+
 & $venvPython -m PyInstaller --noconfirm --clean (Join-Path $PSScriptRoot "NovelWorkflow.spec")
 if ($LASTEXITCODE -ne 0) { throw "Could not build NovelWorkflow." }
 
@@ -41,12 +47,12 @@ if (-not $isccCandidates) {
 }
 
 $iscc = $isccCandidates | Select-Object -First 1
-& $iscc (Join-Path $PSScriptRoot "installer.iss")
+& $iscc "/DMyAppVersion=$version" (Join-Path $PSScriptRoot "installer.iss")
 if ($LASTEXITCODE -ne 0) { throw "Could not build the Windows installer." }
 
-$installer = Join-Path $PSScriptRoot "dist\NovelWorkflow-Setup-1.1.0.exe"
+$installer = Join-Path $PSScriptRoot "dist\NovelWorkflow-Setup-$version.exe"
 if (-not (Test-Path -LiteralPath $installer)) {
-    throw "The Windows installer was not created."
+    throw "The Windows installer was not created: $installer"
 }
 
 Write-Output "Installer ready: $installer"
