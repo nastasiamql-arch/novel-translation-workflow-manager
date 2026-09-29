@@ -44,6 +44,20 @@ jobs:
         with:
           name: NovelWorkflow-Setup-${{ steps.version.outputs.version }}
           path: dist/NovelWorkflow-Setup-${{ steps.version.outputs.version }}.exe
+      - name: Create version tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
+        shell: pwsh
+        run: |
+          $tag = "v${{ steps.version.outputs.version }}"
+          git fetch --tags
+          if (git rev-parse $tag 2>$null) {
+            Write-Output "Tag $tag already exists; leaving it unchanged."
+          } else {
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag $tag "${{ github.sha }}"
+            git push origin $tag
+          }
       - name: Publish versioned GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
         uses: softprops/action-gh-release@v2
