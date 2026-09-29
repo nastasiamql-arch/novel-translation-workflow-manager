@@ -83,9 +83,9 @@ def main() -> int:
                 browse.mkdir()
                 ProfileService.remember_browse_directory(repo, window.profile, browse / "context.md")
                 actual_browse = window.profile_browse_directory()
-                assert actual_browse == browse, (
+                assert actual_browse == browse.resolve(), (
                     f"profile browse directory mismatch: stored={window.profile.last_browse_directory!r}, "
-                    f"expected={str(browse)!r}, actual={str(actual_browse)!r}"
+                    f"expected={str(browse.resolve())!r}, actual={str(actual_browse)!r}"
                 )
 
                 second = ProfileService(repo).create("Second novel")
