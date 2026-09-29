@@ -4,6 +4,7 @@ from novel_workflow.services import AssemblyService, ProfileService, WorkflowSer
 from novel_workflow.storage import ProjectRepository, read_json
 from novel_workflow.launcher import LauncherService
 import pytest
+from unittest.mock import patch
 
 def test_profiles_are_independent(tmp_path):
     repo=ProjectRepository(tmp_path);svc=ProfileService(repo);a=svc.create("A");b=svc.create("B")
@@ -125,6 +126,110 @@ def test_launcher_plan_opens_main_folder_and_enabled_items_in_order(tmp_path):
     plan=LauncherService.build_plan(profile)
     assert [(item.kind,item.label) for item in plan]==[
         ("folder","โฟลเดอร์หลัก"),("application","first"),("file","last")]
+
+
+@pytest.mark.parametrize("executable,expected", [
+    ("Code.exe", True), ("code.exe", True), ("code.cmd", True), ("code", True),
+    (r"C:\Users\X\AppData\Local\Programs\Microsoft VS Code\Code.exe", True),
+    ("random-editor.exe", False), ("my-code-helper.exe", False),
+])
+def test_vscode_target_detection(executable, expected):
+    entry=LaunchTarget(kind="application",target=executable)
+    assert LauncherService.is_vscode_target(entry) is expected
+
+
+@pytest.mark.parametrize("arguments", [
+    ["--reuse-window", "--profile", "Novel"], ["-r", "--profile", "Novel"],
+    ["--new-window", "--profile", "Novel"], ["-n", "--profile", "Novel"],
+])
+def test_vscode_arguments_force_one_new_window(arguments):
+    normalized=LauncherService.normalized_vscode_arguments(arguments)
+    assert "-r" not in normalized and "--reuse-window" not in normalized
+    assert normalized.count("-n") + normalized.count("--new-window") == 1
+    assert "--profile" in normalized and "Novel" in normalized
+
+
+def test_vscode_profile_groups_folder_and_enabled_files_without_reopening(tmp_path):
+    folder=tmp_path/"A";folder.mkdir()
+    executable=tmp_path/"Code.exe";executable.touch()
+    first=folder/"a.md";first.touch()
+    second=folder/"b.txt";second.touch()
+    profile=NovelProfile(main_folder=str(folder),launch_targets=[
+        LaunchTarget(label="Code",kind="application",target=str(executable),arguments=["--reuse-window","--profile","Novel"],order=0),
+        LaunchTarget(label="second",kind="file",target=str(second),order=2),
+        LaunchTarget(label="first",kind="file",target=str(first),order=1),
+        LaunchTarget(label="disabled file",kind="file",target=str(folder/"disabled.md"),enabled=False,order=3),
+        LaunchTarget(label="disabled editor",kind="application",target=str(tmp_path/"disabled.exe"),enabled=False,order=4),
+    ])
+    with patch("novel_workflow.launcher.subprocess.Popen") as popen, \
+         patch("novel_workflow.launcher.os.startfile", create=True) as startfile:
+        results=LauncherService().launch_profile(profile)
+    command=popen.call_args.args[0]
+    assert command == [str(executable),"--profile","Novel","--new-window",str(folder),str(first),str(second)]
+    assert all(success for success,_ in results)
+    startfile.assert_not_called()
+
+
+def test_vscode_primary_is_first_by_order_and_explicit_folder_stays_separate(tmp_path):
+    code=tmp_path/"code";code.touch()
+    other_code=tmp_path/"code.cmd";other_code.touch()
+    explicit=tmp_path/"extra";explicit.mkdir()
+    profile=NovelProfile(launch_targets=[
+        LaunchTarget(label="later editor",kind="application",target=str(other_code),order=5),
+        LaunchTarget(label="extra",kind="folder",target=str(explicit),order=3),
+        LaunchTarget(label="primary",kind="application",target=str(code),order=1),
+    ])
+    with patch("novel_workflow.launcher.subprocess.Popen") as popen, \
+         patch("novel_workflow.launcher.os.startfile", create=True) as startfile:
+        LauncherService().launch_profile(profile)
+    assert popen.call_count==2
+    assert popen.call_args_list[0].args[0][:2]==[str(code),"--new-window"]
+    startfile.assert_called_once_with(str(explicit))
+
+
+def test_non_vscode_targets_and_website_keep_existing_behavior(tmp_path):
+    tool=tmp_path/"tool.exe";tool.touch()
+    profile=NovelProfile(launch_targets=[
+        LaunchTarget(label="tool",kind="application",target=str(tool),arguments=["--safe"]),
+        LaunchTarget(label="site",kind="website",target="https://example.com"),
+    ])
+    with patch("novel_workflow.launcher.subprocess.Popen") as popen, \
+         patch("novel_workflow.launcher.webbrowser.open",return_value=True) as open_site:
+        results=LauncherService().launch_profile(profile)
+    assert all(success for success,_ in results)
+    popen.assert_called_once_with([str(tool),"--safe"],shell=False)
+    open_site.assert_called_once_with("https://example.com")
+
+
+def test_profile_without_vscode_keeps_file_association_behavior(tmp_path):
+    file=tmp_path/"notes.md";file.touch()
+    profile=NovelProfile(launch_targets=[LaunchTarget(kind="file",target=str(file))])
+    with patch("novel_workflow.launcher.os.startfile",create=True) as startfile, \
+         patch("novel_workflow.launcher.subprocess.Popen") as popen:
+        LauncherService().launch_profile(profile)
+    startfile.assert_called_once_with(str(file))
+    popen.assert_not_called()
+
+
+def test_open_group_launches_one_isolated_vscode_invocation_per_profile(tmp_path):
+    profiles=[]
+    for name in ("A","B"):
+        folder=tmp_path/name;folder.mkdir()
+        code=folder/"Code.exe";code.touch()
+        files=[]
+        for filename in (f"{name.lower()}1.md",f"{name.lower()}2.md"):
+            path=folder/filename;path.touch()
+            files.append(LaunchTarget(kind="file",target=str(path),order=len(files)+1))
+        profiles.append(NovelProfile(name=name,main_folder=str(folder),launch_targets=[LaunchTarget(kind="application",target=str(code),order=0),*files]))
+    group=NovelGroup(name="AB",profile_ids=[profile.id for profile in profiles])
+    with patch("novel_workflow.launcher.subprocess.Popen") as popen:
+        results=LauncherService().launch_group(group,profiles)
+    assert all(success for success,_ in results)
+    assert popen.call_count==2
+    command_a,command_b=[call.args[0] for call in popen.call_args_list]
+    assert str(tmp_path/"A") in command_a and all("\\B\\" not in arg for arg in command_a)
+    assert str(tmp_path/"B") in command_b and all("\\A\\" not in arg for arg in command_b)
+    assert "--new-window" in command_a and "--new-window" in command_b
 
 def test_copy_advancement_cycles_through_workflow_steps():
     assert WorkflowService.next_index(0,4)==1
