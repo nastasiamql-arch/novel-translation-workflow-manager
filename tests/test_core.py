@@ -214,6 +214,9 @@ def test_launcher_plan_opens_main_folder_and_enabled_items_in_order(tmp_path):
 @pytest.mark.parametrize("executable,expected", [
     ("Code.exe", True), ("code.exe", True), ("code.cmd", True), ("code", True),
     (r"C:\Users\X\AppData\Local\Programs\Microsoft VS Code\Code.exe", True),
+    ('"C:\\Users\\X\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe"', True),
+    (r"C:\Users\X\AppData\Local\Programs\Microsoft VS Code Insiders\Code - Insiders.exe", True),
+    ("code-insiders.bat", True),
     ("random-editor.exe", False), ("my-code-helper.exe", False),
 ])
 def test_vscode_target_detection(executable, expected):

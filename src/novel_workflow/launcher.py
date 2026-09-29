@@ -22,10 +22,16 @@ class LauncherService:
     @staticmethod
     def is_vscode_target(entry: LaunchTarget) -> bool:
         """Recognize common VS Code executable names without matching other editors."""
-        executable = entry.target.replace("\\", "/").rsplit("/", 1)[-1].casefold()
+        # Launcher targets can come from imported configuration with surrounding
+        # quotes, and the official Insiders installer uses "Code - Insiders.exe".
+        target = entry.target.strip().strip('"').strip("'")
+        executable = target.replace("\\", "/").rsplit("/", 1)[-1].casefold()
         return entry.kind == "application" and executable in {
-            "code.exe", "code.cmd", "code", "code-insiders.exe",
-            "code-insiders.cmd", "code-insiders", "visual studio code.exe",
+            "code.exe", "code.cmd", "code.bat", "code",
+            "code-insiders.exe", "code-insiders.cmd", "code-insiders.bat",
+            "code-insiders", "code - insiders.exe", "code - insiders.cmd",
+            "code - insiders.bat", "visual studio code.exe",
+            "visual studio code.cmd", "visual studio code.bat",
         }
 
     @staticmethod
