@@ -82,10 +82,9 @@ def main() -> int:
                 workspace.toggle_sidebar()
                 assert window.settings.sidebar_visible
 
-                assert any(
-                    action.text() == "คัดลอกขั้นตอน"
-                    for action in toolbar.actions()
-                )
+                assert not any(action.text() == "คัดลอกขั้นตอน" for action in toolbar.actions())
+                assert workspace.copy_step_button.text() == "COPY STEP"
+                assert workspace.copy_step_button.isEnabled()
 
                 workspace.editor.open_file(chapter)
                 app.processEvents()
@@ -94,6 +93,9 @@ def main() -> int:
                 editor = workspace.editor.tabs.currentWidget()
                 assert editor.objectName() == "codeEditor"
                 assert editor.font().pointSizeF() >= 10.5
+                window.adjust_editor_font_size(1)
+                assert round(editor.font().pointSizeF(), 2) == 12.0, editor.font().pointSizeF()
+                window.set_editor_font_size(11.0)
                 assert workspace.file_tree.objectName() == "fileTree"
                 editor.appendPlainText("\nแก้ไขจาก Auto Save")
                 app.processEvents()
@@ -105,9 +107,12 @@ def main() -> int:
                 assert "บันทึกอัตโนมัติแล้ว" in workspace.editor.status.text()
                 assert "อักขระ" in window.editor_status.text()
 
+                assert editor.find("126")
                 QTest.keyClick(editor, Qt.Key_H, Qt.ControlModifier)
                 app.processEvents()
                 assert workspace.editor.find_panel.isVisible()
+                assert workspace.editor.find_input.text() == "126"
+                assert workspace.editor.find_count.text() == "1/1"
                 editor.appendPlainText("\nแก้ไขอีกครั้ง")
                 workspace.editor.find_input.setText("แก้ไข")
                 assert workspace.editor.find_count.text() == "1/2"

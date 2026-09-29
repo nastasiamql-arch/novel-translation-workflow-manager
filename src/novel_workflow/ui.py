@@ -429,7 +429,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self,"อ่าน Context ไม่ได้",str(exc))
             return
         if chapter is None:
-            QMessageBox.warning(self,"ไม่พบเลขบท","ไฟล์นี้ไม่พบหัวข้อที่ขึ้นต้นด้วย “บทที่ <เลขบท>”")
+            QMessageBox.warning(self,"ไม่พบเลขบท","ไฟล์นี้ไม่พบหัวข้อบทที่รองรับ เช่น “บทที่ 12”, “第12章” หรือ “Chapter 12”")
             return
         self.profile.context_path=str(context.resolve())
         self.profile.translation_checkpoint_path=str(context.resolve())

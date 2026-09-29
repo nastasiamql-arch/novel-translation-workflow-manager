@@ -32,7 +32,7 @@ class LineNumberArea(QWidget):
 class CodeEditor(QPlainTextEdit):
     """Native text editor with a VS Code-style line-number gutter."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, font_size=11.0):
         super().__init__(parent)
         self.setObjectName("codeEditor")
         self.line_number_area = LineNumberArea(self)
@@ -50,7 +50,7 @@ class CodeEditor(QPlainTextEdit):
             font.setFamilies(chosen)
         else:
             font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
-        font.setPointSizeF(11.0)
+        font.setPointSizeF(float(font_size))
         try:
             font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
             font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
@@ -64,21 +64,38 @@ class CodeEditor(QPlainTextEdit):
             "p { margin-top: 0; margin-bottom: 6px; line-height: 135%; }"
         )
         self.setStyleSheet(
-            """
-            QPlainTextEdit#codeEditor {
+            f"""
+            QPlainTextEdit#codeEditor {{
                 background: #1E1E1E;
                 color: #D4D4D4;
                 border: 0;
                 padding: 7px 10px;
                 selection-background-color: #264F78;
                 selection-color: #FFFFFF;
-            }
+                font-size: {float(font_size):g}pt;
+            }}
             """
         )
         metrics = QFontMetrics(font)
         self.setTabStopDistance(metrics.horizontalAdvance(" ") * 4)
         self.update_line_number_area_width()
         self.highlight_current_line()
+
+    def set_font_size(self, size):
+        font = self.font()
+        font.setPointSizeF(float(size))
+        self.setFont(font)
+        self.setStyleSheet(
+            f"""
+            QPlainTextEdit#codeEditor {{
+                background: #1E1E1E; color: #D4D4D4; border: 0;
+                padding: 7px 10px; selection-background-color: #264F78;
+                selection-color: #FFFFFF; font-size: {float(size):g}pt;
+            }}
+            """
+        )
+        self.setTabStopDistance(QFontMetrics(font).horizontalAdvance(" ") * 4)
+        self.update_line_number_area_width()
 
     def line_number_area_width(self):
         digits = max(2, len(str(max(1, self.blockCount()))))
@@ -159,14 +176,19 @@ class EditorTabs(QWidget):
     """Multi-tab text editor that auto-saves the original file after typing stops."""
 
     statusChanged = Signal(str)
+    fontSizeChanged = Signal(float)
+    documentSaved = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, font_size=11.0):
         super().__init__(parent)
+        self._font_size = float(font_size)
         self.tabs = QTabWidget()
         self.tabs.setObjectName("editorTabs")
         self.tabs.setDocumentMode(True)
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
+        self.tabs.tabBar().setDrawBase(False)
+        self.tabs.tabBar().setExpanding(False)
         self.tabs.tabCloseRequested.connect(self.close_tab)
         self._active_editor = None
         self.tabs.currentChanged.connect(self._handle_tab_change)
@@ -182,6 +204,11 @@ class EditorTabs(QWidget):
                 background: #1E1E1E;
                 border: 0;
                 border-radius: 0;
+            }
+            QTabWidget#editorTabs, QTabWidget#editorTabs::tab-bar,
+            QTabWidget#editorTabs QTabBar, QTabWidget#editorTabs QTabBar::base {
+                background: #1E1E1E;
+                border: 0;
             }
             QTabWidget#editorTabs QTabBar::tab {
                 background: #181818;
@@ -325,7 +352,7 @@ class EditorTabs(QWidget):
             QMessageBox.warning(self, "อ่านไฟล์ไม่ได้", str(exc))
             return None
 
-        editor = CodeEditor()
+        editor = CodeEditor(font_size=self._font_size)
         editor.setProperty("documentPath", str(path))
         editor.setProperty("documentDirty", False)
         editor.setProperty("saveState", "บันทึกแล้ว")
@@ -379,7 +406,17 @@ class EditorTabs(QWidget):
             False,
             "บันทึกอัตโนมัติแล้ว" if autosave else "บันทึกแล้ว",
         )
+        self.documentSaved.emit(str(path))
         return True
+
+    def set_font_size(self, size):
+        self._font_size = max(8.0, min(28.0, float(size)))
+        for index in range(self.tabs.count()):
+            self.tabs.widget(index).set_font_size(self._font_size)
+        self.fontSizeChanged.emit(self._font_size)
+
+    def font_size(self):
+        return self._font_size
 
     def save_current(self) -> bool:
         editor = self.tabs.currentWidget()
@@ -492,11 +529,17 @@ class EditorTabs(QWidget):
             self.find_panel.raise_()
 
     def show_find(self):
+        editor = self.tabs.currentWidget()
+        selected = editor.textCursor().selectedText() if editor else ""
+        selected = selected.replace("\u2029", " ").strip()
+        if selected:
+            self.find_input.setText(selected)
         self.find_panel.show()
         self.find_panel.raise_()
-        self.find_input.setFocus(Qt.ShortcutFocusReason)
-        self.find_input.selectAll()
         self._update_find_matches()
+        self.find_input.setFocus(Qt.ShortcutFocusReason)
+        if not selected:
+            self.find_input.selectAll()
 
     def close_find(self):
         if self.find_panel.isVisible():

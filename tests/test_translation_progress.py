@@ -7,6 +7,7 @@ from novel_workflow.translation_progress import (
     daily_chapter_count,
     goal_progress,
     local_day,
+    latest_context_chapter,
     reset_goal_progress,
     sync_profile_context,
 )
@@ -19,6 +20,12 @@ def make_profile(path: Path, chapter: int = 125) -> NovelProfile:
         chapter_state=ChapterState(current_chapter=chapter),
         translation_checkpoint_path=str(path.resolve()),
     )
+
+
+def test_context_chapter_headings_support_thai_chinese_and_english():
+    assert latest_context_chapter("บทที่ 12 ชื่อเรื่อง") == 12
+    assert latest_context_chapter("第 176 章 标题") == 176
+    assert latest_context_chapter("Chapter 42: Title") == 42
 
 
 def write_context(path: Path, chapter: int, modified: datetime) -> str:

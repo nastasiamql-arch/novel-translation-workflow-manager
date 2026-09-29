@@ -44,7 +44,7 @@ class ProfileWorkspace(QWidget):
             self.file_tree.hideColumn(column)
         self.file_tree.doubleClicked.connect(self._open_tree_index)
 
-        self.editor = EditorTabs()
+        self.editor = EditorTabs(font_size=owner.settings.editor_font_size)
         self.steps = QListWidget()
         self.steps.setSelectionMode(QAbstractItemView.SingleSelection)
         self.steps.setSpacing(2)
@@ -63,9 +63,16 @@ class ProfileWorkspace(QWidget):
         sidebar_layout = QVBoxLayout(self.sidebar)
         sidebar_layout.setContentsMargins(10, 10, 10, 10)
         sidebar_layout.setSpacing(8)
+        step_header = QHBoxLayout()
         sidebar_heading = QLabel("ขั้นตอนการแปล")
         sidebar_heading.setObjectName("sectionHeading")
-        sidebar_layout.addWidget(sidebar_heading)
+        step_header.addWidget(sidebar_heading, 1)
+        self.copy_step_button = QPushButton("COPY STEP")
+        self.copy_step_button.setObjectName("copyStepButton")
+        self.copy_step_button.setToolTip("คัดลอกไฟล์ของขั้นตอนที่เลือก  ·  Ctrl+Shift+C")
+        self.copy_step_button.clicked.connect(self.owner.copy_step)
+        step_header.addWidget(self.copy_step_button)
+        sidebar_layout.addLayout(step_header)
         sidebar_layout.addWidget(self.steps, 2)
         files_heading = QLabel("ไฟล์ของขั้นตอนปัจจุบัน")
         files_heading.setObjectName("sectionHeading")
@@ -102,6 +109,36 @@ class ProfileWorkspace(QWidget):
         self.breadcrumb.setObjectName("mutedLabel")
         header_layout.addWidget(self.sidebar_toggle)
         header_layout.addWidget(self.breadcrumb, 1)
+        self.context_button = QToolButton()
+        self.context_button.setText("Context")
+        self.context_button.setToolTip("เลือกไฟล์ Context ที่ติดตามความคืบหน้า")
+        self.context_button.clicked.connect(self._choose_context)
+        header_layout.addWidget(self.context_button)
+        find_button = QToolButton()
+        find_button.setText("ค้นหา")
+        find_button.setToolTip("ค้นหาในไฟล์ปัจจุบัน  ·  Ctrl+H")
+        find_button.clicked.connect(self.editor.show_find)
+        header_layout.addWidget(find_button)
+        decrease_font = QToolButton()
+        decrease_font.setText("A−")
+        decrease_font.setToolTip("ลดขนาดตัวอักษร  ·  Ctrl+-")
+        decrease_font.clicked.connect(lambda: self.owner.adjust_editor_font_size(-1))
+        header_layout.addWidget(decrease_font)
+        self.font_size_label = QLabel(f"{self.editor.font_size():g}")
+        self.font_size_label.setObjectName("mutedLabel")
+        self.font_size_label.setMinimumWidth(24)
+        self.font_size_label.setAlignment(Qt.AlignCenter)
+        header_layout.addWidget(self.font_size_label)
+        increase_font = QToolButton()
+        increase_font.setText("A+")
+        increase_font.setToolTip("เพิ่มขนาดตัวอักษร  ·  Ctrl++")
+        increase_font.clicked.connect(lambda: self.owner.adjust_editor_font_size(1))
+        header_layout.addWidget(increase_font)
+        reset_font = QToolButton()
+        reset_font.setText("A")
+        reset_font.setToolTip("คืนขนาดตัวอักษรเริ่มต้น")
+        reset_font.clicked.connect(lambda: self.owner.set_editor_font_size(11.0))
+        header_layout.addWidget(reset_font)
         editor_layout = QVBoxLayout()
         editor_layout.setContentsMargins(0, 0, 0, 0)
         editor_layout.setSpacing(3)
@@ -161,6 +198,10 @@ class ProfileWorkspace(QWidget):
         root_index = self.file_model.setRootPath(str(self.root_path))
         self.file_tree.setRootIndex(root_index)
         self.file_tree.setToolTip(str(self.root_path))
+
+    def _choose_context(self):
+        self.owner.set_context_file()
+        self.owner._update_context_button(self)
 
     def set_mode(self, index):
         self.content_stack.setCurrentIndex(0)
@@ -314,19 +355,16 @@ class MainWindow(LegacyMainWindow):
             ("กลุ่มนิยาย", self.groups_dialog),
             ("สถิติ", self.translation_dashboard),
             ("ตั้งค่า", self.settings_dialog),
-            ("คัดลอกขั้นตอน", self.copy_step),
         ):
             action = QAction(label, self)
             action.triggered.connect(callback)
             bar.addAction(action)
-            if label == "คัดลอกขั้นตอน":
-                self.copy_action = action
 
         root = QWidget()
         root.setObjectName("appShell")
         root_layout = QVBoxLayout(root)
-        root_layout.setContentsMargins(10, 10, 10, 8)
-        root_layout.setSpacing(8)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
 
         self.main_pages = QStackedWidget()
         self.library_page = QWidget()
@@ -389,6 +427,9 @@ class MainWindow(LegacyMainWindow):
         self.shortcut("Ctrl+P", self.preview)
         self.shortcut("Ctrl+R", self.refresh)
         self.shortcut("Ctrl+S", self.save_active_document)
+        self.shortcut("Ctrl+-", lambda: self.adjust_editor_font_size(-1))
+        self.shortcut("Ctrl++", lambda: self.adjust_editor_font_size(1))
+        self.shortcut("Ctrl+0", lambda: self.set_editor_font_size(11.0))
 
         self.progress_timer = QTimer(self)
         self.progress_timer.setInterval(10000)
@@ -467,7 +508,6 @@ class MainWindow(LegacyMainWindow):
             self.si = -1
             self.workspace_stack.setCurrentWidget(self.empty_page)
             self.main_pages.setCurrentWidget(self.library_page)
-            self.copy_action.setEnabled(False)
 
     def filter_profiles(self, query):
         query = query.strip().casefold()
@@ -503,6 +543,8 @@ class MainWindow(LegacyMainWindow):
             self.workspace_stack.addWidget(workspace)
 
             workspace.editor.statusChanged.connect(self._update_editor_status)
+            workspace.editor.fontSizeChanged.connect(self.set_editor_font_size)
+            workspace.editor.documentSaved.connect(self._document_saved)
             workspace.editor.restore_paths(
                 self.settings.editor_tabs.get(profile.id, []),
                 self.settings.editor_active_tabs.get(profile.id, 0),
@@ -563,7 +605,8 @@ class MainWindow(LegacyMainWindow):
 
         self.workspace_stack.setCurrentWidget(workspace)
         self.main_pages.setCurrentWidget(self.workspace_stack)
-        self.copy_action.setEnabled(bool(self.profile.workflow.steps))
+        workspace.copy_step_button.setEnabled(bool(self.profile.workflow.steps))
+        self._update_context_button(workspace)
         self.refresh_steps()
         if self.si >= 0:
             self.steps.setCurrentRow(self.si)
@@ -589,12 +632,16 @@ class MainWindow(LegacyMainWindow):
 
         self.steps.blockSignals(False)
         if self.profile and self.profile.workflow.steps:
+            if workspace:
+                workspace.copy_step_button.setEnabled(True)
             self.si = max(
                 0, min(desired, len(self.profile.workflow.steps) - 1)
             )
             self.steps.setCurrentRow(self.si)
         else:
             self.si = -1
+            if workspace:
+                workspace.copy_step_button.setEnabled(False)
         self.refresh_files()
 
     def refresh_files(self):
@@ -665,6 +712,41 @@ class MainWindow(LegacyMainWindow):
             workspace = self.workspaces.get(self.profile.id)
             if workspace and self.si >= 0:
                 workspace.step_index = self.si
+
+    def set_editor_font_size(self, size):
+        size = max(8.0, min(28.0, float(size)))
+        self.settings.editor_font_size = size
+        for workspace in self.workspaces.values():
+            if workspace.editor.font_size() != size:
+                workspace.editor.set_font_size(size)
+            workspace.font_size_label.setText(f"{size:g}")
+        self.repo.save_settings(self.settings)
+
+    def adjust_editor_font_size(self, delta):
+        size = self.settings.editor_font_size + float(delta)
+        self.set_editor_font_size(size)
+
+    def _document_saved(self, saved_path):
+        if not self.profile:
+            return
+        if self.profile.context_path:
+            try:
+                if Path(self.profile.context_path).expanduser().resolve() == Path(saved_path).resolve():
+                    self.refresh_translation_progress()
+                    workspace = self.workspaces.get(self.profile.id)
+                    if workspace:
+                        self._update_context_button(workspace)
+            except OSError:
+                pass
+
+    def _update_context_button(self, workspace):
+        path = Path(self.profile.context_path).expanduser() if self.profile and self.profile.context_path else None
+        if path and path.is_file():
+            workspace.context_button.setText(path.name)
+            workspace.context_button.setToolTip(str(path))
+        else:
+            workspace.context_button.setText("Context")
+            workspace.context_button.setToolTip("ยังไม่ได้เลือกไฟล์ Context · คลิกเพื่อเลือก")
 
     def launch_profile(self):
         """Open supported profile targets inside the current workspace."""

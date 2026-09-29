@@ -3,8 +3,13 @@ $ErrorActionPreference = "Stop"
 $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
 $pythonIsUsable = $false
 if ($pythonCommand) {
-    & $pythonCommand.Source -c "import sys" 2>$null
-    $pythonIsUsable = ($LASTEXITCODE -eq 0)
+    try {
+        & $pythonCommand.Source -c "import sys" 2>$null
+        $pythonIsUsable = ($LASTEXITCODE -eq 0)
+    } catch {
+        # Windows Store execution aliases can exist on PATH without Python installed.
+        $pythonIsUsable = $false
+    }
 }
 
 $venvPython = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"

@@ -12,7 +12,7 @@ def _prepare_bundled_qt_dlls():
         return
 
     bundle_root = Path(sys._MEIPASS)
-    for directory in (bundle_root / "PySide6", bundle_root):
+    for directory in (bundle_root / "PySide6", bundle_root / "shiboken6", bundle_root):
         if not directory.is_dir():
             continue
         if hasattr(os, "add_dll_directory"):

@@ -14,7 +14,9 @@ import time
 
 from .models import NovelProfile
 
-_CHAPTER_LINE = re.compile(r"(?im)^\s*บทที่\s*(\d+)\b")
+_CHAPTER_LINE = re.compile(
+    r"(?im)^\s*(?:บทที่\s*(\d+)|第\s*(\d+)\s*章|chapter\s+(\d+))"
+)
 
 
 def local_day(timestamp: float | None = None) -> str:
@@ -23,7 +25,7 @@ def local_day(timestamp: float | None = None) -> str:
 
 
 def latest_context_chapter(text: str) -> int | None:
-    chapters = [int(match.group(1)) for match in _CHAPTER_LINE.finditer(text)]
+    chapters = [int(next(group for group in match.groups() if group)) for match in _CHAPTER_LINE.finditer(text)]
     return chapters[-1] if chapters else None
 
 

@@ -138,6 +138,7 @@ class AppSettings:
     editor_positions: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
     sidebar_width: int = 290
     sidebar_visible: bool = True
+    editor_font_size: float = 11.0
 
 @dataclass
 class WorkflowTemplate:
