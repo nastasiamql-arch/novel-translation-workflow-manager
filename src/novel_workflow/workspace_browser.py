@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from urllib.parse import urlparse
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLineEdit, QMessageBox, QPushButton, QTabWidget,
-    QTextBrowser, QToolButton, QVBoxLayout, QWidget,
+    QApplication, QHBoxLayout, QLineEdit, QMessageBox, QPushButton,
+    QTabWidget, QTextBrowser, QToolButton, QVBoxLayout, QWidget,
 )
 
 _WEBENGINE_ALLOWED = (
@@ -18,10 +19,15 @@ _WEBENGINE_ALLOWED = (
 try:
     if not _WEBENGINE_ALLOWED:
         raise ImportError("Qt WebEngine disabled")
+    from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
     from PySide6.QtWebEngineWidgets import QWebEngineView
 except ImportError:
+    QWebEnginePage = None
+    QWebEngineProfile = None
     QWebEngineView = None
 
+
+_SHARED_PROFILE = None
 
 _START_PAGE = """
 <!doctype html>
@@ -45,6 +51,34 @@ p{font-size:16px;line-height:1.7}
 """
 
 
+def persistent_web_profile(storage_root: str | Path | None):
+    """Return one shared persistent profile so cookies/login survive app restarts."""
+    global _SHARED_PROFILE
+
+    if QWebEngineProfile is None:
+        return None
+    if _SHARED_PROFILE is not None:
+        return _SHARED_PROFILE
+
+    root = Path(storage_root or (Path.home() / ".novelworkflow-browser")).resolve()
+    storage = root / "storage"
+    cache = root / "cache"
+    storage.mkdir(parents=True, exist_ok=True)
+    cache.mkdir(parents=True, exist_ok=True)
+
+    profile = QWebEngineProfile("NovelWorkflow", QApplication.instance())
+    profile.setPersistentStoragePath(str(storage))
+    profile.setCachePath(str(cache))
+    try:
+        policy = QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
+    except AttributeError:
+        policy = QWebEngineProfile.ForcePersistentCookies
+    profile.setPersistentCookiesPolicy(policy)
+
+    _SHARED_PROFILE = profile
+    return profile
+
+
 if QWebEngineView is not None:
     class WorkspaceWebView(QWebEngineView):
         def __init__(self, owner, parent=None):
@@ -58,10 +92,12 @@ else:
 
 
 class BrowserTabs(QWidget):
-    """Tabbed embedded browser. Offscreen tests fall back to QTextBrowser."""
+    """Tabbed browser with persistent NovelWorkflow cookies/session storage."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, storage_root=None):
         super().__init__(parent)
+        self.storage_root = Path(storage_root).resolve() if storage_root else None
+        self.web_profile = persistent_web_profile(self.storage_root)
 
         self.back = QToolButton()
         self.back.setText("←")
@@ -119,6 +155,8 @@ class BrowserTabs(QWidget):
     def _make_view(self):
         if WorkspaceWebView is not None:
             view = WorkspaceWebView(self)
+            if self.web_profile is not None:
+                view.setPage(QWebEnginePage(self.web_profile, view))
             view.titleChanged.connect(lambda title, v=view: self._set_title(v, title))
             view.urlChanged.connect(lambda url, v=view: self._url_changed(v, url))
             return view
@@ -146,7 +184,6 @@ class BrowserTabs(QWidget):
         else:
             value = url.toString() if isinstance(url, QUrl) else str(url or "about:blank")
             view.setProperty("workspaceUrl", value)
-
         return view
 
     def close_tab(self, index):
@@ -159,7 +196,6 @@ class BrowserTabs(QWidget):
             self.tabs.setTabText(0, "แท็บใหม่")
             self.address.clear()
             return
-
         widget = self.tabs.widget(index)
         self.tabs.removeTab(index)
         widget.deleteLater()
@@ -190,7 +226,6 @@ class BrowserTabs(QWidget):
         qurl = url if isinstance(url, QUrl) else self.normalized_url(str(url))
         if qurl is None:
             raise ValueError("รองรับเฉพาะ URL แบบ http และ https")
-
         if new_tab:
             return self.new_tab(qurl, title or "กำลังโหลด…", select=True)
 
@@ -247,10 +282,8 @@ class BrowserTabs(QWidget):
             widget = self.tabs.widget(0)
             self.tabs.removeTab(0)
             widget.deleteLater()
-
         for value in urls or ["about:blank"]:
             self.new_tab(value if value != "about:blank" else None, select=False)
-
         self.tabs.setCurrentIndex(
             max(0, min(int(current_index or 0), self.tabs.count() - 1))
         )

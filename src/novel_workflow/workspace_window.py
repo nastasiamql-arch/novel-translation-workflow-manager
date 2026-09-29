@@ -34,7 +34,7 @@ class ProfileWorkspace(QWidget):
         self.mode_tabs = QTabBar()
         self.mode_tabs.setObjectName("workspaceModeTabs")
         self.mode_tabs.setExpanding(False)
-        for label in ("งานแปล", "Browser", "ไฟล์", "ความคืบหน้า"):
+        for label in ("งานแปล", "ไฟล์", "Browser", "ความคืบหน้า"):
             self.mode_tabs.addTab(label)
         self.mode_tabs.currentChanged.connect(self.set_mode)
 
@@ -56,7 +56,7 @@ class ProfileWorkspace(QWidget):
         explorer_layout = QVBoxLayout(self.explorer_panel)
         explorer_layout.setContentsMargins(8, 8, 8, 8)
         explorer_layout.setSpacing(6)
-        heading = QLabel("ไฟล์ของเรื่องนี้")
+        heading = QLabel("EXPLORER")
         heading.setObjectName("sectionHeading")
         explorer_layout.addWidget(heading)
         explorer_layout.addWidget(self.file_tree, 1)
@@ -84,61 +84,28 @@ class ProfileWorkspace(QWidget):
         editor_layout.addWidget(editor_heading)
         editor_layout.addWidget(self.editor, 1)
 
-        self.browser = BrowserTabs()
-        self.browser_panel = QFrame()
-        self.browser_panel.setObjectName("workspacePanel")
-        browser_layout = QVBoxLayout(self.browser_panel)
-        browser_layout.setContentsMargins(8, 8, 8, 8)
-        browser_layout.setSpacing(6)
-        browser_heading = QLabel("BROWSER")
-        browser_heading.setObjectName("sectionHeading")
-        browser_layout.addWidget(browser_heading)
-        browser_layout.addWidget(self.browser, 1)
+        self.files_splitter = QSplitter()
+        self.files_splitter.setChildrenCollapsible(False)
+        self.files_splitter.addWidget(self.explorer_panel)
+        self.files_splitter.addWidget(self.editor_panel)
+        self.files_splitter.setStretchFactor(0, 1)
+        self.files_splitter.setStretchFactor(1, 4)
+        self.files_splitter.setSizes([280, 1050])
 
-        self.surface = QSplitter()
-        self.surface.setChildrenCollapsible(False)
-        self.surface.addWidget(self.explorer_panel)
-        self.surface.addWidget(self.editor_panel)
-        self.surface.addWidget(self.browser_panel)
-        self.surface.setStretchFactor(0, 1)
-        self.surface.setStretchFactor(1, 3)
-        self.surface.setStretchFactor(2, 3)
+        self.files_page = QWidget()
+        files_page_layout = QVBoxLayout(self.files_page)
+        files_page_layout.setContentsMargins(0, 0, 0, 0)
+        files_page_layout.addWidget(self.files_splitter)
 
-        surface_page = QWidget()
-        surface_layout = QVBoxLayout(surface_page)
-        surface_layout.setContentsMargins(0, 0, 0, 0)
-        surface_layout.addWidget(self.surface)
-
-        self.progress_today = QLabel("วันนี้ +0 บท")
-        self.progress_today.setObjectName("metricValue")
-        self.progress_latest = QLabel("บทล่าสุด —")
-        self.progress_latest.setObjectName("metricLabel")
-        self.progress_goal = QLabel("ยังไม่ได้ตั้งเป้าหมาย")
-        self.progress_goal.setObjectName("bodyLabel")
-
-        dashboard_button = QPushButton("เปิดแดชบอร์ดความคืบหน้า")
-        dashboard_button.clicked.connect(owner.translation_dashboard)
-
-        progress_page = QWidget()
-        progress_layout = QVBoxLayout(progress_page)
-        progress_layout.setContentsMargins(24, 24, 24, 24)
-        progress_layout.addWidget(QLabel("ความคืบหน้าของเรื่องนี้"))
-        progress_layout.addWidget(self.progress_today)
-        progress_layout.addWidget(self.progress_latest)
-        progress_layout.addWidget(self.progress_goal)
-        progress_layout.addWidget(dashboard_button)
-        progress_layout.addStretch(1)
-
-        self.content_stack = QStackedWidget()
-        self.content_stack.addWidget(surface_page)
-        self.content_stack.addWidget(progress_page)
+        self.browser = BrowserTabs(storage_root=self.owner.repo.root / "browser")
+        self.browser_page = QWidget()
+        browser_page_layout = QVBoxLayout(self.browser_page)
+        browser_page_layout.setContentsMargins(0, 0, 0, 0)
+        browser_page_layout.addWidget(self.browser)
 
         self.steps = QListWidget()
         self.steps.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.steps.setMinimumHeight(112)
-
         self.files = QListWidget()
-        self.files.setMinimumHeight(112)
 
         step_box = QGroupBox("ขั้นตอนการแปล")
         step_layout = QVBoxLayout(step_box)
@@ -161,18 +128,52 @@ class ProfileWorkspace(QWidget):
         goal_layout.addWidget(self.latest_chapter_label)
         goal_layout.addStretch(1)
 
-        workflow_row = QSplitter()
-        workflow_row.addWidget(step_box)
-        workflow_row.addWidget(files_box)
-        workflow_row.addWidget(self.goal_panel)
-        workflow_row.setSizes([300, 500, 330])
+        workflow_splitter = QSplitter()
+        workflow_splitter.setChildrenCollapsible(False)
+        workflow_splitter.addWidget(step_box)
+        workflow_splitter.addWidget(files_box)
+        workflow_splitter.addWidget(self.goal_panel)
+        workflow_splitter.setStretchFactor(0, 1)
+        workflow_splitter.setStretchFactor(1, 2)
+        workflow_splitter.setStretchFactor(2, 1)
+        workflow_splitter.setSizes([320, 650, 360])
+
+        self.workflow_page = QWidget()
+        workflow_layout = QVBoxLayout(self.workflow_page)
+        workflow_layout.setContentsMargins(0, 0, 0, 0)
+        workflow_layout.addWidget(workflow_splitter)
+
+        self.progress_today = QLabel("วันนี้ +0 บท")
+        self.progress_today.setObjectName("metricValue")
+        self.progress_latest = QLabel("บทล่าสุด —")
+        self.progress_latest.setObjectName("metricLabel")
+        self.progress_goal = QLabel("ยังไม่ได้ตั้งเป้าหมาย")
+        self.progress_goal.setObjectName("bodyLabel")
+
+        dashboard_button = QPushButton("เปิดแดชบอร์ดความคืบหน้า")
+        dashboard_button.clicked.connect(owner.translation_dashboard)
+
+        self.progress_page = QWidget()
+        progress_layout = QVBoxLayout(self.progress_page)
+        progress_layout.setContentsMargins(24, 24, 24, 24)
+        progress_layout.addWidget(QLabel("ความคืบหน้าของเรื่องนี้"))
+        progress_layout.addWidget(self.progress_today)
+        progress_layout.addWidget(self.progress_latest)
+        progress_layout.addWidget(self.progress_goal)
+        progress_layout.addWidget(dashboard_button)
+        progress_layout.addStretch(1)
+
+        self.content_stack = QStackedWidget()
+        self.content_stack.addWidget(self.workflow_page)
+        self.content_stack.addWidget(self.files_page)
+        self.content_stack.addWidget(self.browser_page)
+        self.content_stack.addWidget(self.progress_page)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
         layout.addWidget(self.mode_tabs)
         layout.addWidget(self.content_stack, 1)
-        layout.addWidget(workflow_row)
 
         self.configure(profile)
         self.set_mode(0)
@@ -191,25 +192,8 @@ class ProfileWorkspace(QWidget):
         self.file_tree.setToolTip(str(self.root_path))
 
     def set_mode(self, index):
-        if index == 3:
-            self.content_stack.setCurrentIndex(1)
-            return
-
-        self.content_stack.setCurrentIndex(0)
-        if index == 0:
-            self.explorer_panel.show()
-            self.editor_panel.show()
-            self.browser_panel.show()
-            self.surface.setSizes([260, 620, 520])
-        elif index == 1:
-            self.explorer_panel.hide()
-            self.editor_panel.hide()
-            self.browser_panel.show()
-        else:
-            self.explorer_panel.show()
-            self.editor_panel.show()
-            self.browser_panel.hide()
-            self.surface.setSizes([320, 900, 0])
+        if 0 <= index < self.content_stack.count():
+            self.content_stack.setCurrentIndex(index)
 
     def selected_path(self):
         index = self.file_tree.currentIndex()
@@ -267,7 +251,6 @@ class ProfileWorkspace(QWidget):
         if destination.exists():
             QMessageBox.warning(self, "มีชื่อนี้แล้ว", str(destination))
             return
-
         try:
             was_file = path.is_file()
             path.rename(destination)
@@ -724,27 +707,10 @@ class MainWindow(LegacyMainWindow):
         super().save()
 
     def closeEvent(self, event):
-        dirty = sum(
-            workspace.editor.dirty_count()
-            for workspace in self.workspaces.values()
-        )
-        if dirty:
-            result = QMessageBox.question(
-                self,
-                "มีไฟล์ที่ยังไม่ได้บันทึก",
-                f"มีไฟล์ที่แก้ไขแล้ว {dirty} ไฟล์ "
-                "ต้องการบันทึกทั้งหมดก่อนปิดหรือไม่?",
-                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
-                QMessageBox.Save,
-            )
-            if result == QMessageBox.Cancel:
+        for workspace in self.workspaces.values():
+            if not workspace.editor.save_all():
                 event.ignore()
                 return
-            if result == QMessageBox.Save:
-                for workspace in self.workspaces.values():
-                    if not workspace.editor.save_all():
-                        event.ignore()
-                        return
 
         self._capture_sessions()
         self.repo.save_settings(self.settings)

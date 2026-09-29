@@ -2,15 +2,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QRect, QSize, Qt
+from PySide6.QtCore import QRect, QSize, Qt, QTimer
 from PySide6.QtGui import QFontDatabase, QFontMetrics, QPainter, QTextFormat
-from PySide6.QtWidgets import QLabel, QMessageBox, QPlainTextEdit, QTabWidget, QTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QLabel, QMessageBox, QPlainTextEdit, QTabWidget, QTextEdit,
+    QVBoxLayout, QWidget,
+)
 
 
 TEXT_EXTENSIONS = {
     ".txt", ".md", ".markdown", ".json", ".yaml", ".yml", ".toml",
     ".py", ".js", ".ts", ".css", ".html", ".xml", ".csv",
 }
+AUTO_SAVE_DELAY_MS = 1000
 
 
 class LineNumberArea(QWidget):
@@ -105,6 +109,8 @@ class CodeEditor(QPlainTextEdit):
 
 
 class EditorTabs(QWidget):
+    """Multi-tab text editor that auto-saves the original file after typing stops."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.tabs = QTabWidget()
@@ -137,14 +143,26 @@ class EditorTabs(QWidget):
     def _dirty(editor) -> bool:
         return bool(editor.property("documentDirty"))
 
-    def _set_dirty(self, editor, dirty: bool):
+    def _set_dirty(self, editor, dirty: bool, state: str | None = None):
         editor.setProperty("documentDirty", dirty)
+        if state is not None:
+            editor.setProperty("saveState", state)
         index = self.tabs.indexOf(editor)
         if index >= 0:
             path = self._path(editor)
             label = path.name if path else "Untitled"
             self.tabs.setTabText(index, label + (" ●" if dirty else ""))
         self._update_status(self.tabs.currentIndex())
+
+    def _on_text_changed(self, editor):
+        self._set_dirty(editor, True, "กำลังรอบันทึกอัตโนมัติ…")
+        timer = getattr(editor, "autosave_timer", None)
+        if timer is not None:
+            timer.start(AUTO_SAVE_DELAY_MS)
+
+    def _autosave_editor(self, editor):
+        if self._dirty(editor):
+            self.save_editor(editor, quiet=True, autosave=True)
 
     def open_file(self, path: str | Path):
         path = Path(path).expanduser().resolve()
@@ -174,10 +192,18 @@ class EditorTabs(QWidget):
         editor = CodeEditor()
         editor.setProperty("documentPath", str(path))
         editor.setProperty("documentDirty", False)
+        editor.setProperty("saveState", "บันทึกแล้ว")
         editor.blockSignals(True)
         editor.setPlainText(text)
         editor.blockSignals(False)
-        editor.textChanged.connect(lambda e=editor: self._set_dirty(e, True))
+
+        editor.autosave_timer = QTimer(editor)
+        editor.autosave_timer.setSingleShot(True)
+        editor.autosave_timer.setInterval(AUTO_SAVE_DELAY_MS)
+        editor.autosave_timer.timeout.connect(
+            lambda e=editor: self._autosave_editor(e)
+        )
+        editor.textChanged.connect(lambda e=editor: self._on_text_changed(e))
         editor.cursorPositionChanged.connect(
             lambda e=editor: self._update_status(self.tabs.indexOf(e))
         )
@@ -189,16 +215,32 @@ class EditorTabs(QWidget):
         self._update_status(index)
         return editor
 
-    def save_editor(self, editor) -> bool:
+    def save_editor(self, editor, quiet=False, autosave=False) -> bool:
         path = self._path(editor)
         if path is None:
             return True
+
+        timer = getattr(editor, "autosave_timer", None)
+        if timer is not None:
+            timer.stop()
+
         try:
             path.write_text(editor.toPlainText(), encoding="utf-8")
         except OSError as exc:
-            QMessageBox.warning(self, "บันทึกไฟล์ไม่ได้", str(exc))
+            editor.setProperty(
+                "saveState",
+                "บันทึกอัตโนมัติไม่สำเร็จ" if autosave else "บันทึกไม่สำเร็จ",
+            )
+            self._update_status(self.tabs.indexOf(editor))
+            if not quiet:
+                QMessageBox.warning(self, "บันทึกไฟล์ไม่ได้", str(exc))
             return False
-        self._set_dirty(editor, False)
+
+        self._set_dirty(
+            editor,
+            False,
+            "บันทึกอัตโนมัติแล้ว" if autosave else "บันทึกแล้ว",
+        )
         return True
 
     def save_current(self) -> bool:
@@ -219,18 +261,8 @@ class EditorTabs(QWidget):
         editor = self.tabs.widget(index)
         if editor is None:
             return
-        if self._dirty(editor):
-            result = QMessageBox.question(
-                self,
-                "ไฟล์ยังไม่ได้บันทึก",
-                f"บันทึกการแก้ไข {self.tabs.tabText(index).replace(' ●', '')} ก่อนปิดหรือไม่?",
-                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
-                QMessageBox.Save,
-            )
-            if result == QMessageBox.Cancel:
-                return
-            if result == QMessageBox.Save and not self.save_editor(editor):
-                return
+        if self._dirty(editor) and not self.save_editor(editor):
+            return
         self.tabs.removeTab(index)
         editor.deleteLater()
         self._update_status(self.tabs.currentIndex())
@@ -241,6 +273,9 @@ class EditorTabs(QWidget):
             editor = self.tabs.widget(index)
             existing = self._path(editor)
             if existing and existing.resolve() == path:
+                timer = getattr(editor, "autosave_timer", None)
+                if timer is not None:
+                    timer.stop()
                 editor.setProperty("documentDirty", False)
                 self.tabs.removeTab(index)
                 editor.deleteLater()
@@ -285,6 +320,8 @@ class EditorTabs(QWidget):
         path = self._path(editor)
         cursor = editor.textCursor()
         suffix = path.suffix.lower().lstrip(".").upper() if path else "TEXT"
+        state = str(editor.property("saveState") or "")
         self.status.setText(
-            f"Ln {cursor.blockNumber()+1}, Col {cursor.positionInBlock()+1}   UTF-8   {suffix}"
+            f"Ln {cursor.blockNumber()+1}, Col {cursor.positionInBlock()+1}   "
+            f"UTF-8   {suffix}   •   {state}"
         )

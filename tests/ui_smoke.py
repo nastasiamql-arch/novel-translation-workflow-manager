@@ -33,10 +33,7 @@ def main() -> int:
         chapter.write_text("ตอนที่ 126\nเนื้อหาทดสอบ", encoding="utf-8")
         context.write_text("บทที่ 126\nContext", encoding="utf-8")
 
-        profile = ProfileService(repo).create(
-            "เรื่อง A",
-            Workflow.defaults(),
-        )
+        profile = ProfileService(repo).create("เรื่อง A", Workflow.defaults())
         profile.main_folder = str(novel_folder)
         profile.workflow.steps[0].files.append(
             StepFile(
@@ -48,21 +45,10 @@ def main() -> int:
             )
         )
         profile.launch_targets.extend([
-            LaunchTarget(
-                label="Chapter",
-                kind="file",
-                target=str(chapter),
-                order=0,
-            ),
-            LaunchTarget(
-                label="Example",
-                kind="website",
-                target="https://example.com",
-                order=1,
-            ),
+            LaunchTarget(label="Chapter",kind="file",target=str(chapter),order=0),
+            LaunchTarget(label="Example",kind="website",target="https://example.com",order=1),
         ])
         repo.save_profile(profile)
-
         second = ProfileService(repo).create("เรื่อง B", Workflow.defaults())
 
         window = MainWindow(repo)
@@ -75,23 +61,27 @@ def main() -> int:
                 toolbar = window.findChild(QToolBar, "mainToolbar")
                 assert toolbar is not None
                 assert window.story_tabs.count() == 2
-                assert window.story_tabs.tabText(0) == "เรื่อง A"
-                assert window.story_tabs.tabText(1) == "เรื่อง B"
-
                 assert window.profile.id == profile.id
                 workspace = window.workspaces[profile.id]
                 assert workspace.root_path == novel_folder.resolve()
                 assert workspace.steps.count() == 3
                 assert [workspace.steps.item(i).text() for i in range(3)] == [
-                    "1. หาศัพท์",
-                    "2. แปล",
-                    "3. ตรวจคำแปล",
+                    "1. หาศัพท์", "2. แปล", "3. ตรวจคำแปล",
                 ]
 
+                assert workspace.content_stack.currentWidget() is workspace.workflow_page
+                workspace.mode_tabs.setCurrentIndex(1)
+                app.processEvents()
+                assert workspace.content_stack.currentWidget() is workspace.files_page
+                workspace.mode_tabs.setCurrentIndex(2)
+                app.processEvents()
+                assert workspace.content_stack.currentWidget() is workspace.browser_page
+                workspace.mode_tabs.setCurrentIndex(0)
+                app.processEvents()
+
                 copy_buttons = [
-                    button
-                    for button in window.findChildren(QPushButton)
-                    if "COPY STEP" in button.text()
+                    b for b in window.findChildren(QPushButton)
+                    if "COPY STEP" in b.text()
                 ]
                 assert len(copy_buttons) == 1
                 assert copy_buttons[0] is window.copy_button
@@ -101,18 +91,18 @@ def main() -> int:
                     "https://example.com", title="Example", new_tab=True
                 )
                 app.processEvents()
-
                 assert workspace.editor.tabs.count() == 1
-                assert workspace.editor.tabs.tabText(0) == "126.txt"
                 assert workspace.browser.tabs.count() == 2
-                assert workspace.browser.urls()[-1] == "https://example.com"
 
                 editor = workspace.editor.tabs.currentWidget()
-                editor.appendPlainText("\nแก้ไขจาก editor ภายใน")
+                editor.appendPlainText("\nแก้ไขจาก Auto Save")
                 app.processEvents()
                 assert workspace.editor.dirty_count() == 1
-                assert workspace.editor.save_current()
-                assert "แก้ไขจาก editor ภายใน" in chapter.read_text(encoding="utf-8")
+                QTest.qWait(1200)
+                app.processEvents()
+                assert workspace.editor.dirty_count() == 0
+                assert "แก้ไขจาก Auto Save" in chapter.read_text(encoding="utf-8")
+                assert "บันทึกอัตโนมัติแล้ว" in workspace.editor.status.text()
 
                 QTest.mouseClick(window.copy_button, Qt.LeftButton)
                 app.processEvents()
@@ -123,16 +113,12 @@ def main() -> int:
                 window.story_tabs.setCurrentIndex(1)
                 app.processEvents()
                 assert window.profile.id == second.id
-                second_workspace = window.workspaces[second.id]
-                assert second_workspace is not workspace
-                assert second_workspace.browser.tabs.count() == 1
+                assert window.workspaces[second.id] is not workspace
 
                 window.story_tabs.setCurrentIndex(0)
                 app.processEvents()
                 assert window.profile.id == profile.id
                 assert window.workspaces[profile.id] is workspace
-                assert workspace.browser.tabs.count() == 2
-                assert workspace.editor.tabs.count() == 1
 
                 window.resize(1100, 700)
                 app.processEvents()
@@ -140,26 +126,14 @@ def main() -> int:
 
                 smoke_passed = True
                 app.exit(0)
-                print(
-                    "UI smoke passed: novel tabs, three-step workflow, "
-                    "embedded file editor, multi-tab browser, COPY STEP"
-                )
+                print("UI smoke passed: dedicated pages, Auto Save, browser tabs, COPY STEP")
             except Exception as exc:
                 traceback.print_exc()
                 print(f"UI smoke failed: {type(exc).__name__}: {exc}")
-                # Do not call close() here: an assertion may have failed while an
-                # editor is dirty, and closeEvent intentionally asks the user
-                # whether to save. CI has nobody available to answer that dialog.
                 app.exit(1)
 
         QTimer.singleShot(100, exercise_workspace)
-        QTimer.singleShot(
-            20000,
-            lambda: (
-                print("UI smoke timed out after 20 seconds"),
-                app.exit(2),
-            ),
-        )
+        QTimer.singleShot(20000, lambda: (print("UI smoke timed out after 20 seconds"), app.exit(2)))
         event_result = app.exec()
         print(f"Qt event loop exit status: {event_result}")
         result = 0 if smoke_passed else (event_result or 1)

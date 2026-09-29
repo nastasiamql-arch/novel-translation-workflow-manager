@@ -331,6 +331,17 @@ class MainWindow(QMainWindow):
                 row=QListWidgetItem(f"[{target.kind}] {target.label} — {target.target}")
                 row.setFlags(row.flags()|Qt.ItemIsUserCheckable);row.setCheckState(Qt.Checked if target.enabled else Qt.Unchecked);row.setData(Qt.UserRole,target.id);listing.addItem(row)
         def add_target(kind):
+            if kind=="file":
+                paths,_=QFileDialog.getOpenFileNames(dialog,"เลือกไฟล์ที่จะเปิด (เลือกได้หลายไฟล์)",str(self.profile_browse_directory()),"All files (*)")
+                if not paths:return
+                self.remember_profile_browse_directory(paths[-1])
+                known={(target.kind,target.target) for target in targets}
+                for path in paths:
+                    if ("file",path) in known:continue
+                    targets.append(LaunchTarget(label=Path(path).stem,kind="file",target=path,order=len(targets)))
+                    known.add(("file",path))
+                refresh()
+                return
             if kind=="application":
                 path,_=QFileDialog.getOpenFileName(dialog,"เลือกโปรแกรม",str(Path.home()),"Applications (*.exe);;All files (*)")
             elif kind=="folder":
@@ -339,9 +350,9 @@ class MainWindow(QMainWindow):
                 path,ok=QInputDialog.getText(dialog,"Add Website","URL (http/https):")
                 if not ok:return
             else:
-                path,_=QFileDialog.getOpenFileName(dialog,"เลือกไฟล์",str(self.profile_browse_directory()),"All files (*)")
+                return
             if not path:return
-            if kind in ("file","folder"):self.remember_profile_browse_directory(path)
+            if kind=="folder":self.remember_profile_browse_directory(path)
             label=Path(path).stem if kind!="website" else path
             if kind=="website":
                 label,ok=QInputDialog.getText(dialog,"Website Name","ชื่อเว็บไซต์:",text=path)
