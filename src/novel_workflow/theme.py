@@ -11,23 +11,23 @@ TOKENS = {
 
 # Dark follows VS Code's softer charcoal contrast instead of pure black.
 _DARK = {
-    "app": "#181818",
-    "surface": "#1F1F1F",
-    "surface2": "#252525",
-    "hover": "#2B2B2B",
-    "elevated": "#303030",
-    "border": "#333333",
-    "border_strong": "#454545",
-    "text": "#E8E8E8",
-    "secondary": "#B7B7B7",
-    "muted": "#8F8F8F",
-    "accent": "#4DAAFC",
-    "accent_hover": "#69B8FF",
+    "app": "#1B1C1F",
+    "surface": "#222429",
+    "surface2": "#292C32",
+    "hover": "#32363E",
+    "elevated": "#383D46",
+    "border": "#363A42",
+    "border_strong": "#4B515D",
+    "text": "#E4E6EA",
+    "secondary": "#B7BBC4",
+    "muted": "#949AA5",
+    "accent": "#79A9F5",
+    "accent_hover": "#94B9F7",
     "success": "#4EC9B0",
     "warning": "#DCDCAA",
     "danger": "#F48771",
-    "selection": "#264F78",
-    "input": "#1E1E1E",
+    "selection": "#334E76",
+    "input": "#1E2025",
     "primary": "#E8E8E8",
     "primary_hover": "#FFFFFF",
     "primary_text": "#202020",
@@ -146,6 +146,36 @@ def application_stylesheet(appearance: str = "Dark") -> str:
         outline: none;
         selection-background-color: {c["selection"]};
         selection-color: {c["text"]};
+    }}
+    QListWidget#novelLibrary {{
+        background: {c["app"]};
+        border: 0;
+        padding: 8px;
+    }}
+    QListWidget#novelLibrary::item {{
+        background: {c["surface"]};
+        border: 1px solid {c["border"]};
+        border-radius: 12px;
+        padding: 8px;
+        min-height: 226px;
+    }}
+    QListWidget#novelLibrary::item:hover {{
+        background: {c["hover"]};
+        border-color: {c["border_strong"]};
+    }}
+    QListWidget#novelLibrary::item:selected {{
+        background: {c["surface2"]};
+        border: 1px solid {c["accent"]};
+    }}
+    QFrame#workflowSidebar {{
+        background: {c["surface"]};
+        border: 1px solid {c["border"]};
+        border-radius: 10px;
+    }}
+    QLabel#editorStatusBar {{
+        color: {c["secondary"]};
+        background: {c["surface"]};
+        padding: 2px 10px;
     }}
     QTreeView#fileTree {{
         border: 0;
@@ -274,48 +304,6 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QTabBar::tab:selected {{
         color: {c["text"]};
         border-bottom-color: {c["accent"]};
-        font-weight: 600;
-    }}
-
-    QTabBar#storyTabs {{
-        background: transparent;
-    }}
-    QTabBar#storyTabs::tab {{
-        border: 0;
-        border-radius: 9px;
-        border-bottom: 0;
-        padding: 8px 12px;
-        margin: 2px;
-    }}
-    QTabBar#storyTabs::tab:selected {{
-        background: {c["elevated"]};
-        color: {c["text"]};
-        border-bottom: 0;
-    }}
-
-    QTabBar#workspaceModeTabs {{
-        background: {c["surface2"]};
-        border: 1px solid {c["border"]};
-        border-radius: 18px;
-        padding: 2px;
-    }}
-    QTabBar#workspaceModeTabs::tab {{
-        min-width: 92px;
-        padding: 7px 14px;
-        margin: 0;
-        border: 0;
-        border-radius: 15px;
-        background: transparent;
-        color: {c["secondary"]};
-    }}
-    QTabBar#workspaceModeTabs::tab:hover {{
-        background: {c["hover"]};
-        color: {c["text"]};
-    }}
-    QTabBar#workspaceModeTabs::tab:selected {{
-        background: {c["surface"]};
-        color: {c["text"]};
-        border: 1px solid {c["border"]};
         font-weight: 600;
     }}
 

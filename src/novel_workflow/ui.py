@@ -60,7 +60,7 @@ class MainWindow(QMainWindow):
         spacer=QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred)
         bar.addWidget(spacer)
-        for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("นำเข้าข้อมูลเดิม",self.import_launcher_config),("ความคืบหน้า",self.translation_dashboard),("ตั้งค่า",self.settings_dialog)):
+        for label,fn in (("เปิดนิยาย",self.launch_profile),("กลุ่มนิยาย",self.groups_dialog),("ความคืบหน้า",self.translation_dashboard),("ตั้งค่า",self.settings_dialog)):
             a=QAction(label,self);a.triggered.connect(fn);bar.addAction(a)
 
         root=QWidget()
@@ -417,16 +417,6 @@ class MainWindow(QMainWindow):
         layout.addLayout(row)
         close=QDialogButtonBox(QDialogButtonBox.Close);close.rejected.connect(dialog.reject);close.accepted.connect(dialog.accept);layout.addWidget(close)
         dialog.exec()
-
-    def import_launcher_config(self):
-        default=Path.home()/"AppData"/"Roaming"/"com.novellauncher.desktop"/"config.json"
-        path,_=QFileDialog.getOpenFileName(self,"Import Novel Launcher Data",str(default),"JSON files (*.json)")
-        if not path:return
-        try:
-            result=self.repo.import_launcher_config(path)
-            self.refresh_profiles(self.profile.id if self.profile else None)
-            QMessageBox.information(self,"Import Complete",f"นำเข้าข้อมูล Launcher แล้ว\nโปรไฟล์ใหม่: {result['profiles']}\nกลุ่มใหม่: {result['groups']}\nรายการเปิดโปรแกรม/ไฟล์/เว็บไซต์: {result['launch_targets']}\n\nไฟล์ต้นฉบับไม่ได้ถูกแก้ไข")
-        except Exception as error:QMessageBox.warning(self,"Import Failed",str(error))
 
     def set_context_file(self):
         if not self.profile:return

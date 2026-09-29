@@ -121,7 +121,7 @@ def test_profile_order_move_delete_and_restart_are_persistent(tmp_path):
     assert [(profile.name,profile.order) for profile in remaining]==[("Mike",0),("Alpha",1)]
 
 
-def test_new_duplicate_import_and_rename_keep_deterministic_profile_order(tmp_path):
+def test_new_duplicate_and_rename_keep_deterministic_profile_order(tmp_path):
     repo=ProjectRepository(tmp_path/"app")
     service=ProfileService(repo)
     first=service.create("First")
@@ -130,10 +130,7 @@ def test_new_duplicate_import_and_rename_keep_deterministic_profile_order(tmp_pa
     assert [p.id for p in repo.list_profiles()]==[first.id,second.id,duplicate.id]
     duplicate.name="Aardvark";repo.save_profile(duplicate)
     assert [p.id for p in repo.list_profiles()]==[first.id,second.id,duplicate.id]
-    source=tmp_path/"launcher.json"
-    source.write_text(json.dumps({"novels":[{"id":"new","name":"Imported"}],"groups":[]}),encoding="utf-8")
-    repo.import_launcher_config(source)
-    assert [(p.name,p.order) for p in repo.list_profiles()]==[("First",0),("Second",1),("Aardvark",2),("Imported",3)]
+    assert [(p.name,p.order) for p in repo.list_profiles()]==[("First",0),("Second",1),("Aardvark",2)]
 
 
 def test_profile_browse_directory_fallback_and_memory_are_independent(tmp_path):
@@ -165,54 +162,6 @@ def test_profile_browse_directory_falls_back_to_app_profile_then_home(tmp_path):
     assert ProfileService.browse_directory(repo,profile,home)==repo.profile_dir(profile.id)
     profile.last_browse_directory=str(tmp_path/"gone")
     assert ProfileService.browse_directory(repo,profile,home)==repo.profile_dir(profile.id)
-
-def test_launcher_import_merges_targets_groups_and_preserves_source(tmp_path):
-    repo=ProjectRepository(tmp_path/"app")
-    existing=NovelProfile(name="Existing",main_folder=str(tmp_path/"novel"))
-    repo.save_profile(existing)
-    cover=tmp_path/"cover.png"
-    cover.write_bytes(b"cover-image-data")
-    payload={
-        "schemaVersion":8,
-        "novels":[{"id":"old-novel-1","name":"Existing","mainFolder":str(tmp_path/"novel"),"coverPath":str(cover),
-          "status":"paused","contextPath":None,"translationGoal":{"targetChapters":20,"baselineChapter":4},
-          "files":[{"id":"f1","name":"Glossary","path":str(tmp_path/"terms.md"),"enabled":True,"order":0}],
-          "applications":[{"id":"a1","name":"Editor","executablePath":str(tmp_path/"editor.exe"),"arguments":["--profile","novel"],"enabled":True,"order":1}],
-          "websites":[{"id":"w1","name":"Wiki","url":"https://example.com","enabled":False,"order":2}]}],
-        "groups":[{"id":"old-group-1","name":"Reading Set","novelIds":["old-novel-1"],"description":"group"}]
-    }
-    source=tmp_path/"launcher.json"
-    source.write_text(json.dumps(payload),encoding="utf-8")
-    original=source.read_text(encoding="utf-8")
-    result=repo.import_launcher_config(source)
-    loaded=repo.list_profiles()[0]
-    assert result=={"profiles":0,"groups":1,"launch_targets":3}
-    assert source.read_text(encoding="utf-8")==original
-    assert loaded.id==existing.id and loaded.status=="paused"
-    assert loaded.translation_goal_target==20 and loaded.translation_goal_baseline==4
-    assert loaded.cover_image_path=="covers/cover.png"
-    assert repo.resolve_project_path(loaded.id,loaded.cover_image_path).read_bytes()==b"cover-image-data"
-    assert [item.kind for item in loaded.launch_targets]==["file","application","website"]
-    assert loaded.launch_targets[1].arguments==["--profile","novel"]
-    assert repo.load_groups()[0].profile_ids==[existing.id]
-
-def test_launcher_import_matches_existing_title_variant_without_duplicates(tmp_path):
-    repo=ProjectRepository(tmp_path/"app")
-    existing=NovelProfile(name="ย้อนเวลาสู่ปี 1985  สยบวอลล์สตรีท")
-    repo.save_profile(existing)
-    source=tmp_path/"launcher.json"
-    source.write_text(json.dumps({
-        "novels":[{"id":"old-1","name":"ย้อนเวลาสู่ปี 1985 : สยบวอลล์สตรีท","mainFolder":str(tmp_path/"novel"),"files":[]}],
-        "groups":[]
-    }),encoding="utf-8")
-    first=repo.import_launcher_config(source)
-    second=repo.import_launcher_config(source)
-    assert first["profiles"]==0
-    assert second=={"profiles":0,"groups":0,"launch_targets":0}
-    assert len(repo.list_profiles())==1
-    merged=repo.list_profiles()[0]
-    assert merged.id==existing.id
-    assert merged.main_folder==str(tmp_path/"novel")
 
 
 def test_launcher_plan_opens_main_folder_and_enabled_items_in_order(tmp_path):

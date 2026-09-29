@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QRect, QSize, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QPainter, QTextFormat
+from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QPainter, QTextBlockFormat, QTextCursor, QTextDocument, QTextFormat, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QLabel, QMessageBox, QPlainTextEdit, QTabWidget, QTextEdit,
-    QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
+    QPushButton, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 
 
@@ -60,6 +60,9 @@ class CodeEditor(QPlainTextEdit):
         self.setFont(font)
         self.setCursorWidth(2)
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.document().setDefaultStyleSheet(
+            "p { margin-top: 0; margin-bottom: 6px; line-height: 135%; }"
+        )
         self.setStyleSheet(
             """
             QPlainTextEdit#codeEditor {
@@ -130,16 +133,32 @@ class CodeEditor(QPlainTextEdit):
             block_number += 1
 
     def highlight_current_line(self):
-        selection = QTextEdit.ExtraSelection()
-        selection.format.setBackground(QColor("#2A2D2E"))
-        selection.format.setProperty(QTextFormat.FullWidthSelection, True)
-        selection.cursor = self.textCursor()
-        selection.cursor.clearSelection()
-        self.setExtraSelections([selection])
+        selections = []
+        line = QTextEdit.ExtraSelection()
+        line.format.setBackground(QColor("#252a32"))
+        line.format.setProperty(QTextFormat.FullWidthSelection, True)
+        line.cursor = self.textCursor()
+        line.cursor.clearSelection()
+        selections.append(line)
+        query = str(getattr(self, "_find_query", ""))
+        if query:
+            cursor = QTextCursor(self.document())
+            while True:
+                cursor = self.document().find(query, cursor)
+                if cursor.isNull():
+                    break
+                match = QTextEdit.ExtraSelection()
+                match.cursor = cursor
+                match.format.setBackground(QColor("#665523"))
+                match.format.setForeground(QColor("#fff4ce"))
+                selections.append(match)
+        self.setExtraSelections(selections)
 
 
 class EditorTabs(QWidget):
     """Multi-tab text editor that auto-saves the original file after typing stops."""
+
+    statusChanged = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -149,7 +168,9 @@ class EditorTabs(QWidget):
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
         self.tabs.tabCloseRequested.connect(self.close_tab)
-        self.tabs.currentChanged.connect(self._update_status)
+        self._active_editor = None
+        self.tabs.currentChanged.connect(self._handle_tab_change)
+        self._search_text = ""
 
         self.status = QLabel("ยังไม่ได้เปิดไฟล์")
         self.status.setObjectName("editorStatus")
@@ -195,7 +216,45 @@ class EditorTabs(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self.tabs, 1)
-        layout.addWidget(self.status)
+        # Status is supplied by the application status bar; retain the label
+        # for compatibility with older UI smoke checks, but keep it hidden.
+        self.status.hide()
+
+        self.find_panel = QFrame(self)
+        self.find_panel.setObjectName("editorFindPanel")
+        self.find_panel.setStyleSheet(
+            "QFrame#editorFindPanel { background:#20242b; color:#e6e8eb; "
+            "border:1px solid #414854; border-radius:8px; }"
+            "QLineEdit { background:#171a20; color:#f0f2f5; border:1px solid #4b5563; "
+            "border-radius:5px; padding:5px 8px; min-height:20px; }"
+            "QPushButton { background:#2b3039; color:#e6e8eb; border:0; "
+            "border-radius:5px; padding:5px 8px; }"
+            "QPushButton:hover { background:#394150; }"
+        )
+        find_layout = QHBoxLayout(self.find_panel)
+        find_layout.setContentsMargins(8, 6, 8, 6)
+        find_layout.setSpacing(5)
+        self.find_input = QLineEdit(self.find_panel)
+        self.find_input.setPlaceholderText("ค้นหาในไฟล์…")
+        self.find_count = QLabel("0/0", self.find_panel)
+        previous = QPushButton("↑", self.find_panel)
+        next_match = QPushButton("↓", self.find_panel)
+        close_find = QPushButton("×", self.find_panel)
+        for widget in (self.find_input, self.find_count, previous, next_match, close_find):
+            find_layout.addWidget(widget)
+        previous.clicked.connect(lambda: self._find_next(backward=True))
+        next_match.clicked.connect(self._find_next)
+        close_find.clicked.connect(self.close_find)
+        self.find_input.textChanged.connect(self._update_find_matches)
+        self.find_input.returnPressed.connect(self._find_next)
+        self.find_panel.hide()
+        self._place_find_panel()
+        self._find_shortcut = QShortcut(QKeySequence("Ctrl+H"), self)
+        self._find_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self._find_shortcut.activated.connect(self.show_find)
+        self._escape_shortcut = QShortcut(QKeySequence("Escape"), self)
+        self._escape_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self._escape_shortcut.activated.connect(self.close_find)
 
     @staticmethod
     def supports(path: str | Path) -> bool:
@@ -247,8 +306,18 @@ class EditorTabs(QWidget):
         for index in range(self.tabs.count()):
             editor = self.tabs.widget(index)
             if self._path(editor) == path:
+                current = self.tabs.currentWidget()
+                if current is not None and current is not editor and self._dirty(current):
+                    if not self.save_editor(current, quiet=True):
+                        return None
                 self.tabs.setCurrentIndex(index)
                 return editor
+
+        current = self.tabs.currentWidget()
+        if current is not None and self._dirty(current):
+            if not self.save_editor(current, quiet=True):
+                QMessageBox.warning(self, "บันทึกไฟล์ไม่ได้", "บันทึกไฟล์ปัจจุบันไม่สำเร็จ จึงยังเปิดไฟล์ใหม่ไม่ได้")
+                return None
 
         try:
             text = path.read_text(encoding="utf-8-sig", errors="replace")
@@ -263,6 +332,7 @@ class EditorTabs(QWidget):
         editor.blockSignals(True)
         editor.setPlainText(text)
         editor.blockSignals(False)
+        self._format_document(editor)
 
         editor.autosave_timer = QTimer(editor)
         editor.autosave_timer.setSingleShot(True)
@@ -274,6 +344,7 @@ class EditorTabs(QWidget):
         editor.cursorPositionChanged.connect(
             lambda e=editor: self._update_status(self.tabs.indexOf(e))
         )
+        editor.textChanged.connect(lambda e=editor: self._update_find_matches() if e is self.tabs.currentWidget() else None)
 
         index = self.tabs.addTab(editor, path.name)
         self.tabs.setTabToolTip(index, str(path))
@@ -380,6 +451,7 @@ class EditorTabs(QWidget):
     def _update_status(self, index):
         if index < 0:
             self.status.setText("ยังไม่ได้เปิดไฟล์")
+            self.statusChanged.emit("พร้อมใช้งาน  ·  0 คำ  ·  0 อักขระ")
             return
         editor = self.tabs.widget(index)
         if editor is None:
@@ -392,3 +464,103 @@ class EditorTabs(QWidget):
             f"Ln {cursor.blockNumber()+1}, Col {cursor.positionInBlock()+1}   "
             f"UTF-8   {suffix}   •   {state}"
         )
+        text = editor.toPlainText()
+        words = len(text.split())
+        self.statusChanged.emit(
+            f"{state}  ·  {words:,} คำ  ·  {len(text):,} อักขระ  ·  "
+            f"Ln {cursor.blockNumber()+1}, Col {cursor.positionInBlock()+1}  ·  UTF-8 {suffix}"
+        )
+        self._update_find_matches()
+
+    @staticmethod
+    def _format_document(editor):
+        cursor = QTextCursor(editor.document())
+        cursor.select(QTextCursor.Document)
+        block_format = QTextBlockFormat()
+        block_format.setLineHeight(135.0, QTextBlockFormat.ProportionalHeight.value)
+        block_format.setBottomMargin(6)
+        cursor.mergeBlockFormat(block_format)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_find_panel()
+
+    def _place_find_panel(self):
+        if hasattr(self, "find_panel"):
+            self.find_panel.adjustSize()
+            self.find_panel.move(max(8, self.width() - self.find_panel.width() - 22), 14)
+            self.find_panel.raise_()
+
+    def show_find(self):
+        self.find_panel.show()
+        self.find_panel.raise_()
+        self.find_input.setFocus(Qt.ShortcutFocusReason)
+        self.find_input.selectAll()
+        self._update_find_matches()
+
+    def close_find(self):
+        if self.find_panel.isVisible():
+            self.find_panel.hide()
+            editor = self.tabs.currentWidget()
+            if editor:
+                editor.setFocus(Qt.ShortcutFocusReason)
+                editor.highlight_current_line()
+
+    def _update_find_matches(self, *_args):
+        editor = self.tabs.currentWidget()
+        query = self.find_input.text() if hasattr(self, "find_input") else ""
+        if editor is None:
+            return
+        editor._find_query = query
+        editor.highlight_current_line()
+        text = editor.toPlainText()
+        folded_text = text.casefold()
+        folded_query = query.casefold()
+        starts = []
+        if folded_query:
+            offset = 0
+            while (offset := folded_text.find(folded_query, offset)) >= 0:
+                starts.append(offset)
+                offset += max(1, len(folded_query))
+        count = len(starts)
+        cursor = editor.textCursor()
+        current = next(
+            (i + 1 for i, start in enumerate(starts) if start <= cursor.selectionStart() < start + len(folded_query)),
+            0,
+        )
+        if query and count and current == 0:
+            cursor.movePosition(QTextCursor.Start)
+            editor.setTextCursor(cursor)
+            editor.find(query)
+            cursor = editor.textCursor()
+            current = 1
+        if hasattr(self, "find_count"):
+            self.find_count.setText(f"{current}/{count}")
+
+    def _find_next(self, backward=False):
+        editor = self.tabs.currentWidget()
+        query = self.find_input.text()
+        if editor is None or not query:
+            return
+        flags = QTextDocument.FindBackward if backward else QTextDocument.FindFlags()
+        if not editor.find(query, flags):
+            cursor = editor.textCursor()
+            cursor.movePosition(QTextCursor.End if backward else QTextCursor.Start)
+            editor.setTextCursor(cursor)
+            editor.find(query, flags)
+        self._update_find_matches()
+
+    def _handle_tab_change(self, index):
+        editor = self.tabs.widget(index) if index >= 0 else None
+        previous = self._active_editor
+        if previous is not None and previous is not editor and self._dirty(previous):
+            if not self.save_editor(previous, quiet=True):
+                old_index = self.tabs.indexOf(previous)
+                self.tabs.blockSignals(True)
+                if old_index >= 0:
+                    self.tabs.setCurrentIndex(old_index)
+                self.tabs.blockSignals(False)
+                self._update_status(old_index)
+                return
+        self._active_editor = editor
+        self._update_status(index)

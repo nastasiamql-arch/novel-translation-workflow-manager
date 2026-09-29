@@ -7,16 +7,27 @@ if ($pythonCommand) {
     $pythonIsUsable = ($LASTEXITCODE -eq 0)
 }
 
-if ($pythonIsUsable) {
-    & $pythonCommand.Source -m venv .venv
-} elseif (Get-Command py -ErrorAction SilentlyContinue) {
-    py -3 -m venv .venv
-} else {
-    throw "Python 3.10 or newer is required. Install Python, then run this script again."
-}
-if ($LASTEXITCODE -ne 0) { throw "Could not create the build environment." }
-
 $venvPython = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+$buildEnvReady = $false
+if (Test-Path -LiteralPath $venvPython) {
+    & $venvPython -c "import sys; raise SystemExit(sys.version_info < (3, 10))" 2>$null
+    $buildEnvReady = ($LASTEXITCODE -eq 0)
+}
+
+if (-not $buildEnvReady) {
+    if ($pythonIsUsable) {
+        & $pythonCommand.Source -m venv .venv
+    } elseif (Get-Command py -ErrorAction SilentlyContinue) {
+        py -3 -m venv .venv
+    } else {
+        throw "Python 3.10 or newer is required. Install Python, then run this script again."
+    }
+    if ($LASTEXITCODE -ne 0) { throw "Could not create the build environment." }
+}
+
+if (-not (Test-Path -LiteralPath $venvPython)) {
+    throw "Could not create the build environment."
+}
 & $venvPython -m pip install --upgrade pip
 if ($LASTEXITCODE -ne 0) { throw "Could not install pip." }
 
@@ -39,7 +50,8 @@ if (-not (Test-Path -LiteralPath $appExe)) {
 
 $isccCandidates = @(
     (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
-    (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+    (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"),
+    (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe")
 ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
 
 if (-not $isccCandidates) {

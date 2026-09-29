@@ -44,10 +44,9 @@ def main() -> int:
                 order=0,
             )
         )
-        profile.launch_targets.extend([
-            LaunchTarget(label="Chapter",kind="file",target=str(chapter),order=0),
-            LaunchTarget(label="Example",kind="website",target="https://example.com",order=1),
-        ])
+        profile.launch_targets.append(
+            LaunchTarget(label="Chapter", kind="file", target=str(chapter), order=0)
+        )
         repo.save_profile(profile)
         second = ProfileService(repo).create("เรื่อง B", Workflow.defaults())
 
@@ -60,8 +59,9 @@ def main() -> int:
             try:
                 toolbar = window.findChild(QToolBar, "mainToolbar")
                 assert toolbar is not None
-                assert window.story_tabs.count() == 2
+                assert window.profile_cards.count() == 2
                 assert window.profile.id == profile.id
+                assert window.main_pages.currentWidget() is window.workspace_stack
                 workspace = window.workspaces[profile.id]
                 assert workspace.root_path == novel_folder.resolve()
                 assert workspace.steps.count() == 3
@@ -70,35 +70,31 @@ def main() -> int:
                 ]
 
                 assert workspace.content_stack.currentWidget() is workspace.workflow_page
-                workspace.mode_tabs.setCurrentIndex(1)
-                app.processEvents()
-                assert workspace.content_stack.currentWidget() is workspace.files_page
-                workspace.mode_tabs.setCurrentIndex(2)
-                app.processEvents()
-                assert workspace.content_stack.currentWidget() is workspace.browser_page
-                workspace.mode_tabs.setCurrentIndex(0)
-                app.processEvents()
+                assert not hasattr(workspace, "browser")
+                assert workspace.content_stack.currentWidget() is workspace.workflow_page
+                workspace.file_search.setText("Chapter")
+                assert not workspace.files.item(0).isHidden()
+                workspace.file_search.setText("not found")
+                assert workspace.files.item(0).isHidden()
+                workspace.file_search.clear()
+                workspace.toggle_sidebar()
+                assert not window.settings.sidebar_visible
+                workspace.toggle_sidebar()
+                assert window.settings.sidebar_visible
 
-                copy_buttons = [
-                    b for b in window.findChildren(QPushButton)
-                    if "COPY STEP" in b.text()
-                ]
-                assert len(copy_buttons) == 1
-                assert copy_buttons[0] is window.copy_button
+                assert any(
+                    action.text() == "คัดลอกขั้นตอน"
+                    for action in toolbar.actions()
+                )
 
                 workspace.editor.open_file(chapter)
-                workspace.browser.open_url(
-                    "https://example.com", title="Example", new_tab=True
-                )
                 app.processEvents()
                 assert workspace.editor.tabs.count() == 1
-                assert workspace.browser.tabs.count() == 2
 
                 editor = workspace.editor.tabs.currentWidget()
                 assert editor.objectName() == "codeEditor"
                 assert editor.font().pointSizeF() >= 10.5
                 assert workspace.file_tree.objectName() == "fileTree"
-                assert window.copy_button.maximumWidth() <= 320
                 editor.appendPlainText("\nแก้ไขจาก Auto Save")
                 app.processEvents()
                 assert workspace.editor.dirty_count() == 1
@@ -107,19 +103,44 @@ def main() -> int:
                 assert workspace.editor.dirty_count() == 0
                 assert "แก้ไขจาก Auto Save" in chapter.read_text(encoding="utf-8")
                 assert "บันทึกอัตโนมัติแล้ว" in workspace.editor.status.text()
+                assert "อักขระ" in window.editor_status.text()
 
-                QTest.mouseClick(window.copy_button, Qt.LeftButton)
+                QTest.keyClick(editor, Qt.Key_H, Qt.ControlModifier)
+                app.processEvents()
+                assert workspace.editor.find_panel.isVisible()
+                editor.appendPlainText("\nแก้ไขอีกครั้ง")
+                workspace.editor.find_input.setText("แก้ไข")
+                assert workspace.editor.find_count.text() == "1/2"
+                workspace.editor._find_next()
+                assert workspace.editor.find_count.text() == "2/2"
+                workspace.editor._find_next(backward=True)
+                assert workspace.editor.find_count.text() == "1/2"
+                QTest.keyClick(workspace.editor.find_input, Qt.Key_Escape)
+                workspace.editor.close_find()
+                assert not workspace.editor.find_panel.isVisible()
+
+                original_block_format = editor.document().begin().blockFormat()
+                pasted = editor.textCursor()
+                pasted.insertText("\nข้อความที่วางจากภาษาญี่ปุ่น\n次の段落")
+                last_format = editor.document().lastBlock().blockFormat()
+                assert original_block_format.bottomMargin() == last_format.bottomMargin()
+                assert original_block_format.lineHeight() == last_format.lineHeight()
+                workspace.editor.save_current()
+
+                window.copy_step()
                 app.processEvents()
                 urls = app.clipboard().mimeData().urls()
                 assert [Path(url.toLocalFile()) for url in urls] == [chapter.resolve()]
                 assert workspace.steps.currentRow() == 1
 
-                window.story_tabs.setCurrentIndex(1)
+                window.show_library()
+                window._open_profile_card(window.profile_cards.item(1))
                 app.processEvents()
                 assert window.profile.id == second.id
                 assert window.workspaces[second.id] is not workspace
 
-                window.story_tabs.setCurrentIndex(0)
+                window.show_library()
+                window._open_profile_card(window.profile_cards.item(0))
                 app.processEvents()
                 assert window.profile.id == profile.id
                 assert window.workspaces[profile.id] is workspace
@@ -130,7 +151,7 @@ def main() -> int:
 
                 smoke_passed = True
                 app.exit(0)
-                print("UI smoke passed: dedicated pages, Auto Save, browser tabs, COPY STEP")
+                print("UI smoke passed: Novel Library, workflow sidebar, Auto Save, Find, COPY STEP")
             except Exception as exc:
                 traceback.print_exc()
                 print(f"UI smoke failed: {type(exc).__name__}: {exc}")

@@ -6,10 +6,10 @@ from pathlib import Path
 from PySide6.QtCore import QDir, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFileSystemModel, QFrame, QGridLayout, QGroupBox,
-    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
+    QAbstractItemView, QFileSystemModel, QFrame, QGridLayout,
+    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
     QProgressBar, QPushButton, QSizePolicy, QSplitter, QStackedWidget,
-    QTabBar, QToolButton, QTreeView, QVBoxLayout, QWidget, QInputDialog,
+    QToolButton, QTreeView, QVBoxLayout, QWidget, QInputDialog,
 )
 
 from .models import migrate_legacy_basic_workflow
@@ -18,7 +18,6 @@ from .translation_progress import (
     sync_profile_context,
 )
 from .ui import MainWindow as LegacyMainWindow
-from .workspace_browser import BrowserTabs
 from .workspace_editor import EditorTabs
 
 
@@ -30,13 +29,6 @@ class ProfileWorkspace(QWidget):
         self.owner = owner
         self.profile_id = profile.id
         self.step_index = 0
-
-        self.mode_tabs = QTabBar()
-        self.mode_tabs.setObjectName("workspaceModeTabs")
-        self.mode_tabs.setExpanding(False)
-        for label in ("งานแปล", "ไฟล์", "Browser", "ความคืบหน้า"):
-            self.mode_tabs.addTab(label)
-        self.mode_tabs.currentChanged.connect(self.set_mode)
 
         self.file_model = QFileSystemModel(self)
         self.file_model.setReadOnly(False)
@@ -52,69 +44,80 @@ class ProfileWorkspace(QWidget):
             self.file_tree.hideColumn(column)
         self.file_tree.doubleClicked.connect(self._open_tree_index)
 
-        self.explorer_panel = QFrame()
-        self.explorer_panel.setObjectName("explorerPanel")
-        explorer_layout = QVBoxLayout(self.explorer_panel)
-        explorer_layout.setContentsMargins(8, 8, 8, 8)
-        explorer_layout.setSpacing(6)
-        heading = QLabel("EXPLORER")
-        heading.setObjectName("sectionHeading")
-        explorer_layout.addWidget(heading)
-        explorer_layout.addWidget(self.file_tree, 1)
+        self.editor = EditorTabs()
+        self.steps = QListWidget()
+        self.steps.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.steps.setSpacing(2)
+        self.files = QListWidget()
+        self.files.setSpacing(1)
+        self.files.setAccessibleName("ไฟล์ของขั้นตอนปัจจุบัน")
+        self.files.itemDoubleClicked.connect(
+            lambda item: self.owner.open_workflow_file(self.profile_id, item)
+        )
+        self.file_search = QLineEdit()
+        self.file_search.setPlaceholderText("ค้นหาบทหรือไฟล์…")
+        self.file_search.textChanged.connect(self.filter_files)
 
-        actions = QGridLayout()
+        self.sidebar = QFrame()
+        self.sidebar.setObjectName("workflowSidebar")
+        sidebar_layout = QVBoxLayout(self.sidebar)
+        sidebar_layout.setContentsMargins(10, 10, 10, 10)
+        sidebar_layout.setSpacing(8)
+        sidebar_heading = QLabel("ขั้นตอนการแปล")
+        sidebar_heading.setObjectName("sectionHeading")
+        sidebar_layout.addWidget(sidebar_heading)
+        sidebar_layout.addWidget(self.steps, 2)
+        files_heading = QLabel("ไฟล์ของขั้นตอนปัจจุบัน")
+        files_heading.setObjectName("sectionHeading")
+        sidebar_layout.addWidget(files_heading)
+        sidebar_layout.addWidget(self.file_search)
+        sidebar_layout.addWidget(self.files, 3)
+        self.explorer_toggle = QToolButton()
+        self.explorer_toggle.setText("ไฟล์ทั้งหมด  ▾")
+        self.explorer_toggle.setCheckable(True)
+        self.explorer_toggle.setChecked(False)
+        self.explorer_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.explorer_toggle.toggled.connect(self.file_tree.setVisible)
+        sidebar_layout.addWidget(self.explorer_toggle)
+        self.file_tree.setVisible(False)
+        sidebar_layout.addWidget(self.file_tree, 2)
+        file_actions = QGridLayout()
         for index, (label, callback) in enumerate((
-            ("ไฟล์ใหม่", self.new_file),
-            ("โฟลเดอร์ใหม่", self.new_folder),
-            ("เปลี่ยนชื่อ", self.rename_selected),
-            ("ลบ", self.delete_selected),
+            ("ไฟล์ใหม่", self.new_file), ("โฟลเดอร์ใหม่", self.new_folder),
+            ("เปลี่ยนชื่อ", self.rename_selected), ("ลบ", self.delete_selected),
         )):
             button = QPushButton(label)
             button.clicked.connect(callback)
-            actions.addWidget(button, index // 2, index % 2)
-        explorer_layout.addLayout(actions)
+            file_actions.addWidget(button, index // 2, index % 2)
+        sidebar_layout.addLayout(file_actions)
 
-        self.editor = EditorTabs()
-        self.editor_panel = QFrame()
-        self.editor_panel.setObjectName("editorPanel")
-        editor_layout = QVBoxLayout(self.editor_panel)
-        editor_layout.setContentsMargins(8, 8, 8, 8)
-        editor_layout.setSpacing(6)
-        editor_heading = QLabel("EDITOR")
-        editor_heading.setObjectName("sectionHeading")
-        editor_layout.addWidget(editor_heading)
+        self.sidebar_toggle = QToolButton()
+        self.sidebar_toggle.setText("☰")
+        self.sidebar_toggle.setToolTip("ซ่อน/แสดงแถบด้านข้าง")
+        self.sidebar_toggle.clicked.connect(self.toggle_sidebar)
+        self.editor_header = QFrame()
+        header_layout = QHBoxLayout(self.editor_header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        self.breadcrumb = QLabel("เลือกไฟล์จากแถบด้านข้าง")
+        self.breadcrumb.setObjectName("mutedLabel")
+        header_layout.addWidget(self.sidebar_toggle)
+        header_layout.addWidget(self.breadcrumb, 1)
+        editor_layout = QVBoxLayout()
+        editor_layout.setContentsMargins(0, 0, 0, 0)
+        editor_layout.setSpacing(3)
+        editor_layout.addWidget(self.editor_header)
         editor_layout.addWidget(self.editor, 1)
+        editor_host = QWidget()
+        editor_host.setLayout(editor_layout)
 
-        self.files_splitter = QSplitter()
-        self.files_splitter.setChildrenCollapsible(False)
-        self.files_splitter.addWidget(self.explorer_panel)
-        self.files_splitter.addWidget(self.editor_panel)
-        self.files_splitter.setStretchFactor(0, 1)
-        self.files_splitter.setStretchFactor(1, 4)
-        self.files_splitter.setSizes([280, 1050])
-
-        self.files_page = QWidget()
-        files_page_layout = QVBoxLayout(self.files_page)
-        files_page_layout.setContentsMargins(0, 0, 0, 0)
-        files_page_layout.addWidget(self.files_splitter)
-
-        self.browser = BrowserTabs(storage_root=self.owner.repo.root / "browser")
-        self.browser_page = QWidget()
-        browser_page_layout = QVBoxLayout(self.browser_page)
-        browser_page_layout.setContentsMargins(0, 0, 0, 0)
-        browser_page_layout.addWidget(self.browser)
-
-        self.steps = QListWidget()
-        self.steps.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.files = QListWidget()
-
-        step_box = QGroupBox("ขั้นตอนการแปล")
-        step_layout = QVBoxLayout(step_box)
-        step_layout.addWidget(self.steps)
-
-        files_box = QGroupBox("ไฟล์ของขั้นตอนปัจจุบัน")
-        files_layout = QVBoxLayout(files_box)
-        files_layout.addWidget(self.files)
+        self.workspace_splitter = QSplitter(Qt.Horizontal)
+        self.workspace_splitter.setChildrenCollapsible(True)
+        self.workspace_splitter.addWidget(self.sidebar)
+        self.workspace_splitter.addWidget(editor_host)
+        self.workspace_splitter.setStretchFactor(0, 0)
+        self.workspace_splitter.setStretchFactor(1, 1)
+        self.workspace_splitter.setSizes([290, 1100])
+        self.workspace_splitter.splitterMoved.connect(self._remember_sidebar_width)
 
         self.goal_panel = QFrame()
         self.goal_panel.setObjectName("goalPanel")
@@ -129,60 +132,18 @@ class ProfileWorkspace(QWidget):
         goal_layout.addWidget(self.latest_chapter_label)
         goal_layout.addStretch(1)
 
-        workflow_splitter = QSplitter()
-        workflow_splitter.setChildrenCollapsible(False)
-        workflow_splitter.addWidget(step_box)
-        workflow_splitter.addWidget(files_box)
-        workflow_splitter.addWidget(self.goal_panel)
-        workflow_splitter.setStretchFactor(0, 1)
-        workflow_splitter.setStretchFactor(1, 2)
-        workflow_splitter.setStretchFactor(2, 1)
-        workflow_splitter.setSizes([320, 650, 360])
-
         self.workflow_page = QWidget()
         workflow_layout = QVBoxLayout(self.workflow_page)
         workflow_layout.setContentsMargins(0, 0, 0, 0)
-        workflow_layout.addWidget(workflow_splitter)
-
-        self.progress_today = QLabel("วันนี้ +0 บท")
-        self.progress_today.setObjectName("metricValue")
-        self.progress_latest = QLabel("บทล่าสุด —")
-        self.progress_latest.setObjectName("metricLabel")
-        self.progress_goal = QLabel("ยังไม่ได้ตั้งเป้าหมาย")
-        self.progress_goal.setObjectName("bodyLabel")
-
-        dashboard_button = QPushButton("เปิดแดชบอร์ดความคืบหน้า")
-        dashboard_button.clicked.connect(owner.translation_dashboard)
-
-        self.progress_page = QWidget()
-        progress_layout = QVBoxLayout(self.progress_page)
-        progress_layout.setContentsMargins(24, 24, 24, 24)
-        progress_layout.addWidget(QLabel("ความคืบหน้าของเรื่องนี้"))
-        progress_layout.addWidget(self.progress_today)
-        progress_layout.addWidget(self.progress_latest)
-        progress_layout.addWidget(self.progress_goal)
-        progress_layout.addWidget(dashboard_button)
-        progress_layout.addStretch(1)
+        workflow_layout.addWidget(self.workspace_splitter)
+        self.files_page = self.workflow_page
 
         self.content_stack = QStackedWidget()
         self.content_stack.addWidget(self.workflow_page)
-        self.content_stack.addWidget(self.files_page)
-        self.content_stack.addWidget(self.browser_page)
-        self.content_stack.addWidget(self.progress_page)
-
-        mode_strip = QFrame()
-        mode_strip.setObjectName("modeStrip")
-        mode_layout = QHBoxLayout(mode_strip)
-        mode_layout.setContentsMargins(8, 5, 8, 5)
-        mode_layout.setSpacing(0)
-        mode_layout.addStretch(1)
-        mode_layout.addWidget(self.mode_tabs)
-        mode_layout.addStretch(1)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-        layout.addWidget(mode_strip)
         layout.addWidget(self.content_stack, 1)
 
         self.configure(profile)
@@ -202,8 +163,31 @@ class ProfileWorkspace(QWidget):
         self.file_tree.setToolTip(str(self.root_path))
 
     def set_mode(self, index):
-        if 0 <= index < self.content_stack.count():
-            self.content_stack.setCurrentIndex(index)
+        self.content_stack.setCurrentIndex(0)
+
+    def filter_files(self, query):
+        query = query.strip().casefold()
+        for index in range(self.files.count()):
+            item = self.files.item(index)
+            item.setHidden(bool(query) and query not in item.text().casefold())
+
+    def toggle_sidebar(self):
+        sizes = self.workspace_splitter.sizes()
+        if sizes and sizes[0] > 0:
+            self.owner.settings.sidebar_width = sizes[0]
+            self.owner.settings.sidebar_visible = False
+            self.workspace_splitter.setSizes([0, max(1, sum(sizes))])
+        else:
+            self.owner.settings.sidebar_visible = True
+            self.workspace_splitter.setSizes([
+                max(220, int(self.owner.settings.sidebar_width or 290)),
+                1000,
+            ])
+        self.owner.repo.save_settings(self.owner.settings)
+
+    def _remember_sidebar_width(self, _position, index):
+        if index == 1 and self.workspace_splitter.sizes()[0] > 0:
+            self.owner.settings.sidebar_width = self.workspace_splitter.sizes()[0]
 
     def selected_path(self):
         index = self.file_tree.currentIndex()
@@ -218,7 +202,12 @@ class ProfileWorkspace(QWidget):
     def _open_tree_index(self, index):
         path = Path(self.file_model.filePath(index))
         if path.is_file():
-            self.editor.open_file(path)
+            if self.editor.open_file(path):
+                profile = next((item for item in self.owner.ps_list if item.id == self.profile_id), None)
+                step_name = profile.workflow.steps[self.step_index].name if profile and self.step_index < len(profile.workflow.steps) else ""
+                self.breadcrumb.setText(
+                    f"{profile.name}  ›  {step_name}  ›  {path.name}" if profile else path.name
+                )
 
     def new_file(self):
         folder = self.selected_directory()
@@ -288,7 +277,7 @@ class ProfileWorkspace(QWidget):
 
 
 class MainWindow(LegacyMainWindow):
-    """Novel tabs + embedded file explorer/editor/browser workspace."""
+    """Novel Library with a focused workflow sidebar and full-size editor."""
 
     def build(self):
         self._settings_open = False
@@ -320,15 +309,18 @@ class MainWindow(LegacyMainWindow):
         bar.addWidget(spacer)
 
         for label, callback in (
+            ("คลังนิยาย", self.show_library),
             ("เปิดรายการของเรื่อง", self.launch_profile),
             ("กลุ่มนิยาย", self.groups_dialog),
-            ("นำเข้าข้อมูลเดิม", self.import_launcher_config),
             ("สถิติ", self.translation_dashboard),
             ("ตั้งค่า", self.settings_dialog),
+            ("คัดลอกขั้นตอน", self.copy_step),
         ):
             action = QAction(label, self)
             action.triggered.connect(callback)
             bar.addAction(action)
+            if label == "คัดลอกขั้นตอน":
+                self.copy_action = action
 
         root = QWidget()
         root.setObjectName("appShell")
@@ -336,48 +328,45 @@ class MainWindow(LegacyMainWindow):
         root_layout.setContentsMargins(10, 10, 10, 8)
         root_layout.setSpacing(8)
 
-        story_strip = QFrame()
-        story_strip.setObjectName("storyStrip")
-        story_row = QHBoxLayout(story_strip)
-        story_row.setContentsMargins(8, 5, 8, 5)
-        story_row.setSpacing(4)
-        self.story_tabs = QTabBar()
-        self.story_tabs.setObjectName("storyTabs")
-        self.story_tabs.setExpanding(False)
-        self.story_tabs.setUsesScrollButtons(True)
-        self.story_tabs.setDrawBase(False)
-        self.story_tabs.currentChanged.connect(self.select_profile)
-        story_row.addWidget(self.story_tabs, 1)
-
-        add_story = QToolButton()
-        add_story.setText("+")
-        add_story.setToolTip("เพิ่มนิยาย")
+        self.main_pages = QStackedWidget()
+        self.library_page = QWidget()
+        library_layout = QVBoxLayout(self.library_page)
+        library_layout.setContentsMargins(24, 18, 24, 18)
+        library_header = QHBoxLayout()
+        library_title = QLabel("Novel Library")
+        library_title.setObjectName("currentNovel")
+        library_header.addWidget(library_title, 1)
+        self.library_search = QLineEdit()
+        self.library_search.setPlaceholderText("ค้นหานิยาย…")
+        self.library_search.setMaximumWidth(340)
+        self.library_search.textChanged.connect(self.filter_profiles)
+        library_header.addWidget(self.library_search)
+        add_story = QPushButton("＋ เพิ่มนิยาย")
         add_story.clicked.connect(self.new_profile)
-        story_row.addWidget(add_story)
-        root_layout.addWidget(story_strip)
+        library_header.addWidget(add_story)
+        library_layout.addLayout(library_header)
+        self.profile_cards = QListWidget()
+        self.profile_cards.setObjectName("novelLibrary")
+        self.profile_cards.setViewMode(QListWidget.IconMode)
+        self.profile_cards.setFlow(QListWidget.LeftToRight)
+        self.profile_cards.setWrapping(True)
+        self.profile_cards.setResizeMode(QListWidget.Adjust)
+        self.profile_cards.setMovement(QListWidget.Static)
+        self.profile_cards.setSpacing(14)
+        self.profile_cards.setIconSize(QSize(136, 170))
+        self.profile_cards.setGridSize(QSize(192, 250))
+        self.profile_cards.itemClicked.connect(self._open_profile_card)
+        library_layout.addWidget(self.profile_cards, 1)
+        self.main_pages.addWidget(self.library_page)
 
         self.workspace_stack = QStackedWidget()
         self.empty_page = QLabel("ยังไม่มีนิยาย\nกด + เพื่อเพิ่มนิยาย")
         self.empty_page.setAlignment(Qt.AlignCenter)
         self.empty_page.setObjectName("mutedLabel")
         self.workspace_stack.addWidget(self.empty_page)
-        root_layout.addWidget(self.workspace_stack, 1)
+        self.main_pages.addWidget(self.workspace_stack)
+        root_layout.addWidget(self.main_pages, 1)
 
-        self.copy_button = QPushButton("⧉  COPY STEP")
-        self.copy_button.setObjectName("primaryButton")
-        self.copy_button.setMinimumHeight(40)
-        self.copy_button.setMinimumWidth(220)
-        self.copy_button.setMaximumWidth(320)
-        self.copy_button.clicked.connect(self.copy_step)
-
-        bottom_bar = QFrame()
-        bottom_bar.setObjectName("bottomBar")
-        bottom_layout = QHBoxLayout(bottom_bar)
-        bottom_layout.setContentsMargins(10, 7, 10, 7)
-        bottom_layout.addStretch(1)
-        bottom_layout.addWidget(self.copy_button)
-        bottom_layout.addStretch(1)
-        root_layout.addWidget(bottom_bar)
 
         self.setCentralWidget(root)
 
@@ -393,6 +382,9 @@ class MainWindow(LegacyMainWindow):
         self.latest_chapter_label = QLabel()
 
         self.statusBar().showMessage("เลือกเรื่องเพื่อเริ่มทำงาน")
+        self.editor_status = QLabel("พร้อมใช้งาน  ·  0 คำ  ·  0 อักขระ")
+        self.editor_status.setObjectName("editorStatusBar")
+        self.statusBar().addPermanentWidget(self.editor_status, 1)
         self.shortcut("Ctrl+Shift+C", self.copy_step)
         self.shortcut("Ctrl+P", self.preview)
         self.shortcut("Ctrl+R", self.refresh)
@@ -439,27 +431,26 @@ class MainWindow(LegacyMainWindow):
             self.profiles.addItem(item)
         self.profiles.blockSignals(False)
 
-        self.story_tabs.blockSignals(True)
-        while self.story_tabs.count():
-            self.story_tabs.removeTab(0)
-
+        self.profile_cards.clear()
         placeholder = Path(__file__).resolve().parent / "resources" / "novelworkflow.png"
         for profile in self.ps_list:
-            icon = QIcon(str(placeholder)) if placeholder.is_file() else QIcon()
+            pixmap = QPixmap(str(placeholder)) if placeholder.is_file() else QPixmap()
             if profile.cover_image_path:
                 try:
                     candidate = self.repo.resolve_project_path(
                         profile.id, profile.cover_image_path
                     )
                     if candidate.is_file():
-                        icon = QIcon(str(candidate))
+                        pixmap = QPixmap(str(candidate))
                 except ValueError:
                     pass
-            self.story_tabs.addTab(icon, profile.name)
-            self.story_tabs.setTabToolTip(
-                self.story_tabs.count() - 1, profile.name
-            )
-        self.story_tabs.blockSignals(False)
+            if not pixmap.isNull():
+                pixmap = pixmap.scaled(136, 170, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                pixmap = pixmap.copy((pixmap.width()-136)//2, (pixmap.height()-170)//2, 136, 170)
+            card = QListWidgetItem(QIcon(pixmap), f"{profile.name}\n{profile.status}")
+            card.setData(Qt.UserRole, profile.id)
+            card.setToolTip(profile.name)
+            self.profile_cards.addItem(card)
 
         target_id = pid or (
             self.settings.last_profile_id
@@ -475,7 +466,28 @@ class MainWindow(LegacyMainWindow):
             self.profile = None
             self.si = -1
             self.workspace_stack.setCurrentWidget(self.empty_page)
-            self.copy_button.setEnabled(False)
+            self.main_pages.setCurrentWidget(self.library_page)
+            self.copy_action.setEnabled(False)
+
+    def filter_profiles(self, query):
+        query = query.strip().casefold()
+        for index in range(self.profile_cards.count()):
+            item = self.profile_cards.item(index)
+            item.setHidden(bool(query) and query not in item.text().casefold())
+
+    def _open_profile_card(self, item):
+        profile_id = item.data(Qt.UserRole)
+        index = next((i for i, profile in enumerate(self.ps_list) if profile.id == profile_id), -1)
+        if index >= 0:
+            self.select_profile(index)
+
+    def show_library(self):
+        if self.profile:
+            workspace = self.workspaces.get(self.profile.id)
+            if workspace and not workspace.editor.save_all():
+                self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนหน้าไม่ได้", 5000)
+                return
+        self.main_pages.setCurrentWidget(self.library_page)
 
     def _workspace(self, profile):
         workspace = self.workspaces.get(profile.id)
@@ -490,14 +502,27 @@ class MainWindow(LegacyMainWindow):
             self.workspaces[profile.id] = workspace
             self.workspace_stack.addWidget(workspace)
 
-            workspace.browser.restore(
-                self.settings.browser_tabs.get(profile.id, ["about:blank"]),
-                self.settings.browser_active_tabs.get(profile.id, 0),
-            )
+            workspace.editor.statusChanged.connect(self._update_editor_status)
             workspace.editor.restore_paths(
                 self.settings.editor_tabs.get(profile.id, []),
                 self.settings.editor_active_tabs.get(profile.id, 0),
             )
+            workspace.step_index = int(self.settings.workspace_step_indices.get(profile.id, 0))
+            if self.settings.sidebar_visible:
+                workspace.workspace_splitter.setSizes([
+                    max(220, int(self.settings.sidebar_width or 290)), 1000
+                ])
+            else:
+                workspace.workspace_splitter.setSizes([0, 1000])
+            positions = self.settings.editor_positions.get(profile.id, {})
+            for editor_index in range(workspace.editor.tabs.count()):
+                editor = workspace.editor.tabs.widget(editor_index)
+                path = str(workspace.editor._path(editor))
+                position = positions.get(path, {})
+                cursor = editor.textCursor()
+                cursor.setPosition(min(int(position.get("cursor", 0)), len(editor.toPlainText())))
+                editor.setTextCursor(cursor)
+                editor.verticalScrollBar().setValue(int(position.get("scroll", 0)))
         else:
             workspace.configure(profile)
         return workspace
@@ -508,6 +533,12 @@ class MainWindow(LegacyMainWindow):
         if index < 0 or index >= len(getattr(self, "ps_list", [])):
             return
 
+        old_profile = getattr(self, "profile", None)
+        if old_profile and old_profile.id != self.ps_list[index].id:
+            previous = self.workspaces.get(old_profile.id)
+            if previous and not previous.editor.save_all():
+                self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนนิยายไม่ได้", 5000)
+                return
         self.profile = self.ps_list[index]
         self.settings.last_profile_id = self.profile.id
         workspace = self._workspace(self.profile)
@@ -530,20 +561,16 @@ class MainWindow(LegacyMainWindow):
         self.profiles.setCurrentRow(index)
         self.profiles.blockSignals(False)
 
-        self.story_tabs.blockSignals(True)
-        self.story_tabs.setCurrentIndex(index)
-        self.story_tabs.blockSignals(False)
-
         self.workspace_stack.setCurrentWidget(workspace)
-        self.copy_button.setEnabled(bool(self.profile.workflow.steps))
+        self.main_pages.setCurrentWidget(self.workspace_stack)
+        self.copy_action.setEnabled(bool(self.profile.workflow.steps))
         self.refresh_steps()
         if self.si >= 0:
             self.steps.setCurrentRow(self.si)
         self.refresh_goal_indicator()
         self._update_progress_page(workspace)
-        self.statusBar().showMessage(
-            f"กำลังทำงาน: {self.profile.name}", 2500
-        )
+        self.statusBar().showMessage(f"กำลังทำงาน: {self.profile.name}", 2500)
+        self._update_editor_status()
 
     def refresh_steps(self):
         if getattr(self, "_settings_open", False):
@@ -570,12 +597,25 @@ class MainWindow(LegacyMainWindow):
             self.si = -1
         self.refresh_files()
 
+    def refresh_files(self):
+        super().refresh_files()
+        workspace = self.workspaces.get(self.profile.id) if self.profile else None
+        if workspace:
+            workspace.filter_files(workspace.file_search.text())
+
     def _step_changed(self, profile_id, row):
         if not self.profile or self.profile.id != profile_id or row < 0:
             return
         workspace = self.workspaces.get(profile_id)
         if workspace:
+            if not workspace.editor.save_all():
+                self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนขั้นตอนไม่ได้", 5000)
+                workspace.steps.blockSignals(True)
+                workspace.steps.setCurrentRow(workspace.step_index)
+                workspace.steps.blockSignals(False)
+                return
             workspace.step_index = row
+            self.settings.workspace_step_indices[profile_id] = row
         self.si = row
         self.refresh_files()
 
@@ -595,6 +635,29 @@ class MainWindow(LegacyMainWindow):
         workspace = self.workspaces.get(self.profile.id)
         if workspace and workspace.editor.save_current():
             self.statusBar().showMessage("บันทึกไฟล์แล้ว", 2000)
+
+    def open_workflow_file(self, profile_id, item):
+        profile = next((value for value in self.ps_list if value.id == profile_id), None)
+        workspace = self.workspaces.get(profile_id)
+        if not profile or not workspace or not (0 <= workspace.step_index < len(profile.workflow.steps)):
+            return
+        step = profile.workflow.steps[workspace.step_index]
+        step_file = next((value for value in step.files if value.id == item.data(Qt.UserRole)), None)
+        if not step_file:
+            return
+        try:
+            if step_file.reference_type == "dynamic":
+                path = self.assembler.resolve(profile, step_file.dynamic_reference)
+            elif step_file.reference_type == "external_file":
+                path = Path(step_file.path).expanduser().resolve()
+            else:
+                path = self.repo.resolve_project_path(profile.id, step_file.path)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            QMessageBox.warning(self, "เปิดไฟล์ไม่ได้", str(exc))
+            return
+        if workspace.editor.open_file(path):
+            workspace.breadcrumb.setText(f"{profile.name}  ›  {step.name}  ›  {path.name}")
+
 
     def copy_step(self):
         super().copy_step()
@@ -629,12 +692,7 @@ class MainWindow(LegacyMainWindow):
 
         for entry in targets:
             try:
-                if entry.kind == "website":
-                    workspace.browser.open_url(
-                        entry.target, title=entry.label or None, new_tab=True
-                    )
-                    succeeded += 1
-                elif entry.kind == "file":
+                if entry.kind == "file":
                     path = Path(entry.target).expanduser()
                     if not path.is_file():
                         raise FileNotFoundError(path)
@@ -687,7 +745,6 @@ class MainWindow(LegacyMainWindow):
         if not self.profile:
             return
 
-        today = daily_chapter_count(self.profile)
         latest = None
         if self.profile.context_path:
             try:
@@ -701,35 +758,51 @@ class MainWindow(LegacyMainWindow):
             except OSError:
                 latest = None
 
-        goal = goal_progress(self.profile)
-        workspace.progress_today.setText(f"วันนี้ +{today} บท")
-        workspace.progress_latest.setText(
-            f"บทล่าสุด {latest}" if latest is not None else "บทล่าสุด —"
+        self._latest_chapter_status = (
+            f"  ·  ล่าสุดบท {latest}" if latest is not None else ""
         )
-        if goal:
-            completed, target, percentage = goal
-            workspace.progress_goal.setText(
-                f"เป้าหมาย {completed}/{target} บท · {percentage}%"
-            )
-        else:
-            workspace.progress_goal.setText("ยังไม่ได้ตั้งเป้าหมาย")
+        self._update_editor_status()
 
     def _capture_sessions(self):
         for profile_id, workspace in self.workspaces.items():
-            self.settings.browser_tabs[profile_id] = workspace.browser.urls()
-            self.settings.browser_active_tabs[profile_id] = (
-                workspace.browser.tabs.currentIndex()
-            )
             self.settings.editor_tabs[profile_id] = (
                 workspace.editor.open_paths()
             )
             self.settings.editor_active_tabs[profile_id] = (
                 workspace.editor.tabs.currentIndex()
             )
+            self.settings.workspace_step_indices[profile_id] = workspace.step_index
+            sidebar_size = workspace.workspace_splitter.sizes()[0]
+            self.settings.sidebar_visible = sidebar_size > 0
+            if sidebar_size > 0:
+                self.settings.sidebar_width = sidebar_size
+            positions = {}
+            for index in range(workspace.editor.tabs.count()):
+                editor = workspace.editor.tabs.widget(index)
+                path = workspace.editor._path(editor)
+                if path:
+                    positions[str(path)] = {
+                        "cursor": editor.textCursor().position(),
+                        "scroll": editor.verticalScrollBar().value(),
+                    }
+            self.settings.editor_positions[profile_id] = positions
 
     def save(self):
         self._capture_sessions()
         super().save()
+
+    def _update_editor_status(self, text=""):
+        progress = ""
+        if self.profile:
+            progress = f"  ·  วันนี้ +{daily_chapter_count(self.profile)} บท"
+            goal = goal_progress(self.profile)
+            if goal:
+                completed, target, percentage = goal
+                progress += f"  ·  เป้าหมาย {completed}/{target} ({percentage}%)"
+        self.editor_status.setText(
+            (text or "พร้อมใช้งาน  ·  0 คำ  ·  0 อักขระ")
+            + progress + getattr(self, "_latest_chapter_status", "")
+        )
 
     def closeEvent(self, event):
         for workspace in self.workspaces.values():

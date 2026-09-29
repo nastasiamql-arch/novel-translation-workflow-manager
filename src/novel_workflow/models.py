@@ -132,10 +132,12 @@ class AppSettings:
     confirm_before_deleting: bool = True
     open_last_profile: bool = True
     last_profile_id: str | None = None
-    browser_tabs: dict[str, list[str]] = field(default_factory=dict)
-    browser_active_tabs: dict[str, int] = field(default_factory=dict)
     editor_tabs: dict[str, list[str]] = field(default_factory=dict)
     editor_active_tabs: dict[str, int] = field(default_factory=dict)
+    workspace_step_indices: dict[str, int] = field(default_factory=dict)
+    editor_positions: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
+    sidebar_width: int = 290
+    sidebar_visible: bool = True
 
 @dataclass
 class WorkflowTemplate:
