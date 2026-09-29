@@ -3,7 +3,7 @@ from pathlib import Path
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 from .storage import ProjectRepository
-from .ui import MainWindow
+from .workspace_window import MainWindow
 
 def _icon_path():
     return Path(__file__).resolve().parent / "resources" / "novelworkflow.png"
@@ -32,4 +32,6 @@ def main():
     window = MainWindow()
     window.show()
     return app.exec()
-if __name__ == "__main__": raise SystemExit(main())
+
+if __name__ == "__main__":
+    raise SystemExit(main())
