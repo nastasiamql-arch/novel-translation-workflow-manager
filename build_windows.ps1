@@ -26,11 +26,27 @@ if ($LASTEXITCODE -ne 0) { throw "Could not install the app dependencies." }
 & $venvPython -m PyInstaller --noconfirm --clean (Join-Path $PSScriptRoot "NovelWorkflow.spec")
 if ($LASTEXITCODE -ne 0) { throw "Could not build NovelWorkflow." }
 
-$portableDir = Join-Path $PSScriptRoot "dist\NovelWorkflow"
-if (-not (Test-Path -LiteralPath (Join-Path $portableDir "NovelWorkflow.exe"))) {
+$appExe = Join-Path $PSScriptRoot "dist\NovelWorkflow\NovelWorkflow.exe"
+if (-not (Test-Path -LiteralPath $appExe)) {
     throw "The Windows app executable was not created."
 }
-$zipPath = Join-Path $PSScriptRoot "dist\NovelWorkflow-windows.zip"
-$portableFiles = Get-ChildItem -LiteralPath $portableDir -Force
-Compress-Archive -Path $portableFiles.FullName -DestinationPath $zipPath -Force
-Write-Output "Ready-to-run app: $zipPath"
+
+$isccCandidates = @(
+    (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+    (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+
+if (-not $isccCandidates) {
+    throw "Inno Setup 6 is required to build the installer. Install it and run this script again."
+}
+
+$iscc = $isccCandidates | Select-Object -First 1
+& $iscc (Join-Path $PSScriptRoot "installer.iss")
+if ($LASTEXITCODE -ne 0) { throw "Could not build the Windows installer." }
+
+$installer = Join-Path $PSScriptRoot "dist\NovelWorkflow-Setup-1.1.0.exe"
+if (-not (Test-Path -LiteralPath $installer)) {
+    throw "The Windows installer was not created."
+}
+
+Write-Output "Installer ready: $installer"

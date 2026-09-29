@@ -2,7 +2,6 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -21,6 +20,7 @@ jobs:
         run: python tests/ui_smoke.py
       - name: Run test suite
         run: python -m pytest -q
+
   windows-build:
     needs: test
     runs-on: windows-latest
@@ -29,14 +29,26 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Build portable Windows app
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+      - name: Build Windows installer
         run: .\build_windows.ps1
+      - name: Read project version
+        id: version
+        shell: pwsh
+        run: |
+          $version = python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
+          "version=$version" >> $env:GITHUB_OUTPUT
       - uses: actions/upload-artifact@v4
         with:
-          name: NovelWorkflow-windows
-          path: dist/NovelWorkflow-windows.zip
-      - name: Publish tagged release
-        if: startsWith(github.ref, 'refs/tags/v')
+          name: NovelWorkflow-Setup-${{ steps.version.outputs.version }}
+          path: dist/NovelWorkflow-Setup-${{ steps.version.outputs.version }}.exe
+      - name: Publish versioned GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/NovelWorkflow-windows.zip
+          tag_name: v${{ steps.version.outputs.version }}
+          name: NovelWorkflow v${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: dist/NovelWorkflow-Setup-${{ steps.version.outputs.version }}.exe

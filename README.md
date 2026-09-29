@@ -7,10 +7,10 @@ NovelWorkflow คือโปรแกรมเดสก์ท็อปสำห
 ## ดาวน์โหลดและใช้งานบน Windows
 
 1. เปิดหน้า [GitHub Releases](https://github.com/nastasiamql-arch/novel-translation-workflow-manager/releases)
-2. ดาวน์โหลดไฟล์ `NovelWorkflow-windows.zip` จาก Release ล่าสุด แล้วแตกไฟล์ ZIP ทั้งหมด
-3. เปิด `NovelWorkflow.exe` จากโฟลเดอร์ที่แตกไฟล์แล้ว โดยต้องเก็บโฟลเดอร์ `_internal` ไว้ข้าง ๆ ไฟล์โปรแกรม
+2. ดาวน์โหลดไฟล์ `NovelWorkflow-Setup-1.1.0.exe` จาก Release ล่าสุด
+3. เปิดไฟล์ติดตั้ง แล้วทำตามขั้นตอนบนหน้าจอ จากนั้นเปิด NovelWorkflow จาก Start Menu หรือ Desktop shortcut
 
-แพ็กเกจ Release มีตัวโปรแกรมและไฟล์ Qt runtime ที่จำเป็นรวมมาให้แล้ว จึงไม่ต้องติดตั้ง Python เพิ่ม ปุ่ม **Code → Download ZIP** ใช้ดาวน์โหลดซอร์สโค้ดสำหรับนักพัฒนา ไม่ใช่ตัวโปรแกรมที่พร้อมเปิดใช้งาน ส่วน Build ล่าสุดจากการอัปเดต branch `main` สามารถดาวน์โหลดได้จาก GitHub Actions ในหัวข้อ **Artifacts**
+ตัวติดตั้ง Release มีโปรแกรมและ Qt runtime ที่จำเป็นรวมมาให้แล้ว จึงไม่ต้องติดตั้ง Python เพิ่ม ปุ่ม **Code → Download ZIP** ใช้ดาวน์โหลดซอร์สโค้ดสำหรับนักพัฒนา ไม่ใช่ตัวติดตั้ง ส่วน Build ล่าสุดจากการอัปเดต branch `main` สามารถดาวน์โหลดได้จาก GitHub Actions ในหัวข้อ **Artifacts**
 
 ## รันจากซอร์สโค้ด
 
@@ -18,7 +18,7 @@ NovelWorkflow คือโปรแกรมเดสก์ท็อปสำห
 
     .\build_windows.ps1
 
-คำสั่งนี้จะสร้างไฟล์ `dist/NovelWorkflow-windows.zip` และ `dist/NovelWorkflow/NovelWorkflow.exe` ให้แตกไฟล์ ZIP ก่อนใช้งาน และไฟล์โปรแกรมต้องอยู่ข้างโฟลเดอร์ `_internal` เสมอ
+คำสั่งนี้จะสร้างตัวโปรแกรมด้วย PyInstaller และแพ็กเป็นตัวติดตั้ง `dist/NovelWorkflow-Setup-1.1.0.exe` ด้วย Inno Setup 6
 
 ถ้าต้องการรันจาก Python โดยตรง ให้สร้าง environment ติดตั้งโปรแกรม แล้วจึงเปิดใช้งาน:
 
@@ -35,7 +35,7 @@ NovelWorkflow คือโปรแกรมเดสก์ท็อปสำห
 - ตั้งรูปปกแยกสำหรับนิยายแต่ละเรื่องได้ โดยรูปปกจะถูกคัดลอกไปเก็บในข้อมูลของโปรไฟล์นั้น
 - ข้อมูล Workflow จะผูกอยู่กับแต่ละโปรไฟล์ นิยายที่นำเข้าจาก Launcher จะได้รับ Workflow เริ่มต้น ส่วนโปรไฟล์เดิมที่ตรงกันจะยังคง Workflow และไฟล์เดิมไว้
 
-โปรแกรมยังใช้โฟลเดอร์ข้อมูลเดิมที่ `%LOCALAPPDATA%/NovelTranslationWorkflowManager` ดังนั้นโปรไฟล์เดิมจะถูกนำกลับมาใช้ต่อหลังอัปเดตโปรแกรม ส่วนข้อมูลกลุ่มจะเก็บไว้ในไฟล์ `groups.json` ข้างโปรไฟล์
+ตั้งแต่เวอร์ชัน 1.1 โปรแกรมใช้พื้นที่ข้อมูลใหม่ที่ `%LOCALAPPDATA%/NovelWorkflow` เพื่อเริ่มต้นแบบโปรแกรมใหม่โดยไม่มีข้อมูลนิยายเดิม ข้อมูลเก่าที่ `%LOCALAPPDATA%/NovelTranslationWorkflowManager` จะไม่ถูกลบและจะไม่ถูกโหลดอัตโนมัติ
 
 ## ฟีเจอร์ Workflow
 
@@ -64,4 +64,4 @@ NovelWorkflow คือโปรแกรมเดสก์ท็อปสำห
     python -m pytest
     .\build_windows.ps1
 
-GitHub Actions จะรันชุดทดสอบและสร้าง Windows portable build ทุกครั้งที่มีการอัปเดตเข้า `main` ส่วน Build ที่มีการติด Tag จะเผยแพร่ไฟล์ `NovelWorkflow-windows.zip` เป็นไฟล์ดาวน์โหลดใน GitHub Release
+GitHub Actions จะรันชุดทดสอบและสร้างตัวติดตั้ง Windows ทุกครั้งที่มีการอัปเดตเข้า `main` และ commit สำหรับ Release จะเผยแพร่ไฟล์ `NovelWorkflow-Setup-<version>.exe` ใน GitHub Releases

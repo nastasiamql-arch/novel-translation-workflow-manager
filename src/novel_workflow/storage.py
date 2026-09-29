@@ -5,13 +5,14 @@ from .models import AppSettings, LaunchTarget, NovelGroup, NovelProfile, Workflo
 from .translation_progress import latest_context_chapter
 
 def data_root():
-    # Keep the existing location so current NovelTranslationWorkflowManager data is reused.
-    return Path(os.environ.get("LOCALAPPDATA",Path.home()/"AppData"/"Local"))/"NovelTranslationWorkflowManager"
+    # Version 1.1 starts with a clean application data namespace. Legacy data is left untouched.
+    return Path(os.environ.get("LOCALAPPDATA",Path.home()/"AppData"/"Local"))/"NovelWorkflow"
 
 def read_json(path, default):
     path=Path(path)
     if not path.exists(): return default
     raw=path.read_text(encoding="utf-8")
+    if not raw.strip(): return default
     try: return json.loads(raw)
     except json.JSONDecodeError as exc:
         fixed=re.sub(r",\s*([}\]])",r"\1",raw)

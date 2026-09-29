@@ -1,7 +1,7 @@
 import json
 from novel_workflow.models import LaunchTarget, NovelGroup, NovelProfile, StepFile, Workflow, WorkflowStep
 from novel_workflow.services import AssemblyService, ProfileService, WorkflowService
-from novel_workflow.storage import ProjectRepository, read_json
+from novel_workflow.storage import ProjectRepository, data_root, read_json
 from novel_workflow.launcher import LauncherService
 import pytest
 from unittest.mock import call, patch
@@ -48,6 +48,20 @@ def test_traversal_and_json_recovery(tmp_path):
     assert read_json(f,{})=={"ok":True} and f.read_text(encoding="utf-8")==raw
     f.write_text('{"ok":',encoding="utf-8")
     with pytest.raises(ValueError):read_json(f,{})
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "\n\t"])
+def test_read_json_empty_or_whitespace_returns_default_without_rewriting(tmp_path, raw):
+    f=tmp_path/"empty.json"
+    f.write_text(raw,encoding="utf-8")
+    default={"safe":True}
+    assert read_json(f,default) is default
+    assert f.read_text(encoding="utf-8")==raw
+
+
+def test_data_root_uses_clean_novelworkflow_namespace(tmp_path):
+    with patch.dict("os.environ",{"LOCALAPPDATA":str(tmp_path)}):
+        assert data_root()==tmp_path/"NovelWorkflow"
 
 
 def test_copy_advancement_cycles_through_workflow_steps():
