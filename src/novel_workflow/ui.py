@@ -54,11 +54,9 @@ class MainWindow(QMainWindow):
         bar.setIconSize(QSize(30,30))
         logo=Path(__file__).resolve().parent/"resources"/"novelworkflow.png"
         mark=QLabel()
+        mark.setObjectName("toolbarLogo")
         if logo.is_file(): mark.setPixmap(QPixmap(str(logo)).scaled(30,30,Qt.KeepAspectRatio,Qt.SmoothTransformation))
         bar.addWidget(mark)
-        brand=QLabel("<b>NovelWorkflow</b>")
-        brand.setObjectName("brandTitle")
-        bar.addWidget(brand)
         spacer=QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred)
         bar.addWidget(spacer)
@@ -156,6 +154,14 @@ class MainWindow(QMainWindow):
 
     def shortcut(self,key,fn):a=QAction(self);a.setShortcut(QKeySequence(key));a.triggered.connect(fn);self.addAction(a)
     def refresh(self):self.refresh_profiles(self.profile.id if self.profile else None)
+
+    def profile_browse_directory(self):
+        if not self.profile:return Path.home()
+        return ProfileService.browse_directory(self.repo,self.profile)
+
+    def remember_profile_browse_directory(self,path):
+        if self.profile:ProfileService.remember_browse_directory(self.repo,self.profile,path)
+
     def refresh_profiles(self,pid=None):
         self.ps_list=self.repo.list_profiles()
         for profile in self.ps_list:
@@ -289,6 +295,13 @@ class MainWindow(QMainWindow):
     def save(self):
         if self.profile:self.repo.save_profile(self.profile)
         self.repo.save_settings(self.settings);self.statusBar().showMessage("Saved",2000)
+
+    def move_profile(self,direction):
+        if not self.profile:return
+        profile_id=self.profile.id
+        index=self.repo.move_profile(profile_id,direction)
+        self.refresh_profiles(profile_id)
+        self.profiles.setCurrentRow(index)
     def launch_profile(self):
         if not self.profile:return
         results=self.launcher.launch_profile(self.profile)
@@ -301,7 +314,13 @@ class MainWindow(QMainWindow):
         if not self.profile:return
         dialog=QDialog(self);dialog.setWindowTitle("Launcher Items — "+self.profile.name);dialog.resize(760,560)
         layout=QVBoxLayout(dialog);folder=QLineEdit(self.profile.main_folder);folder.setPlaceholderText("โฟลเดอร์หลักของนิยาย")
-        browse=QPushButton("Browse…");browse.clicked.connect(lambda:folder.setText(QFileDialog.getExistingDirectory(dialog,"เลือกโฟลเดอร์นิยาย",folder.text()) or folder.text()))
+        def choose_main_folder():
+            start=folder.text() if Path(folder.text()).is_dir() else str(self.profile_browse_directory())
+            selected=QFileDialog.getExistingDirectory(dialog,"เลือกโฟลเดอร์นิยาย",start)
+            if selected:
+                folder.setText(selected)
+                self.remember_profile_browse_directory(selected)
+        browse=QPushButton("Browse…");browse.clicked.connect(choose_main_folder)
         folder_row=QHBoxLayout();folder_row.addWidget(folder,1);folder_row.addWidget(browse)
         layout.addWidget(QLabel("Main folder"));layout.addLayout(folder_row)
         listing=QListWidget();layout.addWidget(listing,1)
@@ -313,15 +332,16 @@ class MainWindow(QMainWindow):
                 row.setFlags(row.flags()|Qt.ItemIsUserCheckable);row.setCheckState(Qt.Checked if target.enabled else Qt.Unchecked);row.setData(Qt.UserRole,target.id);listing.addItem(row)
         def add_target(kind):
             if kind=="application":
-                path,_=QFileDialog.getOpenFileName(dialog,"เลือกโปรแกรม","","Applications (*.exe);;All files (*)")
+                path,_=QFileDialog.getOpenFileName(dialog,"เลือกโปรแกรม",str(Path.home()),"Applications (*.exe);;All files (*)")
             elif kind=="folder":
-                path=QFileDialog.getExistingDirectory(dialog,"เลือกโฟลเดอร์")
+                path=QFileDialog.getExistingDirectory(dialog,"เลือกโฟลเดอร์",str(self.profile_browse_directory()))
             elif kind=="website":
                 path,ok=QInputDialog.getText(dialog,"Add Website","URL (http/https):")
                 if not ok:return
             else:
-                path,_=QFileDialog.getOpenFileName(dialog,"เลือกไฟล์","","All files (*)")
+                path,_=QFileDialog.getOpenFileName(dialog,"เลือกไฟล์",str(self.profile_browse_directory()),"All files (*)")
             if not path:return
+            if kind in ("file","folder"):self.remember_profile_browse_directory(path)
             label=Path(path).stem if kind!="website" else path
             if kind=="website":
                 label,ok=QInputDialog.getText(dialog,"Website Name","ชื่อเว็บไซต์:",text=path)
@@ -399,7 +419,7 @@ class MainWindow(QMainWindow):
 
     def set_context_file(self):
         if not self.profile:return
-        path,_=QFileDialog.getOpenFileName(self,"เลือกไฟล์ Context ของนิยาย",str(Path(self.profile.main_folder or Path.home()).expanduser()),"Context files (*.md *.txt *.json);;All files (*)")
+        path,_=QFileDialog.getOpenFileName(self,"เลือกไฟล์ Context ของนิยาย",str(self.profile_browse_directory()),"Context files (*.md *.txt *.json);;All files (*)")
         if not path:return
         context=Path(path).expanduser()
         try:
@@ -413,13 +433,14 @@ class MainWindow(QMainWindow):
         self.profile.context_path=str(context.resolve())
         self.profile.translation_checkpoint_path=str(context.resolve())
         self.profile.chapter_state.current_chapter=chapter
+        self.remember_profile_browse_directory(context)
         self.repo.save_profile(self.profile)
         self.statusBar().showMessage(f"เชื่อม Context แล้ว · บทล่าสุด {chapter}",3500)
         self.refresh_translation_progress()
 
     def set_cover(self):
         if not self.profile:return
-        path,_=QFileDialog.getOpenFileName(self,"เลือกรูปปกนิยาย",str(Path.home()),"รูปภาพ (*.png *.jpg *.jpeg *.webp *.bmp)")
+        path,_=QFileDialog.getOpenFileName(self,"เลือกรูปปกนิยาย",str(self.profile_browse_directory()),"รูปภาพ (*.png *.jpg *.jpeg *.webp *.bmp)")
         if not path:return
         source=Path(path).expanduser()
         if QPixmap(str(source)).isNull():
@@ -432,6 +453,7 @@ class MainWindow(QMainWindow):
         import shutil
         shutil.copy2(source,target)
         self.profile.cover_image_path=target.relative_to(root).as_posix()
+        self.remember_profile_browse_directory(source)
         self.repo.save_profile(self.profile)
         self.refresh_profiles(self.profile.id)
         self.statusBar().showMessage("ตั้งรูปปกนิยายแล้ว",2500)
@@ -494,8 +516,9 @@ class MainWindow(QMainWindow):
     def add_file(self):
         if not self.profile or not self.step():return
         root=self.repo.profile_dir(self.profile.id).resolve()
-        sources,_=QFileDialog.getOpenFileNames(self,"Link original files",str(root),"Text files (*.txt *.md *.json)")
+        sources,_=QFileDialog.getOpenFileNames(self,"Link original files",str(self.profile_browse_directory()),"Text files (*.txt *.md *.json)")
         if not sources:return
+        self.remember_profile_browse_directory(sources[-1])
         added=0;updated=0;skipped=0
         for src in sources:
             source=Path(src).resolve()
@@ -584,10 +607,11 @@ class MainWindow(QMainWindow):
                     step.files=[item for item in step.files if item.reference_type=="external_file" or not item.path or self.repo.resolve_project_path(self.profile.id,item.path)!=path]
                 self.save();refresh();self.refresh_files()
         def import_file():
-            source,_=QFileDialog.getOpenFileName(dialog,"Import file","","Text files (*.txt *.md *.json)")
+            source,_=QFileDialog.getOpenFileName(dialog,"Import file",str(self.profile_browse_directory()),"Text files (*.txt *.md *.json)")
             if not source:return
             src=Path(source)
             if src.suffix.lower() not in (".txt",".md",".json"):QMessageBox.warning(dialog,"Unsupported","Use .txt, .md, or .json.");return
+            self.remember_profile_browse_directory(src)
             rel,ok=QInputDialog.getText(dialog,"Import File","Destination relative path:",text="reference/"+src.name)
             if not ok:return
             dest=self.repo.resolve_project_path(self.profile.id,rel)
@@ -706,6 +730,7 @@ class MainWindow(QMainWindow):
 
         profile_actions=[
             ("เพิ่มนิยาย",self.new_profile),("ทำสำเนา",self.duplicate_profile),
+            ("เลื่อนขึ้น",lambda:self.move_profile(-1)),("เลื่อนลง",lambda:self.move_profile(1)),
             ("ตั้งรูปปก",self.set_cover),("เอารูปปกออก",self.remove_cover),
             ("เลือก Context",self.set_context_file),("เปลี่ยนชื่อ",self.rename_profile),
             ("ตัวเปิดไฟล์",self.launcher_dialog),("ลบนิยาย",self.delete_profile),

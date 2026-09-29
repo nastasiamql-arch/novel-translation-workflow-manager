@@ -69,6 +69,89 @@ def test_launcher_profile_and_groups_are_saved_independently(tmp_path):
     assert loaded[first.id].launch_targets[0].target=="https://example.com"
     assert repo.load_groups()[0].profile_ids==[first.id,second.id]
 
+
+def test_profile_order_and_browse_fields_load_save_and_legacy_defaults(tmp_path):
+    repo=ProjectRepository(tmp_path)
+    profile=NovelProfile(name="Ordered",order=7,last_browse_directory=str(tmp_path))
+    repo.save_profile(profile)
+    loaded=NovelProfile.from_dict(json.loads((repo.profile_dir(profile.id)/"profile.json").read_text(encoding="utf-8")))
+    assert loaded.order==7 and loaded.last_browse_directory==str(tmp_path)
+    legacy=NovelProfile.from_dict({"id":"a"*32,"name":"Legacy"})
+    assert legacy.order==0 and legacy.last_browse_directory is None
+
+
+def test_legacy_profiles_migrate_to_stable_name_order_then_persist(tmp_path):
+    repo=ProjectRepository(tmp_path)
+    for name,pid in (("Zulu","b"*32),("Alpha","a"*32)):
+        folder=repo.profile_dir(pid);folder.mkdir(parents=True)
+        (folder/"profile.json").write_text(json.dumps({"id":pid,"name":name}),encoding="utf-8")
+    profiles=repo.list_profiles()
+    assert [(profile.name,profile.order) for profile in profiles]==[("Alpha",0),("Zulu",1)]
+    assert [json.loads((repo.profile_dir(profile.id)/"profile.json").read_text(encoding="utf-8"))["order"] for profile in profiles]==[0,1]
+
+
+def test_profile_order_move_delete_and_restart_are_persistent(tmp_path):
+    repo=ProjectRepository(tmp_path)
+    service=ProfileService(repo)
+    profiles=[service.create(name) for name in ("Zulu","Alpha","Mike")]
+    assert [profile.name for profile in repo.list_profiles()]==["Zulu","Alpha","Mike"]
+    repo.move_profile(profiles[2].id,-1)
+    assert [profile.name for profile in repo.list_profiles()]==["Zulu","Mike","Alpha"]
+    repo.move_profile(profiles[2].id,1)
+    assert [profile.name for profile in repo.list_profiles()]==["Zulu","Alpha","Mike"]
+    repo.move_profile(profiles[2].id,-2)
+    reopened=ProjectRepository(tmp_path)
+    assert [profile.name for profile in reopened.list_profiles()]==["Mike","Zulu","Alpha"]
+    reopened.delete_profile(profiles[0].id)
+    remaining=reopened.list_profiles()
+    assert [(profile.name,profile.order) for profile in remaining]==[("Mike",0),("Alpha",1)]
+
+
+def test_new_duplicate_import_and_rename_keep_deterministic_profile_order(tmp_path):
+    repo=ProjectRepository(tmp_path/"app")
+    service=ProfileService(repo)
+    first=service.create("First")
+    second=service.create("Second")
+    duplicate=service.duplicate(first,"Copy")
+    assert [p.id for p in repo.list_profiles()]==[first.id,second.id,duplicate.id]
+    duplicate.name="Aardvark";repo.save_profile(duplicate)
+    assert [p.id for p in repo.list_profiles()]==[first.id,second.id,duplicate.id]
+    source=tmp_path/"launcher.json"
+    source.write_text(json.dumps({"novels":[{"id":"new","name":"Imported"}],"groups":[]}),encoding="utf-8")
+    repo.import_launcher_config(source)
+    assert [(p.name,p.order) for p in repo.list_profiles()]==[("First",0),("Second",1),("Aardvark",2),("Imported",3)]
+
+
+def test_profile_browse_directory_fallback_and_memory_are_independent(tmp_path):
+    repo=ProjectRepository(tmp_path/"app")
+    main=tmp_path/"novel";main.mkdir()
+    last_a=tmp_path/"external-a";last_a.mkdir()
+    last_b=tmp_path/"external-b";last_b.mkdir()
+    profile_a=ProfileService(repo).create("A")
+    profile_b=ProfileService(repo).create("B")
+    profile_a.main_folder=str(main)
+    assert ProfileService.browse_directory(repo,profile_a)==main
+    selected=last_a/"context.txt";selected.touch()
+    ProfileService.remember_browse_directory(repo,profile_a,selected)
+    ProfileService.remember_browse_directory(repo,profile_b,last_b)
+    reopened=ProjectRepository(tmp_path/"app")
+    loaded={p.id:p for p in reopened.list_profiles()}
+    assert ProfileService.browse_directory(reopened,loaded[profile_a.id])==last_a
+    assert ProfileService.browse_directory(reopened,loaded[profile_b.id])==last_b
+    loaded[profile_a.id].last_browse_directory=str(tmp_path/"removed")
+    assert ProfileService.browse_directory(reopened,loaded[profile_a.id])==main
+
+
+def test_profile_browse_directory_falls_back_to_app_profile_then_home(tmp_path):
+    repo=ProjectRepository(tmp_path/"app")
+    profile=NovelProfile(id="c"*32,name="No folder")
+    home=tmp_path/"home";home.mkdir()
+    assert ProfileService.browse_directory(repo,profile,home)==home
+    repo.save_profile(profile)
+    assert ProfileService.browse_directory(repo,profile,home)==repo.profile_dir(profile.id)
+    profile.last_browse_directory=str(tmp_path/"gone")
+    assert ProfileService.browse_directory(repo,profile,home)==repo.profile_dir(profile.id)
+
 def test_launcher_import_merges_targets_groups_and_preserves_source(tmp_path):
     repo=ProjectRepository(tmp_path/"app")
     existing=NovelProfile(name="Existing",main_folder=str(tmp_path/"novel"))

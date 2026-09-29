@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QToolBar
 
 from novel_workflow.models import StepFile, Workflow
 from novel_workflow.services import ProfileService
@@ -39,6 +39,13 @@ def main() -> int:
             try:
                 assert window.novel.text() == profile.name
                 assert window.steps.currentRow() == 0
+                toolbar = window.findChild(QToolBar, "mainToolbar")
+                logo = window.findChild(QLabel, "toolbarLogo")
+                assert logo is not None and logo.pixmap() is not None and not logo.pixmap().isNull()
+                assert window.findChild(QLabel, "brandTitle") is None
+                assert {action.text() for action in toolbar.actions()} >= {
+                    "เปิดนิยาย", "กลุ่มนิยาย", "นำเข้าข้อมูลเดิม", "ความคืบหน้า", "ตั้งค่า"
+                }
 
                 second = window.steps.visualItemRect(window.steps.item(1))
                 QTest.mouseClick(window.steps.viewport(), Qt.LeftButton, pos=second.center())
@@ -70,13 +77,24 @@ def main() -> int:
                 window.settings.appearance = "Dark"
                 window.apply_theme()
 
+                browse = Path(temp_dir) / "selected-folder"
+                browse.mkdir()
+                ProfileService.remember_browse_directory(repo, window.profile, browse / "context.md")
+                assert window.profile_browse_directory() == browse
+
+                second = ProfileService(repo).create("Second novel")
+                window.refresh_profiles(profile.id)
+                window.move_profile(1)
+                assert [item.id for item in repo.list_profiles()] == [second.id, profile.id]
+                assert [item.id for item in ProjectRepository(temp_dir).list_profiles()] == [second.id, profile.id]
+
                 window.resize(900, 600)
                 app.processEvents()
                 assert window.width() == 900
                 window.close()
                 app.exit(0)
                 smoke_passed = True
-                print("UI smoke passed: select step, enable file, copy to clipboard, cycle, theme, resize")
+                print("UI smoke passed: toolbar branding, profile order persistence, browse memory, workspace interactions, theme, resize")
             except Exception as exc:
                 print(f"UI smoke failed: {type(exc).__name__}: {exc}")
                 window.close()

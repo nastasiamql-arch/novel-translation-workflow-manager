@@ -8,9 +8,9 @@ DYNAMIC=("CURRENT_SOURCE_CHAPTER","CURRENT_TRANSLATED_CHAPTER","CURRENT_REVIEWED
 class ProfileService:
     def __init__(self,repo): self.repo=repo
     def create(self,name,workflow=None):
-        p=NovelProfile(name=name.strip() or "Novel",workflow=deepcopy(workflow or Workflow.defaults())); self.repo.save_profile(p); return p
+        p=NovelProfile(name=name.strip() or "Novel",order=self.repo.next_profile_order(),workflow=deepcopy(workflow or Workflow.defaults())); self.repo.save_profile(p); return p
     def duplicate(self,source,name,glossary=False,characters=False):
-        p=NovelProfile(name=name.strip() or source.name+" Copy",workflow=deepcopy(source.workflow)); self.repo.save_profile(p)
+        p=NovelProfile(name=name.strip() or source.name+" Copy",order=self.repo.next_profile_order(),workflow=deepcopy(source.workflow)); self.repo.save_profile(p)
         src,dst=self.repo.profile_dir(source.id),self.repo.profile_dir(p.id)
         import shutil
         for cat,copy in (("prompts",True),("style",True),("glossary",glossary),("characters",characters)):
@@ -18,6 +18,26 @@ class ProfileService:
         for s in p.workflow.steps:
             s.files=[f for f in s.files if f.reference_type=="dynamic" or (f.path and (dst/f.path).is_file())]
         self.repo.save_profile(p); return p
+
+    @staticmethod
+    def browse_directory(repo,profile,home=None):
+        """Choose the profile's last-used folder, novel folder, app folder, or home."""
+        for candidate in (profile.last_browse_directory,profile.main_folder):
+            if candidate:
+                path=Path(candidate).expanduser()
+                if path.is_dir():return path
+        profile_root=repo.profile_dir(profile.id)
+        if profile_root.is_dir():return profile_root
+        return Path(home).expanduser() if home else Path.home()
+
+    @staticmethod
+    def remember_browse_directory(repo,profile,path):
+        selected=Path(path).expanduser()
+        directory=selected if selected.is_dir() else selected.parent
+        if not directory.is_dir():return False
+        profile.last_browse_directory=str(directory.resolve())
+        repo.save_profile(profile)
+        return True
 
 class WorkflowService:
     @staticmethod

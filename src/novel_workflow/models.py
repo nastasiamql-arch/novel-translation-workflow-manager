@@ -89,15 +89,19 @@ class NovelProfile:
     translation_checkpoint_path: str | None = None
     translation_daily_activity: dict[str, list[int]] = field(default_factory=dict)
     cover_image_path: str | None = None
+    order: int = 0
+    last_browse_directory: str | None = None
     @classmethod
     def from_dict(cls,d):
         state=d.get("chapter_state",{})
         return cls(
             id=d.get("id",uid()),
             name=d.get("name","Novel"),
+            order=int(d.get("order",0)),
             workflow=Workflow.from_dict(d.get("workflow",{})),
             chapter_state=ChapterState(int(state.get("current_chapter",1)),state.get("statuses",{})),
             main_folder=str(d.get("main_folder","")),
+            last_browse_directory=d.get("last_browse_directory"),
             launch_targets=[LaunchTarget.from_dict(x) for x in d.get("launch_targets",[])],
             context_path=d.get("context_path"),
             status=str(d.get("status","translating")),

@@ -41,13 +41,49 @@ class ProjectRepository:
         if not re.fullmatch(r"[a-fA-F0-9]{32}",pid): raise ValueError("Invalid profile ID")
         return self.profiles_dir/pid
     def list_profiles(self):
-        return sorted([NovelProfile.from_dict(read_json(p/"profile.json",{})) for p in self.profiles_dir.iterdir() if (p/"profile.json").is_file()], key=lambda profile: profile.name.casefold())
+        profiles=[]
+        missing_order=[]
+        for folder in self.profiles_dir.iterdir():
+            path=folder/"profile.json"
+            if not path.is_file():continue
+            data=read_json(path,{})
+            profile=NovelProfile.from_dict(data)
+            profiles.append(profile)
+            if "order" not in data:missing_order.append(profile)
+        if missing_order:
+            missing_ids={profile.id for profile in missing_order}
+            next_order=max((profile.order for profile in profiles if profile.id not in missing_ids),default=-1)+1
+            for profile in sorted(missing_order,key=lambda item:item.name.casefold()):
+                profile.order=next_order
+                next_order+=1
+                self.save_profile(profile)
+        return sorted(profiles,key=lambda profile:(profile.order,profile.name.casefold()))
+
+    def next_profile_order(self):
+        return max((profile.order for profile in self.list_profiles()),default=-1)+1
+
+    def move_profile(self,pid,direction):
+        profiles=self.list_profiles()
+        index=next((i for i,profile in enumerate(profiles) if profile.id==pid),None)
+        if index is None:raise ValueError(f"Unknown profile: {pid}")
+        destination=max(0,min(len(profiles)-1,index+direction))
+        if destination!=index:
+            profile=profiles.pop(index)
+            profiles.insert(destination,profile)
+            for order,profile in enumerate(profiles):
+                profile.order=order
+                self.save_profile(profile)
+        return destination
     def save_profile(self,p):
         folder=self.profile_dir(p.id); folder.mkdir(parents=True,exist_ok=True)
         for c in self.CATEGORIES: (folder/c).mkdir(exist_ok=True)
         write_json(folder/"profile.json",asdict(p))
     def delete_profile(self,pid):
         import shutil; shutil.rmtree(self.profile_dir(pid))
+        for order,profile in enumerate(self.list_profiles()):
+            if profile.order!=order:
+                profile.order=order
+                self.save_profile(profile)
         groups=[g for g in self.load_groups()]
         for group in groups:group.profile_ids=[profile_id for profile_id in group.profile_ids if profile_id!=pid]
         self.save_groups(groups)
@@ -102,6 +138,7 @@ class ProjectRepository:
         } if isinstance(raw_checkpoints,list) else {}
 
         profiles=self.list_profiles()
+        next_order=max((profile.order for profile in profiles),default=-1)+1
         folder_key=lambda value: str(Path(value).expanduser()).replace("\\","/").rstrip("/").casefold()
         name_key=lambda value: re.sub(r"[^\w]+","",str(value),flags=re.UNICODE).casefold()
         by_folder={folder_key(p.main_folder):p for p in profiles if p.main_folder}
@@ -118,7 +155,8 @@ class ProjectRepository:
                 candidate=by_name.get(name_key(name))
                 if candidate and (not folder or not candidate.main_folder or folder_key(candidate.main_folder)==key): profile=candidate
             if profile is None:
-                profile=NovelProfile(name=name,main_folder=folder)
+                profile=NovelProfile(name=name,main_folder=folder,order=next_order)
+                next_order+=1
                 new_profiles+=1
             elif folder and not profile.main_folder:
                 profile.main_folder=folder
