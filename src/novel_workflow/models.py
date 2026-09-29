@@ -46,9 +46,7 @@ class Workflow:
     @classmethod
     def from_dict(cls,d): return cls([WorkflowStep.from_dict(x) for x in d.get("steps",[])])
 
-
 _LEGACY_BASIC_STEP_NAMES = ("หาศัพท์","แปล","ตรวจคำแปล","เกลาสำนวน")
-
 
 def migrate_legacy_basic_workflow(workflow: Workflow) -> bool:
     """Remove only the old built-in fourth step, leaving custom workflows intact."""
@@ -134,6 +132,10 @@ class AppSettings:
     confirm_before_deleting: bool = True
     open_last_profile: bool = True
     last_profile_id: str | None = None
+    browser_tabs: dict[str, list[str]] = field(default_factory=dict)
+    browser_active_tabs: dict[str, int] = field(default_factory=dict)
+    editor_tabs: dict[str, list[str]] = field(default_factory=dict)
+    editor_active_tabs: dict[str, int] = field(default_factory=dict)
 
 @dataclass
 class WorkflowTemplate:
