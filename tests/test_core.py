@@ -12,6 +12,20 @@ def test_profiles_are_independent(tmp_path):
     assert not (repo.profile_dir(b.id)/"source"/"chapter_25.txt").exists()
     assert [p.name for p in repo.list_profiles()]==["A","B"]
 
+def test_duplicate_profile_preserves_separate_vocabulary_step(tmp_path):
+    repo=ProjectRepository(tmp_path)
+    source=ProfileService(repo).create("A")
+    source.vocabulary_step.files.append(StepFile(
+        label="Current chapter",reference_type="dynamic",
+        dynamic_reference="CURRENT_SOURCE_CHAPTER",
+    ))
+    repo.save_profile(source)
+
+    duplicate=ProfileService(repo).duplicate(source,"A Copy")
+
+    assert duplicate.vocabulary_step.name=="หาศัพท์"
+    assert duplicate.vocabulary_step.files[0].dynamic_reference=="CURRENT_SOURCE_CHAPTER"
+
 def test_workflow_and_ordering():
     w=Workflow.defaults();s=WorkflowService.add_step(w,"custom")
     s.files=[StepFile(label="a",order=0),StepFile(label="b",order=1)];s.files[0].enabled=False

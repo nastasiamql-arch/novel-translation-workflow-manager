@@ -1,7 +1,7 @@
 import json, os, re, tempfile
 from pathlib import Path
 from dataclasses import asdict
-from .models import AppSettings, NovelGroup, NovelProfile, Workflow, WorkflowTemplate, migrate_legacy_basic_workflow
+from .models import AppSettings, NovelGroup, NovelProfile, Workflow, WorkflowTemplate, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
 
 def data_root():
     # Version 1.1 starts with a clean application data namespace. Legacy data is left untouched.
@@ -101,15 +101,23 @@ class ProjectRepository:
             templates=[WorkflowTemplate("Novel Translation Basic",Workflow.defaults())]
             self.save_templates(templates)
             return templates
-        templates=[WorkflowTemplate(x["name"],Workflow.from_dict(x.get("workflow",{}))) for x in data]
+        templates=[WorkflowTemplate(
+            x["name"],
+            Workflow.from_dict(x.get("workflow",{})),
+            WorkflowTemplate.from_dict(x).vocabulary_step,
+        ) for x in data]
         changed=False
         for template in templates:
-            if template.name.strip().casefold()=="novel translation basic":
-                changed=migrate_legacy_basic_workflow(template.workflow) or changed
+            changed=migrate_legacy_basic_workflow(template.workflow) or changed
+            profile=NovelProfile(workflow=template.workflow,vocabulary_step=template.vocabulary_step)
+            if migrate_legacy_vocabulary_step(profile):
+                template.workflow=profile.workflow
+                template.vocabulary_step=profile.vocabulary_step
+                changed=True
         if changed:
             self.save_templates(templates)
         return templates
-    def save_templates(self,items): write_json(self.templates_path,[{"name":x.name,"workflow":asdict(x.workflow)} for x in items])
+    def save_templates(self,items): write_json(self.templates_path,[{"name":x.name,"workflow":asdict(x.workflow),"vocabulary_step":asdict(x.vocabulary_step) if x.vocabulary_step else None} for x in items])
     def load_groups(self):
         data=read_json(self.groups_path,[])
         if not isinstance(data,list):raise ValueError("Group data must be a JSON array")

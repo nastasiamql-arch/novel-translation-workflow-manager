@@ -42,7 +42,7 @@ class WorkflowStep:
 class Workflow:
     steps: list[WorkflowStep] = field(default_factory=list)
     @classmethod
-    def defaults(cls): return cls([WorkflowStep(name=n) for n in ("หาศัพท์","แปล","ตรวจคำแปล")])
+    def defaults(cls): return cls([WorkflowStep(name=n) for n in ("แปล","ตรวจคำแปล")])
     @classmethod
     def from_dict(cls,d): return cls([WorkflowStep.from_dict(x) for x in d.get("steps",[])])
 
@@ -53,6 +53,22 @@ def migrate_legacy_basic_workflow(workflow: Workflow) -> bool:
     if tuple(step.name for step in workflow.steps) != _LEGACY_BASIC_STEP_NAMES:
         return False
     workflow.steps.pop()
+    return True
+
+
+def migrate_legacy_vocabulary_step(profile: "NovelProfile") -> bool:
+    """Move the former first workflow step into the separate vocabulary tool."""
+    if not profile.workflow.steps or profile.workflow.steps[0].name.strip() != "หาศัพท์":
+        return False
+    legacy_step = profile.workflow.steps.pop(0)
+    current = profile.vocabulary_step
+    if current is None or not current.files:
+        profile.vocabulary_step = legacy_step
+    else:
+        # Preserve both sets of links if a partially migrated profile contains
+        # data in each place.
+        known = {item.id for item in current.files}
+        current.files.extend(item for item in legacy_step.files if item.id not in known)
     return True
 
 @dataclass
@@ -77,6 +93,7 @@ class NovelProfile:
     id: str = field(default_factory=uid)
     name: str = "Novel"
     workflow: Workflow = field(default_factory=Workflow.defaults)
+    vocabulary_step: WorkflowStep | None = field(default_factory=lambda: WorkflowStep(name="หาศัพท์"))
     chapter_state: ChapterState = field(default_factory=ChapterState)
     main_folder: str = ""
     launch_targets: list[LaunchTarget] = field(default_factory=list)
@@ -97,6 +114,11 @@ class NovelProfile:
             name=d.get("name","Novel"),
             order=int(d.get("order",0)),
             workflow=Workflow.from_dict(d.get("workflow",{})),
+            vocabulary_step=(
+                WorkflowStep.from_dict(d["vocabulary_step"])
+                if isinstance(d.get("vocabulary_step"), dict)
+                else WorkflowStep(name="หาศัพท์")
+            ),
             chapter_state=ChapterState(int(state.get("current_chapter",1)),state.get("statuses",{})),
             main_folder=str(d.get("main_folder","")),
             last_browse_directory=d.get("last_browse_directory"),
@@ -146,3 +168,12 @@ class AppSettings:
 class WorkflowTemplate:
     name: str
     workflow: Workflow
+    vocabulary_step: WorkflowStep | None = field(default_factory=lambda: WorkflowStep(name="หาศัพท์"))
+    @classmethod
+    def from_dict(cls, data):
+        vocabulary = data.get("vocabulary_step")
+        return cls(
+            data.get("name", "Workflow"),
+            Workflow.from_dict(data.get("workflow", {})),
+            WorkflowStep.from_dict(vocabulary) if isinstance(vocabulary, dict) else WorkflowStep(name="หาศัพท์"),
+        )

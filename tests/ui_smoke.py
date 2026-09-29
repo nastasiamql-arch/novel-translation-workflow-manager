@@ -13,7 +13,7 @@ from PySide6.QtGui import QTextCursor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton, QToolBar
 
-from novel_workflow.models import LaunchTarget, StepFile, Workflow
+from novel_workflow.models import LaunchTarget, StepFile, Workflow, WorkflowStep
 from novel_workflow.services import ProfileService
 from novel_workflow.storage import ProjectRepository
 from novel_workflow.workspace_window import ElidingStatusLabel, MainWindow
@@ -48,6 +48,16 @@ def main() -> int:
                 order=0,
             )
         )
+        legacy_vocabulary_file = StepFile(
+            label="Find Terms",
+            reference_type="external_file",
+            path=str(context),
+            file_type="glossary",
+            order=0,
+        )
+        profile.workflow.steps.insert(
+            0, WorkflowStep(name="หาศัพท์", files=[legacy_vocabulary_file])
+        )
         profile.launch_targets.append(
             LaunchTarget(label="Chapter", kind="file", target=str(chapter), order=0)
         )
@@ -69,10 +79,23 @@ def main() -> int:
                 workspace = window.workspaces[profile.id]
                 assert window.settings.appearance == "Light"
                 assert workspace.root_path == novel_folder.resolve()
-                assert workspace.steps.count() == 3
-                assert [workspace.steps.item(i).text() for i in range(3)] == [
-                    "1. หาศัพท์", "2. แปล", "3. ตรวจคำแปล",
+                assert workspace.steps.count() == 2
+                assert [workspace.steps.item(i).text() for i in range(2)] == [
+                    "แปล", "ตรวจคำแปล",
                 ]
+                assert workspace.vocabulary_button.text() == "หาศัพท์"
+                assert window.profile.workflow.steps[0].name == "แปล"
+                assert window.profile.vocabulary_step.files[0].id == legacy_vocabulary_file.id
+                saved_profile = repo.list_profiles()[0]
+                assert [step.name for step in saved_profile.workflow.steps] == ["แปล", "ตรวจคำแปล"]
+                workspace.vocabulary_button.click()
+                app.processEvents()
+                assert workspace.vocabulary_mode
+                assert window.step().name == "หาศัพท์"
+                assert workspace.files.item(0).text() == "Find Terms"
+                workspace.vocabulary_button.click()
+                app.processEvents()
+                assert not workspace.vocabulary_mode
 
                 assert workspace.content_stack.currentWidget() is workspace.workflow_page
                 assert not hasattr(workspace, "browser")
@@ -218,12 +241,21 @@ def main() -> int:
                 assert window._utility_pages["progress"].isVisible()
                 window.return_from_utility_page()
 
+                workspace.vocabulary_button.click()
+                assert workspace.vocabulary_mode
                 window.settings_dialog()
                 assert window.main_pages.currentWidget() is window.utility_page
                 assert window._settings_open
+                window.file_scope_selector.setCurrentIndex(1)
+                assert window.step().name == "หาศัพท์"
+                assert window.files.item(0).text() == "Find Terms"
+                window.file_scope_selector.setCurrentIndex(0)
+                assert window.step().name == "แปล"
                 window.return_from_utility_page()
                 assert not window._settings_open
                 assert window.main_pages.currentWidget() is window.workspace_stack
+                assert workspace.vocabulary_mode
+                workspace.vocabulary_button.click()
 
                 window.file_manager()
                 assert window.main_pages.currentWidget() is window.utility_page

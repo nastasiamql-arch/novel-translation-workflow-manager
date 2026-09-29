@@ -3,7 +3,7 @@ from dataclasses import asdict as asdict_target
 from PySide6.QtCore import Qt, QUrl, QSize, QTimer, QMimeData
 from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap
 from PySide6.QtWidgets import *
-from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow, migrate_legacy_basic_workflow
+from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow, WorkflowTemplate, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
 from .services import ProfileService, WorkflowService, AssemblyService
 from .launcher import LauncherService
 from .storage import ProjectRepository
@@ -166,6 +166,7 @@ class MainWindow(QMainWindow):
         self.ps_list=self.repo.list_profiles()
         for profile in self.ps_list:
             changed=migrate_legacy_basic_workflow(profile.workflow)
+            if migrate_legacy_vocabulary_step(profile):changed=True
             if sync_profile_context(profile):changed=True
             if changed:self.repo.save_profile(profile)
         self.profiles.blockSignals(True)
@@ -255,7 +256,7 @@ class MainWindow(QMainWindow):
     def refresh_steps(self):
         self.steps.blockSignals(True);self.steps.clear()
         if self.profile:
-            for i,s in enumerate(self.profile.workflow.steps):self.steps.addItem(f"{i+1}. {s.name}")
+            for s in self.profile.workflow.steps:self.steps.addItem(s.name)
             if not self.profile.workflow.steps:
                 empty=QListWidgetItem("ยังไม่มีขั้นตอน\nเพิ่มได้ที่ ตั้งค่า → ขั้นตอน")
                 empty.setFlags(Qt.NoItemFlags);empty.setTextAlignment(Qt.AlignCenter);self.steps.addItem(empty)
@@ -277,7 +278,7 @@ class MainWindow(QMainWindow):
         for index,step in enumerate(self.profile.workflow.steps):
             item=self.steps.item(index)
             if item:
-                item.setText(f"{index+1}. {step.name}")
+                item.setText(step.name)
                 item.setToolTip(step.name)
     def step(self):return self.profile.workflow.steps[self.si] if self.profile and 0<=self.si<len(self.profile.workflow.steps) else None
     def refresh_files(self):
@@ -476,7 +477,9 @@ class MainWindow(QMainWindow):
         name,ok=QInputDialog.getText(self,"New Profile","Novel name:")
         if not ok:return
         ts=self.repo.load_templates();choice,ok=QInputDialog.getItem(self,"Workflow Template","Template:",[x.name for x in ts],0,False)
-        t=next((x.workflow for x in ts if x.name==choice),Workflow.defaults()) if ok else Workflow.defaults();self.refresh_profiles(self.ps.create(name,t).id)
+        template=next((x for x in ts if x.name==choice),None) if ok else None
+        created=self.ps.create(name,template.workflow if template else Workflow.defaults(),template.vocabulary_step if template else None)
+        self.refresh_profiles(created.id)
     def duplicate_profile(self):
         if not self.profile:return
         name,ok=QInputDialog.getText(self,"Duplicate","New profile name:",text=self.profile.name+" Copy")
@@ -495,7 +498,7 @@ class MainWindow(QMainWindow):
         name,ok=QInputDialog.getText(self,"Save Workflow Template","Template name:",text=self.profile.name+" workflow")
         if not ok or not name.strip():return
         from copy import deepcopy
-        templates=self.repo.load_templates();templates.append(__import__("novel_workflow.models",fromlist=["WorkflowTemplate"]).WorkflowTemplate(name.strip(),deepcopy(self.profile.workflow)))
+        templates=self.repo.load_templates();templates.append(WorkflowTemplate(name.strip(),deepcopy(self.profile.workflow),deepcopy(self.profile.vocabulary_step)))
         self.repo.save_templates(templates);self.statusBar().showMessage("Workflow template saved",2500)
     def add_step(self):
         if not self.profile:return
@@ -532,7 +535,9 @@ class MainWindow(QMainWindow):
             except ValueError:
                 reference_type="external_file";stored_path=str(source)
             old_copy="reference/"+source.name
-            for workflow_step in self.profile.workflow.steps:
+            all_steps=list(self.profile.workflow.steps)
+            if self.profile.vocabulary_step:all_steps.append(self.profile.vocabulary_step)
+            for workflow_step in all_steps:
                 for item in workflow_step.files:
                     if item.reference_type=="repository_file" and item.path==old_copy:
                         item.reference_type=reference_type;item.path=stored_path;updated+=1
@@ -595,7 +600,9 @@ class MainWindow(QMainWindow):
             if dest.exists():QMessageBox.warning(dialog,"Exists","Destination already exists.");return
             old=path.relative_to(root).as_posix();dest.parent.mkdir(parents=True,exist_ok=True);path.rename(dest)
             new=dest.relative_to(root).as_posix()
-            for step in self.profile.workflow.steps:
+            all_steps=list(self.profile.workflow.steps)
+            if self.profile.vocabulary_step:all_steps.append(self.profile.vocabulary_step)
+            for step in all_steps:
                 for item in step.files:
                     if item.path==old:item.path=new
             self.save();refresh()
@@ -604,7 +611,9 @@ class MainWindow(QMainWindow):
             if not path:return
             if QMessageBox.question(dialog,"Delete File",f"Permanently delete {path.name}?")==QMessageBox.Yes:
                 path.unlink()
-                for step in self.profile.workflow.steps:
+                all_steps=list(self.profile.workflow.steps)
+                if self.profile.vocabulary_step:all_steps.append(self.profile.vocabulary_step)
+                for step in all_steps:
                     step.files=[item for item in step.files if item.reference_type=="external_file" or not item.path or self.repo.resolve_project_path(self.profile.id,item.path)!=path]
                 self.save();refresh();self.refresh_files()
         def import_file():
@@ -653,6 +662,7 @@ class MainWindow(QMainWindow):
     def copy_step(self):
         step=self.step()
         if not step:return
+        vocabulary_mode=bool(self.profile and step is self.profile.vocabulary_step)
         try:
             paths=[]
             for item in sorted(step.files,key=lambda x:x.order):
@@ -674,13 +684,14 @@ class MainWindow(QMainWindow):
             mime_data.setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
             QApplication.clipboard().setMimeData(mime_data)
             self.statusBar().showMessage(f"Copied {len(paths)} file(s) from {step.name}. Paste with Ctrl+V.",5000)
-            next_row=WorkflowService.next_index(self.si,self.steps.count())
-            self.si=next_row
-            self.steps.blockSignals(True)
-            self.steps.setCurrentRow(next_row)
-            self.steps.blockSignals(False)
-            self.update_step_indicator()
-            self.refresh_files()
+            if not vocabulary_mode:
+                next_row=WorkflowService.next_index(self.si,self.steps.count())
+                self.si=next_row
+                self.steps.blockSignals(True)
+                self.steps.setCurrentRow(next_row)
+                self.steps.blockSignals(False)
+                self.update_step_indicator()
+                self.refresh_files()
         except Exception as e:QMessageBox.warning(self,"Copy failed",str(e))
     def settings_dialog(self):
         """Open a separate management page; keep the main workspace action-focused."""
