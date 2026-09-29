@@ -95,6 +95,10 @@ def main() -> int:
                 assert workspace.browser.tabs.count() == 2
 
                 editor = workspace.editor.tabs.currentWidget()
+                assert editor.objectName() == "codeEditor"
+                assert editor.font().pointSizeF() >= 10.5
+                assert workspace.file_tree.objectName() == "fileTree"
+                assert window.copy_button.maximumWidth() <= 320
                 editor.appendPlainText("\nแก้ไขจาก Auto Save")
                 app.processEvents()
                 assert workspace.editor.dirty_count() == 1

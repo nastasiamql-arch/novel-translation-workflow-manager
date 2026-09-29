@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QRect, QSize, Qt, QTimer
-from PySide6.QtGui import QFontDatabase, QFontMetrics, QPainter, QTextFormat
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QPainter, QTextFormat
 from PySide6.QtWidgets import (
     QLabel, QMessageBox, QPlainTextEdit, QTabWidget, QTextEdit,
     QVBoxLayout, QWidget,
@@ -34,14 +34,44 @@ class CodeEditor(QPlainTextEdit):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("codeEditor")
         self.line_number_area = LineNumberArea(self)
+        self.line_number_area.setObjectName("lineNumberArea")
         self.blockCountChanged.connect(self.update_line_number_area_width)
         self.updateRequest.connect(self.update_line_number_area)
         self.cursorPositionChanged.connect(self.highlight_current_line)
 
-        font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        families = set(QFontDatabase.families())
+        preferred = ["Cascadia Code", "Cascadia Mono", "Consolas", "Leelawadee UI", "Segoe UI"]
+        chosen = [name for name in preferred if name in families]
+
+        font = QFont()
+        if chosen:
+            font.setFamilies(chosen)
+        else:
+            font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        font.setPointSizeF(11.0)
+        try:
+            font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
+            font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        except AttributeError:
+            pass
+
         self.setFont(font)
+        self.setCursorWidth(2)
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.setStyleSheet(
+            """
+            QPlainTextEdit#codeEditor {
+                background: #1E1E1E;
+                color: #D4D4D4;
+                border: 0;
+                padding: 7px 10px;
+                selection-background-color: #264F78;
+                selection-color: #FFFFFF;
+            }
+            """
+        )
         metrics = QFontMetrics(font)
         self.setTabStopDistance(metrics.horizontalAdvance(" ") * 4)
         self.update_line_number_area_width()
@@ -73,7 +103,7 @@ class CodeEditor(QPlainTextEdit):
 
     def line_number_area_paint_event(self, event):
         painter = QPainter(self.line_number_area)
-        painter.fillRect(event.rect(), self.palette().alternateBase())
+        painter.fillRect(event.rect(), QColor("#1E1E1E"))
 
         block = self.firstVisibleBlock()
         block_number = block.blockNumber()
@@ -84,7 +114,7 @@ class CodeEditor(QPlainTextEdit):
 
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
-                painter.setPen(self.palette().placeholderText().color())
+                painter.setPen(QColor("#858585"))
                 painter.drawText(
                     0,
                     top,
@@ -101,7 +131,7 @@ class CodeEditor(QPlainTextEdit):
 
     def highlight_current_line(self):
         selection = QTextEdit.ExtraSelection()
-        selection.format.setBackground(self.palette().alternateBase())
+        selection.format.setBackground(QColor("#2A2D2E"))
         selection.format.setProperty(QTextFormat.FullWidthSelection, True)
         selection.cursor = self.textCursor()
         selection.cursor.clearSelection()
@@ -114,6 +144,7 @@ class EditorTabs(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.tabs = QTabWidget()
+        self.tabs.setObjectName("editorTabs")
         self.tabs.setDocumentMode(True)
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
@@ -121,12 +152,48 @@ class EditorTabs(QWidget):
         self.tabs.currentChanged.connect(self._update_status)
 
         self.status = QLabel("ยังไม่ได้เปิดไฟล์")
-        self.status.setObjectName("mutedLabel")
+        self.status.setObjectName("editorStatus")
         self.status.setContentsMargins(8, 2, 8, 2)
+
+        self.setStyleSheet(
+            """
+            QTabWidget#editorTabs::pane {
+                background: #1E1E1E;
+                border: 0;
+                border-radius: 0;
+            }
+            QTabWidget#editorTabs QTabBar::tab {
+                background: #181818;
+                color: #969696;
+                border: 0;
+                border-right: 1px solid #2A2A2A;
+                border-bottom: 1px solid #2A2A2A;
+                padding: 8px 13px;
+                min-width: 92px;
+            }
+            QTabWidget#editorTabs QTabBar::tab:hover {
+                background: #202020;
+                color: #CCCCCC;
+            }
+            QTabWidget#editorTabs QTabBar::tab:selected {
+                background: #1E1E1E;
+                color: #FFFFFF;
+                border-top: 1px solid #007ACC;
+                border-bottom: 0;
+            }
+            QLabel#editorStatus {
+                background: #181818;
+                color: #B3B3B3;
+                border-top: 1px solid #2A2A2A;
+                padding: 4px 8px;
+                font-size: 9.5pt;
+            }
+            """
+        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(0)
         layout.addWidget(self.tabs, 1)
         layout.addWidget(self.status)
 

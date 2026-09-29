@@ -43,6 +43,7 @@ class ProfileWorkspace(QWidget):
         self.file_model.setFilter(QDir.AllEntries | QDir.NoDotAndDotDot)
 
         self.file_tree = QTreeView()
+        self.file_tree.setObjectName("fileTree")
         self.file_tree.setModel(self.file_model)
         self.file_tree.setHeaderHidden(True)
         self.file_tree.setAnimated(True)
@@ -52,7 +53,7 @@ class ProfileWorkspace(QWidget):
         self.file_tree.doubleClicked.connect(self._open_tree_index)
 
         self.explorer_panel = QFrame()
-        self.explorer_panel.setObjectName("workspacePanel")
+        self.explorer_panel.setObjectName("explorerPanel")
         explorer_layout = QVBoxLayout(self.explorer_panel)
         explorer_layout.setContentsMargins(8, 8, 8, 8)
         explorer_layout.setSpacing(6)
@@ -75,7 +76,7 @@ class ProfileWorkspace(QWidget):
 
         self.editor = EditorTabs()
         self.editor_panel = QFrame()
-        self.editor_panel.setObjectName("workspacePanel")
+        self.editor_panel.setObjectName("editorPanel")
         editor_layout = QVBoxLayout(self.editor_panel)
         editor_layout.setContentsMargins(8, 8, 8, 8)
         editor_layout.setSpacing(6)
@@ -169,10 +170,19 @@ class ProfileWorkspace(QWidget):
         self.content_stack.addWidget(self.browser_page)
         self.content_stack.addWidget(self.progress_page)
 
+        mode_strip = QFrame()
+        mode_strip.setObjectName("modeStrip")
+        mode_layout = QHBoxLayout(mode_strip)
+        mode_layout.setContentsMargins(8, 5, 8, 5)
+        mode_layout.setSpacing(0)
+        mode_layout.addStretch(1)
+        mode_layout.addWidget(self.mode_tabs)
+        mode_layout.addStretch(1)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-        layout.addWidget(self.mode_tabs)
+        layout.setSpacing(8)
+        layout.addWidget(mode_strip)
         layout.addWidget(self.content_stack, 1)
 
         self.configure(profile)
@@ -283,6 +293,7 @@ class MainWindow(LegacyMainWindow):
     def build(self):
         self._settings_open = False
         self.workspaces = {}
+        self.resize(1440, 860)
 
         bar = self.addToolBar("Main")
         bar.setObjectName("mainToolbar")
@@ -320,12 +331,16 @@ class MainWindow(LegacyMainWindow):
             bar.addAction(action)
 
         root = QWidget()
+        root.setObjectName("appShell")
         root_layout = QVBoxLayout(root)
-        root_layout.setContentsMargins(8, 8, 8, 8)
-        root_layout.setSpacing(6)
+        root_layout.setContentsMargins(10, 10, 10, 8)
+        root_layout.setSpacing(8)
 
-        story_row = QHBoxLayout()
-        story_row.setContentsMargins(0, 0, 0, 0)
+        story_strip = QFrame()
+        story_strip.setObjectName("storyStrip")
+        story_row = QHBoxLayout(story_strip)
+        story_row.setContentsMargins(8, 5, 8, 5)
+        story_row.setSpacing(4)
         self.story_tabs = QTabBar()
         self.story_tabs.setObjectName("storyTabs")
         self.story_tabs.setExpanding(False)
@@ -339,7 +354,7 @@ class MainWindow(LegacyMainWindow):
         add_story.setToolTip("เพิ่มนิยาย")
         add_story.clicked.connect(self.new_profile)
         story_row.addWidget(add_story)
-        root_layout.addLayout(story_row)
+        root_layout.addWidget(story_strip)
 
         self.workspace_stack = QStackedWidget()
         self.empty_page = QLabel("ยังไม่มีนิยาย\nกด + เพื่อเพิ่มนิยาย")
@@ -350,9 +365,19 @@ class MainWindow(LegacyMainWindow):
 
         self.copy_button = QPushButton("⧉  COPY STEP")
         self.copy_button.setObjectName("primaryButton")
-        self.copy_button.setMinimumHeight(46)
+        self.copy_button.setMinimumHeight(40)
+        self.copy_button.setMinimumWidth(220)
+        self.copy_button.setMaximumWidth(320)
         self.copy_button.clicked.connect(self.copy_step)
-        root_layout.addWidget(self.copy_button)
+
+        bottom_bar = QFrame()
+        bottom_bar.setObjectName("bottomBar")
+        bottom_layout = QHBoxLayout(bottom_bar)
+        bottom_layout.setContentsMargins(10, 7, 10, 7)
+        bottom_layout.addStretch(1)
+        bottom_layout.addWidget(self.copy_button)
+        bottom_layout.addStretch(1)
+        root_layout.addWidget(bottom_bar)
 
         self.setCentralWidget(root)
 
