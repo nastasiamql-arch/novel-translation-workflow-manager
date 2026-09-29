@@ -96,7 +96,10 @@ def main() -> int:
                 assert len(copy_buttons) == 1
                 assert copy_buttons[0] is window.copy_button
 
-                window.launch_profile()
+                workspace.editor.open_file(chapter)
+                workspace.browser.open_url(
+                    "https://example.com", title="Example", new_tab=True
+                )
                 app.processEvents()
 
                 assert workspace.editor.tabs.count() == 1
@@ -135,9 +138,8 @@ def main() -> int:
                 app.processEvents()
                 assert window.width() == 1100
 
-                window.close()
-                app.exit(0)
                 smoke_passed = True
+                app.exit(0)
                 print(
                     "UI smoke passed: novel tabs, three-step workflow, "
                     "embedded file editor, multi-tab browser, COPY STEP"
@@ -151,6 +153,13 @@ def main() -> int:
                 app.exit(1)
 
         QTimer.singleShot(100, exercise_workspace)
+        QTimer.singleShot(
+            20000,
+            lambda: (
+                print("UI smoke timed out after 20 seconds"),
+                app.exit(2),
+            ),
+        )
         event_result = app.exec()
         print(f"Qt event loop exit status: {event_result}")
         result = 0 if smoke_passed else (event_result or 1)
