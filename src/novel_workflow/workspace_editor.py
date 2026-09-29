@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import QFontDatabase, QFontMetrics, QPainter, QTextFormat
-from PySide6.QtWidgets import QLabel, QMessageBox, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QMessageBox, QPlainTextEdit, QTabWidget, QTextEdit, QVBoxLayout, QWidget
 
 
 TEXT_EXTENSIONS = {
@@ -96,7 +96,7 @@ class CodeEditor(QPlainTextEdit):
             block_number += 1
 
     def highlight_current_line(self):
-        selection = QPlainTextEdit.ExtraSelection()
+        selection = QTextEdit.ExtraSelection()
         selection.format.setBackground(self.palette().alternateBase())
         selection.format.setProperty(QTextFormat.FullWidthSelection, True)
         selection.cursor = self.textCursor()
