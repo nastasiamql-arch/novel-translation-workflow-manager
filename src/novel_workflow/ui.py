@@ -438,6 +438,8 @@ class MainWindow(QMainWindow):
         self.remember_profile_browse_directory(context)
         self.repo.save_profile(self.profile)
         self.statusBar().showMessage(f"เชื่อม Context แล้ว · บทล่าสุด {chapter}",3500)
+        if getattr(self, "_settings_open", False):
+            self.refresh_settings_launch_targets()
         self.refresh_translation_progress()
 
     def set_cover(self):

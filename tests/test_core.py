@@ -49,6 +49,21 @@ def test_duplicate_profile_preserves_separate_vocabulary_step(tmp_path):
     assert duplicate.vocabulary_step.name=="หาศัพท์"
     assert duplicate.vocabulary_step.files[0].dynamic_reference=="CURRENT_SOURCE_CHAPTER"
 
+def test_working_files_are_saved_independently_from_step_attachments(tmp_path):
+    repo=ProjectRepository(tmp_path)
+    profile=ProfileService(repo).create("A")
+    profile.workflow.steps[0].files.append(StepFile(label="prompt",path="Prompt.md"))
+    profile.working_files.append(StepFile(
+        label="notes.txt",reference_type="external_file",path="D:/Notes/notes.txt",
+    ))
+    repo.save_profile(profile)
+
+    restored=next(item for item in repo.list_profiles() if item.id==profile.id)
+
+    assert restored.workflow.steps[0].files[0].label=="prompt"
+    assert len(restored.working_files)==1
+    assert restored.working_files[0].path=="D:/Notes/notes.txt"
+
 def test_workflow_and_ordering():
     w=Workflow.defaults();s=WorkflowService.add_step(w,"custom")
     s.files=[StepFile(label="a",order=0),StepFile(label="b",order=1)];s.files[0].enabled=False

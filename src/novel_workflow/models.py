@@ -104,6 +104,7 @@ class NovelProfile:
     translation_checkpoint_path: str | None = None
     translation_daily_activity: dict[str, list[int]] = field(default_factory=dict)
     cover_image_path: str | None = None
+    working_files: list[StepFile] = field(default_factory=list)
     order: int = 0
     last_browse_directory: str | None = None
     @classmethod
@@ -130,6 +131,7 @@ class NovelProfile:
             translation_checkpoint_path=d.get("translation_checkpoint_path"),
             translation_daily_activity=_daily_activity_from_dict(d.get("translation_daily_activity", {})),
             cover_image_path=d.get("cover_image_path"),
+            working_files=[StepFile.from_dict(item) for item in d.get("working_files", [])],
         )
 
 @dataclass

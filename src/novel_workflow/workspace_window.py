@@ -9,11 +9,11 @@ import subprocess
 from PySide6.QtCore import QDir, QFileSystemWatcher, QSize, Qt, QTimer, Signal, QThread
 from PySide6.QtGui import QAction, QFontMetrics, QIcon, QPixmap, QPainter, QPalette
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QFileDialog, QFileSystemModel, QFrame, QGridLayout,
+    QAbstractItemView, QApplication, QDialog, QFileDialog, QFileSystemModel, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
     QProgressBar, QPushButton, QSizePolicy, QSplitter, QStackedWidget,
     QToolButton, QTreeView, QVBoxLayout, QWidget, QInputDialog, QComboBox, QTextEdit,
-    QTabWidget, QCheckBox, QProgressDialog,
+    QCheckBox, QProgressDialog, QScrollArea, QSpinBox,
 )
 
 from .models import LaunchTarget, StepFile, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
@@ -667,9 +667,9 @@ class MainWindow(LegacyMainWindow):
         active_workspace = self.workspaces.get(previous_profile_id) if previous_profile_id else None
         active_vocabulary_mode = bool(active_workspace and active_workspace.vocabulary_mode)
         page = QWidget()
-        root = QVBoxLayout(page)
-        tabs = QTabWidget()
-        root.addWidget(tabs, 1)
+        root = QHBoxLayout(page)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(12)
 
         self.profiles = ReorderableProfileList()
         self.profiles.orderChanged.connect(self._persist_profile_order)
@@ -688,89 +688,176 @@ class MainWindow(LegacyMainWindow):
         self.files.setCursor(Qt.PointingHandCursor)
         self.files.setAccessibleName("ไฟล์ของขั้นตอน")
         self.files.itemChanged.connect(self.toggle_file)
-        self.file_scope_selector = QComboBox()
-        self.file_scope_selector.addItems(["ไฟล์ของขั้นตอน", "ไฟล์หาศัพท์"])
-        files_panel = QWidget()
-        files_layout = QVBoxLayout(files_panel)
-        files_layout.setContentsMargins(0, 0, 0, 0)
-        files_layout.addWidget(self.file_scope_selector)
-        files_layout.addWidget(self.files, 1)
-        self.file_scope_selector.currentIndexChanged.connect(self._settings_file_scope_changed)
 
-        def management_tab(title, widget, buttons):
-            tab = QWidget()
-            layout = QVBoxLayout(tab)
-            layout.setContentsMargins(14, 14, 14, 14)
-            layout.addWidget(widget, 1)
-            grid = QGridLayout()
-            grid.setHorizontalSpacing(8)
-            grid.setVerticalSpacing(8)
-            for index, (label, callback) in enumerate(buttons):
-                button = QPushButton(label)
-                button.setMinimumHeight(40)
-                button.clicked.connect(callback)
-                grid.addWidget(button, index // 2, index % 2)
-            layout.addLayout(grid)
-            tabs.addTab(tab, title)
-            return tab
-
-        management_tab("นิยาย", self.profiles, [
-            ("เพิ่มนิยาย", self.new_profile), ("ทำสำเนา", self.duplicate_profile),
+        profile_panel = QFrame()
+        profile_panel.setObjectName("settingsCard")
+        profile_layout = QVBoxLayout(profile_panel)
+        profile_layout.addWidget(QLabel("นิยายของฉัน"))
+        profile_layout.addWidget(self.profiles, 1)
+        profile_actions = QGridLayout()
+        for index, (label, callback) in enumerate((
+            ("＋ เพิ่มนิยาย", self.new_profile), ("ทำสำเนา", self.duplicate_profile),
             ("เลื่อนขึ้น", lambda: self.move_profile(-1)), ("เลื่อนลง", lambda: self.move_profile(1)),
-            ("ตั้งรูปปก", self.set_cover), ("เอารูปปกออก", self.remove_cover),
-            ("เลือก Context", self.set_context_file), ("เปลี่ยนชื่อ", self.rename_profile),
-            ("รายการที่เปิด", self.launcher_dialog), ("ลบนิยาย", self.delete_profile),
-        ])
+        )):
+            button = QPushButton(label)
+            button.clicked.connect(callback)
+            profile_actions.addWidget(button, index // 2, index % 2)
+        profile_layout.addLayout(profile_actions)
+        profile_panel.setMinimumWidth(230)
+        root.addWidget(profile_panel, 1)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        detail_page = QWidget()
+        detail = QVBoxLayout(detail_page)
+        detail.setContentsMargins(4, 4, 4, 4)
+        self.settings_profile_heading = QLabel("เลือกนิยายเพื่อจัดการการตั้งค่า")
+        self.settings_profile_heading.setObjectName("sectionHeading")
+        detail.addWidget(self.settings_profile_heading)
+
+        info_frame = QFrame()
+        info_frame.setObjectName("settingsCard")
+        info_layout = QHBoxLayout(info_frame)
+        self.settings_context_hint = QLabel("ยังไม่ได้เลือกไฟล์ Context")
+        self.settings_context_hint.setObjectName("mutedLabel")
+        info_layout.addWidget(self.settings_context_hint, 1)
+        info_layout.addWidget(QLabel("เป้าหมายบท/รอบ"))
+        self.settings_goal_target = QSpinBox()
+        self.settings_goal_target.setRange(0, 100000)
+        self.settings_goal_target.setSpecialValueText("ยังไม่ตั้ง")
+        info_layout.addWidget(self.settings_goal_target)
+        save_goal = QPushButton("บันทึกเป้าหมาย")
+        save_goal.clicked.connect(self.save_settings_goal_target)
+        info_layout.addWidget(save_goal)
+        detail.addWidget(info_frame)
+
+        story_actions = QHBoxLayout()
+        for label, callback in (
+            ("เปลี่ยนชื่อ", self.rename_profile), ("ตั้งรูปปก", self.set_cover),
+            ("เอารูปปกออก", self.remove_cover), ("เลือก Context", self.set_context_file),
+            ("ลบนิยาย", self.delete_profile),
+        ):
+            button = QPushButton(label)
+            button.clicked.connect(callback)
+            story_actions.addWidget(button)
+        detail.addLayout(story_actions)
+
+        launcher_frame = QFrame()
+        launcher_frame.setObjectName("settingsCard")
+        launcher_layout = QVBoxLayout(launcher_frame)
+        launcher_layout.addWidget(QLabel("โฟลเดอร์และรายการที่เปิดพร้อมเรื่องนี้"))
+        folder_row = QHBoxLayout()
+        self.settings_main_folder = QLineEdit()
+        self.settings_main_folder.setPlaceholderText("โฟลเดอร์หลักของนิยาย (ถ้ามี)")
+        folder_row.addWidget(self.settings_main_folder, 1)
+        choose_folder = QPushButton("เลือกโฟลเดอร์")
+        choose_folder.clicked.connect(self.choose_settings_main_folder)
+        folder_row.addWidget(choose_folder)
+        save_folder = QPushButton("บันทึกโฟลเดอร์")
+        save_folder.clicked.connect(self.save_settings_main_folder)
+        folder_row.addWidget(save_folder)
+        launcher_layout.addLayout(folder_row)
+        self.settings_launch_targets = QListWidget()
+        self.settings_launch_targets.itemChanged.connect(self.save_settings_launch_target_state)
+        launcher_layout.addWidget(self.settings_launch_targets)
+        launch_actions = QHBoxLayout()
+        for label, kind in (("＋ App", "application"), ("＋ ไฟล์", "file"),
+                            ("＋ โฟลเดอร์", "folder"), ("＋ Website", "website")):
+            button = QPushButton(label)
+            button.clicked.connect(lambda checked=False, value=kind: self.add_settings_launch_target(value))
+            launch_actions.addWidget(button)
+        remove_target = QPushButton("เอารายการที่เลือกออก")
+        remove_target.clicked.connect(self.remove_settings_launch_target)
+        launch_actions.addWidget(remove_target)
+        launcher_layout.addLayout(launch_actions)
+        detail.addWidget(launcher_frame)
+
         def workflow_step_action(callback):
             def run(*_args):
                 if self._management_vocabulary_mode:
                     self.statusBar().showMessage(
-                        "หาศัพท์แยกจากขั้นตอนแปล จัดการไฟล์ได้จากแท็บไฟล์แนบ", 3500
+                        "หาศัพท์แยกจากขั้นตอนแปล จัดการไฟล์ได้จากรายการไฟล์ด้านขวา", 3500
                     )
                     return
                 callback()
             return run
-
-        steps_tab = management_tab("ขั้นตอน", self.steps, [
+        workflow_frame = QFrame()
+        workflow_frame.setObjectName("settingsCard")
+        workflow_layout = QVBoxLayout(workflow_frame)
+        workflow_layout.addWidget(QLabel("ขั้นตอนและไฟล์แนบ"))
+        workflow_columns = QHBoxLayout()
+        steps_column = QVBoxLayout()
+        steps_column.addWidget(QLabel("เลือกขั้นตอน"))
+        steps_column.addWidget(self.steps, 1)
+        step_actions = QGridLayout()
+        for index, (label, callback) in enumerate((
             ("เพิ่มขั้นตอน", self.add_step),
             ("เปลี่ยนชื่อ", workflow_step_action(self.rename_step)),
             ("ทำสำเนา", workflow_step_action(self.duplicate_step)),
             ("ลบขั้นตอน", workflow_step_action(self.delete_step)),
-            ("เลื่อนขึ้น", workflow_step_action(lambda: self.move_step(-1))),
-            ("เลื่อนลง", workflow_step_action(lambda: self.move_step(1))),
-            ("บันทึกเป็นแม่แบบ", workflow_step_action(self.save_template)),
-        ])
-        files_tab = management_tab("ไฟล์แนบ", files_panel, [
-            ("เพิ่มไฟล์", self.add_file), ("อ้างอิงบทปัจจุบัน", self.add_dynamic),
-            ("เอาออกจากขั้นตอน", self.remove_file), ("เลื่อนขึ้น", lambda: self.move_file(-1)),
-            ("เลื่อนลง", lambda: self.move_file(1)), ("เปลี่ยนชื่อที่แสดง", self.rename_file_label),
+            ("ขึ้น", workflow_step_action(lambda: self.move_step(-1))),
+            ("ลง", workflow_step_action(lambda: self.move_step(1))),
+            ("บันทึกแม่แบบ", workflow_step_action(self.save_template)),
+        )):
+            button = QPushButton(label)
+            button.clicked.connect(callback)
+            step_actions.addWidget(button, index // 2, index % 2)
+        steps_column.addLayout(step_actions)
+        workflow_columns.addLayout(steps_column, 1)
+
+        files_column = QVBoxLayout()
+        files_header = QHBoxLayout()
+        files_header.addWidget(QLabel("ไฟล์แนบของขั้นตอนที่เลือก"), 1)
+        self.settings_step_hint = QLabel("เลือกขั้นตอนเพื่อจัดการไฟล์")
+        self.settings_step_hint.setObjectName("mutedLabel")
+        files_header.addWidget(self.settings_step_hint)
+        files_column.addLayout(files_header)
+        files_column.addWidget(self.files, 1)
+        file_actions = QGridLayout()
+        for index, (label, callback) in enumerate((
+            ("＋ เพิ่มหลายไฟล์", self.add_file), ("ไฟล์บทปัจจุบัน", self.add_dynamic),
+            ("เอาออก", self.remove_file), ("ขึ้น", lambda: self.move_file(-1)),
+            ("ลง", lambda: self.move_file(1)), ("เปลี่ยนชื่อแสดง", self.rename_file_label),
             ("จัดการไฟล์", self.file_manager), ("ดูตัวอย่าง", self.preview),
-        ])
+        )):
+            button = QPushButton(label)
+            button.clicked.connect(callback)
+            file_actions.addWidget(button, index // 2, index % 2)
+        files_column.addLayout(file_actions)
+        workflow_columns.addLayout(files_column, 2)
+        workflow_layout.addLayout(workflow_columns)
+        detail.addWidget(workflow_frame, 1)
 
-        preferences = QWidget()
-        prefs = QVBoxLayout(preferences)
-        appearance = QComboBox()
-        appearance.addItems(["System", "Light", "Dark"])
-        appearance.setCurrentText(self.settings.appearance)
-        prefs.addWidget(QLabel("รูปลักษณ์"))
-        prefs.addWidget(appearance)
-        separator = QLineEdit(self.settings.separator)
-        prefs.addWidget(QLabel("ตัวคั่นเนื้อหา (ใช้ {FILE_NAME})"))
-        prefs.addWidget(separator)
-        checks = []
-        for label, attr in (("แสดงชื่อไฟล์", "show_filename_heading"),
-                            ("ยืนยันก่อนลบ", "confirm_before_deleting"),
-                            ("เปิดนิยายล่าสุดเมื่อเริ่มโปรแกรม", "open_last_profile")):
-            check = QCheckBox(label)
-            check.setChecked(getattr(self.settings, attr))
-            prefs.addWidget(check)
-            checks.append((check, attr))
-        prefs.addStretch(1)
-        tabs.addTab(preferences, "ทั่วไป")
+        work_frame = QFrame()
+        work_frame.setObjectName("settingsCard")
+        work_layout = QVBoxLayout(work_frame)
+        work_header = QHBoxLayout()
+        work_header.addWidget(QLabel("ไฟล์สำหรับเปิดทำงาน"), 1)
+        self.working_files_hint = QLabel("เลือกไฟล์ที่ต้องการเปิดเป็นแท็บ โดยไม่ผูกกับขั้นตอน")
+        self.working_files_hint.setObjectName("mutedLabel")
+        work_header.addWidget(self.working_files_hint)
+        work_layout.addLayout(work_header)
+        self.working_files = QListWidget()
+        self.working_files.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.working_files.itemDoubleClicked.connect(self.open_selected_working_file)
+        work_layout.addWidget(self.working_files)
+        work_actions = QHBoxLayout()
+        for label, callback in (
+            ("＋ เลือกหลายไฟล์", self.add_working_files),
+            ("เปิดไฟล์ที่เลือก", self.open_selected_working_file),
+            ("เอาออกจากรายการ", self.remove_working_file),
+        ):
+            button = QPushButton(label)
+            button.clicked.connect(callback)
+            work_actions.addWidget(button)
+        work_layout.addLayout(work_actions)
+        detail.addWidget(work_frame)
 
-        save = QPushButton("บันทึกการตั้งค่า")
-        save.setMinimumHeight(42)
-        root.addWidget(save, alignment=Qt.AlignRight)
+        program_settings = QPushButton("ตั้งค่าโปรแกรม")
+        program_settings.clicked.connect(self.program_settings_dialog)
+        detail.addWidget(program_settings, alignment=Qt.AlignRight)
+        scroll.setWidget(detail_page)
+        root.addWidget(scroll, 4)
 
         self._settings_open = True
         self._management_vocabulary_mode = False
@@ -779,36 +866,260 @@ class MainWindow(LegacyMainWindow):
             "profile_id": previous_profile_id, "step_id": active_step_id,
             "vocabulary_mode": active_vocabulary_mode,
         }
-        self._settings_tabs = tabs
-        self._settings_steps_tab = steps_tab
-        self._settings_file_tab = files_tab
         self.steps.itemDoubleClicked.connect(self._open_selected_step_files)
         self.refresh_profiles(previous_profile_id)
 
-        def save_preferences():
+    def program_settings_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("ตั้งค่าโปรแกรม")
+        dialog.resize(520, 420)
+        layout = QVBoxLayout(dialog)
+        appearance = QComboBox()
+        appearance.addItems(["System", "Light", "Dark"])
+        appearance.setCurrentText(self.settings.appearance)
+        layout.addWidget(QLabel("รูปลักษณ์ของโปรแกรม"))
+        layout.addWidget(appearance)
+        separator = QLineEdit(self.settings.separator)
+        layout.addWidget(QLabel("ตัวคั่นเนื้อหา (ใช้ {FILE_NAME})"))
+        layout.addWidget(separator)
+        checks = []
+        for label, attr in (("แสดงชื่อไฟล์", "show_filename_heading"),
+                            ("ยืนยันก่อนลบ", "confirm_before_deleting"),
+                            ("เปิดนิยายล่าสุดเมื่อเริ่มโปรแกรม", "open_last_profile")):
+            check = QCheckBox(label)
+            check.setChecked(getattr(self.settings, attr))
+            layout.addWidget(check)
+            checks.append((check, attr))
+        layout.addStretch(1)
+        save = QPushButton("บันทึก")
+        save.clicked.connect(dialog.accept)
+        layout.addWidget(save, alignment=Qt.AlignRight)
+        if dialog.exec() == QDialog.Accepted:
             self.settings.appearance = appearance.currentText()
             self.settings.separator = separator.text()
             for check, attr in checks:
                 setattr(self.settings, attr, check.isChecked())
-            self.save()
+            self.repo.save_settings(self.settings)
             self.apply_theme()
-            self.statusBar().showMessage("บันทึกการตั้งค่าแล้ว", 3000)
+            self.statusBar().showMessage("บันทึกการตั้งค่าโปรแกรมแล้ว", 3000)
 
-        save.clicked.connect(save_preferences)
+    def save_settings_goal_target(self):
+        if not self.profile:
+            return
+        self.profile.translation_goal_target = self.settings_goal_target.value() or None
+        self.save()
+        self.refresh_translation_progress()
+        self.statusBar().showMessage("บันทึกเป้าหมายนิยายแล้ว", 2500)
+
+    def refresh_working_files(self):
+        if not hasattr(self, "working_files"):
+            return
+        self.working_files.clear()
+        if not self.profile:
+            self.working_files.addItem("เลือกนิยายก่อน")
+            return
+        for file_ref in sorted(self.profile.working_files, key=lambda item: item.order):
+            label = file_ref.label or Path(file_ref.path or "").name
+            row = QListWidgetItem()
+            row.setData(Qt.UserRole, file_ref.id)
+            row.setToolTip(file_ref.path or "")
+            row.setSizeHint(QSize(0, 38))
+            self.working_files.addItem(row)
+            row_widget = QWidget(self.working_files)
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(8, 2, 4, 2)
+            row_label = QLabel(label)
+            row_label.setToolTip(file_ref.path or "")
+            row_layout.addWidget(row_label, 1)
+            open_button = QPushButton("เปิด")
+            open_button.clicked.connect(
+                lambda checked=False, item_id=file_ref.id: self.open_working_file(item_id)
+            )
+            row_layout.addWidget(open_button)
+            self.working_files.setItemWidget(row, row_widget)
+        if not self.profile.working_files:
+            self.working_files.addItem("ยังไม่มีไฟล์ · กด “เลือกหลายไฟล์” เพื่อเพิ่ม")
+
+    def refresh_settings_launch_targets(self):
+        if not hasattr(self, "settings_launch_targets") or not self.profile:
+            return
+        self.settings_main_folder.setText(self.profile.main_folder)
+        context = Path(self.profile.context_path).expanduser() if self.profile.context_path else None
+        self.settings_context_hint.setText(
+            f"Context: {context.name}" if context and context.is_file()
+            else "ยังไม่ได้เลือกไฟล์ Context"
+        )
+        self.settings_goal_target.setValue(self.profile.translation_goal_target or 0)
+        self.settings_launch_targets.blockSignals(True)
+        self.settings_launch_targets.clear()
+        for target in sorted(self.profile.launch_targets, key=lambda item: item.order):
+            row = QListWidgetItem(f"{target.label or target.target}  ·  {target.kind}")
+            row.setData(Qt.UserRole, target.id)
+            row.setFlags(row.flags() | Qt.ItemIsUserCheckable)
+            row.setCheckState(Qt.Checked if target.enabled else Qt.Unchecked)
+            self.settings_launch_targets.addItem(row)
+        self.settings_launch_targets.blockSignals(False)
+
+    def save_settings_launch_target_state(self, _row):
+        if not self.profile:
+            return
+        for index in range(self.settings_launch_targets.count()):
+            row = self.settings_launch_targets.item(index)
+            target = next((value for value in self.profile.launch_targets
+                           if value.id == row.data(Qt.UserRole)), None)
+            if target:
+                target.enabled = row.checkState() == Qt.Checked
+                target.order = index
+        self.save()
+
+    def choose_settings_main_folder(self):
+        if not self.profile:
+            return
+        start = self.settings_main_folder.text()
+        if not Path(start).is_dir():
+            start = str(self.profile_browse_directory())
+        selected = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์หลักของนิยาย", start)
+        if selected:
+            self.settings_main_folder.setText(selected)
+            self.save_settings_main_folder()
+
+    def save_settings_main_folder(self):
+        if not self.profile:
+            return
+        self.profile.main_folder = self.settings_main_folder.text().strip()
+        self.save()
+        self.statusBar().showMessage("บันทึกโฟลเดอร์หลักแล้ว", 2500)
+
+    def add_settings_launch_target(self, kind):
+        if not self.profile:
+            return
+        if kind == "folder":
+            targets = [QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์", str(self.profile_browse_directory()))]
+        elif kind == "file":
+            targets, _ = QFileDialog.getOpenFileNames(
+                self, "เลือกไฟล์ที่จะเปิดพร้อมเรื่อง (เลือกได้หลายไฟล์)",
+                str(self.profile_browse_directory()), "ทุกไฟล์ (*)",
+            )
+        elif kind == "application":
+            selected, _ = QFileDialog.getOpenFileName(self, "เลือกโปรแกรม", str(Path.home()), "โปรแกรม (*.exe);;ทุกไฟล์ (*)")
+            targets = [selected]
+        else:
+            target, accepted = QInputDialog.getText(self, "เพิ่มเว็บไซต์", "URL (http/https):")
+            if not accepted:
+                return
+            targets = [target]
+        targets = [target for target in targets if target]
+        if not targets:
+            return
+        if kind == "website":
+            label, accepted = QInputDialog.getText(self, "ชื่อเว็บไซต์", "ชื่อ:", text=targets[0])
+            if not accepted:
+                return
+            labels = [label]
+        else:
+            labels = [Path(target).name if kind != "website" else target for target in targets]
+        for target, label in zip(targets, labels):
+            self.profile.launch_targets.append(LaunchTarget(
+                label=label, kind=kind, target=target, order=len(self.profile.launch_targets),
+            ))
+        self.save()
+        self.refresh_settings_launch_targets()
+
+    def remove_settings_launch_target(self):
+        row = self.settings_launch_targets.currentItem()
+        if not row or not self.profile:
+            return
+        target_id = row.data(Qt.UserRole)
+        self.profile.launch_targets = [item for item in self.profile.launch_targets if item.id != target_id]
+        for index, item in enumerate(self.profile.launch_targets):
+            item.order = index
+        self.save()
+        self.refresh_settings_launch_targets()
+
+    def add_working_files(self):
+        if not self.profile:
+            return
+        sources, _ = QFileDialog.getOpenFileNames(
+            self, "เลือกไฟล์สำหรับเปิดทำงาน (เลือกได้หลายไฟล์)",
+            str(self.profile_browse_directory()),
+            "ไฟล์ที่เปิดได้ (*.txt *.md *.markdown *.json *.yaml *.yml *.toml *.py *.js *.ts *.css *.html *.xml *.csv);;ทุกไฟล์ (*)",
+        )
+        if not sources:
+            return
+        profile_root = self.repo.profile_dir(self.profile.id).resolve()
+        existing = {(item.reference_type, item.path) for item in self.profile.working_files}
+        for source_value in sources:
+            source = Path(source_value).expanduser().resolve()
+            try:
+                stored_path = source.relative_to(profile_root).as_posix()
+                reference_type = "repository_file"
+            except ValueError:
+                stored_path = str(source)
+                reference_type = "external_file"
+            key = (reference_type, stored_path)
+            if key in existing:
+                continue
+            self.profile.working_files.append(StepFile(
+                label=source.name, reference_type=reference_type, path=stored_path,
+                order=len(self.profile.working_files),
+            ))
+            existing.add(key)
+        self.remember_profile_browse_directory(sources[-1])
+        self.save()
+        self.refresh_working_files()
+
+    def _selected_working_file(self):
+        row = self.working_files.currentItem() if hasattr(self, "working_files") else None
+        if not row or not self.profile:
+            return None
+        return next((item for item in self.profile.working_files if item.id == row.data(Qt.UserRole)), None)
+
+    def open_selected_working_file(self, *_args):
+        item = self._selected_working_file()
+        if not item or not self.profile:
+            return
+        self.open_working_file(item.id)
+
+    def open_working_file(self, item_id):
+        item = next((value for value in self.profile.working_files if value.id == item_id), None) if self.profile else None
+        if not item or not self.profile:
+            return
+        try:
+            path = (Path(item.path).expanduser().resolve()
+                    if item.reference_type == "external_file"
+                    else self.repo.resolve_project_path(self.profile.id, item.path))
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.warning(self, "เปิดไฟล์ไม่ได้", str(exc))
+            return
+        workspace = self.workspaces.get(self.profile.id)
+        if not workspace:
+            return
+        if workspace.editor.open_file(path):
+            workspace.breadcrumb.setText(f"{self.profile.name}  ›  ไฟล์ทำงาน  ›  {path.name}")
+            self.return_from_utility_page()
+
+    def remove_working_file(self):
+        item = self._selected_working_file()
+        if not item or not self.profile:
+            return
+        self.profile.working_files = [value for value in self.profile.working_files if value.id != item.id]
+        for index, value in enumerate(self.profile.working_files):
+            value.order = index
+        self.save()
+        self.refresh_working_files()
 
     def show_vocabulary_files(self):
-        """Open the attachment manager with the vocabulary step selected."""
+        """Select the vocabulary step in the combined novel settings page."""
         if not self._settings_page_state:
             self.settings_dialog()
         vocabulary_row = len(self.profile.workflow.steps) if self.profile else -1
         if vocabulary_row >= 0:
             self.steps.setCurrentRow(vocabulary_row)
-        self._settings_tabs.setCurrentWidget(self._settings_file_tab)
         self.refresh_files()
 
     def _open_selected_step_files(self, item):
         if item.data(Qt.UserRole) == "vocabulary-step" and self._settings_page_state:
-            self._settings_tabs.setCurrentWidget(self._settings_file_tab)
+            self._management_vocabulary_mode = True
 
     def _restore_settings_management(self):
         state = self._settings_page_state
@@ -847,84 +1158,12 @@ class MainWindow(LegacyMainWindow):
                 self.repo.save_profile(profile)
 
     def launcher_dialog(self):
-        if not self.profile:
-            return
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        folder = QLineEdit(self.profile.main_folder)
-        folder.setPlaceholderText("โฟลเดอร์หลักของนิยาย")
-        layout.addWidget(QLabel("โฟลเดอร์หลัก"))
-        layout.addWidget(folder)
-        listing = QListWidget()
-        targets = list(self.profile.launch_targets)
-        for target in sorted(targets, key=lambda item: item.order):
-            row = QListWidgetItem(f"{target.label or target.target}  ·  {target.kind}")
-            row.setData(Qt.UserRole, target.id)
-            row.setFlags(row.flags() | Qt.ItemIsUserCheckable)
-            row.setCheckState(Qt.Checked if target.enabled else Qt.Unchecked)
-            listing.addItem(row)
-        layout.addWidget(listing, 1)
-        actions = QHBoxLayout()
-
-        def add_target(kind):
-            if kind == "folder":
-                target, _ = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์", str(self.profile_browse_directory())), True
-            elif kind == "file":
-                target, _ = QFileDialog.getOpenFileName(self, "เลือกไฟล์", str(self.profile_browse_directory()), "All files (*)")
-            elif kind == "application":
-                target, _ = QFileDialog.getOpenFileName(self, "เลือกโปรแกรม", str(Path.home()), "Applications (*.exe);;All files (*)")
-            else:
-                target, accepted = QInputDialog.getText(self, "เพิ่มเว็บไซต์", "URL (http/https):")
-                if not accepted:
-                    return
-            if not target:
-                return
-            label = Path(target).name if kind != "website" else target
-            if kind == "website":
-                label, accepted = QInputDialog.getText(self, "ชื่อเว็บไซต์", "ชื่อ:", text=target)
-                if not accepted:
-                    return
-            item = LaunchTarget(label=label, kind=kind, target=target, order=len(targets))
-            targets.append(item)
-            row = QListWidgetItem(f"{item.label}  ·  {item.kind}")
-            row.setData(Qt.UserRole, item.id)
-            row.setFlags(row.flags() | Qt.ItemIsUserCheckable)
-            row.setCheckState(Qt.Checked)
-            listing.addItem(row)
-
-        for label, kind in (("＋ App", "application"), ("＋ ไฟล์", "file"), ("＋ โฟลเดอร์", "folder"), ("＋ Website", "website")):
-            button = QPushButton(label)
-            button.clicked.connect(lambda checked=False, value=kind: add_target(value))
-            actions.addWidget(button)
-
-        remove = QPushButton("เอารายการออก")
-        def remove_target():
-            row = listing.currentItem()
-            if row is None:
-                return
-            targets[:] = [target for target in targets if target.id != row.data(Qt.UserRole)]
-            listing.takeItem(listing.row(row))
-        remove.clicked.connect(remove_target)
-        actions.addWidget(remove)
-        layout.addLayout(actions)
-        save = QPushButton("บันทึก")
-        save.clicked.connect(lambda: self._save_launch_page(targets, listing, folder.text()))
-        layout.addWidget(save, alignment=Qt.AlignRight)
-        self._show_utility_page("launcher", f"รายการที่เปิด · {self.profile.name}", lambda: page)
-
-    def _save_launch_page(self, targets, listing, main_folder):
-        if not self.profile:
-            return
-        for index in range(listing.count()):
-            row = listing.item(index)
-            target = next((item for item in targets if item.id == row.data(Qt.UserRole)), None)
-            if target:
-                target.enabled = row.checkState() == Qt.Checked
-                target.order = index
-        self.profile.main_folder = main_folder.strip()
-        self.profile.launch_targets = targets
-        self.save()
-        self.statusBar().showMessage("บันทึกรายการที่เปิดแล้ว", 3000)
+        """Compatibility action that now leads to the one-page novel settings."""
+        self.settings_dialog()
+        if self.profile:
+            self.statusBar().showMessage(
+                "ตั้งค่าโฟลเดอร์และไฟล์ที่เปิดพร้อมเรื่องได้ในหน้านี้", 3500
+            )
 
     def preview(self):
         if not self.profile or not self.step():
@@ -1434,6 +1673,19 @@ class MainWindow(LegacyMainWindow):
                 item = self.profiles.item(index)
                 if item:
                     item.setData(Qt.UserRole, profile.id)
+            if self.profile:
+                if hasattr(self, "settings_profile_heading"):
+                    self.settings_profile_heading.setText(f"ตั้งค่านิยาย · {self.profile.name}")
+                self.refresh_working_files()
+                self.refresh_settings_launch_targets()
+            else:
+                if hasattr(self, "settings_profile_heading"):
+                    self.settings_profile_heading.setText("เลือกนิยายเพื่อจัดการการตั้งค่า")
+                self.refresh_working_files()
+                self.settings_launch_targets.clear()
+                self.settings_main_folder.clear()
+                self.settings_context_hint.setText("ยังไม่ได้เลือกไฟล์ Context")
+                self.settings_goal_target.setValue(0)
             return result
 
         self.ps_list = self.repo.list_profiles()
@@ -1567,7 +1819,12 @@ class MainWindow(LegacyMainWindow):
 
     def select_profile(self, index):
         if getattr(self, "_settings_open", False):
-            return super().select_profile(index)
+            result = super().select_profile(index)
+            if self.profile:
+                self.settings_profile_heading.setText(f"ตั้งค่านิยาย · {self.profile.name}")
+                self.refresh_working_files()
+                self.refresh_settings_launch_targets()
+            return result
         if index < 0 or index >= len(getattr(self, "ps_list", [])):
             return
 
@@ -1624,6 +1881,12 @@ class MainWindow(LegacyMainWindow):
                 )
                 vocabulary.setSizeHint(QSize(0, 42))
                 self.steps.addItem(vocabulary)
+            if hasattr(self, "settings_step_hint"):
+                active_step = self.step()
+                self.settings_step_hint.setText(
+                    f"{active_step.name} · {len(active_step.files)} ไฟล์"
+                    if active_step else "เลือกขั้นตอนเพื่อจัดการไฟล์"
+                )
             return result
 
         workspace = (
@@ -1753,17 +2016,6 @@ class MainWindow(LegacyMainWindow):
                     return self.profile.vocabulary_step
         return super().step()
 
-    def _settings_file_scope_changed(self, index):
-        self._management_vocabulary_mode = index == 1
-        if getattr(self, "_settings_open", False):
-            if self.profile and self.steps:
-                vocabulary_row = len(self.profile.workflow.steps)
-                if index == 1 and self.steps.currentRow() != vocabulary_row:
-                    self.steps.setCurrentRow(vocabulary_row)
-                elif index == 0 and self.steps.currentRow() == vocabulary_row:
-                    self.steps.setCurrentRow(min(self.si, vocabulary_row - 1))
-            self.refresh_files()
-
     def set_vocabulary_mode(self, profile_id, enabled):
         workspace = self.workspaces.get(profile_id)
         if not workspace or not self.profile or self.profile.id != profile_id:
@@ -1794,14 +2046,19 @@ class MainWindow(LegacyMainWindow):
                 and self.steps.currentItem().data(Qt.UserRole) == "vocabulary-step"
             )
             self._management_vocabulary_mode = is_vocabulary_row
-            if hasattr(self, "file_scope_selector"):
-                self.file_scope_selector.blockSignals(True)
-                self.file_scope_selector.setCurrentIndex(1 if is_vocabulary_row else 0)
-                self.file_scope_selector.blockSignals(False)
             if is_vocabulary_row:
                 self.refresh_files()
+                if hasattr(self, "settings_step_hint"):
+                    self.settings_step_hint.setText("หาศัพท์ · ไฟล์ที่ใช้กับขั้นตอนนี้")
                 return
-            return super().select_step(index)
+            result = super().select_step(index)
+            if hasattr(self, "settings_step_hint"):
+                active_step = self.step()
+                self.settings_step_hint.setText(
+                    f"{active_step.name} · {len(active_step.files)} ไฟล์"
+                    if active_step else "เลือกขั้นตอนเพื่อจัดการไฟล์"
+                )
+            return result
         if self.profile:
             self._step_changed(self.profile.id, index)
 
@@ -1891,9 +2148,9 @@ class MainWindow(LegacyMainWindow):
         has_main_folder = bool(self.profile.main_folder.strip())
         has_enabled_targets = any(item.enabled for item in self.profile.launch_targets)
         if not has_main_folder and not has_enabled_targets:
-            self.launcher_dialog()
+            self.settings_dialog()
             self.statusBar().showMessage(
-                "ยังไม่มีรายการให้เปิด เพิ่มไฟล์หรือโฟลเดอร์ในหน้านี้ได้เลย", 5000
+                "ยังไม่มีรายการให้เปิด · เพิ่มไฟล์หรือโฟลเดอร์ได้ในหน้าตั้งค่านิยาย", 5000
             )
             return
 

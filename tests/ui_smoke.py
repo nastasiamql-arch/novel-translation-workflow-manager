@@ -306,21 +306,41 @@ def main() -> int:
                 assert window.steps.item(vocabulary_row).text() == "หาศัพท์"
                 window.steps.setCurrentRow(vocabulary_row)
                 assert window.step().name == "หาศัพท์"
-                assert window.file_scope_selector.currentIndex() == 1
                 assert window.files.item(0).text() == "Find Terms"
                 window.steps.itemDoubleClicked.emit(window.steps.item(vocabulary_row))
-                assert window._settings_tabs.currentWidget() is window._settings_file_tab
+                assert not hasattr(window, "_settings_tabs")
                 window.steps.setCurrentRow(0)
                 assert window.step().name == "แปล"
                 window.show_vocabulary_files()
-                assert window.file_scope_selector.currentIndex() == 1
-                assert window._settings_tabs.currentWidget() is window._settings_file_tab
                 assert window.step().name == "หาศัพท์"
-                window.file_scope_selector.setCurrentIndex(0)
+                working_file = novel_folder / "working.txt"
+                working_file.write_text("เปิดเป็นแท็บ", encoding="utf-8")
+                window.profile.working_files.append(StepFile(
+                    label="working.txt", reference_type="external_file",
+                    path=str(working_file),
+                ))
+                window.save()
+                window.refresh_working_files()
+                working_row = window.working_files.item(0)
+                row_widget = window.working_files.itemWidget(working_row)
+                open_button = row_widget.findChild(QPushButton)
+                assert row_widget.findChild(type(window.settings_profile_heading)).text() == "working.txt"
+                assert open_button.text() == "เปิด"
+                open_button.click()
                 window.return_from_utility_page()
                 assert not window._settings_open
                 assert window.main_pages.currentWidget() is window.workspace_stack
+                assert any(
+                    workspace.editor._path(workspace.editor.tabs.widget(i)) == working_file
+                    for i in range(workspace.editor.tabs.count())
+                )
                 assert workspace.vocabulary_mode
+                previous_step_index = workspace.step_index
+                for stage_button in workspace.stage_buttons:
+                    QTest.mouseMove(stage_button)
+                    app.processEvents()
+                    assert workspace.step_index == previous_step_index
+                    assert workspace.vocabulary_mode
                 workspace.vocabulary_button.click()
 
                 window.file_manager()
@@ -335,7 +355,7 @@ def main() -> int:
 
                 window.launcher_dialog()
                 assert window.main_pages.currentWidget() is window.utility_page
-                assert window.utility_title.text().startswith("รายการที่เปิด ·")
+                assert window.utility_title.text() == "ตั้งค่าและจัดการ"
                 window.return_from_utility_page()
 
                 selected_profile = window.profile
@@ -343,7 +363,7 @@ def main() -> int:
                 selected_profile.main_folder, selected_profile.launch_targets = "", []
                 window.launch_profile()
                 assert window.main_pages.currentWidget() is window.utility_page
-                assert window.utility_title.text().startswith("รายการที่เปิด ·")
+                assert window.utility_title.text() == "ตั้งค่าและจัดการ"
                 window.return_from_utility_page()
                 selected_profile.main_folder, selected_profile.launch_targets = saved_folder, saved_targets
 
