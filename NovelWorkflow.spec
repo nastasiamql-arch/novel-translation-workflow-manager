@@ -1,7 +1,10 @@
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 hiddenimports = collect_submodules('novel_workflow')
-datas = [('src/novel_workflow/resources/novelworkflow.png', 'novel_workflow/resources')]
+datas = [
+    ('src/novel_workflow/resources/novelworkflow.png', 'novel_workflow/resources'),
+    *copy_metadata('novelworkflow'),
+]
 
 a = Analysis(
     ['run_app.py'],

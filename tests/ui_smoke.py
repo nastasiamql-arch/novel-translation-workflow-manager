@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import traceback
+from datetime import date
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -26,6 +27,9 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="novelworkflow-ui-") as temp_dir:
         root = Path(temp_dir)
         repo = ProjectRepository(root / "data")
+        settings = repo.load_settings()
+        settings.last_update_check_date = date.today().isoformat()
+        repo.save_settings(settings)
 
         novel_folder = root / "novel-a"
         novel_folder.mkdir()
@@ -84,6 +88,7 @@ def main() -> int:
             try:
                 toolbar = window.findChild(QToolBar, "mainToolbar")
                 assert toolbar is not None
+                assert any(action.text() == "ตรวจสอบอัปเดต" for action in toolbar.actions())
                 assert window.profile_cards.count() == 2
                 assert window.profile.id == profile.id
                 assert window.main_pages.currentWidget() is window.workspace_stack

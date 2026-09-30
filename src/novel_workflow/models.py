@@ -163,6 +163,7 @@ class AppSettings:
     sidebar_width: int = 290
     sidebar_visible: bool = True
     editor_font_size: float = 11.0
+    last_update_check_date: str | None = None
 
 @dataclass
 class WorkflowTemplate:

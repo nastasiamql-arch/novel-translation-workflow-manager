@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import shutil
+import tempfile
+from datetime import date
 from pathlib import Path
+import subprocess
 
-from PySide6.QtCore import QDir, QFileSystemWatcher, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QDir, QFileSystemWatcher, QSize, Qt, QTimer, Signal, QThread
 from PySide6.QtGui import QAction, QFontMetrics, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QFileDialog, QFileSystemModel, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
     QProgressBar, QPushButton, QSizePolicy, QSplitter, QStackedWidget,
     QToolButton, QTreeView, QVBoxLayout, QWidget, QInputDialog, QComboBox, QTextEdit,
-    QTabWidget, QCheckBox,
+    QTabWidget, QCheckBox, QProgressDialog,
 )
 
 from .models import LaunchTarget, StepFile, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
@@ -20,6 +23,49 @@ from .translation_progress import (
 )
 from .ui import MainWindow as LegacyMainWindow
 from .workspace_editor import EditorTabs
+from . import __version__
+from .updater import UpdateError, UpdateInfo, check_for_update, download_update
+
+
+class _UpdateCheckWorker(QThread):
+    finished_check = Signal(object, object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.result = None
+        self.error = None
+
+    def run(self):
+        try:
+            self.result = check_for_update(__version__)
+        except UpdateError as exc:
+            self.error = str(exc)
+        self.finished_check.emit(self.result, self.error)
+
+
+class _UpdateDownloadWorker(QThread):
+    progress = Signal(int)
+    finished_download = Signal(object, object)
+
+    def __init__(self, update: UpdateInfo, destination: Path, parent=None):
+        super().__init__(parent)
+        self.update = update
+        self.destination = destination
+        self.result = None
+        self.error = None
+
+    def run(self):
+        try:
+            self.result = download_update(
+                self.update,
+                self.destination,
+                progress=self.progress.emit,
+                cancelled=self.isInterruptionRequested,
+                timeout=8,
+            )
+        except UpdateError as exc:
+            self.error = str(exc)
+        self.finished_download.emit(self.result, self.error)
 
 
 class ElidingStatusLabel(QLabel):
@@ -1103,6 +1149,7 @@ class MainWindow(LegacyMainWindow):
             ("เปิดรายการของเรื่อง", self.launch_profile),
             ("กลุ่มนิยาย", self.groups_dialog),
             ("สถิติ", self.translation_dashboard),
+            ("ตรวจสอบอัปเดต", self.check_updates),
             ("ตั้งค่า", self.settings_dialog),
         ):
             action = QAction(label, self)
@@ -1234,6 +1281,89 @@ class MainWindow(LegacyMainWindow):
         self.context_refresh_timer.setInterval(250)
         self.context_refresh_timer.timeout.connect(self.refresh_translation_progress)
         self._watch_context_paths()
+
+        self._update_check_worker = None
+        self._update_download_worker = None
+        self._update_progress = None
+        if self.settings.last_update_check_date != date.today().isoformat():
+            QTimer.singleShot(2500, lambda: self.check_updates(manual=False))
+
+    def check_updates(self, checked=False, manual=None):
+        manual = True if manual is None else manual
+        if self._update_check_worker and self._update_check_worker.isRunning():
+            if manual:
+                QMessageBox.information(self, "อัปเดต", "กำลังตรวจสอบอัปเดตอยู่ครับ")
+            return
+        worker = _UpdateCheckWorker(self)
+        self._update_check_worker = worker
+
+        def complete(update, error):
+            self._update_check_worker = None
+            if error:
+                if manual:
+                    QMessageBox.warning(self, "ตรวจสอบอัปเดตไม่ได้", error)
+                return
+            self.settings.last_update_check_date = date.today().isoformat()
+            self.repo.save_settings(self.settings)
+            if update is None:
+                if manual:
+                    QMessageBox.information(self, "อัปเดต", f"คุณใช้เวอร์ชันล่าสุดแล้ว (v{__version__})")
+                return
+            self._offer_update(update)
+
+        worker.finished_check.connect(complete)
+        worker.start()
+
+    def _offer_update(self, update: UpdateInfo):
+        notes = update.notes[:1600] if update.notes else "ไม่มีรายละเอียดการเปลี่ยนแปลง"
+        answer = QMessageBox.question(
+            self,
+            f"มีอัปเดต v{update.version}",
+            f"เวอร์ชันปัจจุบัน: v{__version__}\nเวอร์ชันใหม่: v{update.version}\n\n"
+            f"{notes}\n\nดาวน์โหลดและตรวจสอบไฟล์ติดตั้งตอนนี้ไหม?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if answer == QMessageBox.Yes:
+            destination = Path(tempfile.gettempdir()) / f"NovelWorkflow-Setup-{update.version}.exe"
+            self._download_update(update, destination)
+
+    def _download_update(self, update: UpdateInfo, destination: Path):
+        dialog = QProgressDialog("กำลังดาวน์โหลดและตรวจสอบไฟล์ติดตั้ง…", "ยกเลิก", 0, 100, self)
+        dialog.setWindowTitle(f"ดาวน์โหลด v{update.version}")
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.setMinimumDuration(0)
+        worker = _UpdateDownloadWorker(update, destination, self)
+        self._update_download_worker = worker
+        self._update_progress = dialog
+        dialog.canceled.connect(worker.requestInterruption)
+        worker.progress.connect(dialog.setValue)
+
+        def complete(path, error):
+            self._update_download_worker = None
+            self._update_progress = None
+            dialog.close()
+            dialog.deleteLater()
+            if error:
+                QMessageBox.warning(self, "ดาวน์โหลดอัปเดตไม่ได้", error)
+                return
+            answer = QMessageBox.question(
+                self,
+                "ติดตั้งอัปเดต",
+                f"ดาวน์โหลด v{update.version} และตรวจ SHA-256 ผ่านแล้ว\n\n"
+                "ต้องการปิดโปรแกรมและเปิดตัวติดตั้งหรือไม่?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if answer == QMessageBox.Yes:
+                try:
+                    subprocess.Popen([str(path)], close_fds=True)
+                    QApplication.quit()
+                except OSError as exc:
+                    QMessageBox.warning(self, "เปิดตัวติดตั้งไม่ได้", str(exc))
+
+        worker.finished_download.connect(complete)
+        worker.start()
 
     def refresh_profiles(self, pid=None):
         if getattr(self, "_settings_open", False):
@@ -1837,6 +1967,16 @@ class MainWindow(LegacyMainWindow):
             self.goal_status.setToolTip(f"{self.profile.name}: ยังไม่ได้ตั้งเป้าหมาย")
 
     def closeEvent(self, event):
+        for worker in (self._update_check_worker, self._update_download_worker):
+            if worker and worker.isRunning():
+                worker.requestInterruption()
+                if not getattr(self, "_close_after_update_worker", False):
+                    self._close_after_update_worker = True
+                    signal = getattr(worker, "finished_check", None) or getattr(worker, "finished_download", None)
+                    signal.connect(lambda *_: QTimer.singleShot(0, self.close))
+                self.statusBar().showMessage("กำลังหยุดงานอัปเดตก่อนปิดโปรแกรม…")
+                event.ignore()
+                return
         for workspace in self.workspaces.values():
             if not workspace.editor.save_all():
                 event.ignore()
