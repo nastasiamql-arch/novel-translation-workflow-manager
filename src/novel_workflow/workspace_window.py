@@ -99,6 +99,7 @@ class ProfileWorkspace(QWidget):
             appearance=owner.settings.appearance,
         )
         self.steps = QListWidget()
+        self.steps.setObjectName("workflowSteps")
         self.steps.setSelectionMode(QAbstractItemView.SingleSelection)
         self.steps.setSpacing(2)
         self.stage_buttons = []
@@ -132,7 +133,9 @@ class ProfileWorkspace(QWidget):
         self.copy_step_button = QPushButton("COPY STEP")
         self.copy_step_button.setObjectName("copyStepButton")
         self.copy_step_button.setToolTip("คัดลอกไฟล์ของขั้นตอนที่เลือก  ·  Ctrl+Shift+C")
-        self.copy_step_button.clicked.connect(self.owner.copy_step)
+        self.copy_step_button.clicked.connect(
+            lambda checked=False: self.owner.copy_step()
+        )
         step_header.addWidget(self.copy_step_button)
         sidebar_layout.addLayout(step_header)
         sidebar_layout.addWidget(self.vocabulary_button)
@@ -1530,7 +1533,7 @@ class MainWindow(LegacyMainWindow):
             self.steps.blockSignals(False)
         self._sync_stage_buttons(workspace)
         self.refresh_files()
-        self.copy_step()
+        self.copy_step(advance=False)
 
     def step(self):
         """Return the currently active vocabulary or translation step."""
@@ -1612,9 +1615,11 @@ class MainWindow(LegacyMainWindow):
             workspace.breadcrumb.setText(f"{profile.name}  ›  {step.name}  ›  {path.name}")
 
 
-    def copy_step(self):
+    def copy_step(self, advance=True):
         workspace = self.workspaces.get(self.profile.id) if self.profile else None
-        super().copy_step()
+        super().copy_step(advance=advance)
+        if advance and self.profile and workspace and not workspace.vocabulary_mode and self.si >= 0:
+            workspace.step_index = self.si
         if workspace:
             self._sync_stage_buttons(workspace)
 

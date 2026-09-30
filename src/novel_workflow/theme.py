@@ -201,6 +201,19 @@ def application_stylesheet(appearance: str = "Light") -> str:
         border: 1px solid {c["border"]};
         border-radius: 10px;
     }}
+    QListWidget#workflowSteps {{
+        background: transparent;
+        border: 0;
+        outline: 0;
+    }}
+    QListWidget#workflowSteps::item,
+    QListWidget#workflowSteps::item:selected,
+    QListWidget#workflowSteps::item:focus {{
+        background: transparent;
+        color: {c["text"]};
+        border: 0;
+        outline: 0;
+    }}
     QPushButton#workflowStageButton, QPushButton#vocabularyButton {{
         color: {c["text"]};
         background: {c["surface2"]};

@@ -659,7 +659,7 @@ class MainWindow(QMainWindow):
         dlg=QDialog(self);dlg.setWindowTitle("Preview: "+self.step().name);dlg.resize(850,650);l=QVBoxLayout(dlg);view=QTextEdit();view.setReadOnly(True);view.setPlainText(text);l.addWidget(view);l.addWidget(QLabel(f"{len(text):,} characters"))
         buttons=QDialogButtonBox(QDialogButtonBox.Close);copy=buttons.addButton("Copy Contents",QDialogButtonBox.ActionRole);copy.clicked.connect(lambda:self.copy_text(text));buttons.rejected.connect(dlg.reject);l.addWidget(buttons);dlg.exec()
     def copy_text(self,text):QApplication.clipboard().setText(text);self.statusBar().showMessage("Copied to clipboard",2500)
-    def copy_step(self):
+    def copy_step(self, advance=True):
         step=self.step()
         if not step:return
         try:
@@ -683,6 +683,15 @@ class MainWindow(QMainWindow):
             mime_data.setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
             QApplication.clipboard().setMimeData(mime_data)
             self.statusBar().showMessage(f"Copied {len(paths)} file(s) from {step.name}. Paste with Ctrl+V.",5000)
+            if (advance and self.profile and step is not self.profile.vocabulary_step
+                    and self.profile.workflow.steps):
+                next_row=WorkflowService.next_index(self.si,self.steps.count())
+                self.si=next_row
+                self.steps.blockSignals(True)
+                self.steps.setCurrentRow(next_row)
+                self.steps.blockSignals(False)
+                self.update_step_indicator()
+                self.refresh_files()
         except Exception as e:QMessageBox.warning(self,"Copy failed",str(e))
     def settings_dialog(self):
         """Open a separate management page; keep the main workspace action-focused."""

@@ -95,6 +95,7 @@ def main() -> int:
                     "แปล", "ตรวจคำแปล",
                 ]
                 assert all(workspace.steps.itemWidget(workspace.steps.item(i)) for i in range(2))
+                assert workspace.steps.objectName() == "workflowSteps"
                 assert [workspace.steps.itemWidget(workspace.steps.item(i)).text() for i in range(2)] == [
                     "แปล", "ตรวจคำแปล",
                 ]
@@ -228,11 +229,11 @@ def main() -> int:
                 workspace.editor.save_current()
 
                 translation_button.click()
-                window.copy_step()
+                workspace.copy_step_button.click()
                 app.processEvents()
                 urls = app.clipboard().mimeData().urls()
                 assert [Path(url.toLocalFile()) for url in urls] == [chapter.resolve()]
-                assert workspace.steps.currentRow() == 0
+                assert workspace.steps.currentRow() == 1
 
                 window.show_library()
                 window._open_profile_card(window.profile_cards.item(1))
