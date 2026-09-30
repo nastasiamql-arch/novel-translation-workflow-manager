@@ -3,6 +3,7 @@ from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 hiddenimports = collect_submodules('novel_workflow')
 datas = [
     ('src/novel_workflow/resources/novelworkflow.png', 'novel_workflow/resources'),
+    ('src/novel_workflow/resources/palantir_novel.png', 'novel_workflow/resources'),
     *copy_metadata('novelworkflow'),
 ]
 
@@ -30,7 +31,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
-    icon='assets/novelworkflow.ico',
+    icon='assets/palantir_novel.ico',
 )
 coll = COLLECT(
     exe,

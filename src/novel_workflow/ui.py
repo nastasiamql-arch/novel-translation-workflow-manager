@@ -30,10 +30,10 @@ class MainWindow(QMainWindow):
         self.profile=None
         self.si=-1
         self.dashboard_dialog=None
-        self.setWindowTitle("NovelWorkflow")
+        self.setWindowTitle("Palantir: Novel")
         self.setMinimumSize(900,600)
         self.resize(1260,780)
-        logo=Path(__file__).resolve().parent/"resources"/"novelworkflow.png"
+        logo=Path(__file__).resolve().parent/"resources"/"palantir_novel.png"
         if logo.is_file(): self.setWindowIcon(QIcon(str(logo)))
         self.apply_theme()
         self.build()
@@ -52,7 +52,7 @@ class MainWindow(QMainWindow):
         bar.setObjectName("mainToolbar")
         bar.setMovable(False)
         bar.setIconSize(QSize(30,30))
-        logo=Path(__file__).resolve().parent/"resources"/"novelworkflow.png"
+        logo=Path(__file__).resolve().parent/"resources"/"palantir_novel.png"
         mark=QLabel()
         mark.setObjectName("toolbarLogo")
         if logo.is_file(): mark.setPixmap(QPixmap(str(logo)).scaled(30,30,Qt.KeepAspectRatio,Qt.SmoothTransformation))
@@ -308,7 +308,7 @@ class MainWindow(QMainWindow):
         results=self.launcher.launch_profile(self.profile)
         failures=[message for success,message in results if not success]
         succeeded=sum(1 for success,_ in results if success)
-        if failures:QMessageBox.warning(self,"NovelWorkflow",f"เปิดสำเร็จ {succeeded} รายการ\n\n"+"\n".join(failures))
+        if failures:QMessageBox.warning(self,"Palantir: Novel",f"เปิดสำเร็จ {succeeded} รายการ\n\n"+"\n".join(failures))
         else:self.statusBar().showMessage(f"เปิด {self.profile.name} แล้ว ({succeeded} รายการ)",4000)
 
     def launcher_dialog(self):

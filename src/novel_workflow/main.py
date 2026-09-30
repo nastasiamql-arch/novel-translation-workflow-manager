@@ -8,7 +8,7 @@ from .workspace_window import MainWindow
 
 
 def _icon_path():
-    return Path(__file__).resolve().parent / "resources" / "novelworkflow.png"
+    return Path(__file__).resolve().parent / "resources" / "palantir_novel.png"
 
 
 def _configure_font(app: QApplication):
@@ -36,7 +36,8 @@ def _configure_font(app: QApplication):
 
 def _create_app(argv):
     app = QApplication(argv)
-    app.setApplicationName("NovelWorkflow")
+    app.setApplicationName("Palantir: Novel")
+    # Keep the storage namespace stable so renaming the app does not move user data.
     app.setOrganizationName("NovelWorkflow")
     _configure_font(app)
     icon = _icon_path()

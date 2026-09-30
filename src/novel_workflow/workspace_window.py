@@ -577,6 +577,10 @@ class MainWindow(LegacyMainWindow):
 
     def __init__(self, repo=None):
         super().__init__(repo)
+        self.setWindowTitle("Palantir: Novel")
+        logo = Path(__file__).resolve().parent / "resources" / "palantir_novel.png"
+        if logo.is_file():
+            self.setWindowIcon(QIcon(str(logo)))
         changed = False
         if not self.settings.appearance_migrated:
             # Dark was the old default. Honor the user's newer request for the
@@ -1434,7 +1438,7 @@ class MainWindow(LegacyMainWindow):
         bar.setMovable(False)
         bar.setIconSize(QSize(28, 28))
 
-        logo = Path(__file__).resolve().parent / "resources" / "novelworkflow.png"
+        logo = Path(__file__).resolve().parent / "resources" / "palantir_novel.png"
         mark = QLabel()
         mark.setObjectName("toolbarLogo")
         if logo.is_file():
@@ -1445,7 +1449,7 @@ class MainWindow(LegacyMainWindow):
             )
         bar.addWidget(mark)
 
-        brand = QLabel("NovelWorkflow")
+        brand = QLabel("Palantir: Novel")
         brand.setObjectName("brandTitle")
         bar.addWidget(brand)
 
@@ -2213,7 +2217,7 @@ class MainWindow(LegacyMainWindow):
         if failures:
             QMessageBox.warning(
                 self,
-                "NovelWorkflow",
+                "Palantir: Novel",
                 f"เปิดสำเร็จ {succeeded} รายการ\n\n" + "\n".join(failures),
             )
         else:

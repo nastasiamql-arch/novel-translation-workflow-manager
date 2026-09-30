@@ -1,8 +1,8 @@
-#define MyAppName "NovelWorkflow"
+#define MyAppName "Palantir: Novel"
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
 #endif
-#define MyAppPublisher "NovelWorkflow"
+#define MyAppPublisher "Palantir Novel"
 #define MyAppExeName "NovelWorkflow.exe"
 
 [Setup]
@@ -11,11 +11,11 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\NovelWorkflow
-DefaultGroupName=NovelWorkflow
+DefaultGroupName=Palantir Novel
 DisableProgramGroupPage=yes
 OutputDir=dist
 OutputBaseFilename=NovelWorkflow-Setup-{#MyAppVersion}
-SetupIconFile=assets\novelworkflow.ico
+SetupIconFile=assets\palantir_novel.ico
 UninstallDisplayIcon={app}\NovelWorkflow.exe
 Compression=lzma2
 SolidCompression=yes
@@ -34,13 +34,16 @@ Source: "dist\NovelWorkflow\*"; DestDir: "{app}"; Flags: ignoreversion recursesu
 Type: files; Name: "{app}\Qt6*.dll"
 Type: files; Name: "{app}\shiboken6*.dll"
 Type: filesandordirs; Name: "{app}\PySide6"
+; Remove shortcuts from the previous product name during an in-place upgrade.
+Type: files; Name: "{autoprograms}\NovelWorkflow.lnk"
+Type: files; Name: "{autodesktop}\NovelWorkflow.lnk"
 
 [Icons]
-Name: "{autoprograms}\NovelWorkflow"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\NovelWorkflow"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\Palantir Novel"; Filename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\Palantir Novel"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch NovelWorkflow"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch Palantir: Novel"; Flags: nowait postinstall skipifsilent
