@@ -208,7 +208,8 @@ def application_stylesheet(appearance: str = "Light") -> str:
     }}
     QListWidget#workflowSteps::item,
     QListWidget#workflowSteps::item:selected,
-    QListWidget#workflowSteps::item:focus {{
+    QListWidget#workflowSteps::item:focus,
+    QListWidget#workflowSteps::item:hover {{
         background: transparent;
         color: {c["text"]};
         border: 0;

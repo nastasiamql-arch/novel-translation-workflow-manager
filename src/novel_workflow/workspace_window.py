@@ -783,11 +783,14 @@ class MainWindow(LegacyMainWindow):
             return run
         workflow_frame = QFrame()
         workflow_frame.setObjectName("settingsCard")
+        workflow_frame.setMinimumHeight(470)
         workflow_layout = QVBoxLayout(workflow_frame)
         workflow_layout.addWidget(QLabel("ขั้นตอนและไฟล์แนบ"))
         workflow_columns = QHBoxLayout()
         steps_column = QVBoxLayout()
         steps_column.addWidget(QLabel("เลือกขั้นตอน"))
+        self.steps.setMinimumHeight(250)
+        self.steps.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         steps_column.addWidget(self.steps, 1)
         step_actions = QGridLayout()
         for index, (label, callback) in enumerate((
@@ -812,6 +815,8 @@ class MainWindow(LegacyMainWindow):
         self.settings_step_hint.setObjectName("mutedLabel")
         files_header.addWidget(self.settings_step_hint)
         files_column.addLayout(files_header)
+        self.files.setMinimumHeight(250)
+        self.files.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         files_column.addWidget(self.files, 1)
         file_actions = QGridLayout()
         for index, (label, callback) in enumerate((
