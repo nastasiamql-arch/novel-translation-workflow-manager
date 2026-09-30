@@ -307,6 +307,11 @@ def main() -> int:
                 assert window.files.item(0).text() == "Find Terms"
                 window.file_scope_selector.setCurrentIndex(0)
                 assert window.step().name == "แปล"
+                window.show_vocabulary_files()
+                assert window.file_scope_selector.currentIndex() == 1
+                assert window._settings_tabs.currentWidget() is window._settings_file_tab
+                assert window.step().name == "หาศัพท์"
+                window.file_scope_selector.setCurrentIndex(0)
                 window.return_from_utility_page()
                 assert not window._settings_open
                 assert window.main_pages.currentWidget() is window.workspace_stack
@@ -327,6 +332,15 @@ def main() -> int:
                 assert window.main_pages.currentWidget() is window.utility_page
                 assert window.utility_title.text().startswith("รายการที่เปิด ·")
                 window.return_from_utility_page()
+
+                selected_profile = window.profile
+                saved_folder, saved_targets = selected_profile.main_folder, selected_profile.launch_targets
+                selected_profile.main_folder, selected_profile.launch_targets = "", []
+                window.launch_profile()
+                assert window.main_pages.currentWidget() is window.utility_page
+                assert window.utility_title.text().startswith("รายการที่เปิด ·")
+                window.return_from_utility_page()
+                selected_profile.main_folder, selected_profile.launch_targets = saved_folder, saved_targets
 
                 window.resize(1100, 700)
                 app.processEvents()

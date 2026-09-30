@@ -3,8 +3,31 @@ from novel_workflow.models import LaunchTarget, NovelGroup, NovelProfile, StepFi
 from novel_workflow.services import AssemblyService, ProfileService, WorkflowService
 from novel_workflow.storage import ProjectRepository, data_root, read_json
 from novel_workflow.launcher import LauncherService
+from novel_workflow.file_import import import_files_into_directory
 import pytest
 from unittest.mock import call, patch
+
+
+def test_import_files_copies_many_and_skips_conflicts_and_unsupported(tmp_path):
+    sources = tmp_path / "sources"
+    sources.mkdir()
+    first = sources / "first.txt"
+    second = sources / "second.md"
+    unsupported = sources / "image.png"
+    first.write_text("first", encoding="utf-8")
+    second.write_text("second", encoding="utf-8")
+    unsupported.write_bytes(b"image")
+    destination = tmp_path / "project" / "reference"
+    destination.mkdir(parents=True)
+    (destination / "second.md").write_text("existing", encoding="utf-8")
+
+    copied, skipped = import_files_into_directory(
+        [first, second, unsupported], destination
+    )
+
+    assert (copied, skipped) == (1, 2)
+    assert (destination / "first.txt").read_text(encoding="utf-8") == "first"
+    assert (destination / "second.md").read_text(encoding="utf-8") == "existing"
 
 def test_profiles_are_independent(tmp_path):
     repo=ProjectRepository(tmp_path);svc=ProfileService(repo);a=svc.create("A");b=svc.create("B")

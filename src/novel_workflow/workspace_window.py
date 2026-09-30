@@ -25,6 +25,7 @@ from .ui import MainWindow as LegacyMainWindow
 from .workspace_editor import EditorTabs
 from . import __version__
 from .updater import UpdateError, UpdateInfo, check_for_update, download_update
+from .file_import import import_files_into_directory
 
 
 class _UpdateCheckWorker(QThread):
@@ -711,6 +712,7 @@ class MainWindow(LegacyMainWindow):
                 grid.addWidget(button, index // 2, index % 2)
             layout.addLayout(grid)
             tabs.addTab(tab, title)
+            return tab
 
         management_tab("นิยาย", self.profiles, [
             ("เพิ่มนิยาย", self.new_profile), ("ทำสำเนา", self.duplicate_profile),
@@ -724,8 +726,9 @@ class MainWindow(LegacyMainWindow):
             ("ทำสำเนา", self.duplicate_step), ("ลบขั้นตอน", self.delete_step),
             ("เลื่อนขึ้น", lambda: self.move_step(-1)), ("เลื่อนลง", lambda: self.move_step(1)),
             ("บันทึกเป็นแม่แบบ", self.save_template),
+            ("จัดการไฟล์หาศัพท์", self.show_vocabulary_files),
         ])
-        management_tab("ไฟล์แนบ", files_panel, [
+        files_tab = management_tab("ไฟล์แนบ", files_panel, [
             ("เพิ่มไฟล์", self.add_file), ("อ้างอิงบทปัจจุบัน", self.add_dynamic),
             ("เอาออกจากขั้นตอน", self.remove_file), ("เลื่อนขึ้น", lambda: self.move_file(-1)),
             ("เลื่อนลง", lambda: self.move_file(1)), ("เปลี่ยนชื่อที่แสดง", self.rename_file_label),
@@ -764,6 +767,8 @@ class MainWindow(LegacyMainWindow):
             "profile_id": previous_profile_id, "step_id": active_step_id,
             "vocabulary_mode": active_vocabulary_mode,
         }
+        self._settings_tabs = tabs
+        self._settings_file_tab = files_tab
         self.refresh_profiles(previous_profile_id)
 
         def save_preferences():
@@ -776,6 +781,15 @@ class MainWindow(LegacyMainWindow):
             self.statusBar().showMessage("บันทึกการตั้งค่าแล้ว", 3000)
 
         save.clicked.connect(save_preferences)
+
+    def show_vocabulary_files(self):
+        """Open the attachment manager with the vocabulary step selected."""
+        if not self._settings_page_state:
+            self.settings_dialog()
+        self._management_vocabulary_mode = True
+        self.file_scope_selector.setCurrentIndex(1)
+        self._settings_tabs.setCurrentWidget(self._settings_file_tab)
+        self.refresh_files()
 
     def _restore_settings_management(self):
         state = self._settings_page_state
@@ -990,23 +1004,41 @@ class MainWindow(LegacyMainWindow):
 
         import_button = QPushButton("นำเข้าไฟล์")
         def import_file():
-            source, _ = QFileDialog.getOpenFileName(self, "นำเข้าไฟล์", str(self.profile_browse_directory()), "Text files (*.txt *.md *.json)")
-            if not source:
+            sources, _ = QFileDialog.getOpenFileNames(
+                self,
+                "เลือกไฟล์ที่จะนำเข้า (เลือกหลายไฟล์ได้ด้วย Ctrl/Shift)",
+                str(self.profile_browse_directory()),
+                "ไฟล์ข้อความ (*.txt *.md *.json);;ทุกไฟล์ (*)",
+            )
+            if not sources:
                 return
-            src = Path(source)
-            if src.suffix.lower() not in (".txt", ".md", ".json"):
-                QMessageBox.warning(self, "นำเข้าไม่ได้", "รองรับ .txt, .md และ .json")
-                return
-            relative, accepted = QInputDialog.getText(self, "นำเข้าไฟล์", "ตำแหน่งปลายทาง:", text=f"reference/{src.name}")
+            self.remember_profile_browse_directory(sources[-1])
+            relative, accepted = QInputDialog.getText(
+                self,
+                "นำเข้าไฟล์",
+                f"โฟลเดอร์ปลายทางในเรื่องนี้ (เลือก {len(sources)} ไฟล์):",
+                text="reference",
+            )
             if not accepted or not relative:
                 return
-            dest = self.repo.resolve_project_path(profile.id, relative)
-            if dest.exists():
-                QMessageBox.warning(self, "นำเข้าไม่ได้", "มีไฟล์ชื่อนี้แล้ว")
+            try:
+                destination = self.repo.resolve_project_path(profile.id, relative)
+            except (ValueError, OSError) as exc:
+                QMessageBox.warning(self, "นำเข้าไม่ได้", f"โฟลเดอร์ปลายทางไม่ถูกต้อง: {exc}")
                 return
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
+            if destination.exists() and not destination.is_dir():
+                QMessageBox.warning(self, "นำเข้าไม่ได้", "ตำแหน่งปลายทางต้องเป็นโฟลเดอร์")
+                return
+            try:
+                copied, skipped = import_files_into_directory(sources, destination)
+            except OSError as exc:
+                QMessageBox.warning(self, "นำเข้าไม่ได้", str(exc))
+                return
             refresh(search.text())
+            message = f"นำเข้าแล้ว {copied} ไฟล์"
+            if skipped:
+                message += f" · ข้าม {skipped} ไฟล์ (ชนชื่อหรือไม่รองรับ)"
+            self.statusBar().showMessage(message, 6000)
         import_button.clicked.connect(import_file)
         actions.addWidget(import_button)
 
@@ -1802,6 +1834,15 @@ class MainWindow(LegacyMainWindow):
     def launch_profile(self):
         """Open supported profile targets inside the current workspace."""
         if not self.profile:
+            return
+
+        has_main_folder = bool(self.profile.main_folder.strip())
+        has_enabled_targets = any(item.enabled for item in self.profile.launch_targets)
+        if not has_main_folder and not has_enabled_targets:
+            self.launcher_dialog()
+            self.statusBar().showMessage(
+                "ยังไม่มีรายการให้เปิด เพิ่มไฟล์หรือโฟลเดอร์ในหน้านี้ได้เลย", 5000
+            )
             return
 
         workspace = self._workspace(self.profile)
