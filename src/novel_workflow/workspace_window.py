@@ -160,7 +160,10 @@ class ProfileWorkspace(QWidget):
         )
         self.steps = QListWidget()
         self.steps.setObjectName("workflowSteps")
-        self.steps.setSelectionMode(QAbstractItemView.SingleSelection)
+        # Stage state is changed by the stage buttons' clicked handlers only.
+        # The list's current row is presentation state and must not activate a
+        # workflow stage when Qt updates it from pointer/focus navigation.
+        self.steps.setSelectionMode(QAbstractItemView.NoSelection)
         self.steps.setSpacing(2)
         self.stage_buttons = []
         self.vocabulary_mode = False
@@ -1783,9 +1786,6 @@ class MainWindow(LegacyMainWindow):
         workspace = self.workspaces.get(profile.id)
         if workspace is None:
             workspace = ProfileWorkspace(self, profile)
-            workspace.steps.currentRowChanged.connect(
-                lambda row, pid=profile.id: self._step_changed(pid, row)
-            )
             workspace.files.itemChanged.connect(
                 lambda item, pid=profile.id: self._file_toggled(pid, item)
             )
