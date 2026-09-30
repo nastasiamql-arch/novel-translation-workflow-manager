@@ -39,8 +39,8 @@ Type: files; Name: "{autoprograms}\NovelWorkflow.lnk"
 Type: files; Name: "{autodesktop}\NovelWorkflow.lnk"
 
 [Icons]
-Name: "{autoprograms}\Palantir Novel"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\Palantir Novel"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\Palantir Novel"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; IconIndex: 0
+Name: "{autodesktop}\Palantir Novel"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; IconIndex: 0; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked

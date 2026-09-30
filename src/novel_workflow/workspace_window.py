@@ -1438,17 +1438,6 @@ class MainWindow(LegacyMainWindow):
         bar.setMovable(False)
         bar.setIconSize(QSize(28, 28))
 
-        logo = Path(__file__).resolve().parent / "resources" / "palantir_novel.png"
-        mark = QLabel()
-        mark.setObjectName("toolbarLogo")
-        if logo.is_file():
-            mark.setPixmap(
-                QPixmap(str(logo)).scaled(
-                    28, 28, Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-            )
-        bar.addWidget(mark)
-
         brand = QLabel("Palantir: Novel")
         brand.setObjectName("brandTitle")
         bar.addWidget(brand)
