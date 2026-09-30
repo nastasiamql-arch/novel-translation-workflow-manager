@@ -19,6 +19,11 @@ def release_payload(version="1.8.0", content=b"installer bytes"):
         "html_url": f"https://github.com/nastasiamql-arch/novel-translation-workflow-manager/releases/tag/v{version}",
         "body": "Bug fixes and improvements",
         "assets": [{
+            "id": 123456,
+            "url": (
+                "https://api.github.com/repos/nastasiamql-arch/novel-translation-workflow-manager/"
+                "releases/assets/123456"
+            ),
             "name": f"NovelWorkflow-Setup-{version}.exe",
             "size": len(content),
             "digest": f"sha256:{digest}",
@@ -36,6 +41,7 @@ def test_latest_release_is_available_only_when_its_version_is_newer():
 
     assert available.version == "1.8.0"
     assert available.sha256 == hashlib.sha256(b"installer bytes").hexdigest()
+    assert available.asset_api_url.endswith("/releases/assets/123456")
     assert current is None
 
 
@@ -81,6 +87,16 @@ def test_download_verifies_hash_before_publishing_installer(tmp_path, monkeypatc
     assert destination.read_bytes() == content
     assert progress[-1] == 100
     assert requests[0].get_header("Authorization") == f"Bearer {token}"
+    assert requests[0].get_header("Accept") == "application/octet-stream"
+    assert requests[0].full_url == release.asset_api_url
+
+
+def test_release_without_valid_asset_api_url_is_rejected():
+    payload = release_payload()
+    payload["assets"][0]["url"] = "https://attacker.example/installer.exe"
+
+    with pytest.raises(updater.UpdateError, match="API"):
+        updater.parse_latest_release(payload, "1.7.5")
 
 
 def test_bad_download_is_removed_instead_of_left_as_installer(tmp_path, monkeypatch):

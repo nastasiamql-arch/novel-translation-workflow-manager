@@ -59,6 +59,7 @@ class UpdateInfo:
     version: str
     release_url: str
     download_url: str
+    asset_api_url: str
     sha256: str
     size: int
     notes: str
@@ -103,6 +104,14 @@ def parse_latest_release(payload: dict, current_version: str) -> UpdateInfo | No
     if download_url != expected_download_url:
         raise UpdateError("ลิงก์ดาวน์โหลดไม่ตรงกับ installer ของ repository ทางการ")
 
+    asset_id = asset.get("id")
+    asset_api_url = asset.get("url", "")
+    expected_asset_api_url = (
+        f"https://api.github.com/repos/{REPOSITORY}/releases/assets/{asset_id}"
+    )
+    if not isinstance(asset_id, int) or asset_id <= 0 or asset_api_url != expected_asset_api_url:
+        raise UpdateError("ลิงก์ API ของไฟล์ติดตั้งไม่ถูกต้อง")
+
     size = asset.get("size")
     if not isinstance(size, int) or size <= 0:
         raise UpdateError("ขนาดไฟล์ติดตั้งใน Release ไม่ถูกต้อง")
@@ -111,6 +120,7 @@ def parse_latest_release(payload: dict, current_version: str) -> UpdateInfo | No
         version=version,
         release_url=release_url,
         download_url=download_url,
+        asset_api_url=asset_api_url,
         sha256=digest.lower(),
         size=size,
         notes=str(payload.get("body") or "").strip(),
@@ -152,15 +162,19 @@ def download_update(
     destination = Path(destination)
     part_path = destination.with_name(destination.name + ".part")
     request = Request(
-        update.download_url,
-        headers=_github_headers(f"NovelWorkflow/{update.version}"),
+        update.asset_api_url,
+        headers={
+            **_github_headers(f"NovelWorkflow/{update.version}"),
+            "Accept": "application/octet-stream",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
     )
     digest = hashlib.sha256()
     received = 0
     destination.parent.mkdir(parents=True, exist_ok=True)
     try:
         with urlopen(request, timeout=timeout) as response, part_path.open("wb") as output:
-            final_url = response.geturl() if hasattr(response, "geturl") else update.download_url
+            final_url = response.geturl() if hasattr(response, "geturl") else update.asset_api_url
             if not str(final_url).startswith("https://"):
                 raise UpdateError("การเชื่อมต่อดาวน์โหลดไม่ปลอดภัย")
             while True:
