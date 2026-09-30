@@ -97,7 +97,7 @@ def main() -> int:
                 assert all(workspace.steps.itemWidget(workspace.steps.item(i)) for i in range(2))
                 assert workspace.steps.objectName() == "workflowSteps"
                 assert [workspace.steps.itemWidget(workspace.steps.item(i)).text() for i in range(2)] == [
-                    "แปล", "ตรวจคำแปล",
+                    "› แปล", "ตรวจคำแปล",
                 ]
                 assert workspace.vocabulary_button.text() == "หาศัพท์"
                 assert window.profile.workflow.steps[0].name == "แปล"
@@ -108,18 +108,22 @@ def main() -> int:
                 app.processEvents()
                 assert workspace.vocabulary_mode
                 assert window.step().name == "หาศัพท์"
+                assert workspace.vocabulary_button.text() == "› หาศัพท์"
                 assert workspace.files.item(0).text() == "Find Terms"
                 assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [context.resolve()]
                 translation_button = workspace.steps.itemWidget(workspace.steps.item(0))
                 translation_button.click()
                 app.processEvents()
                 assert not workspace.vocabulary_mode
+                assert translation_button.text() == "› แปล"
+                review_button = workspace.steps.itemWidget(workspace.steps.item(1))
+                assert review_button.text() == "ตรวจคำแปล"
                 assert workspace.steps.currentRow() == 0
                 assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [chapter.resolve()]
-                review_button = workspace.steps.itemWidget(workspace.steps.item(1))
                 review_button.click()
                 app.processEvents()
                 assert workspace.steps.currentRow() == 1
+                assert review_button.text() == "› ตรวจคำแปล"
                 assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [review.resolve()]
                 translation_button.click()
                 app.processEvents()
@@ -234,6 +238,7 @@ def main() -> int:
                 urls = app.clipboard().mimeData().urls()
                 assert [Path(url.toLocalFile()) for url in urls] == [chapter.resolve()]
                 assert workspace.steps.currentRow() == 1
+                assert workspace.steps.itemWidget(workspace.steps.item(1)).text() == "› ตรวจคำแปล"
 
                 window.show_library()
                 window._open_profile_card(window.profile_cards.item(1))

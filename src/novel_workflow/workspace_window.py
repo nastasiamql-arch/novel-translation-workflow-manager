@@ -1442,6 +1442,7 @@ class MainWindow(LegacyMainWindow):
                 if workspace:
                     button = QPushButton(step.name)
                     button.setObjectName("workflowStageButton")
+                    button.setProperty("workflowStageName", step.name)
                     button.setCheckable(True)
                     button.setMinimumHeight(38)
                     button.setCursor(Qt.PointingHandCursor)
@@ -1502,11 +1503,17 @@ class MainWindow(LegacyMainWindow):
     @staticmethod
     def _sync_stage_buttons(workspace):
         for index, button in enumerate(workspace.stage_buttons):
+            active = not workspace.vocabulary_mode and index == workspace.step_index
             button.blockSignals(True)
-            button.setChecked(not workspace.vocabulary_mode and index == workspace.step_index)
+            button.setChecked(active)
+            name = button.property("workflowStageName") or button.text().removeprefix("› ")
+            button.setText(f"› {name}" if active else name)
             button.blockSignals(False)
         workspace.vocabulary_button.blockSignals(True)
         workspace.vocabulary_button.setChecked(workspace.vocabulary_mode)
+        workspace.vocabulary_button.setText(
+            "› หาศัพท์" if workspace.vocabulary_mode else "หาศัพท์"
+        )
         workspace.vocabulary_button.blockSignals(False)
 
     def copy_named_stage(self, profile_id, stage):
