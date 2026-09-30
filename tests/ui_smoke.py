@@ -302,10 +302,15 @@ def main() -> int:
                 assert [item.id for item in repo.list_profiles()] == reordered
                 window._persist_profile_order(original_order)
                 assert [item.id for item in repo.list_profiles()] == original_order
-                window.file_scope_selector.setCurrentIndex(1)
+                vocabulary_row = len(window.profile.workflow.steps)
+                assert window.steps.item(vocabulary_row).text() == "หาศัพท์"
+                window.steps.setCurrentRow(vocabulary_row)
                 assert window.step().name == "หาศัพท์"
+                assert window.file_scope_selector.currentIndex() == 1
                 assert window.files.item(0).text() == "Find Terms"
-                window.file_scope_selector.setCurrentIndex(0)
+                window.steps.itemDoubleClicked.emit(window.steps.item(vocabulary_row))
+                assert window._settings_tabs.currentWidget() is window._settings_file_tab
+                window.steps.setCurrentRow(0)
                 assert window.step().name == "แปล"
                 window.show_vocabulary_files()
                 assert window.file_scope_selector.currentIndex() == 1

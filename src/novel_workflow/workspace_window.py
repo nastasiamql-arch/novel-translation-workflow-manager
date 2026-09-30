@@ -721,12 +721,24 @@ class MainWindow(LegacyMainWindow):
             ("เลือก Context", self.set_context_file), ("เปลี่ยนชื่อ", self.rename_profile),
             ("รายการที่เปิด", self.launcher_dialog), ("ลบนิยาย", self.delete_profile),
         ])
-        management_tab("ขั้นตอน", self.steps, [
-            ("เพิ่มขั้นตอน", self.add_step), ("เปลี่ยนชื่อ", self.rename_step),
-            ("ทำสำเนา", self.duplicate_step), ("ลบขั้นตอน", self.delete_step),
-            ("เลื่อนขึ้น", lambda: self.move_step(-1)), ("เลื่อนลง", lambda: self.move_step(1)),
-            ("บันทึกเป็นแม่แบบ", self.save_template),
-            ("จัดการไฟล์หาศัพท์", self.show_vocabulary_files),
+        def workflow_step_action(callback):
+            def run(*_args):
+                if self._management_vocabulary_mode:
+                    self.statusBar().showMessage(
+                        "หาศัพท์แยกจากขั้นตอนแปล จัดการไฟล์ได้จากแท็บไฟล์แนบ", 3500
+                    )
+                    return
+                callback()
+            return run
+
+        steps_tab = management_tab("ขั้นตอน", self.steps, [
+            ("เพิ่มขั้นตอน", self.add_step),
+            ("เปลี่ยนชื่อ", workflow_step_action(self.rename_step)),
+            ("ทำสำเนา", workflow_step_action(self.duplicate_step)),
+            ("ลบขั้นตอน", workflow_step_action(self.delete_step)),
+            ("เลื่อนขึ้น", workflow_step_action(lambda: self.move_step(-1))),
+            ("เลื่อนลง", workflow_step_action(lambda: self.move_step(1))),
+            ("บันทึกเป็นแม่แบบ", workflow_step_action(self.save_template)),
         ])
         files_tab = management_tab("ไฟล์แนบ", files_panel, [
             ("เพิ่มไฟล์", self.add_file), ("อ้างอิงบทปัจจุบัน", self.add_dynamic),
@@ -768,7 +780,9 @@ class MainWindow(LegacyMainWindow):
             "vocabulary_mode": active_vocabulary_mode,
         }
         self._settings_tabs = tabs
+        self._settings_steps_tab = steps_tab
         self._settings_file_tab = files_tab
+        self.steps.itemDoubleClicked.connect(self._open_selected_step_files)
         self.refresh_profiles(previous_profile_id)
 
         def save_preferences():
@@ -786,10 +800,15 @@ class MainWindow(LegacyMainWindow):
         """Open the attachment manager with the vocabulary step selected."""
         if not self._settings_page_state:
             self.settings_dialog()
-        self._management_vocabulary_mode = True
-        self.file_scope_selector.setCurrentIndex(1)
+        vocabulary_row = len(self.profile.workflow.steps) if self.profile else -1
+        if vocabulary_row >= 0:
+            self.steps.setCurrentRow(vocabulary_row)
         self._settings_tabs.setCurrentWidget(self._settings_file_tab)
         self.refresh_files()
+
+    def _open_selected_step_files(self, item):
+        if item.data(Qt.UserRole) == "vocabulary-step" and self._settings_page_state:
+            self._settings_tabs.setCurrentWidget(self._settings_file_tab)
 
     def _restore_settings_management(self):
         state = self._settings_page_state
@@ -1596,7 +1615,16 @@ class MainWindow(LegacyMainWindow):
 
     def refresh_steps(self):
         if getattr(self, "_settings_open", False):
-            return super().refresh_steps()
+            result = super().refresh_steps()
+            if self.profile and self.profile.vocabulary_step:
+                vocabulary = QListWidgetItem(self.profile.vocabulary_step.name)
+                vocabulary.setData(Qt.UserRole, "vocabulary-step")
+                vocabulary.setToolTip(
+                    "ดับเบิลคลิกเพื่อไปเพิ่มหรือจัดการไฟล์หาศัพท์"
+                )
+                vocabulary.setSizeHint(QSize(0, 42))
+                self.steps.addItem(vocabulary)
+            return result
 
         workspace = (
             self.workspaces.get(self.profile.id) if self.profile else None
@@ -1713,7 +1741,11 @@ class MainWindow(LegacyMainWindow):
         """Return the currently active vocabulary or translation step."""
         if self.profile:
             if getattr(self, "_settings_open", False):
-                if getattr(self, "_management_vocabulary_mode", False):
+                selected = self.steps.currentItem() if self.steps else None
+                is_vocabulary_row = bool(
+                    selected and selected.data(Qt.UserRole) == "vocabulary-step"
+                )
+                if getattr(self, "_management_vocabulary_mode", False) or is_vocabulary_row:
                     return self.profile.vocabulary_step
             else:
                 workspace = self.workspaces.get(self.profile.id)
@@ -1724,6 +1756,12 @@ class MainWindow(LegacyMainWindow):
     def _settings_file_scope_changed(self, index):
         self._management_vocabulary_mode = index == 1
         if getattr(self, "_settings_open", False):
+            if self.profile and self.steps:
+                vocabulary_row = len(self.profile.workflow.steps)
+                if index == 1 and self.steps.currentRow() != vocabulary_row:
+                    self.steps.setCurrentRow(vocabulary_row)
+                elif index == 0 and self.steps.currentRow() == vocabulary_row:
+                    self.steps.setCurrentRow(min(self.si, vocabulary_row - 1))
             self.refresh_files()
 
     def set_vocabulary_mode(self, profile_id, enabled):
@@ -1749,6 +1787,20 @@ class MainWindow(LegacyMainWindow):
 
     def select_step(self, index):
         if getattr(self, "_settings_open", False):
+            vocabulary_row = len(self.profile.workflow.steps) if self.profile else -1
+            is_vocabulary_row = bool(
+                index == vocabulary_row
+                and self.steps.currentItem()
+                and self.steps.currentItem().data(Qt.UserRole) == "vocabulary-step"
+            )
+            self._management_vocabulary_mode = is_vocabulary_row
+            if hasattr(self, "file_scope_selector"):
+                self.file_scope_selector.blockSignals(True)
+                self.file_scope_selector.setCurrentIndex(1 if is_vocabulary_row else 0)
+                self.file_scope_selector.blockSignals(False)
+            if is_vocabulary_row:
+                self.refresh_files()
+                return
             return super().select_step(index)
         if self.profile:
             self._step_changed(self.profile.id, index)
