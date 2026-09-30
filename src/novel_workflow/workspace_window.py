@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import QDir, QFileSystemWatcher, QSize, Qt, QTimer
+from PySide6.QtCore import QDir, QFileSystemWatcher, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QFontMetrics, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QFileDialog, QFileSystemModel, QFrame, QGridLayout,
@@ -47,6 +47,28 @@ class ElidingStatusLabel(QLabel):
         self.setText(QFontMetrics(self.font()).elidedText(
             self._full_text, Qt.ElideRight, available
         ))
+
+
+class ReorderableProfileList(QListWidget):
+    """Profile list with native click-and-drag reordering."""
+
+    orderChanged = Signal(list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.setDefaultDropAction(Qt.MoveAction)
+        self.setToolTip("คลิกค้างที่นิยายแล้วลากเพื่อจัดลำดับ")
+
+    def dropEvent(self, event):
+        super().dropEvent(event)
+        self.orderChanged.emit([
+            self.item(index).data(Qt.UserRole)
+            for index in range(self.count())
+        ])
 
 
 class ProfileWorkspace(QWidget):
@@ -586,7 +608,8 @@ class MainWindow(LegacyMainWindow):
         tabs = QTabWidget()
         root.addWidget(tabs, 1)
 
-        self.profiles = QListWidget()
+        self.profiles = ReorderableProfileList()
+        self.profiles.orderChanged.connect(self._persist_profile_order)
         self.profiles.setSpacing(1)
         self.profiles.setCursor(Qt.PointingHandCursor)
         self.profiles.setAccessibleName("รายการนิยาย")
@@ -718,6 +741,17 @@ class MainWindow(LegacyMainWindow):
         self._utility_pages.pop("settings", None)
         self.utility_stack.removeWidget(page)
         page.deleteLater()
+
+    def _persist_profile_order(self, profile_ids):
+        """Persist profile order after a drag in Settings → Novels."""
+        profiles = {profile.id: profile for profile in self.repo.list_profiles()}
+        if len(profile_ids) != len(profiles) or set(profile_ids) != set(profiles):
+            return
+        for order, profile_id in enumerate(profile_ids):
+            profile = profiles[profile_id]
+            if profile.order != order:
+                profile.order = order
+                self.repo.save_profile(profile)
 
     def launcher_dialog(self):
         if not self.profile:
@@ -1200,7 +1234,12 @@ class MainWindow(LegacyMainWindow):
 
     def refresh_profiles(self, pid=None):
         if getattr(self, "_settings_open", False):
-            return super().refresh_profiles(pid)
+            result = super().refresh_profiles(pid)
+            for index, profile in enumerate(getattr(self, "ps_list", [])):
+                item = self.profiles.item(index)
+                if item:
+                    item.setData(Qt.UserRole, profile.id)
+            return result
 
         self.ps_list = self.repo.list_profiles()
         for profile in self.ps_list:
@@ -1491,7 +1530,7 @@ class MainWindow(LegacyMainWindow):
             self.steps.blockSignals(False)
         self._sync_stage_buttons(workspace)
         self.refresh_files()
-        self.copy_step(advance=False)
+        self.copy_step()
 
     def step(self):
         """Return the currently active vocabulary or translation step."""
@@ -1573,12 +1612,9 @@ class MainWindow(LegacyMainWindow):
             workspace.breadcrumb.setText(f"{profile.name}  ›  {step.name}  ›  {path.name}")
 
 
-    def copy_step(self, advance=True):
+    def copy_step(self):
         workspace = self.workspaces.get(self.profile.id) if self.profile else None
-        vocabulary_mode = bool(workspace and workspace.vocabulary_mode)
-        super().copy_step(advance=advance)
-        if advance and self.profile and workspace and not vocabulary_mode and self.si >= 0:
-            workspace.step_index = self.si
+        super().copy_step()
         if workspace:
             self._sync_stage_buttons(workspace)
 

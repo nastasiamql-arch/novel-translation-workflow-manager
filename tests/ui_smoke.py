@@ -11,7 +11,7 @@ os.environ.setdefault("NOVELWORKFLOW_DISABLE_WEBENGINE", "1")
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QTextCursor
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QPushButton, QToolBar
+from PySide6.QtWidgets import QAbstractItemView, QApplication, QPushButton, QToolBar
 
 from novel_workflow.models import LaunchTarget, StepFile, Workflow, WorkflowStep
 from novel_workflow.services import ProfileService
@@ -227,11 +227,12 @@ def main() -> int:
                 assert original_block_format.lineHeight() == last_format.lineHeight()
                 workspace.editor.save_current()
 
+                translation_button.click()
                 window.copy_step()
                 app.processEvents()
                 urls = app.clipboard().mimeData().urls()
                 assert [Path(url.toLocalFile()) for url in urls] == [chapter.resolve()]
-                assert workspace.steps.currentRow() == 1
+                assert workspace.steps.currentRow() == 0
 
                 window.show_library()
                 window._open_profile_card(window.profile_cards.item(1))
@@ -272,6 +273,15 @@ def main() -> int:
                 window.settings_dialog()
                 assert window.main_pages.currentWidget() is window.utility_page
                 assert window._settings_open
+                assert window.profiles.dragDropMode() == QAbstractItemView.InternalMove
+                assert window.profiles.dragEnabled()
+                original_order = [window.profiles.item(i).data(Qt.UserRole) for i in range(window.profiles.count())]
+                assert set(original_order) == {profile.id, second.id}
+                reordered = list(reversed(original_order))
+                window._persist_profile_order(reordered)
+                assert [item.id for item in repo.list_profiles()] == reordered
+                window._persist_profile_order(original_order)
+                assert [item.id for item in repo.list_profiles()] == original_order
                 window.file_scope_selector.setCurrentIndex(1)
                 assert window.step().name == "หาศัพท์"
                 assert window.files.item(0).text() == "Find Terms"

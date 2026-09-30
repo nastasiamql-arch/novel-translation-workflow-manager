@@ -204,20 +204,19 @@ def application_stylesheet(appearance: str = "Light") -> str:
     QPushButton#workflowStageButton, QPushButton#vocabularyButton {{
         color: {c["text"]};
         background: {c["surface2"]};
-        border: 1px solid {c["border_strong"]};
+        border: 1px solid {c["border"]};
         border-radius: 8px;
         padding: 7px 12px;
         text-align: left;
         font-weight: 600;
     }}
     QPushButton#workflowStageButton:hover, QPushButton#vocabularyButton:hover {{
-        background: {c["hover"]};
-        border-color: {c["accent"]};
+        background: {c["surface2"]};
+        border-color: {c["border"]};
     }}
-    QPushButton#workflowStageButton:checked, QPushButton#vocabularyButton:checked {{
-        background: {c["selection"]};
-        border: 2px solid {c["accent"]};
-        color: {c["text"]};
+    QPushButton#workflowStageButton:focus, QPushButton#vocabularyButton:focus {{
+        border: 1px solid {c["border"]};
+        outline: none;
     }}
     QPushButton#copyStepButton {{
         color: {c["text"]};
