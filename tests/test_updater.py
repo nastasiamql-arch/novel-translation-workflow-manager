@@ -1,6 +1,8 @@
 import hashlib
 import io
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -48,6 +50,13 @@ def test_release_without_valid_sha256_is_rejected():
 def test_download_verifies_hash_before_publishing_installer(tmp_path, monkeypatch):
     content = b"verified installer"
     release = updater.parse_latest_release(release_payload(content=content), "1.7.5")
+    token = "test-private-download-token"
+    monkeypatch.setattr(updater.shutil, "which", lambda name: "gh.exe" if name == "gh" else None)
+    monkeypatch.setattr(
+        updater.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=f"{token}\n"),
+    )
 
     class Response(io.BytesIO):
         def __enter__(self):
@@ -56,7 +65,13 @@ def test_download_verifies_hash_before_publishing_installer(tmp_path, monkeypatc
         def __exit__(self, *_args):
             self.close()
 
-    monkeypatch.setattr(updater, "urlopen", lambda *_args, **_kwargs: Response(content))
+    requests = []
+
+    def fake_urlopen(request, **_kwargs):
+        requests.append(request)
+        return Response(content)
+
+    monkeypatch.setattr(updater, "urlopen", fake_urlopen)
     destination = tmp_path / "NovelWorkflow-Setup-1.8.0.exe"
     progress = []
 
@@ -65,6 +80,7 @@ def test_download_verifies_hash_before_publishing_installer(tmp_path, monkeypatc
     assert result == destination
     assert destination.read_bytes() == content
     assert progress[-1] == 100
+    assert requests[0].get_header("Authorization") == f"Bearer {token}"
 
 
 def test_bad_download_is_removed_instead_of_left_as_installer(tmp_path, monkeypatch):
@@ -91,3 +107,41 @@ def test_runtime_version_comes_from_installed_project_metadata():
     from importlib.metadata import version
 
     assert __version__ == version("novelworkflow")
+
+
+def test_check_uses_github_cli_credential_without_persisting_it(monkeypatch):
+    token = "test-private-token"
+    monkeypatch.setattr(updater.shutil, "which", lambda name: "gh.exe" if name == "gh" else None)
+    monkeypatch.setattr(
+        updater.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=f"{token}\n"),
+    )
+    response = io.BytesIO(json.dumps(release_payload("1.8.1")).encode())
+    requests = []
+
+    def fake_urlopen(request, **_kwargs):
+        requests.append(request)
+        return response
+
+    monkeypatch.setattr(updater, "urlopen", fake_urlopen)
+    updater.check_for_update("1.8.0")
+
+    assert requests[0].get_header("Authorization") == f"Bearer {token}"
+    assert not any(value == token for value in updater.__dict__.values())
+
+
+def test_unauthenticated_private_repository_404_explains_how_to_sign_in(monkeypatch):
+    from urllib.error import HTTPError
+
+    monkeypatch.setattr(updater.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(
+        updater,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            HTTPError(updater.LATEST_RELEASE_URL, 404, "Not Found", {}, None)
+        ),
+    )
+
+    with pytest.raises(updater.UpdateError, match="Private|private|gh auth login"):
+        updater.check_for_update("1.8.0")

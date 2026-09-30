@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -20,6 +22,36 @@ _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 
 class UpdateError(Exception):
     """An update could not be checked or verified."""
+
+
+def _github_cli_token() -> str | None:
+    """Read an existing GitHub CLI credential without persisting or logging it."""
+    executable = shutil.which("gh")
+    if not executable:
+        return None
+    try:
+        result = subprocess.run(
+            [executable, "auth", "token", "--hostname", "github.com"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    token = result.stdout.strip()
+    if result.returncode != 0 or not token or any(char.isspace() for char in token):
+        return None
+    return token
+
+
+def _github_headers(user_agent: str) -> dict[str, str]:
+    headers = {"User-Agent": user_agent}
+    token = _github_cli_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 @dataclass(frozen=True)
@@ -89,15 +121,22 @@ def check_for_update(current_version: str, timeout: int = 8) -> UpdateInfo | Non
     request = Request(
         LATEST_RELEASE_URL,
         headers={
+            **_github_headers(f"NovelWorkflow/{current_version}"),
             "Accept": "application/vnd.github+json",
-            "User-Agent": f"NovelWorkflow/{current_version}",
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
     try:
         with urlopen(request, timeout=timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except HTTPError as exc:
+        if exc.code == 404:
+            raise UpdateError(
+                "GitHub ตอบ 404: repository นี้เป็น Private และต้องใช้บัญชีที่มีสิทธิ์ "
+                "หากติดตั้ง GitHub CLI ให้รัน `gh auth login` ด้วยบัญชีนั้น แล้วเปิดโปรแกรมใหม่"
+            ) from exc
+        raise UpdateError(f"ตรวจสอบอัปเดตไม่ได้: {exc}") from exc
+    except (URLError, TimeoutError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise UpdateError(f"ตรวจสอบอัปเดตไม่ได้: {exc}") from exc
     return parse_latest_release(payload, current_version)
 
@@ -114,7 +153,7 @@ def download_update(
     part_path = destination.with_name(destination.name + ".part")
     request = Request(
         update.download_url,
-        headers={"User-Agent": f"NovelWorkflow/{update.version}"},
+        headers=_github_headers(f"NovelWorkflow/{update.version}"),
     )
     digest = hashlib.sha256()
     received = 0
