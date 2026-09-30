@@ -219,7 +219,7 @@ def application_stylesheet(appearance: str = "Light") -> str:
         background: {c["surface2"]};
         border: 1px solid {c["border"]};
         border-radius: 8px;
-        padding: 7px 12px;
+        padding: 7px 12px 7px 32px;
         text-align: left;
         font-weight: 600;
     }}
