@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Polished vocabulary change set",
+  "type": "object",
+  "required": ["NEW", "UPDATE"],
+  "additionalProperties": false,
+  "properties": {
+    "NEW": {"type": "array", "items": {"$ref": "#/$defs/row"}},
+    "UPDATE": {"type": "array", "items": {"$ref": "#/$defs/row"}}
+  },
+  "$defs": {
+    "row": {
+      "type": "object",
+      "minProperties": 2,
+      "additionalProperties": {"type": "string", "pattern": "^[^\\t\\r\\n\\u0000]*$"}
+    }
+  },
+  "$comment": "Runtime additionally requires exact VOCAB columns, nonempty identity/translation, unique identities, NEW absent and UPDATE present. The first VOCAB column is identity."
+}

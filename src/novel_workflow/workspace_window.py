@@ -26,6 +26,7 @@ from .workspace_editor import EditorTabs
 from . import __version__
 from .updater import UpdateError, UpdateInfo, check_for_update, download_update
 from .file_import import import_files_into_directory
+from .vocabulary_panel import VocabularyPanel
 
 
 PROFILE_STATUSES = (
@@ -309,7 +310,16 @@ class ProfileWorkspace(QWidget):
         editor_layout = QVBoxLayout()
         editor_layout.setContentsMargins(0, 0, 0, 0)
         editor_layout.setSpacing(3)
-        editor_layout.addWidget(self.editor_header)
+        # Keep header controls reachable without forcing the editor's minimum
+        # width to exceed the available space beside the vocabulary panel.
+        header_scroll = QScrollArea()
+        header_scroll.setWidgetResizable(True)
+        header_scroll.setFrameShape(QFrame.NoFrame)
+        header_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        header_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        header_scroll.setFixedHeight(self.editor_header.sizeHint().height() + 20)
+        header_scroll.setWidget(self.editor_header)
+        editor_layout.addWidget(header_scroll)
         editor_layout.addWidget(self.editor, 1)
         editor_host = QWidget()
         editor_host.setLayout(editor_layout)
@@ -359,10 +369,16 @@ class ProfileWorkspace(QWidget):
         self.workspace_splitter.addWidget(self.novel_cover_rail)
         self.workspace_splitter.addWidget(self.sidebar)
         self.workspace_splitter.addWidget(editor_host)
+        self.vocabulary_panel = VocabularyPanel(
+            owner.repo, profile, self.editor.open_file,
+            prepare=self._prepare_vocabulary, release=self.editor.unlock_path,
+        )
+        self.workspace_splitter.addWidget(self.vocabulary_panel)
+        self.workspace_splitter.setCollapsible(3, False)
         self.workspace_splitter.setStretchFactor(0, 0)
         self.workspace_splitter.setStretchFactor(1, 0)
         self.workspace_splitter.setStretchFactor(2, 1)
-        self.workspace_splitter.setSizes([68, 290, 1100])
+        self.workspace_splitter.setSizes([68, 290, 900, profile.vocabulary_settings.panel_width])
         self.workspace_splitter.splitterMoved.connect(self._remember_sidebar_width)
 
         self.goal_panel = QFrame()
@@ -401,6 +417,8 @@ class ProfileWorkspace(QWidget):
         self.resume_profile_button.setVisible(status != "translating")
 
     def configure(self, profile):
+        if hasattr(self, "vocabulary_panel"):
+            self.vocabulary_panel.refresh(profile)
         root = (
             Path(profile.main_folder).expanduser()
             if profile.main_folder.strip()
@@ -412,6 +430,17 @@ class ProfileWorkspace(QWidget):
         root_index = self.file_model.setRootPath(str(self.root_path))
         self.file_tree.setRootIndex(root_index)
         self.file_tree.setToolTip(str(self.root_path))
+
+    def _prepare_vocabulary(self, path):
+        target = Path(path).expanduser().resolve()
+        if target in EditorTabs.locked_paths:
+            return False
+        # Save source/prompt buffers before reading snapshots. Clean VOCAB tabs
+        # must not be saved again from stale buffers after the atomic replace.
+        for workspace in self.owner.workspaces.values():
+            if not workspace.editor.save_all(): return False
+        self.editor.lock_path(target)
+        return True
 
     def _choose_context(self):
         self.owner.set_context_file()
@@ -434,7 +463,7 @@ class ProfileWorkspace(QWidget):
             self.owner.settings.sidebar_width = sidebar_width
             self.owner.settings.sidebar_visible = False
             self.workspace_splitter.setSizes([
-                rail_width, 0, max(1, sum(sizes) - rail_width)
+                rail_width, 0, max(1, sum(sizes) - rail_width - sizes[3]), sizes[3]
             ])
         else:
             self.owner.settings.sidebar_visible = True
@@ -442,6 +471,7 @@ class ProfileWorkspace(QWidget):
                 rail_width,
                 max(220, int(self.owner.settings.sidebar_width or 290)),
                 1000,
+                sizes[3],
             ])
         self.owner.repo.save_settings(self.owner.settings)
 
@@ -449,6 +479,10 @@ class ProfileWorkspace(QWidget):
         sizes = self.workspace_splitter.sizes()
         if index == 2 and len(sizes) > 2 and sizes[1] > 0:
             self.owner.settings.sidebar_width = sizes[1]
+        if index == 3 and len(sizes) > 3 and sizes[3] >= 250:
+            profile = self.vocabulary_panel.profile
+            profile.vocabulary_settings.panel_width = min(380, sizes[3])
+            self.owner.repo.save_profile(profile)
 
     def selected_path(self):
         index = self.file_tree.currentIndex()
@@ -756,6 +790,13 @@ class MainWindow(LegacyMainWindow):
         if self._settings_page_state is None:
             self._build_settings_page()
         self._show_utility_page("settings", "ตั้งค่าและจัดการ", lambda: self._settings_page_state["page"])
+
+    def delete_profile(self):
+        workspace = self.workspaces.get(self.profile.id) if self.profile else None
+        if workspace and workspace.vocabulary_panel.worker and workspace.vocabulary_panel.worker.isRunning():
+            self.statusBar().showMessage("ยกเลิกงานหาศัพท์และรอให้จบก่อนลบนิยาย")
+            return
+        super().delete_profile()
 
     def _build_settings_page(self):
         original_lists = (self.profiles, self.steps, self.files)
@@ -1997,10 +2038,11 @@ class MainWindow(LegacyMainWindow):
             workspace.step_index = int(self.settings.workspace_step_indices.get(profile.id, 0))
             if self.settings.sidebar_visible:
                 workspace.workspace_splitter.setSizes([
-                    68, max(220, int(self.settings.sidebar_width or 290)), 1000
+                    68, max(220, int(self.settings.sidebar_width or 290)), 1000,
+                    profile.vocabulary_settings.panel_width if profile.vocabulary_settings.panel_visible else 60,
                 ])
             else:
-                workspace.workspace_splitter.setSizes([68, 0, 1000])
+                workspace.workspace_splitter.setSizes([68, 0, 1000, profile.vocabulary_settings.panel_width])
             positions = self.settings.editor_positions.get(profile.id, {})
             for editor_index in range(workspace.editor.tabs.count()):
                 editor = workspace.editor.tabs.widget(editor_index)
@@ -2455,7 +2497,7 @@ class MainWindow(LegacyMainWindow):
                 workspace.editor.tabs.currentIndex()
             )
             self.settings.workspace_step_indices[profile_id] = workspace.step_index
-            sidebar_size = workspace.workspace_splitter.sizes()[0]
+            sidebar_size = workspace.workspace_splitter.sizes()[1]
             self.settings.sidebar_visible = sidebar_size > 0
             if sidebar_size > 0:
                 self.settings.sidebar_width = sidebar_size
@@ -2520,6 +2562,15 @@ class MainWindow(LegacyMainWindow):
             self.goal_status.setToolTip(f"{self.profile.name}: ยังไม่ได้ตั้งเป้าหมาย")
 
     def closeEvent(self, event):
+        for workspace in self.workspaces.values():
+            panel = workspace.vocabulary_panel
+            if panel.worker and panel.worker.isRunning():
+                panel.cancel()
+                if not getattr(panel.worker, "close_connected", False):
+                    panel.worker.close_connected = True
+                    panel.worker.finished.connect(lambda: QTimer.singleShot(0, self.close))
+                event.ignore()
+                return
         for worker in (self._update_check_worker, self._update_download_worker):
             if worker and worker.isRunning():
                 worker.requestInterruption()

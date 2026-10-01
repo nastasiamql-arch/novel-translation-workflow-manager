@@ -1,5 +1,48 @@
 # Palantir: Novel
 
+## หาศัพท์อัตโนมัติ (1.13.0)
+
+เปิดนิยายแล้วใช้แผง **หาศัพท์** ด้านขวา เลือกไฟล์ 4 อย่างแยกกัน: **ไฟล์เนื้อหา**, **VOCAB**, **Prompt หาศัพท์**, **Prompt เกลาศัพท์** โปรแกรมจำไฟล์และค่า AI แยกต่อเรื่อง กดหัวแผงเพื่อย่อ/ขยาย และลากขอบปรับขนาดได้
+
+เลือกไฟล์เนื้อหาครั้งเดียว แล้วเปิดใน Editor กลาง วางบทใหม่ทับไฟล์เดิมและบันทึก กด **หา + เกลา + อัปเดต** ระบบจะอ่าน snapshot → หา → เกลา → ตรวจ → สำรอง → อัปเดต VOCAB โดย Extract ไม่เขียนไฟล์ศัพท์ หากผลไม่ผ่านจะไม่อัปเดต ใช้ปุ่มยกเลิกเพื่อหยุดก่อน commit; หากกำลังรอ API จะรอคำตอบหรือ timeout ก่อนหยุด
+
+Prompt รองรับ `.txt`, `.md`, `.json`, `.docx` (ย่อหน้าและตารางใน body) เลือกไฟล์คำสั่งจริงของคุณได้เลย โปรแกรมส่งคำสั่งพร้อม VOCAB/เนื้อหา และเพิ่มข้อกำหนดผล JSON สำหรับอัปเดตอัตโนมัติ ไฟล์ prompt ที่อ้างถึงในแชตเดิมไม่ปรากฏในรายการ attachment ที่เข้าถึงได้ จึงไม่ได้ฝังหรืออ้างว่าใช้เนื้อหาไฟล์เหล่านั้น หากคำสั่งเดิมกำหนดผลเป็นข้อความ/ตาราง ให้เพิ่มหรือปรับข้อกำหนดผลเป็น JSON ตามตัวอย่างด้านล่าง
+
+### ตั้งค่า AI
+
+กด **ตั้งค่า Provider / Model / API key** ในแผง เลือก `openai`, `openai-compatible` หรือ `anthropic`, ใส่ชื่อ model ที่บัญชีคุณใช้งานได้ และ API key ค่า URL มาตรฐานคือ `https://api.openai.com/v1` หรือ `https://api.anthropic.com/v1`; provider อื่นต้องรองรับ Chat Completions และ HTTPS โปรแกรมจะส่งเนื้อหา, VOCAB และ prompt ไป URL ที่เลือก
+
+API key เข้ารหัสด้วย Windows DPAPI ผูกกับบัญชี Windows ปัจจุบัน เก็บใน `%LOCALAPPDATA%/NovelWorkflow/credentials/` แยก profile/provider ไม่อยู่ใน profile/settings และไม่แสดงข้อความตอบ error จาก server กรอก key ว่างเพื่อเก็บค่าเดิม หรือเลือกช่องลบ key; เมื่อเปลี่ยนบัญชี Windows ให้ตั้ง key ใหม่ ไม่มี plaintext fallback และการ duplicate นิยายไม่คัดลอก key/ไฟล์ศัพท์ที่ลิงก์ภายนอก
+
+Adapters อิง [OpenAI Chat API](https://developers.openai.com/api/reference/resources/chat) และ [Anthropic Messages API](https://platform.claude.com/docs/en/api/messages/create) จำกัดเวลารอเครือข่าย 60 วินาทีต่อ request และปฏิเสธ redirect/ผลที่ถูกตัด ไม่มี retry API อัตโนมัติ การทดสอบโครงการใช้ provider จำลอง; ต้องตั้ง key จริงเพื่อใช้งาน
+
+### รูปแบบ VOCAB และผลเกลา
+
+รองรับ UTF-8 TSV (`.tsv`/`.txt`) ที่มี header หรือ `.json` ที่เป็น array ของ row objects ทุก field เป็น string คอลัมน์แรกคือ identity คอลัมน์ที่สองคือคำแปล ส่วนคอลัมน์อื่นรักษาตาม header เดิม เช่น TSV:
+
+```text
+source	target	notes
+old term	คำเดิม	ตัวอย่าง
+```
+
+ผลเกลาต้องเป็น JSON object มี `NEW` และ `UPDATE` เท่านั้น แต่ละรายการเป็นทั้งแถว มี field ตรงกับ VOCAB ทุกคอลัมน์:
+
+```json
+{"NEW":[{"source":"new term","target":"คำใหม่","notes":""}],"UPDATE":[{"source":"old term","target":"คำที่เกลาแล้ว","notes":"ปรับตามบริบท"}]}
+```
+
+ไม่มีศัพท์ใหม่ใช้ `{"NEW":[],"UPDATE":[]}` ได้ JSON VOCAB ว่าง `[]` จะใช้ fields `source`, `target`, `notes` ค่า identity/คำแปลห้ามว่าง ห้าม tab/newline ในค่า ห้าม identity ซ้ำ ห้าม NEW ที่มีอยู่แล้ว และ UPDATE ต้องตรง identity เดิมทุกตัวอักษร ไม่ลบแถวเก่า ตาราง Markdown, ไฟล์ไม่มี header และ schema อื่นจะหยุดอย่างปลอดภัยแทนการเดารูปแบบ
+
+ตรวจทั้งผลเกลาและ candidate ที่สร้างแล้วก่อน commit เก็บ backup เป็น bytes ต้นฉบับใน `vocab_backups/` ข้าง VOCAB ใช้ temp file ในโฟลเดอร์เดียวกันแล้วแทนไฟล์แบบ atomic หาก VOCAB เปลี่ยนระหว่างรันจะหยุด และ editor ภายในจะล็อก VOCAB ระหว่างงานพร้อมโหลดไฟล์ล่าสุดหลังจบ หลีกเลี่ยงการแก้ VOCAB จากโปรแกรมอื่นระหว่างรัน: lock ประสานเฉพาะผู้เขียนที่ใช้กลไกเดียวกัน การเทียบ bytes ก่อน replace ไม่ใช่ filesystem compare-and-swap
+
+หากโปรแกรมถูกบังคับปิดระหว่าง commit อาจเหลือ `<VOCAB>.vocab-lock`; หลังแน่ใจว่าไม่มีงานทำอยู่จึงลบ lock เพื่อรันใหม่ Backup ยังอยู่และใช้คืนไฟล์ได้ด้วยการคัดลอกกลับ ไม่มีการลบ backup อัตโนมัติ การซ่อม JSON ทำเฉพาะ trailing comma นอก string ในสำเนาชั่วคราว แล้ว parse/validate ก่อน ไม่แก้ prompt หรือ VOCAB ต้นฉบับเพื่อให้ parse ผ่าน
+
+### Migration และออก release
+
+โปรไฟล์เดิมได้รับ `schema_version: 2` และ `vocabulary_settings` ค่าเริ่มต้น โดย workflow แปล, file links และข้อมูลความคืบหน้ายังอยู่ Schema ผลและ settings อยู่ใน `schemas/` ระบบ self-updater และ installer AppId เดิมยังใช้ได้
+
+ทดสอบด้วย `python -m pytest -q` และ `python tests/ui_smoke.py` แล้ว build ด้วย `./build_windows.ps1` (Python 3.11+ สำหรับอ่าน TOML ใน build script และ Inno Setup 6) เผยแพร่ผ่าน CI เดิม: merge commit บน `main` ที่มี `[release]` จะสร้าง tag `v1.13.0` และ GitHub Release พร้อม `NovelWorkflow-Setup-1.13.0.exe` หลัง release เผยแพร่ ผู้ใช้กด **ตรวจสอบอัปเดต** ในโปรแกรมเดิมได้ Draft PR ยังไม่เผยแพร่ release
+
 ## หน้าตาและการใช้งาน
 
 - หน้าต่างหลักใช้โครงแบบเดสก์ท็อปที่เรียบและโปร่งขึ้น คล้ายแนวทางของแอป ChatGPT

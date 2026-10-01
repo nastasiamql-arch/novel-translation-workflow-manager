@@ -89,6 +89,24 @@ class LaunchTarget:
     def from_dict(cls,d): return cls(**{k:v for k,v in d.items() if k in cls.__dataclass_fields__})
 
 @dataclass
+class VocabularySettings:
+    source_path: str = ""
+    vocab_path: str = ""
+    extract_prompt_path: str = ""
+    polish_prompt_path: str = ""
+    provider: str = "openai"
+    model: str = ""
+    base_url: str = "https://api.openai.com/v1"
+    panel_visible: bool = True
+    panel_width: int = 290
+
+    @classmethod
+    def from_dict(cls, data):
+        if not isinstance(data, dict): return cls()
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
 class NovelProfile:
     id: str = field(default_factory=uid)
     name: str = "Novel"
@@ -107,6 +125,8 @@ class NovelProfile:
     working_files: list[StepFile] = field(default_factory=list)
     order: int = 0
     last_browse_directory: str | None = None
+    schema_version: int = 2
+    vocabulary_settings: VocabularySettings = field(default_factory=VocabularySettings)
     @classmethod
     def from_dict(cls,d):
         state=d.get("chapter_state",{})
@@ -132,6 +152,7 @@ class NovelProfile:
             translation_daily_activity=_daily_activity_from_dict(d.get("translation_daily_activity", {})),
             cover_image_path=d.get("cover_image_path"),
             working_files=[StepFile.from_dict(item) for item in d.get("working_files", [])],
+            vocabulary_settings=VocabularySettings.from_dict(d.get("vocabulary_settings")),
         )
 
 @dataclass
