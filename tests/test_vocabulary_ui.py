@@ -141,3 +141,19 @@ def test_model_list_worker_fetches_models_off_ui_thread():
     assert worker.key == ""
     worker.deleteLater()
     app.processEvents()
+
+
+def test_pipeline_failure_reports_phase_and_safe_provider_status(tmp_path):
+    from test_vocabulary import setup_run
+    from novel_workflow.vocabulary_panel import VocabularyWorker
+    settings, _ = setup_run(tmp_path)
+    class Provider:
+        def complete(self, *args):
+            raise ValueError("Provider HTTP 403; check key and API access")
+    worker = VocabularyWorker(settings, Provider(), "private-api-key")
+    worker.run()
+    assert worker.current_phase == "extract"
+    assert "หาศัพท์ไม่สำเร็จ" in worker.error
+    assert "HTTP 403" in worker.error and "ไม่มีสิทธิ์" in worker.error
+    assert "private-api-key" not in worker.error
+    assert worker.key == ""
