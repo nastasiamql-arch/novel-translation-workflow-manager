@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NovelProfile schema v2 vocabulary_settings",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "source_path": {"type": "string"},
+    "vocab_path": {"type": "string"},
+    "extract_prompt_path": {"type": "string"},
+    "polish_prompt_path": {"type": "string"},
+    "provider": {"enum": ["openai", "openai-compatible", "anthropic"]},
+    "model": {"type": "string"},
+    "base_url": {"type": "string", "pattern": "^https://"},
+    "panel_visible": {"type": "boolean"},
+    "panel_width": {"type": "integer", "minimum": 250, "maximum": 380}
+  },
+  "$comment": "API keys must never appear here. Older profiles gain independent default settings when loaded; existing workflow and file links are preserved."
+}

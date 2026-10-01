@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from weakref import WeakSet
 from bisect import bisect_left
 
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
@@ -15,7 +16,7 @@ from .theme import editor_colors
 
 TEXT_EXTENSIONS = {
     ".txt", ".md", ".markdown", ".json", ".yaml", ".yml", ".toml",
-    ".py", ".js", ".ts", ".css", ".html", ".xml", ".csv",
+    ".py", ".js", ".ts", ".css", ".html", ".xml", ".csv", ".tsv",
 }
 AUTO_SAVE_DELAY_MS = 1000
 
@@ -213,9 +214,12 @@ class EditorTabs(QWidget):
     statusChanged = Signal(str)
     fontSizeChanged = Signal(float)
     documentSaved = Signal(str)
+    locked_paths = set()
+    instances = WeakSet()
 
     def __init__(self, parent=None, font_size=11.0, appearance="Light"):
         super().__init__(parent)
+        self.instances.add(self)
         self._font_size = float(font_size)
         self.appearance = appearance
         self.colors = editor_colors(appearance)
@@ -391,6 +395,7 @@ class EditorTabs(QWidget):
             return None
 
         editor = CodeEditor(font_size=self._font_size, appearance=self.appearance)
+        editor.setReadOnly(path in self.locked_paths)
         editor.setProperty("documentPath", str(path))
         editor.setProperty("documentDirty", False)
         editor.setProperty("saveState", "บันทึกแล้ว")
@@ -430,6 +435,8 @@ class EditorTabs(QWidget):
         path = self._path(editor)
         if path is None:
             return True
+        if path.resolve() in self.locked_paths or editor.isReadOnly():
+            return False
 
         timer = getattr(editor, "autosave_timer", None)
         if timer is not None:
@@ -474,6 +481,37 @@ class EditorTabs(QWidget):
             if self._dirty(editor) and not self.save_editor(editor):
                 return False
         return True
+
+    def lock_path(self, path):
+        path = Path(path).expanduser().resolve()
+        self.locked_paths.add(path)
+        for tabs in list(self.instances):
+            for index in range(tabs.tabs.count()):
+                editor = tabs.tabs.widget(index)
+                if tabs._path(editor) == path:
+                    editor.autosave_timer.stop()
+                    editor.setReadOnly(True)
+
+    def unlock_path(self, path):
+        path = Path(path).expanduser().resolve()
+        self.locked_paths.discard(path)
+        for tabs in list(self.instances):
+            for index in range(tabs.tabs.count()):
+                editor = tabs.tabs.widget(index)
+                if tabs._path(editor) != path: continue
+                try: text = path.read_text(encoding="utf-8-sig")
+                except (OSError, UnicodeError):
+                    # Keep a stale buffer read-only if reload fails.
+                    editor.setProperty("saveState", "โหลด VOCAB ใหม่ไม่สำเร็จ ปิดแล้วเปิดไฟล์อีกครั้ง")
+                    continue
+                editor.autosave_timer.stop()
+                editor.blockSignals(True)
+                editor.setPlainText(text)
+                editor.blockSignals(False)
+                tabs._format_document(editor)
+                tabs._recount_document_stats(editor)
+                tabs._set_dirty(editor, False, "โหลด VOCAB ล่าสุดแล้ว")
+                editor.setReadOnly(False)
 
     def dirty_count(self) -> int:
         return sum(self._dirty(self.tabs.widget(i)) for i in range(self.tabs.count()))

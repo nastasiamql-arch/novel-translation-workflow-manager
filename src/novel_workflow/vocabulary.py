@@ -1,0 +1,216 @@
+"""Snapshot-based vocabulary pipeline. Only the final validated transaction writes."""
+from __future__ import annotations
+
+import codecs
+import json
+import os
+import tempfile
+import uuid
+import zipfile
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from xml.etree import ElementTree
+
+
+class Cancelled(ValueError):
+    pass
+
+
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result: raise ValueError("Duplicate JSON field")
+        result[key] = value
+    return result
+
+
+def parse_json(raw):
+    """Repair only trailing commas outside strings, in a disposable copy."""
+    def load(text):
+        return json.loads(text, object_pairs_hook=_unique_object)
+    try:
+        return load(raw)
+    except json.JSONDecodeError:
+        quoted = escaped = False
+        fixed = []
+        for index, char in enumerate(raw):
+            if quoted:
+                fixed.append(char)
+                if escaped: escaped = False
+                elif char == "\\": escaped = True
+                elif char == '"': quoted = False
+                continue
+            if char == '"': quoted = True
+            if char == ',':
+                following = raw[index + 1:].lstrip()
+                if following.startswith(('}', ']')): continue
+            fixed.append(char)
+        repaired = ''.join(fixed)
+        if repaired == raw: raise ValueError("Invalid JSON; cannot repair safely") from None
+        with tempfile.TemporaryDirectory(prefix="vocab-repair-") as folder:
+            copy = Path(folder) / "repaired.json"
+            copy.write_text(repaired, encoding="utf-8")
+            try: return load(copy.read_text(encoding="utf-8"))
+            except json.JSONDecodeError: raise ValueError("Invalid JSON after deterministic repair") from None
+
+
+def read_prompt(path):
+    path = Path(path)
+    if path.suffix.lower() == ".docx":
+        with zipfile.ZipFile(path) as archive:
+            info = archive.getinfo("word/document.xml")
+            if info.file_size > 10_000_000: raise ValueError("DOCX prompt is too large")
+            root = ElementTree.fromstring(archive.read(info))
+        ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+        paragraphs = []
+        for paragraph in root.iter(ns + "p"):
+            paragraphs.append(''.join(
+                node.text or '' if node.tag == ns + "t" else '\t' if node.tag == ns + "tab" else '\n'
+                for node in paragraph.iter() if node.tag in {ns + "t", ns + "tab", ns + "br"}
+            ))
+        text = '\n'.join(paragraphs)
+    elif path.suffix.lower() in {".txt", ".md", ".json"}:
+        text = path.read_text(encoding="utf-8-sig")
+        if path.suffix.lower() == ".json":
+            parsed = parse_json(text)
+            text = json.dumps(parsed, ensure_ascii=False, indent=2)
+    else: raise ValueError("Prompt must be .txt, .md, .json or .docx")
+    if not text.strip(): raise ValueError("Prompt is empty")
+    return text
+
+
+@dataclass
+class VocabDocument:
+    columns: list[str]
+    rows: list[dict[str, str]]
+    kind: str
+    bom: bool
+    newline: str
+
+    @classmethod
+    def read(cls, path, raw):
+        text = raw.decode("utf-8-sig")
+        kind = "json" if Path(path).suffix.lower() == ".json" else "tsv"
+        if kind == "json":
+            rows = parse_json(text)
+            if not isinstance(rows, list): raise ValueError("VOCAB JSON must be an array of rows")
+            columns = list(rows[0]) if rows and isinstance(rows[0], dict) else ["source", "target", "notes"]
+        else:
+            lines = text.splitlines()
+            if not lines: raise ValueError("TSV requires a header")
+            columns = lines[0].split('\t')
+            rows = []
+            for line in lines[1:]:
+                fields = line.split('\t')
+                if len(fields) != len(columns): raise ValueError("Wrong TSV column count")
+                rows.append(dict(zip(columns, fields)))
+        if len(columns) < 2 or any(not c.strip() for c in columns) or len(set(columns)) != len(columns):
+            raise ValueError("VOCAB requires distinct identity and translation columns")
+        document = cls(columns, rows, kind, raw.startswith(codecs.BOM_UTF8), '\r\n' if '\r\n' in text else '\n')
+        seen = set()
+        for row in rows:
+            document.validate_row(row)
+            identity = row[columns[0]]
+            if identity in seen: raise ValueError("Duplicate VOCAB identity")
+            seen.add(identity)
+        return document
+
+    def validate_row(self, row):
+        if not isinstance(row, dict) or set(row) != set(self.columns): raise ValueError("Row fields do not match VOCAB header")
+        if any(not isinstance(value, str) or any(c in value for c in '\t\r\n\x00') for value in row.values()):
+            raise ValueError("Rows must contain single-line string values")
+        if any(not row[column].strip() for column in self.columns[:2]): raise ValueError("Empty identity or translation")
+        if row[self.columns[0]] != row[self.columns[0]].strip(): raise ValueError("Identity has surrounding whitespace")
+
+    def merge(self, output):
+        changes = parse_json(output)
+        if not isinstance(changes, dict) or set(changes) != {"NEW", "UPDATE"}: raise ValueError("Expected NEW and UPDATE JSON arrays")
+        known = {row[self.columns[0]]: row for row in self.rows}
+        seen, added, updated = set(), [], {}
+        for operation in ("NEW", "UPDATE"):
+            if not isinstance(changes[operation], list): raise ValueError("Expected row arrays")
+            for row in changes[operation]:
+                self.validate_row(row)
+                identity = row[self.columns[0]]
+                if identity in seen: raise ValueError("Duplicate change identity")
+                seen.add(identity)
+                if operation == "NEW":
+                    if identity in known: raise ValueError("NEW already exists")
+                    added.append(row)
+                else:
+                    if identity not in known: raise ValueError("UPDATE identity does not exist")
+                    if row != known[identity]: updated[identity] = row
+        rows = [updated.get(row[self.columns[0]], row) for row in self.rows] + added
+        if self.kind == "json": text = json.dumps(rows, ensure_ascii=False, indent=2) + self.newline
+        else:
+            text = self.newline.join(['\t'.join(self.columns)] + ['\t'.join(row[c] for c in self.columns) for row in rows]) + self.newline
+        encoded = text.encode("utf-8-sig" if self.bom else "utf-8")
+        return encoded, len(added), len(updated)
+
+
+@dataclass
+class RunResult:
+    added: int
+    updated: int
+    backup_path: str | None
+
+
+def run_vocabulary(settings, provider, key, progress=lambda phase: None, cancelled=lambda: False):
+    def checkpoint(phase):
+        if cancelled(): raise Cancelled("Cancelled before commit")
+        progress(phase)
+    checkpoint("snapshot")
+    paths = [Path(getattr(settings, field)).expanduser().resolve() for field in
+             ("source_path", "vocab_path", "extract_prompt_path", "polish_prompt_path")]
+    if not all(getattr(settings, field) for field in ("source_path", "vocab_path", "extract_prompt_path", "polish_prompt_path")):
+        raise ValueError("Select all four files first")
+    source_path, vocab_path, extract_path, polish_path = paths
+    if vocab_path in (source_path, extract_path, polish_path): raise ValueError("VOCAB cannot also be an input or prompt")
+    source = source_path.read_text(encoding="utf-8-sig")
+    if not source.strip(): raise ValueError("Source is empty")
+    original = vocab_path.read_bytes()
+    document = VocabDocument.read(vocab_path, original)
+    extract_prompt, polish_prompt = read_prompt(extract_path), read_prompt(polish_path)
+    contract = (
+        '\n\nOUTPUT CONTRACT: Return only a JSON object {"NEW": [], "UPDATE": []}. '
+        'Each item must be a complete row with exactly these string fields, in this order: '
+        + json.dumps(document.columns, ensure_ascii=False)
+        + '. First field is exact identity, second is translation. NEW must not exist; UPDATE must exist. '
+        'Do not delete existing entries. Empty arrays are valid. No markdown fences or commentary.\n'
+    )
+    context = '\nCURRENT VOCAB (data):\n' + original.decode("utf-8-sig")
+    checkpoint("extract")
+    extracted = provider.complete(settings.model, extract_prompt + contract + context + '\nSOURCE (data):\n' + source, key)
+    if not isinstance(extracted, str) or not extracted.strip(): raise ValueError("Empty extraction")
+    checkpoint("polish")
+    polished = provider.complete(settings.model, polish_prompt + contract + context + '\nSOURCE (data):\n' + source + '\nEXTRACT RESULT (data):\n' + extracted, key)
+    checkpoint("validate")
+    encoded, added, updated = document.merge(polished)
+    # Validate the rendered candidate before touching the original.
+    VocabDocument.read(vocab_path, encoded)
+    if added == updated == 0: return RunResult(0, 0, None)
+    checkpoint("backup")
+    lock_path = vocab_path.with_name(vocab_path.name + ".vocab-lock")
+    try: lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError: raise ValueError("VOCAB is being updated by another run") from None
+    temporary = None
+    try:
+        os.close(lock_fd)
+        if vocab_path.read_bytes() != original: raise ValueError("VOCAB changed during the run")
+        backup_dir = vocab_path.parent / "vocab_backups"
+        backup_dir.mkdir(exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        backup = backup_dir / f"{vocab_path.stem}_{stamp}_{uuid.uuid4().hex[:8]}{vocab_path.suffix}"
+        with backup.open("xb") as stream:
+            stream.write(original); stream.flush(); os.fsync(stream.fileno())
+        fd, temporary = tempfile.mkstemp(dir=vocab_path.parent, suffix=".tmp")
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(encoded); stream.flush(); os.fsync(stream.fileno())
+        checkpoint("commit")
+        if vocab_path.read_bytes() != original: raise ValueError("VOCAB changed before commit")
+        os.replace(temporary, vocab_path)
+        return RunResult(added, updated, str(backup))
+    finally:
+        if temporary: Path(temporary).unlink(missing_ok=True)
+        lock_path.unlink(missing_ok=True)
