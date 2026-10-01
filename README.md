@@ -1,6 +1,6 @@
 # Palantir: Novel
 
-## หาศัพท์อัตโนมัติ (1.13.0)
+## หาศัพท์อัตโนมัติ (1.13.1)
 
 เปิดนิยายแล้วใช้แผง **หาศัพท์** ด้านขวา เลือกไฟล์ 4 อย่างแยกกัน: **ไฟล์เนื้อหา**, **VOCAB**, **Prompt หาศัพท์**, **Prompt เกลาศัพท์** โปรแกรมจำไฟล์และค่า AI แยกต่อเรื่อง กดหัวแผงเพื่อย่อ/ขยาย และลากขอบปรับขนาดได้
 
@@ -10,7 +10,7 @@ Prompt รองรับ `.txt`, `.md`, `.json`, `.docx` (ย่อหน้า
 
 ### ตั้งค่า AI
 
-กด **ตั้งค่า Provider / Model / API key** ในแผง เลือก `openai`, `openai-compatible` หรือ `anthropic`, ใส่ชื่อ model ที่บัญชีคุณใช้งานได้ และ API key ค่า URL มาตรฐานคือ `https://api.openai.com/v1` หรือ `https://api.anthropic.com/v1`; provider อื่นต้องรองรับ Chat Completions และ HTTPS โปรแกรมจะส่งเนื้อหา, VOCAB และ prompt ไป URL ที่เลือก
+กด **ตั้งค่า Provider / Model / API key** ในแผง เลือก `openai`, `openai-compatible` หรือ `anthropic`, ใส่ API URL และ key แล้วกด **เชื่อมต่อและดึงรายการโมเดล** เพื่อเลือก model จากบัญชีได้ (หรือพิมพ์ชื่อเองก็ได้) ค่า URL มาตรฐานคือ `https://api.openai.com/v1` หรือ `https://api.anthropic.com/v1`; MaxPlus ใช้ `https://api.maxplus-ai.cc/v1` และรองรับรายการโมเดลผ่าน `/models` โดย pool ที่ระบุเฉพาะอาจใช้ URL ตามหน้าคู่มือ MaxPlus โปรแกรมจะทดสอบด้วย key ที่พิมพ์อยู่ หรือ key ที่บันทึกไว้ และจะบันทึกการตั้งค่าก็ต่อเมื่อกด Save เท่านั้น โปรแกรมจะส่งเนื้อหา, VOCAB และ prompt ไป URL ที่เลือก
 
 API key เข้ารหัสด้วย Windows DPAPI ผูกกับบัญชี Windows ปัจจุบัน เก็บใน `%LOCALAPPDATA%/NovelWorkflow/credentials/` แยก profile/provider ไม่อยู่ใน profile/settings และไม่แสดงข้อความตอบ error จาก server กรอก key ว่างเพื่อเก็บค่าเดิม หรือเลือกช่องลบ key; เมื่อเปลี่ยนบัญชี Windows ให้ตั้ง key ใหม่ ไม่มี plaintext fallback และการ duplicate นิยายไม่คัดลอก key/ไฟล์ศัพท์ที่ลิงก์ภายนอก
 
@@ -41,7 +41,7 @@ old term	คำเดิม	ตัวอย่าง
 
 โปรไฟล์เดิมได้รับ `schema_version: 2` และ `vocabulary_settings` ค่าเริ่มต้น โดย workflow แปล, file links และข้อมูลความคืบหน้ายังอยู่ Schema ผลและ settings อยู่ใน `schemas/` ระบบ self-updater และ installer AppId เดิมยังใช้ได้
 
-ทดสอบด้วย `python -m pytest -q` และ `python tests/ui_smoke.py` แล้ว build ด้วย `./build_windows.ps1` (Python 3.11+ สำหรับอ่าน TOML ใน build script และ Inno Setup 6) เผยแพร่ผ่าน CI เดิม: merge commit บน `main` ที่มี `[release]` จะสร้าง tag `v1.13.0` และ GitHub Release พร้อม `NovelWorkflow-Setup-1.13.0.exe` หลัง release เผยแพร่ ผู้ใช้กด **ตรวจสอบอัปเดต** ในโปรแกรมเดิมได้ Draft PR ยังไม่เผยแพร่ release
+ทดสอบด้วย `python -m pytest -q` และ `python tests/ui_smoke.py` แล้ว build ด้วย `./build_windows.ps1` (Python 3.11+ สำหรับอ่าน TOML ใน build script และ Inno Setup 6) เผยแพร่ผ่าน CI เดิม: merge commit บน `main` ที่มี `[release]` จะสร้าง tag ตามเวอร์ชันใน `pyproject.toml` และ GitHub Release พร้อม installer หลัง release เผยแพร่ ผู้ใช้กด **ตรวจสอบอัปเดต** ในโปรแกรมเดิมได้ Draft PR ยังไม่เผยแพร่ release
 
 ## หน้าตาและการใช้งาน
 

@@ -40,6 +40,42 @@ class VocabularyWorker(QThread):
             self.key = ""
 
 
+class ModelListWorker(QThread):
+    succeeded = Signal(list)
+    failed = Signal(str)
+
+    def __init__(self, provider, key, parent=None):
+        super().__init__(parent)
+        self.provider, self.key = provider, key
+
+    def run(self):
+        try:
+            self.succeeded.emit(self.provider.list_models(self.key))
+        except ValueError as error:
+            self.failed.emit(str(error))
+        except Exception:
+            self.failed.emit("เชื่อมต่อไม่ได้ ตรวจ URL, API key และสิทธิ์ดูรายการโมเดล")
+        finally:
+            self.key = ""
+
+
+class ProviderDialog(QDialog):
+    """Keep controls alive while an in-flight model request finishes."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.model_worker = None
+
+    def reject(self):
+        if self.model_worker and self.model_worker.isRunning(): return
+        super().reject()
+
+    def closeEvent(self, event):
+        if self.model_worker and self.model_worker.isRunning():
+            event.ignore()
+        else:
+            super().closeEvent(event)
+
+
 class VocabularyPanel(QWidget):
     def __init__(self, repo, profile, open_file, prepare=lambda path: True, release=lambda path: None, parent=None):
         super().__init__(parent)
@@ -140,14 +176,17 @@ class VocabularyPanel(QWidget):
         self.refresh(self.profile)
 
     def configure_provider(self):
-        dialog = QDialog(self)
+        dialog = ProviderDialog(self)
         dialog.setWindowTitle("ตั้งค่า AI สำหรับนิยายเรื่องนี้")
         form = QFormLayout(dialog)
         settings = self.profile.vocabulary_settings
         provider = QComboBox()
         provider.addItems(["openai", "openai-compatible", "anthropic"])
         provider.setCurrentText(settings.provider)
-        model, endpoint = QLineEdit(settings.model), QLineEdit(settings.base_url)
+        model, endpoint = QComboBox(), QLineEdit(settings.base_url)
+        model.setEditable(True)
+        model.setInsertPolicy(QComboBox.NoInsert)
+        model.setCurrentText(settings.model)
         key = QLineEdit()
         key.setEchoMode(QLineEdit.Password)
         key.setPlaceholderText("เว้นว่างเพื่อใช้ key ที่บันทึกไว้")
@@ -156,6 +195,13 @@ class VocabularyPanel(QWidget):
         form.addRow("Model", model)
         form.addRow("API URL (HTTPS)", endpoint)
         form.addRow("API key", key)
+        connect_row = QHBoxLayout()
+        connect_button = QPushButton("เชื่อมต่อและดึงรายการโมเดล")
+        connection_status = QLabel("")
+        connection_status.setWordWrap(True)
+        connect_row.addWidget(connect_button)
+        form.addRow(connect_row)
+        form.addRow(connection_status)
         form.addRow(delete)
         notice = QLabel("API key เข้ารหัสด้วยบัญชี Windows นี้ · ส่งเนื้อหาและ VOCAB ไปยัง provider ที่เลือก")
         notice.setWordWrap(True)
@@ -165,14 +211,48 @@ class VocabularyPanel(QWidget):
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         form.addRow(buttons)
         buttons.rejected.connect(dialog.reject)
+
+        def fetch_models():
+            try:
+                selected = provider.currentText()
+                api = create_provider(selected, endpoint.text().strip())
+                credential = key.text().strip() or self.credentials.get(self.profile.id, selected)
+                api.validate_request("model-list", credential)
+            except (ValueError, OSError):
+                connection_status.setText("ตรวจ URL แบบ HTTPS และ API key ก่อนเชื่อมต่อ")
+                return
+            connect_button.setEnabled(False)
+            buttons.button(QDialogButtonBox.Save).setEnabled(False)
+            connection_status.setText("กำลังเชื่อมต่อและอ่านรายการโมเดล…")
+            worker = ModelListWorker(api, credential, dialog)
+            dialog.model_worker = worker
+            def succeeded(names):
+                previous = model.currentText().strip()
+                model.clear()
+                model.addItems(names)
+                model.setCurrentText(previous if previous in names else names[0])
+                connection_status.setText(f"เชื่อมต่อสำเร็จ · พบ {len(names)} โมเดล")
+            def failed(message):
+                connection_status.setText(message)
+            def finished():
+                connect_button.setEnabled(True)
+                buttons.button(QDialogButtonBox.Save).setEnabled(True)
+                dialog.model_worker = None
+                worker.deleteLater()
+            worker.succeeded.connect(succeeded)
+            worker.failed.connect(failed)
+            worker.finished.connect(finished)
+            worker.start()
+
+        connect_button.clicked.connect(fetch_models)
         def save():
             try:
                 selected = provider.currentText()
                 create_provider(selected, endpoint.text().strip())
-                if not model.text().strip(): raise ValueError("Model required")
+                if not model.currentText().strip(): raise ValueError("Model required")
                 if delete.isChecked(): self.credentials.delete(self.profile.id, selected)
                 elif key.text(): self.credentials.set(self.profile.id, selected, key.text().strip())
-                settings.provider, settings.model, settings.base_url = selected, model.text().strip(), endpoint.text().strip()
+                settings.provider, settings.model, settings.base_url = selected, model.currentText().strip(), endpoint.text().strip()
                 self.repo.save_profile(self.profile)
             except (ValueError, OSError):
                 QMessageBox.warning(dialog, "บันทึกไม่ได้", "ตรวจ model, HTTPS URL และสิทธิ์เก็บ key ของ Windows")
