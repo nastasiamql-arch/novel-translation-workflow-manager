@@ -360,6 +360,13 @@ def main() -> int:
                 assert window.step().name == "แปล"
                 window.show_vocabulary_files()
                 assert window.step().name == "หาศัพท์"
+                target_profile_row = next(
+                    index for index in range(window.profiles.count())
+                    if window.profiles.item(index).data(Qt.UserRole) == profile.id
+                )
+                window.profiles.setCurrentRow(target_profile_row)
+                assert window.profile.id == profile.id
+                workspace = window.workspaces[profile.id]
                 working_file = novel_folder / "working.txt"
                 working_file.write_text("เปิดเป็นแท็บ", encoding="utf-8")
                 window.profile.working_files.append(StepFile(

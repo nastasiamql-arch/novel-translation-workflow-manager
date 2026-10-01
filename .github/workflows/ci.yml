@@ -18,6 +18,7 @@ jobs:
           cache: pip
       - run: python -m pip install -e ".[dev]"
       - name: Run desktop UI smoke test
+        timeout-minutes: 2
         run: python tests/ui_smoke.py
       - name: Run test suite
         run: python -m pytest -q
