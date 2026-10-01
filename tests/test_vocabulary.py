@@ -44,6 +44,28 @@ def test_profile_settings_are_independent_and_legacy_migrates(tmp_path):
     assert json.loads((legacy_dir / "profile.json").read_text())["schema_version"] == 2
 
 
+def test_snapshot_errors_identify_unreadable_input_without_exposing_path_or_content(tmp_path):
+    from novel_workflow.vocabulary import InputFileError, run_vocabulary
+    from novel_workflow.models import VocabularySettings
+    settings = VocabularySettings(source_path=str(tmp_path / "private-novel.txt"),
+        vocab_path=str(tmp_path / "private-vocab.tsv"),
+        extract_prompt_path=str(tmp_path / "private-extract.md"),
+        polish_prompt_path=str(tmp_path / "private-polish.md"))
+    with pytest.raises(InputFileError) as error:
+        run_vocabulary(settings, object(), "unused")
+    assert (error.value.role, error.value.reason) == ("source", "missing")
+    assert "private-novel" not in str(error.value)
+
+
+def test_snapshot_errors_classify_invalid_vocab_format(tmp_path):
+    from novel_workflow.vocabulary import InputFileError, run_vocabulary
+    settings, vocab = setup_run(tmp_path)
+    vocab.write_text("not a valid header", encoding="utf-8")
+    with pytest.raises(InputFileError) as error:
+        run_vocabulary(settings, object(), "unused")
+    assert (error.value.role, error.value.reason, error.value.detail) == ("vocab", "format", "VOCAB requires distinct identity and translation columns")
+
+
 def test_extract_cannot_write_and_polish_controls_commit(tmp_path):
     from novel_workflow.vocabulary import run_vocabulary
     settings, vocab = setup_run(tmp_path)

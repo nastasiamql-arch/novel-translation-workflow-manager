@@ -26,6 +26,16 @@ def test_panel_remembers_separate_profile_files(tmp_path):
     app.processEvents()
 
 
+def test_snapshot_failure_message_names_input_role_and_safe_reason():
+    from novel_workflow.vocabulary import InputFileError
+    from novel_workflow.vocabulary_panel import VocabularyWorker
+    worker = VocabularyWorker({}, object(), "never-shown")
+    message = worker._failure_message(InputFileError("vocab", "format",
+        "VOCAB requires distinct identity and translation columns"))
+    assert message == "ไฟล์ VOCAB · VOCAB ต้องมีคอลัมน์คำต้นฉบับและคำแปลที่ไม่ซ้ำกัน"
+    assert "never-shown" not in message
+
+
 def test_editor_lock_prevents_stale_autosave(tmp_path):
     from novel_workflow.workspace_editor import EditorTabs
     app = QApplication.instance() or QApplication([])
