@@ -3,6 +3,7 @@
 ## 1.13.2
 
 - Report which vocabulary pipeline phase failed, with safe guidance for API HTTP statuses and common file/validation failures. Never display prompt, source, model response or API key contents.
+- Accept the MaxPlus API root URL for OpenAI-compatible Gemini keys and auto-resolve the Gemini pool path while fetching model IDs; store the resolved endpoint on Save.
 
 ## 1.13.1
 

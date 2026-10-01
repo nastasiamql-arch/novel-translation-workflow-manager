@@ -12,7 +12,7 @@ Prompt รองรับ `.txt`, `.md`, `.json`, `.docx` (ย่อหน้า
 
 ### ตั้งค่า AI
 
-กด **ตั้งค่า Provider / Model / API key** ในแผง เลือก `openai`, `openai-compatible` หรือ `anthropic`, ใส่ API URL และ key แล้วกด **เชื่อมต่อและดึงรายการโมเดล** เพื่อเลือก model จากบัญชีได้ (หรือพิมพ์ชื่อเองก็ได้) ค่า URL มาตรฐานคือ `https://api.openai.com/v1` หรือ `https://api.anthropic.com/v1`; MaxPlus ใช้ `https://api.maxplus-ai.cc/v1` และรองรับรายการโมเดลผ่าน `/models` โดย pool ที่ระบุเฉพาะอาจใช้ URL ตามหน้าคู่มือ MaxPlus โปรแกรมจะทดสอบด้วย key ที่พิมพ์อยู่ หรือ key ที่บันทึกไว้ และจะบันทึกการตั้งค่าก็ต่อเมื่อกด Save เท่านั้น โปรแกรมจะส่งเนื้อหา, VOCAB และ prompt ไป URL ที่เลือก
+กด **ตั้งค่า Provider / Model / API key** ในแผง เลือก `openai`, `openai-compatible` หรือ `anthropic`, ใส่ API URL และ key แล้วกด **เชื่อมต่อและดึงรายการโมเดล** เพื่อเลือก model จากบัญชีได้ (หรือพิมพ์ชื่อเองก็ได้) ค่า URL มาตรฐานคือ `https://api.openai.com/v1` หรือ `https://api.anthropic.com/v1`; สำหรับ MaxPlus Gemini ที่ใช้ Provider `openai-compatible` วาง URL หลัก `https://api.maxplus-ai.cc` ได้ โปรแกรมจะลองหา Gemini pool จาก key แล้วเติม URL ที่ถูกต้องให้ก่อน Save ส่วน pool อื่นให้ใช้ API path ประจำ pool จากหน้า dashboard MaxPlus โปรแกรมจะทดสอบด้วย key ที่พิมพ์อยู่ หรือ key ที่บันทึกไว้ และจะบันทึกการตั้งค่าก็ต่อเมื่อกด Save เท่านั้น โปรแกรมจะส่งเนื้อหา, VOCAB และ prompt ไป URL ที่เลือก
 
 API key เข้ารหัสด้วย Windows DPAPI ผูกกับบัญชี Windows ปัจจุบัน เก็บใน `%LOCALAPPDATA%/NovelWorkflow/credentials/` แยก profile/provider ไม่อยู่ใน profile/settings และไม่แสดงข้อความตอบ error จาก server กรอก key ว่างเพื่อเก็บค่าเดิม หรือเลือกช่องลบ key; เมื่อเปลี่ยนบัญชี Windows ให้ตั้ง key ใหม่ ไม่มี plaintext fallback และการ duplicate นิยายไม่คัดลอก key/ไฟล์ศัพท์ที่ลิงก์ภายนอก
 

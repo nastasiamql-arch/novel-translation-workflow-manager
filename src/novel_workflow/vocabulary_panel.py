@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
     QCheckBox, QScrollArea)
 
 from .credentials import CredentialStore
-from .providers import create_provider
+from .providers import create_provider, connect_and_list_models
 from .services import ProfileService
 from .vocabulary import run_vocabulary, Cancelled
 
@@ -79,7 +79,7 @@ class VocabularyWorker(QThread):
 
 
 class ModelListWorker(QThread):
-    succeeded = Signal(list)
+    succeeded = Signal(str, list)
     failed = Signal(str)
 
     def __init__(self, provider, key, parent=None):
@@ -88,7 +88,8 @@ class ModelListWorker(QThread):
 
     def run(self):
         try:
-            self.succeeded.emit(self.provider.list_models(self.key))
+            endpoint, models = connect_and_list_models(self.provider, self.key)
+            self.succeeded.emit(endpoint, models)
         except ValueError as error:
             self.failed.emit(str(error))
         except Exception:
@@ -264,12 +265,14 @@ class VocabularyPanel(QWidget):
             connection_status.setText("กำลังเชื่อมต่อและอ่านรายการโมเดล…")
             worker = ModelListWorker(api, credential, dialog)
             dialog.model_worker = worker
-            def succeeded(names):
+            def succeeded(resolved_endpoint, names):
                 previous = model.currentText().strip()
                 model.clear()
                 model.addItems(names)
                 model.setCurrentText(previous if previous in names else names[0])
-                connection_status.setText(f"เชื่อมต่อสำเร็จ · พบ {len(names)} โมเดล")
+                endpoint.setText(resolved_endpoint)
+                pool = resolved_endpoint.removeprefix("https://api.maxplus-ai.cc") or "Native"
+                connection_status.setText(f"เชื่อมต่อสำเร็จ · {pool} · พบ {len(names)} โมเดล")
             def failed(message):
                 connection_status.setText(message)
             def finished():

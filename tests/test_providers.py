@@ -130,3 +130,28 @@ def test_anthropic_model_discovery_auth_headers(monkeypatch):
     assert provider.list_models("secret") == ["claude"]
     assert calls[0][0] == "/models"
     assert calls[0][1]["x-api-key"] == "secret"
+
+
+def test_maxplus_root_url_discovers_pool_from_key_scope(monkeypatch):
+    from novel_workflow.providers import OpenAICompatibleProvider, connect_and_list_models
+    attempted = []
+    def list_models(self, key):
+        attempted.append(self.base_url)
+        if self.base_url.endswith("/gemini-full/v1"):
+            return ["gemini-3.8-flash"]
+        raise ValueError("Provider HTTP 403; check key and API access")
+    monkeypatch.setattr(OpenAICompatibleProvider, "list_models", list_models)
+    provider = OpenAICompatibleProvider("https://api.maxplus-ai.cc")
+    endpoint, models = connect_and_list_models(provider, "private-key")
+    assert endpoint == "https://api.maxplus-ai.cc/gemini-full/v1"
+    assert models == ["gemini-3.8-flash"]
+    assert attempted == ["https://api.maxplus-ai.cc/gemini-full/v1"]
+
+
+def test_maxplus_discovery_preserves_explicit_pool_url(monkeypatch):
+    from novel_workflow.providers import OpenAICompatibleProvider, connect_and_list_models
+    calls = []
+    monkeypatch.setattr(OpenAICompatibleProvider, "list_models", lambda self, key: calls.append(self.base_url) or ["m"])
+    provider = OpenAICompatibleProvider("https://api.maxplus-ai.cc/gemini-full/v1")
+    assert connect_and_list_models(provider, "key") == (provider.base_url, ["m"])
+    assert calls == [provider.base_url]

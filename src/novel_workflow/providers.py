@@ -118,3 +118,29 @@ def create_provider(provider, base_url):
     if provider in {"openai", "openai-compatible"}: return OpenAICompatibleProvider(base_url)
     if provider == "anthropic": return AnthropicProvider(base_url)
     raise ValueError("Unknown API provider")
+
+
+def connect_and_list_models(provider, key):
+    """Resolve MaxPlus Gemini pool routing when only its API origin was entered."""
+    parsed = urlsplit(provider.base_url)
+    is_maxplus_origin = (isinstance(provider, OpenAICompatibleProvider)
+                         and parsed.hostname == "api.maxplus-ai.cc" and parsed.path in {"", "/"})
+    if not is_maxplus_origin:
+        return provider.base_url, provider.list_models(key)
+
+    # MaxPlus API keys are scoped to pools. Its root models route is only the
+    # Native pool, so try the Gemini pool aliases users commonly paste as root.
+    # Keep probes on the same HTTPS origin; no prompt or file data is sent.
+    pool_paths = ("/gemini-full/v1", "/gemini/v1", "/gemini-lite/v1", "/gemini-stable/v1", "/v1")
+    last_error = None
+    for path in pool_paths:
+        candidate = type(provider)(f"{parsed.scheme}://{parsed.netloc}{path}")
+        try:
+            return candidate.base_url, candidate.list_models(key)
+        except ValueError as error:
+            message = str(error)
+            if "Provider HTTP 403" in message or "Provider HTTP 404" in message:
+                last_error = error
+                continue
+            raise
+    raise ValueError("Could not find a compatible MaxPlus Gemini pool for this key") from last_error
