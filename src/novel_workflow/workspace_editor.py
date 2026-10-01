@@ -539,24 +539,25 @@ class EditorTabs(QWidget):
                 background: {colors['gutter']}; border: 0;
             }}
             QTabWidget#editorTabs QTabBar::tab {{
-                background: {colors['gutter']}; color: {colors['gutter_text']};
-                border: 0; border-right: 1px solid {colors['current_line']};
-                padding: 8px 13px; min-width: 92px;
+                background: {colors['tab']}; color: {colors['gutter_text']};
+                border: 0; border-right: 1px solid {colors['border']};
+                border-radius: 9px 9px 0 0;
+                padding: 10px 15px; min-width: 92px;
             }}
             QTabWidget#editorTabs QTabBar::tab:hover {{
                 background: {colors['current_line']}; color: {colors['foreground']};
             }}
             QTabWidget#editorTabs QTabBar::tab:selected {{
-                background: {colors['background']}; color: {colors['foreground']};
-                border-top: 2px solid #0E639C; font-weight: 600;
+                background: {colors['tab_selected']}; color: {colors['foreground']};
+                border-top: 2px solid {colors['accent']}; font-weight: 600;
             }}
             QFrame#editorFindPanel {{
                 background: {colors['background']}; color: {colors['foreground']};
-                border: 1px solid {colors['gutter_text']}; border-radius: 10px;
+                border: 1px solid {colors['border']}; border-radius: 14px;
             }}
             QFrame#editorFindPanel QLineEdit {{
                 background: {colors['background']}; color: {colors['foreground']};
-                border: 1px solid {colors['gutter_text']}; border-radius: 6px;
+                border: 1px solid {colors['border']}; border-radius: 9px;
                 padding: 5px 8px; min-height: 22px;
             }}
             QFrame#editorFindPanel QPushButton {{
