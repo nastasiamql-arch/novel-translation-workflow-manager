@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from bisect import bisect_left
 
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QPainter, QTextBlockFormat, QTextCursor, QTextDocument, QTextFormat, QKeySequence, QShortcut
@@ -203,6 +204,10 @@ class EditorTabs(QWidget):
         self._status_text = "พร้อมใช้งาน  ·  0 คำ  ·  0 อักขระ"
         self.tabs.currentChanged.connect(self._handle_tab_change)
         self._search_text = ""
+        self._find_update_timer = QTimer(self)
+        self._find_update_timer.setSingleShot(True)
+        self._find_update_timer.setInterval(180)
+        self._find_update_timer.timeout.connect(self._update_find_matches)
 
         self.status = QLabel("ยังไม่ได้เปิดไฟล์")
         self.status.setObjectName("editorStatus")
@@ -304,6 +309,20 @@ class EditorTabs(QWidget):
         timer = getattr(editor, "autosave_timer", None)
         if timer is not None:
             timer.start(AUTO_SAVE_DELAY_MS)
+        stats_timer = getattr(editor, "stats_timer", None)
+        if stats_timer is not None:
+            stats_timer.start()
+
+    def _recount_document_stats(self, editor):
+        text = editor.toPlainText()
+        editor._cached_character_count = len(text)
+        editor._cached_word_count = len(text.split())
+        if editor is self.tabs.currentWidget():
+            self._update_status(self.tabs.currentIndex())
+
+    def _queue_find_matches(self, editor):
+        if editor is self.tabs.currentWidget() and self.find_input.text():
+            self._find_update_timer.start()
 
     def _autosave_editor(self, editor):
         if self._dirty(editor):
@@ -352,6 +371,8 @@ class EditorTabs(QWidget):
         editor.setPlainText(text)
         editor.blockSignals(False)
         self._format_document(editor)
+        editor._cached_character_count = len(text)
+        editor._cached_word_count = len(text.split())
 
         editor.autosave_timer = QTimer(editor)
         editor.autosave_timer.setSingleShot(True)
@@ -359,11 +380,17 @@ class EditorTabs(QWidget):
         editor.autosave_timer.timeout.connect(
             lambda e=editor: self._autosave_editor(e)
         )
+        editor.stats_timer = QTimer(editor)
+        editor.stats_timer.setSingleShot(True)
+        editor.stats_timer.setInterval(300)
+        editor.stats_timer.timeout.connect(
+            lambda e=editor: self._recount_document_stats(e)
+        )
         editor.textChanged.connect(lambda e=editor: self._on_text_changed(e))
         editor.cursorPositionChanged.connect(
             lambda e=editor: self._update_status(self.tabs.indexOf(e))
         )
-        editor.textChanged.connect(lambda e=editor: self._update_find_matches() if e is self.tabs.currentWidget() else None)
+        editor.textChanged.connect(lambda e=editor: self._queue_find_matches(e))
 
         index = self.tabs.addTab(editor, path.name)
         self.tabs.setTabToolTip(index, str(path))
@@ -494,14 +521,18 @@ class EditorTabs(QWidget):
             f"Ln {cursor.blockNumber()+1}, Col {cursor.positionInBlock()+1}   "
             f"UTF-8   {suffix}   •   {state}"
         )
-        text = editor.toPlainText()
-        words = len(text.split())
+        words = getattr(editor, "_cached_word_count", 0)
+        characters = getattr(editor, "_cached_character_count", 0)
+        selection_size = cursor.selectionEnd() - cursor.selectionStart()
+        selection_status = (
+            f"  ·  เลือก {selection_size:,} อักขระ" if selection_size else ""
+        )
         self._status_text = (
-            f"{state}  ·  {words:,} คำ  ·  {len(text):,} อักขระ  ·  "
+            f"{state}  ·  {words:,} คำ  ·  {characters:,} อักขระ{selection_status}  ·  "
             f"Ln {cursor.blockNumber()+1}, Col {cursor.positionInBlock()+1}  ·  UTF-8 {suffix}"
         )
         self.statusChanged.emit(self._status_text)
-        self._update_find_matches()
+        self._update_find_counter(editor, cursor)
 
     def current_status_text(self):
         return self._status_text
@@ -611,17 +642,18 @@ class EditorTabs(QWidget):
             return
         editor._find_query = query
         editor.highlight_current_line()
-        cursor = editor.textCursor()
         matches = self._find_matches(editor, query)
-        current = next(
-            (
-                index for index, match in enumerate(matches, 1)
-                if cursor.hasSelection()
-                and cursor.selectionStart() == match[0]
-                and cursor.selectionEnd() == match[1]
-            ),
-            0,
-        )
+        editor._find_matches_cache = matches
+        self._update_find_counter(editor, editor.textCursor())
+
+    def _update_find_counter(self, editor, cursor):
+        matches = getattr(editor, "_find_matches_cache", [])
+        current = 0
+        if cursor.hasSelection() and matches:
+            selection = (cursor.selectionStart(), cursor.selectionEnd())
+            index = bisect_left(matches, selection)
+            if index < len(matches) and matches[index] == selection:
+                current = index + 1
         if hasattr(self, "find_count"):
             self.find_count.setText(f"{current}/{len(matches)}")
 
@@ -641,9 +673,10 @@ class EditorTabs(QWidget):
         return matches
 
     def _on_find_text_changed(self, *_args):
-        self._update_find_matches()
         if self.find_input.text():
             self._find_next()
+        else:
+            self._update_find_matches()
 
     def _find_next(self, backward=False):
         editor = self.tabs.currentWidget()
