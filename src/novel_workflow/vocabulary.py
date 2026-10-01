@@ -111,10 +111,11 @@ def read_prompt(path):
 @dataclass
 class VocabDocument:
     columns: list[str]
-    rows: list[dict[str, str]]
+    rows: list[dict[str, str]] | list[list[str]]
     kind: str
     bom: bool
     newline: str
+    final_newline: bool = True
 
     @classmethod
     def read(cls, path, raw):
@@ -126,25 +127,47 @@ class VocabDocument:
             columns = list(rows[0]) if rows and isinstance(rows[0], dict) else ["source", "target", "notes"]
         else:
             lines = text.splitlines()
-            if not lines: raise ValueError("TSV requires a header")
-            columns = lines[0].split('\t')
-            rows = []
-            for line in lines[1:]:
-                fields = line.split('\t')
-                if len(fields) != len(columns): raise ValueError("Wrong TSV column count")
-                rows.append(dict(zip(columns, fields)))
-        if len(columns) < 2 or any(not c.strip() for c in columns) or len(set(columns)) != len(columns):
+            if not lines: raise ValueError("VOCAB is empty")
+            first = lines[0].split('\t')
+            identity_headers = {"source", "identity", "term", "term_cn", "chinese", "cn", "原文", "中文", "词条", "คำศัพท์", "คำต้นฉบับ"}
+            translation_headers = {"target", "translation", "term_th", "thai", "th", "译文", "泰语", "คำแปล", "ภาษาไทย"}
+            is_header = (len(first) >= 2 and first[0].strip().casefold() in identity_headers
+                         and first[1].strip().casefold() in translation_headers)
+            if is_header:
+                columns = first
+                rows = []
+                for line in lines[1:]:
+                    fields = line.split('\t')
+                    if len(fields) != len(columns): raise ValueError("Wrong TSV column count")
+                    rows.append(dict(zip(columns, fields)))
+            else:
+                # SEGGlossary files are headerless and use 3 cells for a term
+                # (source, translation, description) or 4 for a character
+                # (source, translation, gender, description).
+                kind = "seg-glossary"
+                columns = []
+                rows = [line.split('\t') for line in lines]
+        if kind != "seg-glossary" and (len(columns) < 2 or any(not c.strip() for c in columns) or len(set(columns)) != len(columns)):
             raise ValueError("VOCAB requires distinct identity and translation columns")
-        document = cls(columns, rows, kind, raw.startswith(codecs.BOM_UTF8), '\r\n' if '\r\n' in text else '\n')
+        document = cls(columns, rows, kind, raw.startswith(codecs.BOM_UTF8),
+                       '\r\n' if '\r\n' in text else '\n', text.endswith(('\n', '\r')))
         seen = set()
         for row in rows:
             document.validate_row(row)
-            identity = row[columns[0]]
+            identity = tuple(row) if kind == "seg-glossary" else row[columns[0]]
             if identity in seen: raise ValueError("Duplicate VOCAB identity")
             seen.add(identity)
         return document
 
     def validate_row(self, row):
+        if self.kind == "seg-glossary":
+            if not isinstance(row, list) or len(row) < 2:
+                raise ValueError("SEGGlossary rows require at least 2 fields")
+            if any(not isinstance(value, str) or any(c in value for c in '\t\r\n\x00') for value in row):
+                raise ValueError("Rows must contain single-line string values")
+            if not row[0].strip() or not row[1].strip(): raise ValueError("Empty identity or translation")
+            if row[0] != row[0].strip(): raise ValueError("Identity has surrounding whitespace")
+            return
         if not isinstance(row, dict) or set(row) != set(self.columns): raise ValueError("Row fields do not match VOCAB header")
         if any(not isinstance(value, str) or any(c in value for c in '\t\r\n\x00') for value in row.values()):
             raise ValueError("Rows must contain single-line string values")
@@ -154,6 +177,8 @@ class VocabDocument:
     def merge(self, output):
         changes = parse_json(output)
         if not isinstance(changes, dict) or set(changes) != {"NEW", "UPDATE"}: raise ValueError("Expected NEW and UPDATE JSON arrays")
+        if self.kind == "seg-glossary":
+            return self._merge_seg_glossary(changes)
         known = {row[self.columns[0]]: row for row in self.rows}
         seen, added, updated = set(), [], {}
         for operation in ("NEW", "UPDATE"):
@@ -175,6 +200,40 @@ class VocabDocument:
             text = self.newline.join(['\t'.join(self.columns)] + ['\t'.join(row[c] for c in self.columns) for row in rows]) + self.newline
         encoded = text.encode("utf-8-sig" if self.bom else "utf-8")
         return encoded, len(added), len(updated)
+
+    def _merge_seg_glossary(self, changes):
+        original_rows = [list(row) for row in self.rows]
+        if not isinstance(changes["NEW"], list) or not isinstance(changes["UPDATE"], list):
+            raise ValueError("Expected row arrays")
+        added, replacement_by_index, selected = [], {}, set()
+        known_rows = {tuple(row): index for index, row in enumerate(original_rows)}
+        for row in changes["NEW"]:
+            self.validate_row(row)
+            if tuple(row) in known_rows or any(tuple(row) == tuple(existing) for existing in added):
+                raise ValueError("NEW already exists")
+            added.append(row)
+        for change in changes["UPDATE"]:
+            if not isinstance(change, dict) or set(change) != {"before", "after"}:
+                raise ValueError("SEGGlossary UPDATE items require before and after rows")
+            before, after = change["before"], change["after"]
+            self.validate_row(before)
+            self.validate_row(after)
+            old_key = tuple(before)
+            if old_key not in known_rows: raise ValueError("UPDATE source row does not exist")
+            index = known_rows[old_key]
+            if index in selected: raise ValueError("Duplicate change identity")
+            if len(after) != len(before): raise ValueError("UPDATE must preserve the row field count")
+            if after[0] != before[0]: raise ValueError("UPDATE must preserve the source term")
+            if tuple(after) in known_rows and tuple(after) != old_key:
+                raise ValueError("UPDATE would duplicate an existing row")
+            selected.add(index)
+            replacement_by_index[index] = after
+        rows = [replacement_by_index.get(index, row) for index, row in enumerate(original_rows)] + added
+        updated = {index for index, replacement in replacement_by_index.items()
+                   if replacement != original_rows[index]}
+        text = self.newline.join('\t'.join(row) for row in rows)
+        if self.final_newline: text += self.newline
+        return text.encode("utf-8-sig" if self.bom else "utf-8"), len(added), len(updated)
 
 
 @dataclass
@@ -201,13 +260,26 @@ def run_vocabulary(settings, provider, key, progress=lambda phase: None, cancell
         (raw := vocab_path.read_bytes()), VocabDocument.read(vocab_path, raw)))
     extract_prompt = _read_input("extract_prompt", lambda: read_prompt(extract_path))
     polish_prompt = _read_input("polish_prompt", lambda: read_prompt(polish_path))
-    contract = (
-        '\n\nOUTPUT CONTRACT: Return only a JSON object {"NEW": [], "UPDATE": []}. '
-        'Each item must be a complete row with exactly these string fields, in this order: '
-        + json.dumps(document.columns, ensure_ascii=False)
-        + '. First field is exact identity, second is translation. NEW must not exist; UPDATE must exist. '
-        'Do not delete existing entries. Empty arrays are valid. No markdown fences or commentary.\n'
-    )
+    if document.kind == "seg-glossary":
+        contract = (
+            '\n\nOUTPUT CONTRACT: Return only a JSON object {"NEW": [], "UPDATE": []}. '
+            'Follow the selected Extract and Polish prompts for the meaning, content, and fields of each glossary entry. '
+            'Represent each new entry as an array of strings in the exact SEGGlossary line format; '
+            'preserve the per-entry field count and do not pad short entries. '
+            'For UPDATE, use objects with exactly two array fields: "before" must copy the full existing row exactly, '
+            'and "after" must contain its replacement with the same first field and field count. '
+            'This is required because the same source term may have multiple context-specific entries. '
+            'Do not add a header or invent global columns. NEW must not duplicate a full existing row; '
+            'Do not delete existing entries. Empty arrays are valid. No markdown fences or commentary.\n'
+        )
+    else:
+        contract = (
+            '\n\nOUTPUT CONTRACT: Return only a JSON object {"NEW": [], "UPDATE": []}. '
+            'Each item must be a complete row with exactly these string fields, in this order: '
+            + json.dumps(document.columns, ensure_ascii=False)
+            + '. First field is exact identity, second is translation. NEW must not exist; UPDATE must exist. '
+            'Do not delete existing entries. Empty arrays are valid. No markdown fences or commentary.\n'
+        )
     context = '\nCURRENT VOCAB (data):\n' + original.decode("utf-8-sig")
     checkpoint("extract")
     extracted = provider.complete(settings.model, extract_prompt + contract + context + '\nSOURCE (data):\n' + source, key)

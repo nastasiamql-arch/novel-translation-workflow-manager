@@ -55,6 +55,7 @@ class VocabularyWorker(QThread):
                 "Invalid JSON; cannot repair safely": "JSON ไม่ถูกต้องและซ่อมอัตโนมัติอย่างปลอดภัยไม่ได้",
                 "Invalid JSON after deterministic repair": "JSON ยังไม่ถูกต้องหลังซ่อมเฉพาะเครื่องหมายจุลภาคเกิน",
                 "DOCX prompt is too large": "ไฟล์ DOCX ใหญ่เกินขนาดที่รองรับ",
+                "SEGGlossary rows require at least 2 fields": "แต่ละแถวต้องมีข้อมูลอย่างน้อยคำต้นฉบับและคำแปล",
             }
             if error.reason == "format":
                 reason = detail.get(error.detail, "รูปแบบไฟล์ไม่ถูกต้อง")

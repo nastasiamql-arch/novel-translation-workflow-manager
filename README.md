@@ -20,20 +20,26 @@ Adapters อิง [OpenAI Chat API](https://developers.openai.com/api/reference
 
 ### รูปแบบ VOCAB และผลเกลา
 
-รองรับ UTF-8 TSV (`.tsv`/`.txt`) ที่มี header หรือ `.json` ที่เป็น array ของ row objects ทุก field เป็น string คอลัมน์แรกคือ identity คอลัมน์ที่สองคือคำแปล ส่วนคอลัมน์อื่นรักษาตาม header เดิม เช่น TSV:
+รองรับ UTF-8 TSV (`.tsv`/`.txt`) ที่มี header, headerless SEGGlossary (`.txt`) ซึ่งแต่ละแถวมีจำนวนช่องและความหมายตามรูปแบบ/คำสั่ง Prompt ของเรื่องนั้น, และ `.json` ที่เป็น array ของ row objects ทุก field เป็น string สำหรับ SEGGlossary ตัวอ่านเก็บทุกช่องตามเดิมและไม่เติมหัวตารางหรือบังคับจำนวนช่อง คอลัมน์แรกเป็นคำต้นฉบับและคอลัมน์ที่สองเป็นคำแปล ส่วนคอลัมน์อื่นรักษาตามรูปแบบเดิม เช่น TSV แบบมี header:
 
 ```text
 source	target	notes
 old term	คำเดิม	ตัวอย่าง
 ```
 
-ผลเกลาต้องเป็น JSON object มี `NEW` และ `UPDATE` เท่านั้น แต่ละรายการเป็นทั้งแถว มี field ตรงกับ VOCAB ทุกคอลัมน์:
+ผลเกลาต้องเป็น JSON object มี `NEW` และ `UPDATE` เท่านั้น สำหรับไฟล์มี header แต่ละรายการเป็น object ที่มี fields ตรงกับ VOCAB; สำหรับ SEGGlossary, `NEW` เป็น array ตามรูปแบบที่คำสั่งของคุณกำหนด และ `UPDATE` ใช้แถวเดิม `before` คู่กับแถวแก้ `after` เพื่อรองรับคำต้นฉบับซ้ำคนละความหมาย:
 
 ```json
 {"NEW":[{"source":"new term","target":"คำใหม่","notes":""}],"UPDATE":[{"source":"old term","target":"คำที่เกลาแล้ว","notes":"ปรับตามบริบท"}]}
 ```
 
-ไม่มีศัพท์ใหม่ใช้ `{"NEW":[],"UPDATE":[]}` ได้ JSON VOCAB ว่าง `[]` จะใช้ fields `source`, `target`, `notes` ค่า identity/คำแปลห้ามว่าง ห้าม tab/newline ในค่า ห้าม identity ซ้ำ ห้าม NEW ที่มีอยู่แล้ว และ UPDATE ต้องตรง identity เดิมทุกตัวอักษร ไม่ลบแถวเก่า ตาราง Markdown, ไฟล์ไม่มี header และ schema อื่นจะหยุดอย่างปลอดภัยแทนการเดารูปแบบ
+ตัวอย่าง SEGGlossary:
+
+```json
+{"NEW":[["new term","คำแปล", "รายละเอียดตาม Prompt"]],"UPDATE":[{"before":["old term","คำเดิม","คำอธิบายเดิม"],"after":["old term","คำที่เกลาแล้ว","คำอธิบายตาม Prompt"]}]}
+```
+
+ไม่มีศัพท์ใหม่ใช้ `{"NEW":[],"UPDATE":[]}` ได้ JSON VOCAB ว่าง `[]` จะใช้ fields `source`, `target`, `notes` ไฟล์ SEGGlossary ใช้จำนวนช่องและความหมายตาม Prompt ของเรื่อง โดยโปรแกรมไม่กำหนด schema เนื้อหาเอง; validator เช็กเพียงว่ามีคำต้นฉบับ/คำแปล ไม่ใส่ tab/newline ซ้ำแถวเดิมทั้งแถว และ UPDATE ระบุแถวเดิมที่จะแก้ได้ตรงรายการ จำนวนช่องของแถวต้องคงเดิม ไม่ลบแถวเก่า ตาราง Markdown และ schema ที่ไม่รองรับจะหยุดอย่างปลอดภัยแทนการเดารูปแบบ
 
 ตรวจทั้งผลเกลาและ candidate ที่สร้างแล้วก่อน commit เก็บ backup เป็น bytes ต้นฉบับใน `vocab_backups/` ข้าง VOCAB ใช้ temp file ในโฟลเดอร์เดียวกันแล้วแทนไฟล์แบบ atomic หาก VOCAB เปลี่ยนระหว่างรันจะหยุด และ editor ภายในจะล็อก VOCAB ระหว่างงานพร้อมโหลดไฟล์ล่าสุดหลังจบ หลีกเลี่ยงการแก้ VOCAB จากโปรแกรมอื่นระหว่างรัน: lock ประสานเฉพาะผู้เขียนที่ใช้กลไกเดียวกัน การเทียบ bytes ก่อน replace ไม่ใช่ filesystem compare-and-swap
 
