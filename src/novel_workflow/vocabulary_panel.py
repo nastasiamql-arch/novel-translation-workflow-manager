@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
 from .credentials import CredentialStore
 from .providers import create_provider, connect_and_list_models
 from .services import ProfileService
-from .vocabulary import run_vocabulary, Cancelled
+from .vocabulary import run_vocabulary, Cancelled, InputFileError
 
 
 PHASES = {"snapshot": "อ่านไฟล์", "extract": "1. กำลังหาศัพท์…", "polish": "2. กำลังเกลาศัพท์…",
@@ -29,8 +29,46 @@ class VocabularyWorker(QThread):
     def _failure_message(self, error):
         phase = self.current_phase
         provider_hint = None
+        if isinstance(error, InputFileError):
+            names = {"source": "ไฟล์เนื้อหา", "vocab": "ไฟล์ VOCAB",
+                     "extract_prompt": "Prompt หาศัพท์", "polish_prompt": "Prompt เกลาศัพท์"}
+            reasons = {
+                "missing": "ไม่พบไฟล์ตามตำแหน่งที่เลือก",
+                "permission": "ไม่มีสิทธิ์อ่านไฟล์",
+                "unreadable": "อ่านไฟล์ไม่ได้",
+                "encoding": "ต้องบันทึกเป็น UTF-8",
+                "docx": "ไฟล์ DOCX เสียหรือไม่มีส่วนเนื้อหาที่รองรับ",
+            }
+            detail = {
+                "VOCAB requires a header": "TSV ต้องมีแถวหัวคอลัมน์",
+                "Wrong TSV column count": "จำนวนคอลัมน์ในแถว TSV ไม่ตรงกับหัวตาราง",
+                "VOCAB JSON must be an array of rows": "JSON ของ VOCAB ต้องเป็น array ของแถว",
+                "VOCAB requires distinct identity and translation columns": "VOCAB ต้องมีคอลัมน์คำต้นฉบับและคำแปลที่ไม่ซ้ำกัน",
+                "Duplicate VOCAB identity": "พบคำต้นฉบับซ้ำใน VOCAB",
+                "Empty identity or translation": "พบช่องคำต้นฉบับหรือคำแปลว่าง",
+                "Row fields do not match VOCAB header": "แถวข้อมูลไม่ตรงกับคอลัมน์ในหัวตาราง",
+                "Rows must contain single-line string values": "แต่ละช่องใน VOCAB ต้องเป็นข้อความบรรทัดเดียว",
+                "Identity has surrounding whitespace": "คำต้นฉบับมีช่องว่างเกินหัวหรือท้าย",
+                "Duplicate JSON field": "JSON มีชื่อฟิลด์ซ้ำ",
+                "Prompt must be .txt, .md, .json or .docx": "รองรับ Prompt แบบ TXT, MD, JSON หรือ DOCX",
+                "Prompt is empty": "ไฟล์ Prompt ว่าง",
+                "Invalid JSON; cannot repair safely": "JSON ไม่ถูกต้องและซ่อมอัตโนมัติอย่างปลอดภัยไม่ได้",
+                "Invalid JSON after deterministic repair": "JSON ยังไม่ถูกต้องหลังซ่อมเฉพาะเครื่องหมายจุลภาคเกิน",
+                "DOCX prompt is too large": "ไฟล์ DOCX ใหญ่เกินขนาดที่รองรับ",
+            }
+            if error.reason == "format":
+                reason = detail.get(error.detail, "รูปแบบไฟล์ไม่ถูกต้อง")
+            else:
+                reason = reasons.get(error.reason, "อ่านไฟล์ไม่สำเร็จ")
+            return f"{names.get(error.role, 'ไฟล์')} · {reason}"
+        if isinstance(error, ValueError) and str(error) == "Source is empty":
+            return "ไฟล์เนื้อหาว่าง · วางเนื้อหาตอนใหม่และบันทึกไฟล์ก่อนเริ่ม"
         if isinstance(error, ValueError):
             message = str(error)
+            if message == "Select all four files first":
+                return "ยังเลือกไฟล์ไม่ครบ · เลือกไฟล์เนื้อหา, VOCAB, Prompt หาศัพท์ และ Prompt เกลา"
+            if message == "VOCAB cannot also be an input or prompt":
+                return "เลือกไฟล์ VOCAB แยกจากไฟล์เนื้อหาและ Prompt"
             if message.startswith("Provider HTTP "):
                 code = message.split()[2].rstrip(";")
                 labels = {401: "API key ไม่ถูกต้อง", 403: "key ไม่มีสิทธิ์ใช้ Pool/API นี้",
