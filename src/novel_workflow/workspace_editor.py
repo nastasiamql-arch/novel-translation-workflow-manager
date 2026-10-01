@@ -45,6 +45,9 @@ class CodeEditor(QPlainTextEdit):
         self.blockCountChanged.connect(self.update_line_number_area_width)
         self.updateRequest.connect(self.update_line_number_area)
         self.cursorPositionChanged.connect(self.highlight_current_line)
+        self.verticalScrollBar().valueChanged.connect(
+            lambda _value: self.highlight_current_line()
+        )
 
         families = set(QFontDatabase.families())
         preferred = ["Segoe UI Variable Text", "Segoe UI", "Leelawadee UI", "Microsoft YaHei UI"]
@@ -165,18 +168,42 @@ class CodeEditor(QPlainTextEdit):
         line.cursor = self.textCursor()
         line.cursor.clearSelection()
         selections.append(line)
-        query = str(getattr(self, "_find_query", ""))
-        if query:
-            cursor = QTextCursor(self.document())
-            while True:
-                cursor = self.document().find(query, cursor)
-                if cursor.isNull():
-                    break
-                match = QTextEdit.ExtraSelection()
-                match.cursor = cursor
-                match.format.setBackground(QColor(self.colors["find"]))
-                match.format.setForeground(QColor(self.colors["find_text"]))
-                selections.append(match)
+
+        matches = getattr(self, "_find_matches_cache", ())
+        if matches:
+            block = self.firstVisibleBlock()
+            if block.isValid():
+                visible_start = block.position()
+                top = self.blockBoundingGeometry(block).translated(
+                    self.contentOffset()
+                ).top()
+                bottom = top + self.blockBoundingRect(block).height()
+                visible_end = visible_start
+                viewport_bottom = self.viewport().rect().bottom()
+                while block.isValid() and top <= viewport_bottom:
+                    if block.isVisible():
+                        visible_end = block.position() + block.length()
+                    block = block.next()
+                    top = bottom
+                    if block.isValid():
+                        bottom = top + self.blockBoundingRect(block).height()
+
+                index = bisect_left(matches, (visible_start, -1))
+                highlighted = 0
+                while index < len(matches) and matches[index][0] < visible_end:
+                    match_start, match_end = matches[index]
+                    match_cursor = QTextCursor(self.document())
+                    match_cursor.setPosition(match_start)
+                    match_cursor.setPosition(match_end, QTextCursor.KeepAnchor)
+                    match = QTextEdit.ExtraSelection()
+                    match.cursor = match_cursor
+                    match.format.setBackground(QColor(self.colors["find"]))
+                    match.format.setForeground(QColor(self.colors["find_text"]))
+                    selections.append(match)
+                    index += 1
+                    highlighted += 1
+                    if highlighted >= 500:
+                        break
         self.setExtraSelections(selections)
 
 
@@ -641,9 +668,9 @@ class EditorTabs(QWidget):
                 self.find_count.setText("0/0")
             return
         editor._find_query = query
-        editor.highlight_current_line()
         matches = self._find_matches(editor, query)
         editor._find_matches_cache = matches
+        editor.highlight_current_line()
         self._update_find_counter(editor, editor.textCursor())
 
     def _update_find_counter(self, editor, cursor):
