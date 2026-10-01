@@ -123,13 +123,14 @@ def application_stylesheet(appearance: str = "Light") -> str:
     }}
     QMainWindow, QDialog {{ background: {c["app"]}; }}
     QWidget#appShell {{ background: transparent; }}
-    QFrame#editorHeader, QFrame#utilityHeader {{
+    QFrame#editorHeader, QFrame#utilityHeader, QFrame#profileHeader {{
         background: {c["glass_strong"]};
         border: 1px solid {c["border"]};
         border-radius: 16px;
     }}
     QFrame#settingsCard, QFrame#groupCard, QFrame#progressCard,
-    QFrame#metricCard, QFrame#goalPanel, QFrame#progressRow {{
+    QFrame#metricCard, QFrame#goalPanel, QFrame#progressRow,
+    QFrame#explorerPanel, QFrame#editorPanel {{
         background: {c["glass_strong"]};
         border: 1px solid {c["border"]};
         border-radius: 18px;
@@ -396,8 +397,8 @@ def application_stylesheet(appearance: str = "Light") -> str:
 
     QCheckBox, QRadioButton {{ color: {c["text"]}; spacing: 8px; }}
     QCheckBox::indicator, QRadioButton::indicator {{
-        width: 10px;
-        height: 10px;
+        width: 16px;
+        height: 16px;
         border: 1px solid {c["border_strong"]};
         border-radius: 4px;
         background: {c["input"]};
@@ -433,6 +434,29 @@ def application_stylesheet(appearance: str = "Light") -> str:
         border-bottom-color: {c["accent"]};
         font-weight: 600;
     }}
+    QTabBar#libraryStatusTabs {{
+        background: {c["glass"]};
+        border: 1px solid {c["border"]};
+        border-radius: 15px;
+        padding: 4px;
+    }}
+    QTabBar#libraryStatusTabs::tab {{
+        min-width: 112px;
+        min-height: 28px;
+        padding: 8px 16px;
+        margin: 0 2px;
+        border: 0;
+        border-radius: 11px;
+    }}
+    QTabBar#libraryStatusTabs::tab:selected {{
+        color: {c["text"]};
+        background: {c["surface"]};
+        border: 1px solid {c["border"]};
+    }}
+    QTabBar#libraryStatusTabs::tab:hover {{
+        background: {c["hover"]};
+    }}
+
 
     QGroupBox {{
         background: {c["glass_strong"]};
