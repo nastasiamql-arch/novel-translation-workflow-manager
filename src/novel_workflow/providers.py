@@ -154,6 +154,8 @@ def connect_and_list_models(provider, key):
     # These GET requests send only the key; no prompt or file content is sent.
     pool_paths = MAXPLUS_ANTHROPIC_POOL_PATHS if isinstance(provider, AnthropicProvider) else MAXPLUS_OPENAI_POOL_PATHS
     last_error = None
+    temporary_server_error = None
+    temporary_server_message = None
     for path in pool_paths:
         candidate = type(provider)(f"{parsed.scheme}://{parsed.netloc}{path}")
         try:
@@ -163,5 +165,13 @@ def connect_and_list_models(provider, key):
             if "Provider HTTP 403" in message or "Provider HTTP 404" in message:
                 last_error = error
                 continue
+            # A pool can be temporarily unavailable while another pool is
+            # healthy. Keep probing; if none work, report the outage accurately.
+            if any(f"Provider HTTP {code}" in message for code in (500, 502, 503, 504)):
+                temporary_server_error = error
+                temporary_server_message = message.split(";", 1)[0]
+                continue
             raise
+    if temporary_server_error:
+        raise ValueError(f"{temporary_server_message}; MaxPlus API/Pool is temporarily unavailable; retry later") from None
     raise ValueError("Could not find a compatible MaxPlus Gemini pool for this key") from last_error
