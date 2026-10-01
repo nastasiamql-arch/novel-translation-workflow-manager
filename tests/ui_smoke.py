@@ -384,9 +384,15 @@ def main() -> int:
                 window.return_from_utility_page()
                 assert not window._settings_open
                 assert window.main_pages.currentWidget() is window.workspace_stack
-                assert any(
-                    workspace.editor._path(workspace.editor.tabs.widget(i)) == working_file
+                opened_paths = [
+                    workspace.editor._path(workspace.editor.tabs.widget(i))
                     for i in range(workspace.editor.tabs.count())
+                ]
+                assert working_file.resolve() in opened_paths, (
+                    f"working file was not opened: expected={working_file.resolve()!s}; "
+                    f"active_profile={window.profile.id if window.profile else None}; "
+                    f"workspace_profile={workspace.profile_id}; tabs={opened_paths!r}; "
+                    f"working_files={[(item.id, item.path) for item in window.profile.working_files]!r}"
                 )
                 assert workspace.vocabulary_mode
                 previous_step_index = workspace.step_index
