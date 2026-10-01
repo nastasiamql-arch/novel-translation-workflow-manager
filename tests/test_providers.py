@@ -88,3 +88,45 @@ def test_openai_rejects_truncated_content(monkeypatch):
     provider = OpenAICompatibleProvider("https://api.example/v1")
     monkeypatch.setattr(provider, "post", lambda *args: {"choices":[{"finish_reason":"length","message":{"content":"{}"}}]})
     with pytest.raises(ValueError, match="incomplete"): provider.complete("m", "p", "k")
+
+
+def test_model_discovery_uses_models_route_and_bearer_key(monkeypatch):
+    from novel_workflow import providers
+    requests = []
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self, limit): return b'{"data":[{"id":"alpha"},{"id":"beta"},{"id":"alpha"}]}'
+    class Opener:
+        def open(self, request, timeout):
+            requests.append((request, timeout)); return Response()
+    monkeypatch.setattr(providers, "build_opener", lambda *args: Opener())
+    provider = providers.create_provider("openai-compatible", "https://api.maxplus-ai.cc/v1")
+    assert provider.list_models("secret") == ["alpha", "beta"]
+    assert requests[0][0].full_url == "https://api.maxplus-ai.cc/v1/models"
+    assert requests[0][0].get_header("Authorization") == "Bearer secret"
+    assert requests[0][1] == 30
+
+
+def test_model_discovery_rejects_empty_and_sanitizes_http_error(monkeypatch):
+    from novel_workflow import providers
+    provider = providers.create_provider("openai-compatible", "https://api.example/v1")
+    monkeypatch.setattr(provider, "get", lambda *args: {"data": []})
+    with pytest.raises(ValueError, match="No models"):
+        provider.list_models("key")
+    monkeypatch.undo()
+    class Opener:
+        def open(self, *args, **kwargs): raise HTTPError("https://api.example", 401, "private key body", {}, None)
+    monkeypatch.setattr(providers, "build_opener", lambda *args: Opener())
+    with pytest.raises(ValueError) as error: provider.list_models("key")
+    assert "401" in str(error.value) and "private" not in str(error.value)
+
+
+def test_anthropic_model_discovery_auth_headers(monkeypatch):
+    from novel_workflow.providers import AnthropicProvider
+    provider = AnthropicProvider("https://api.anthropic.com/v1")
+    calls = []
+    monkeypatch.setattr(provider, "get", lambda route, headers: calls.append((route, headers)) or {"data":[{"id":"claude"}]})
+    assert provider.list_models("secret") == ["claude"]
+    assert calls[0][0] == "/models"
+    assert calls[0][1]["x-api-key"] == "secret"

@@ -43,6 +43,37 @@ class HttpProvider:
         except (json.JSONDecodeError, UnicodeError):
             raise ValueError("Provider returned invalid JSON") from None
 
+    def get(self, route, headers):
+        request = Request(self.base_url + route, headers=headers, method="GET")
+        try:
+            with build_opener(NoRedirect()).open(request, timeout=30) as response:
+                raw = response.read(8_000_001)
+            if len(raw) > 8_000_000: raise ValueError("Provider response exceeds limit")
+            return json.loads(raw)
+        except HTTPError as error:
+            raise ValueError(f"Provider HTTP {error.code}; check key and API access") from None
+        except (URLError, TimeoutError, OSError):
+            raise ValueError("Provider connection failed or timed out") from None
+        except (json.JSONDecodeError, UnicodeError):
+            raise ValueError("Provider returned invalid JSON") from None
+
+    def list_models(self, key, headers):
+        self.validate_request("model-list", key)
+        response = self.get("/models", headers)
+        try:
+            entries = response["data"]
+            if not isinstance(entries, list): raise TypeError
+            models, seen = [], set()
+            for entry in entries:
+                model = entry.get("id") if isinstance(entry, dict) else None
+                if isinstance(model, str) and model.strip() and not any(ord(c) < 32 for c in model) and model not in seen:
+                    seen.add(model)
+                    models.append(model)
+                    if len(models) >= 2000: break
+            if not models: raise ValueError("No models available for this API key")
+            return models
+        except (KeyError, TypeError): raise ValueError("Provider returned an unexpected model list") from None
+
     @staticmethod
     def validate_request(model, key):
         if not model.strip(): raise ValueError("Choose a model first")
@@ -50,6 +81,9 @@ class HttpProvider:
 
 
 class OpenAICompatibleProvider(HttpProvider):
+    def list_models(self, key):
+        return super().list_models(key, {"Authorization": "Bearer " + key})
+
     def complete(self, model, prompt, key):
         self.validate_request(model, key)
         response = self.post("/chat/completions", {"model": model,
@@ -64,6 +98,9 @@ class OpenAICompatibleProvider(HttpProvider):
 
 
 class AnthropicProvider(HttpProvider):
+    def list_models(self, key):
+        return super().list_models(key, {"x-api-key": key, "anthropic-version": "2023-06-01"})
+
     def complete(self, model, prompt, key):
         self.validate_request(model, key)
         response = self.post("/messages", {"model": model, "max_tokens": 8192,

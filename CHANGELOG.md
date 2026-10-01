@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.13.1
+
+- Add a background **Connect and fetch model list** action to provider settings. It requests `/models` using the entered or Windows-protected API key, lets the user select a returned model or type one manually, and never saves a key until Save is pressed.
+- Keep API errors sanitized and provider settings usable while model discovery runs; the worker clears its temporary key after completion.
+
 ## 1.13.0
 
 - Add a compact, collapsible right-side vocabulary panel per novel. Remember source, VOCAB, extract/polish prompt files, provider, model and panel size independently.

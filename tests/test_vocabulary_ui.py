@@ -117,3 +117,27 @@ def test_failed_vocab_reload_cannot_restore_stale_buffer(tmp_path):
     assert not path.exists()
     tabs.deleteLater()
     app.processEvents()
+
+
+def test_model_list_worker_fetches_models_off_ui_thread():
+    from novel_workflow.vocabulary_panel import ModelListWorker
+    app = QApplication.instance() or QApplication([])
+    class Provider:
+        def __init__(self): self.thread = None
+        def list_models(self, key):
+            from PySide6.QtCore import QThread
+            self.thread = QThread.currentThread()
+            assert key == "temporary-key"
+            return ["model-a", "model-b"]
+    provider = Provider()
+    worker = ModelListWorker(provider, "temporary-key")
+    result = []
+    worker.succeeded.connect(result.extend)
+    worker.start()
+    assert worker.wait(3000)
+    app.processEvents()
+    assert result == ["model-a", "model-b"]
+    assert provider.thread != app.thread()
+    assert worker.key == ""
+    worker.deleteLater()
+    app.processEvents()
