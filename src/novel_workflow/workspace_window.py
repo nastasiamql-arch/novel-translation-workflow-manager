@@ -1479,7 +1479,7 @@ class MainWindow(LegacyMainWindow):
         bar = self.addToolBar("Main")
         bar.setObjectName("mainToolbar")
         bar.setMovable(False)
-        bar.setIconSize(QSize(28, 28))
+        bar.setIconSize(QSize(20, 20))
 
         brand = QLabel("Palantir: Novel")
         brand.setObjectName("brandTitle")
@@ -1510,7 +1510,8 @@ class MainWindow(LegacyMainWindow):
         self.main_pages = QStackedWidget()
         self.library_page = QWidget()
         library_layout = QVBoxLayout(self.library_page)
-        library_layout.setContentsMargins(24, 18, 24, 18)
+        library_layout.setContentsMargins(28, 24, 28, 24)
+        library_layout.setSpacing(14)
         library_header = QHBoxLayout()
         library_title = QLabel("คลังนิยาย")
         library_title.setObjectName("pageTitle")
@@ -1797,8 +1798,8 @@ class MainWindow(LegacyMainWindow):
                 except ValueError:
                     pass
             if not pixmap.isNull():
-                pixmap = pixmap.scaled(136, 170, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                pixmap = pixmap.copy((pixmap.width()-136)//2, (pixmap.height()-170)//2, 136, 170)
+                pixmap = pixmap.scaled(148, 188, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                pixmap = pixmap.copy((pixmap.width()-148)//2, (pixmap.height()-188)//2, 148, 188)
             status = _profile_status(profile)
             card = QListWidgetItem(
                 QIcon(pixmap), f"{profile.name}\n{_profile_status_label(status)}"
