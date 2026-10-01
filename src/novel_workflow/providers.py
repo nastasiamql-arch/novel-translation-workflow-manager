@@ -120,18 +120,39 @@ def create_provider(provider, base_url):
     raise ValueError("Unknown API provider")
 
 
+MAXPLUS_OPENAI_POOL_PATHS = (
+    # Gemini Full is the route shown for the user's key in the MaxPlus dashboard.
+    "/gemini-full/v1", "/gemini/v1", "/gemini-lite/v1", "/gemini-stable/v1", "/v1",
+    "/maxpools/v1", "/mirrorpools/v1", "/vip-pools/v1", "/claude-vertex/v1",
+    "/deepseek/v1", "/chinese-model-specials/v1", "/all-max-pools/v1",
+    "/chinese-model-request/v1", "/chinese-request-specials/v1", "/glm/v1", "/glm-free/v1",
+    "/glm-deepseek-cheaper/v1", "/free/v1", "/kimi/v1", "/minimax/v1", "/gpt-pro/v1",
+    "/gpt-plus-pro/v1", "/gpt-pro-20x-ultimate/v1", "/gpt-pro-20x-stable/v1", "/gpt-max/v1",
+    "/gpt-lite/v1", "/gpt-bomb/v1", "/grok/v1", "/grok-fast/v1", "/grok-lite/v1", "/super-grok/v1",
+)
+MAXPLUS_ANTHROPIC_POOL_PATHS = (
+    "/v1", "/maxpools/v1", "/subpools/v1", "/claude-aws/v1", "/kiro-high-cache/v1",
+    "/aws-v2/v1", "/aws-lite/v1", "/ccmax/v1", "/aws-lite-ultimate/v1", "/claudecode-lite/v1",
+    "/cmax-lite/v1", "/cmax-full/v1", "/cmax-specials/v1", "/claude-kiro-faster/v1",
+    "/claude-kiro-pure/v1", "/claude-cursor/v1", "/claude-antigravity/v1", "/kiro-p-90/v1",
+    "/kiro-coperate/v1", "/kiro-95-cache/v1", "/kiro-99-cache/v1", "/kiro-90-cache/v1",
+    "/kiro-70-cache/v1", "/kiro-p-92/v1", "/kiro-p-99/v1", "/claude-cc/v1",
+    "/claude-github-copilot/v1", "/claude-vertex/v1", "/cowork/v1", "/mirrorpools/v1", "/vip-pools/v1",
+)
+
+
 def connect_and_list_models(provider, key):
-    """Resolve MaxPlus Gemini pool routing when only its API origin was entered."""
+    """Resolve a MaxPlus pool from a key when only the API origin was entered."""
     parsed = urlsplit(provider.base_url)
-    is_maxplus_origin = (isinstance(provider, OpenAICompatibleProvider)
+    is_maxplus_origin = (type(provider) in {OpenAICompatibleProvider, AnthropicProvider}
                          and parsed.hostname == "api.maxplus-ai.cc" and parsed.path in {"", "/"})
     if not is_maxplus_origin:
         return provider.base_url, provider.list_models(key)
 
-    # MaxPlus API keys are scoped to pools. Its root models route is only the
-    # Native pool, so try the Gemini pool aliases users commonly paste as root.
-    # Keep probes on the same HTTPS origin; no prompt or file data is sent.
-    pool_paths = ("/gemini-full/v1", "/gemini/v1", "/gemini-lite/v1", "/gemini-stable/v1", "/v1")
+    # A MaxPlus API key is authorized for its pool, while the API root defaults
+    # to Native. Probe documented pool model-list routes on the same HTTPS host.
+    # These GET requests send only the key; no prompt or file content is sent.
+    pool_paths = MAXPLUS_ANTHROPIC_POOL_PATHS if isinstance(provider, AnthropicProvider) else MAXPLUS_OPENAI_POOL_PATHS
     last_error = None
     for path in pool_paths:
         candidate = type(provider)(f"{parsed.scheme}://{parsed.netloc}{path}")

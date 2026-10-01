@@ -155,3 +155,30 @@ def test_maxplus_discovery_preserves_explicit_pool_url(monkeypatch):
     provider = OpenAICompatibleProvider("https://api.maxplus-ai.cc/gemini-full/v1")
     assert connect_and_list_models(provider, "key") == (provider.base_url, ["m"])
     assert calls == [provider.base_url]
+
+
+def test_maxplus_discovery_checks_other_openai_compatible_pools(monkeypatch):
+    from novel_workflow.providers import OpenAICompatibleProvider, connect_and_list_models
+    calls = []
+    def list_models(self, key):
+        calls.append(self.base_url)
+        if self.base_url.endswith("/gpt-pro/v1"): return ["gpt-model"]
+        raise ValueError("Provider HTTP 403; check key and API access")
+    monkeypatch.setattr(OpenAICompatibleProvider, "list_models", list_models)
+    endpoint, models = connect_and_list_models(OpenAICompatibleProvider("https://api.maxplus-ai.cc"), "key")
+    assert endpoint.endswith("/gpt-pro/v1")
+    assert models == ["gpt-model"]
+    assert len(calls) > 1
+
+
+def test_maxplus_discovery_uses_anthropic_pool_routes_for_anthropic_provider(monkeypatch):
+    from novel_workflow.providers import AnthropicProvider, connect_and_list_models
+    calls = []
+    def list_models(self, key):
+        calls.append(self.base_url)
+        if self.base_url.endswith("/cmax-full/v1"): return ["claude-model"]
+        raise ValueError("Provider HTTP 403; check key and API access")
+    monkeypatch.setattr(AnthropicProvider, "list_models", list_models)
+    endpoint, models = connect_and_list_models(AnthropicProvider("https://api.maxplus-ai.cc"), "key")
+    assert endpoint.endswith("/cmax-full/v1")
+    assert models == ["claude-model"]
