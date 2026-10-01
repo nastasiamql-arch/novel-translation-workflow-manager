@@ -4,56 +4,62 @@ from PySide6.QtWidgets import QApplication
 
 TOKENS = {
     "spacing": (4, 8, 12, 16, 20, 24, 32),
-    "radius": 10,
-    "control_height": 36,
+    "radius": 12,
+    "radius_card": 18,
+    "radius_glass": 22,
+    "control_height": 40,
     "motion_ms": 160,
 }
 
 # Dark follows VS Code's softer charcoal contrast instead of pure black.
 _DARK = {
-    "app": "#1B1C1F",
-    "surface": "#222429",
-    "surface2": "#292C32",
-    "hover": "#32363E",
-    "elevated": "#383D46",
-    "border": "#363A42",
-    "border_strong": "#4B515D",
-    "text": "#E4E6EA",
-    "secondary": "#B7BBC4",
-    "muted": "#949AA5",
-    "accent": "#79A9F5",
-    "accent_hover": "#94B9F7",
-    "success": "#4EC9B0",
-    "warning": "#DCDCAA",
-    "danger": "#F48771",
-    "selection": "#334E76",
-    "input": "#1E2025",
-    "primary": "#E8E8E8",
-    "primary_hover": "#FFFFFF",
-    "primary_text": "#202020",
+    "app": "#111318",
+    "surface": "#191C23",
+    "surface2": "#222733",
+    "hover": "#2B3442",
+    "elevated": "#293241",
+    "glass": "rgba(28, 34, 44, 0.84)",
+    "glass_strong": "rgba(31, 38, 50, 0.96)",
+    "border": "rgba(220, 230, 245, 0.10)",
+    "border_strong": "rgba(220, 230, 245, 0.18)",
+    "text": "#F5F7FA",
+    "secondary": "#B4BBC7",
+    "muted": "#858E9C",
+    "accent": "#5AA9FF",
+    "accent_hover": "#83BEFF",
+    "success": "#56C596",
+    "warning": "#F3C969",
+    "danger": "#F17A78",
+    "selection": "#284B71",
+    "input": "#171A20",
+    "primary": "#4C9FFF",
+    "primary_hover": "#6AAEFF",
+    "primary_text": "#08121F",
 }
 
 # Light follows the quiet neutral shell used by modern ChatGPT desktop UI.
 _LIGHT = {
-    "app": "#F7F7F8",
+    "app": "#F3F6FA",
     "surface": "#FFFFFF",
-    "surface2": "#F1F1F2",
-    "hover": "#ECECED",
-    "elevated": "#E7E7E8",
-    "border": "#E5E5E5",
-    "border_strong": "#D1D1D1",
-    "text": "#202123",
-    "secondary": "#4B4F56",
-    "muted": "#62666D",
-    "accent": "#0969A6",
-    "accent_hover": "#1177BB",
-    "success": "#168B67",
-    "warning": "#8A6D1F",
-    "danger": "#C74444",
-    "selection": "#DCEBFA",
+    "surface2": "#F3F6FA",
+    "hover": "#E8F1FB",
+    "elevated": "#FFFFFF",
+    "glass": "rgba(255, 255, 255, 0.78)",
+    "glass_strong": "rgba(255, 255, 255, 0.96)",
+    "border": "rgba(35, 64, 105, 0.10)",
+    "border_strong": "rgba(35, 64, 105, 0.18)",
+    "text": "#182333",
+    "secondary": "#566579",
+    "muted": "#8290A2",
+    "accent": "#1677D2",
+    "accent_hover": "#0E68BF",
+    "success": "#21815B",
+    "warning": "#986D15",
+    "danger": "#C7474F",
+    "selection": "#D9EAFB",
     "input": "#FFFFFF",
-    "primary": "#202123",
-    "primary_hover": "#343541",
+    "primary": "#1677D2",
+    "primary_hover": "#0E68BF",
     "primary_text": "#FFFFFF",
 }
 
@@ -67,6 +73,10 @@ _EDITOR_DARK = {
     "selection_text": "#FFFFFF",
     "find": "#665523",
     "find_text": "#FFF4CE",
+    "tab": "#292D35",
+    "tab_selected": "#353C48",
+    "border": "#343A44",
+    "accent": "#69AEFF",
 }
 
 _EDITOR_LIGHT = {
@@ -79,6 +89,10 @@ _EDITOR_LIGHT = {
     "selection_text": "#202123",
     "find": "#FFE08A",
     "find_text": "#202123",
+    "tab": "#F2F5F9",
+    "tab_selected": "#FFFFFF",
+    "border": "#E4EAF1",
+    "accent": "#1677D2",
 }
 
 
@@ -104,25 +118,44 @@ def application_stylesheet(appearance: str = "Light") -> str:
     return f"""
     QWidget {{
         color: {c["text"]};
-        font-family: "Segoe UI Variable Text", "Leelawadee UI", "Segoe UI", sans-serif;
-        font-size: 10.5pt;
+        font-family: "Segoe UI Variable Text", "Leelawadee UI", "Segoe UI", "Tahoma", sans-serif;
+        font-size: 10pt;
     }}
     QMainWindow, QDialog {{ background: {c["app"]}; }}
+    QWidget#appShell {{ background: transparent; }}
+    QFrame#editorHeader, QFrame#utilityHeader {{
+        background: {c["glass_strong"]};
+        border: 1px solid {c["border"]};
+        border-radius: 16px;
+    }}
+    QFrame#settingsCard, QFrame#groupCard, QFrame#progressCard,
+    QFrame#metricCard, QFrame#goalPanel, QFrame#progressRow {{
+        background: {c["glass_strong"]};
+        border: 1px solid {c["border"]};
+        border-radius: 18px;
+    }}
+    QLabel#pageTitle {{ font-size: 22pt; font-weight: 650; color: {c["text"]}; }}
+    QLabel#pageSubtitle {{ color: {c["secondary"]}; font-size: 10pt; }}
+    QLineEdit#librarySearch {{ min-height: 24px; border-radius: 18px; padding: 8px 15px; }}
 
     QToolBar#mainToolbar {{
-        background: {c["surface"]};
-        border: 0;
-        border-bottom: 1px solid {c["border"]};
+        background: {c["glass_strong"]};
+        border: 1px solid {c["border"]};
+        border-radius: 18px;
         spacing: 5px;
+        margin: 8px 14px 4px 14px;
         padding: 7px 12px;
     }}
     QToolBar#mainToolbar QToolButton {{
-        padding: 7px 10px;
-        border-radius: 8px;
+        padding: 8px 11px;
+        border-radius: 11px;
+        font-size: 9.5pt;
     }}
+    QToolBar#mainToolbar QToolButton:hover {{ background: {c["hover"]}; }}
+    QToolBar#mainToolbar QToolButton:pressed {{ background: {c["selection"]}; }}
     QLabel#brandTitle {{
         color: {c["text"]};
-        font-size: 14pt;
+        font-size: 15pt;
         font-weight: 600;
         padding-left: 3px;
     }}
@@ -184,9 +217,9 @@ def application_stylesheet(appearance: str = "Light") -> str:
     QListWidget#novelLibrary::item {{
         background: {c["surface"]};
         border: 1px solid {c["border"]};
-        border-radius: 12px;
-        padding: 8px;
-        min-height: 226px;
+        border-radius: 18px;
+        padding: 10px;
+        min-height: 274px;
     }}
     QListWidget#novelLibrary::item:hover {{
         background: {c["hover"]};
@@ -199,7 +232,7 @@ def application_stylesheet(appearance: str = "Light") -> str:
     QFrame#workflowSidebar {{
         background: {c["surface"]};
         border: 1px solid {c["border"]};
-        border-radius: 10px;
+        border-radius: 18px;
     }}
     QListWidget#workflowSteps {{
         background: transparent;
@@ -219,8 +252,8 @@ def application_stylesheet(appearance: str = "Light") -> str:
         color: {c["text"]};
         background: {c["surface2"]};
         border: 1px solid {c["border"]};
-        border-radius: 8px;
-        padding: 7px 12px 7px 32px;
+        border-radius: 12px;
+        padding: 9px 14px 9px 34px;
         text-align: left;
         font-weight: 600;
     }}
@@ -236,9 +269,9 @@ def application_stylesheet(appearance: str = "Light") -> str:
         color: {c["text"]};
         background: {c["selection"]};
         border: 1px solid {c["accent"]};
-        border-radius: 8px;
-        padding: 7px 12px;
-        font-weight: 700;
+        border-radius: 12px;
+        padding: 8px 14px;
+        font-weight: 650;
     }}
     QLabel#editorStatusBar {{
         color: {c["secondary"]};
@@ -301,9 +334,9 @@ def application_stylesheet(appearance: str = "Light") -> str:
         background: {c["surface2"]};
         color: {c["text"]};
         border: 1px solid {c["border"]};
-        border-radius: 9px;
-        padding: 7px 12px;
-        font-weight: 500;
+        border-radius: 12px;
+        padding: 9px 14px;
+        font-weight: 550;
     }}
     QPushButton:hover {{ background: {c["hover"]}; border-color: {c["border_strong"]}; }}
     QPushButton:pressed {{ background: {c["elevated"]}; }}
@@ -335,8 +368,8 @@ def application_stylesheet(appearance: str = "Light") -> str:
         background: {c["input"]};
         color: {c["text"]};
         border: 1px solid {c["border"]};
-        border-radius: 9px;
-        padding: 7px 9px;
+        border-radius: 12px;
+        padding: 8px 12px;
         selection-background-color: {c["selection"]};
         min-height: 20px;
     }}
@@ -363,8 +396,8 @@ def application_stylesheet(appearance: str = "Light") -> str:
 
     QCheckBox, QRadioButton {{ color: {c["text"]}; spacing: 8px; }}
     QCheckBox::indicator, QRadioButton::indicator {{
-        width: 16px;
-        height: 16px;
+        width: 10px;
+        height: 10px;
         border: 1px solid {c["border_strong"]};
         border-radius: 4px;
         background: {c["input"]};
@@ -388,8 +421,9 @@ def application_stylesheet(appearance: str = "Light") -> str:
     QTabBar::tab {{
         color: {c["secondary"]};
         background: transparent;
-        padding: 9px 13px;
-        margin-right: 2px;
+        padding: 10px 14px;
+        margin-right: 3px;
+        border-radius: 10px;
         border: 0;
         border-bottom: 2px solid transparent;
     }}
@@ -401,9 +435,9 @@ def application_stylesheet(appearance: str = "Light") -> str:
     }}
 
     QGroupBox {{
-        background: {c["surface"]};
+        background: {c["glass_strong"]};
         border: 1px solid {c["border"]};
-        border-radius: 10px;
+        border-radius: 16px;
         margin-top: 14px;
         padding-top: 10px;
         font-weight: 600;
@@ -458,8 +492,8 @@ def application_stylesheet(appearance: str = "Light") -> str:
         background: {c["surface2"]};
         border: 0;
         margin: 1px;
-        width: 16px;
-        height: 16px;
+        width: 10px;
+        height: 10px;
     }}
     QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
         background: {c["border_strong"]};
