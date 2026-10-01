@@ -93,6 +93,53 @@ def main() -> int:
                 assert window.profile.id == profile.id
                 assert window.main_pages.currentWidget() is window.workspace_stack
                 workspace = window.workspaces[profile.id]
+                assert window.library_status_tabs.count() == 3
+                assert [
+                    workspace.pause_profile_button.text(),
+                    workspace.caught_up_profile_button.text(),
+                ] == ["พักแปล", "ชนต้นฉบับแล้ว"]
+
+                def saved_profile():
+                    return next(item for item in repo.list_profiles() if item.id == profile.id)
+
+                workspace.pause_profile_button.click()
+                app.processEvents()
+                assert saved_profile().status == "paused"
+                assert saved_profile().context_path == str(context)
+                assert saved_profile().chapter_state.current_chapter == 156
+                assert window.library_status_tabs.tabText(1).endswith("(1)")
+                window.library_status_tabs.setCurrentIndex(1)
+                paused_card = next(
+                    window.profile_cards.item(i)
+                    for i in range(window.profile_cards.count())
+                    if window.profile_cards.item(i).data(Qt.UserRole) == profile.id
+                )
+                assert not paused_card.isHidden()
+                window.profile_cards.itemClicked.emit(paused_card)
+                app.processEvents()
+                assert window.profile is not None and window.profile.id == profile.id
+                assert window.main_pages.currentWidget() is window.workspace_stack
+
+                window.workspaces[profile.id].resume_profile_button.click()
+                app.processEvents()
+                assert saved_profile().status == "translating"
+                window.workspaces[profile.id].caught_up_profile_button.click()
+                app.processEvents()
+                assert saved_profile().status == "caught_up"
+                assert window.library_status_tabs.tabText(2).endswith("(1)")
+                window.library_status_tabs.setCurrentIndex(2)
+                caught_up_card = next(
+                    window.profile_cards.item(i)
+                    for i in range(window.profile_cards.count())
+                    if window.profile_cards.item(i).data(Qt.UserRole) == profile.id
+                )
+                assert not caught_up_card.isHidden()
+                window.workspaces[profile.id].resume_profile_button.click()
+                app.processEvents()
+                assert saved_profile().status == "translating"
+                window.library_status_tabs.setCurrentIndex(0)
+                app.processEvents()
+                workspace = window.workspaces[profile.id]
                 assert window.settings.appearance == "Light"
                 assert workspace.root_path == novel_folder.resolve()
                 assert workspace.steps.count() == 2

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QDialog, QFileDialog, QFileSystemModel, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
     QProgressBar, QPushButton, QSizePolicy, QSplitter, QStackedWidget,
-    QToolButton, QTreeView, QVBoxLayout, QWidget, QInputDialog, QComboBox, QTextEdit,
+    QTabBar, QToolButton, QTreeView, QVBoxLayout, QWidget, QInputDialog, QComboBox, QTextEdit,
     QCheckBox, QProgressDialog, QScrollArea, QSpinBox,
 )
 
@@ -26,6 +26,22 @@ from .workspace_editor import EditorTabs
 from . import __version__
 from .updater import UpdateError, UpdateInfo, check_for_update, download_update
 from .file_import import import_files_into_directory
+
+
+PROFILE_STATUSES = (
+    ("translating", "กำลังแปล"),
+    ("paused", "พักแปล"),
+    ("caught_up", "ชนต้นฉบับแล้ว"),
+)
+
+
+def _profile_status(profile):
+    status = str(getattr(profile, "status", "") or "").strip()
+    return status if status in {value for value, _label in PROFILE_STATUSES} else "translating"
+
+
+def _profile_status_label(status):
+    return dict(PROFILE_STATUSES).get(status, dict(PROFILE_STATUSES)["translating"])
 
 
 class _UpdateCheckWorker(QThread):
@@ -238,6 +254,27 @@ class ProfileWorkspace(QWidget):
         self.breadcrumb.setObjectName("mutedLabel")
         header_layout.addWidget(self.sidebar_toggle)
         header_layout.addWidget(self.breadcrumb, 1)
+        self.pause_profile_button = QToolButton()
+        self.pause_profile_button.setText("พักแปล")
+        self.pause_profile_button.setToolTip("ย้ายเรื่องนี้ไปชั้นพักแปล")
+        self.pause_profile_button.clicked.connect(
+            lambda checked=False: self.owner.set_profile_status(self.profile_id, "paused")
+        )
+        header_layout.addWidget(self.pause_profile_button)
+        self.caught_up_profile_button = QToolButton()
+        self.caught_up_profile_button.setText("ชนต้นฉบับแล้ว")
+        self.caught_up_profile_button.setToolTip("ย้ายเรื่องนี้ไปชั้นชนต้นฉบับแล้ว")
+        self.caught_up_profile_button.clicked.connect(
+            lambda checked=False: self.owner.set_profile_status(self.profile_id, "caught_up")
+        )
+        header_layout.addWidget(self.caught_up_profile_button)
+        self.resume_profile_button = QToolButton()
+        self.resume_profile_button.setText("กลับไปแปล")
+        self.resume_profile_button.setToolTip("ย้ายเรื่องนี้กลับไปชั้นกำลังแปล")
+        self.resume_profile_button.clicked.connect(
+            lambda checked=False: self.owner.set_profile_status(self.profile_id, "translating")
+        )
+        header_layout.addWidget(self.resume_profile_button)
         self.context_button = QToolButton()
         self.context_button.setText("Context")
         self.context_button.setToolTip("เลือกไฟล์ Context ที่ติดตามความคืบหน้า")
@@ -268,6 +305,7 @@ class ProfileWorkspace(QWidget):
         reset_font.setToolTip("คืนขนาดตัวอักษรเริ่มต้น")
         reset_font.clicked.connect(lambda: self.owner.set_editor_font_size(11.0))
         header_layout.addWidget(reset_font)
+        self.update_profile_status(_profile_status(profile))
         editor_layout = QVBoxLayout()
         editor_layout.setContentsMargins(0, 0, 0, 0)
         editor_layout.setSpacing(3)
@@ -314,6 +352,11 @@ class ProfileWorkspace(QWidget):
 
         self.configure(profile)
         self.set_mode(0)
+
+    def update_profile_status(self, status):
+        self.pause_profile_button.setEnabled(status != "paused")
+        self.caught_up_profile_button.setEnabled(status != "caught_up")
+        self.resume_profile_button.setVisible(status != "translating")
 
     def configure(self, profile):
         root = (
@@ -1481,6 +1524,16 @@ class MainWindow(LegacyMainWindow):
         add_story.clicked.connect(self.new_profile)
         library_header.addWidget(add_story)
         library_layout.addLayout(library_header)
+        self.library_status_tabs = QTabBar()
+        self.library_status_tabs.setAccessibleName("หมวดนิยาย")
+        self.library_status_tabs.setMovable(False)
+        for status, label in PROFILE_STATUSES:
+            index = self.library_status_tabs.addTab(f"{label} (0)")
+            self.library_status_tabs.setTabData(index, status)
+        self.library_status_tabs.currentChanged.connect(
+            lambda _index: self.filter_profiles(self.library_search.text())
+        )
+        library_layout.addWidget(self.library_status_tabs)
         self.profile_cards = QListWidget()
         self.profile_cards.setObjectName("novelLibrary")
         self.profile_cards.setViewMode(QListWidget.IconMode)
@@ -1493,6 +1546,11 @@ class MainWindow(LegacyMainWindow):
         self.profile_cards.setGridSize(QSize(192, 250))
         self.profile_cards.itemClicked.connect(self._open_profile_card)
         library_layout.addWidget(self.profile_cards, 1)
+        self.library_empty_label = QLabel()
+        self.library_empty_label.setObjectName("mutedLabel")
+        self.library_empty_label.setAlignment(Qt.AlignCenter)
+        self.library_empty_label.hide()
+        library_layout.addWidget(self.library_empty_label, 1)
         self.main_pages.addWidget(self.library_page)
 
         self.workspace_stack = QStackedWidget()
@@ -1715,6 +1773,14 @@ class MainWindow(LegacyMainWindow):
         self.profiles.blockSignals(False)
 
         self.profile_cards.clear()
+        status_counts = {
+            status: sum(1 for profile in self.ps_list if _profile_status(profile) == status)
+            for status, _label in PROFILE_STATUSES
+        }
+        for index, (status, label) in enumerate(PROFILE_STATUSES):
+            self.library_status_tabs.setTabText(
+                index, f"{label} ({status_counts[status]})"
+            )
         placeholder = Path(__file__).resolve().parent / "resources" / "novelworkflow.png"
         for profile in self.ps_list:
             pixmap = QPixmap(str(placeholder)) if placeholder.is_file() else QPixmap()
@@ -1730,8 +1796,12 @@ class MainWindow(LegacyMainWindow):
             if not pixmap.isNull():
                 pixmap = pixmap.scaled(136, 170, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
                 pixmap = pixmap.copy((pixmap.width()-136)//2, (pixmap.height()-170)//2, 136, 170)
-            card = QListWidgetItem(QIcon(pixmap), f"{profile.name}\n{profile.status}")
+            status = _profile_status(profile)
+            card = QListWidgetItem(
+                QIcon(pixmap), f"{profile.name}\n{_profile_status_label(status)}"
+            )
             card.setData(Qt.UserRole, profile.id)
+            card.setData(Qt.UserRole + 1, status)
             card.setToolTip(profile.name)
             self.profile_cards.addItem(card)
 
@@ -1750,18 +1820,58 @@ class MainWindow(LegacyMainWindow):
             self.si = -1
             self.workspace_stack.setCurrentWidget(self.empty_page)
             self.main_pages.setCurrentWidget(self.library_page)
+        self.filter_profiles(self.library_search.text())
 
     def filter_profiles(self, query):
         query = query.strip().casefold()
+        selected_status = self.library_status_tabs.tabData(
+            self.library_status_tabs.currentIndex()
+        )
+        visible = 0
         for index in range(self.profile_cards.count()):
             item = self.profile_cards.item(index)
-            item.setHidden(bool(query) and query not in item.text().casefold())
+            matches = (
+                item.data(Qt.UserRole + 1) == selected_status
+                and (not query or query in item.text().casefold())
+            )
+            item.setHidden(not matches)
+            visible += int(matches)
+        self.profile_cards.setVisible(visible > 0)
+        self.library_empty_label.setText(
+            f"ยังไม่มีนิยายในหมวด{_profile_status_label(selected_status)}"
+            if not query else "ไม่พบนิยายที่ค้นหาในหมวดนี้"
+        )
+        self.library_empty_label.setVisible(visible == 0)
 
     def _open_profile_card(self, item):
         profile_id = item.data(Qt.UserRole)
         index = next((i for i, profile in enumerate(self.ps_list) if profile.id == profile_id), -1)
         if index >= 0:
             self.select_profile(index)
+
+    def set_profile_status(self, profile_id, status):
+        if status not in {value for value, _label in PROFILE_STATUSES}:
+            return
+        profile = next(
+            (item for item in getattr(self, "ps_list", []) if item.id == profile_id),
+            None,
+        )
+        if profile is None:
+            return
+        if _profile_status(profile) == status:
+            return
+        old_status = profile.status
+        profile.status = status
+        try:
+            self.repo.save_profile(profile)
+        except OSError as exc:
+            profile.status = old_status
+            QMessageBox.warning(self, "บันทึกสถานะไม่ได้", str(exc))
+            return
+        self.refresh_profiles(profile_id)
+        self.statusBar().showMessage(
+            f"ย้าย {profile.name} ไปหมวด{_profile_status_label(status)}แล้ว", 4500
+        )
 
     def show_library(self):
         if self._settings_page_state:
@@ -1835,6 +1945,7 @@ class MainWindow(LegacyMainWindow):
         self.profile = self.ps_list[index]
         self.settings.last_profile_id = self.profile.id
         workspace = self._workspace(self.profile)
+        workspace.update_profile_status(_profile_status(self.profile))
 
         self.steps = workspace.steps
         self.files = workspace.files
