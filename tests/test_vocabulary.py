@@ -63,7 +63,91 @@ def test_snapshot_errors_classify_invalid_vocab_format(tmp_path):
     vocab.write_text("not a valid header", encoding="utf-8")
     with pytest.raises(InputFileError) as error:
         run_vocabulary(settings, object(), "unused")
-    assert (error.value.role, error.value.reason, error.value.detail) == ("vocab", "format", "VOCAB requires distinct identity and translation columns")
+    assert (error.value.role, error.value.reason, error.value.detail) == ("vocab", "format", "SEGGlossary rows require at least 2 fields")
+
+
+def test_headerless_seg_glossary_reads_characters_and_terms_with_different_widths(tmp_path):
+    from novel_workflow.vocabulary import VocabDocument
+    path = tmp_path / "SEGGlossary.txt"
+    raw = ("人物甲\t人物译名\t男\t人物说明\r\n"
+           "普通词\t词语译名\t词语说明\r\n").encode("utf-8")
+    path.write_bytes(raw)
+    document = VocabDocument.read(path, raw)
+    assert document.kind == "seg-glossary"
+    assert [len(row) for row in document.rows] == [4, 3]
+    polished = json.dumps({"NEW": [["新词", "คำใหม่", "字段สาม", "字段四", "字段五"]],
+                           "UPDATE": [{"before": ["普通词", "词语译名", "词语说明"],
+                                       "after": ["普通词", "คำที่แก้", "คำอธิบายใหม่"]}]}, ensure_ascii=False)
+    encoded, added, updated = document.merge(polished)
+    assert encoded.decode("utf-8") == (
+        "人物甲\t人物译名\t男\t人物说明\r\n"
+        "普通词\tคำที่แก้\tคำอธิบายใหม่\r\n"
+        "新词\tคำใหม่\t字段สาม\t字段四\t字段五\r\n")
+    assert (added, updated) == (1, 1)
+
+
+def test_seg_glossary_read_does_not_infer_fixed_column_meanings_from_sample(tmp_path):
+    from novel_workflow.vocabulary import VocabDocument
+    path = tmp_path / "SEGGlossary.txt"
+    raw = "词一\tคำแปลหนึ่ง\tA\tB\tC\tD\tE\n词สอง\tคำแปลสอง\tความหมาย\n".encode("utf-8")
+    document = VocabDocument.read(path, raw)
+    assert document.rows == [["词一", "คำแปลหนึ่ง", "A", "B", "C", "D", "E"],
+                             ["词สอง", "คำแปลสอง", "ความหมาย"]]
+
+
+def test_seg_glossary_update_must_keep_the_existing_entry_shape(tmp_path):
+    from novel_workflow.vocabulary import VocabDocument
+    path = tmp_path / "SEGGlossary.txt"
+    raw = "人物甲\t人物译名\t男\t人物说明\n".encode("utf-8")
+    document = VocabDocument.read(path, raw)
+    polished = json.dumps({"NEW": [], "UPDATE": [{"before": ["人物甲", "人物译名", "男", "人物说明"],
+                                                    "after": ["人物甲", "คำแปล", "คำอธิบาย"]}]}, ensure_ascii=False)
+    with pytest.raises(ValueError, match="preserve the row field count"):
+        document.merge(polished)
+
+
+def test_seg_glossary_allows_same_source_with_context_specific_entries(tmp_path):
+    from novel_workflow.vocabulary import VocabDocument
+    path = tmp_path / "SEGGlossary.txt"
+    raw = "同名\tครอบครัวจาง\t-\tคำอธิบายหนึ่ง\n同名\tตระกูลจาง\t-\tคำอธิบายสอง\n".encode("utf-8")
+    document = VocabDocument.read(path, raw)
+    assert len(document.rows) == 2
+    polished = json.dumps({"NEW": [], "UPDATE": [{
+        "before": ["同名", "ครอบครัวจาง", "-", "คำอธิบายหนึ่ง"],
+        "after": ["同名", "ครอบครัวจาง", "-", "แก้เฉพาะความหมายแรก"]
+    }]}, ensure_ascii=False)
+    encoded, added, updated = document.merge(polished)
+    assert encoded.decode("utf-8") == "同名\tครอบครัวจาง\t-\tแก้เฉพาะความหมายแรก\n同名\tตระกูลจาง\t-\tคำอธิบายสอง\n"
+    assert (added, updated) == (0, 1)
+
+
+def test_seg_glossary_pipeline_uses_selected_prompts_and_prompt_driven_rows(tmp_path):
+    from novel_workflow.vocabulary import run_vocabulary
+    from novel_workflow.models import VocabularySettings
+    source, vocab = tmp_path / "source.txt", tmp_path / "SEGGlossary.txt"
+    extract, polish = tmp_path / "extract.md", tmp_path / "polish.md"
+    source.write_text("chapter source", encoding="utf-8")
+    original = "person\tชื่อ\tเพศ\tรายละเอียดตัวละคร\nterm\tคำศัพท์\tรายละเอียดคำศัพท์\n"
+    vocab.write_text(original, encoding="utf-8")
+    extract.write_text("EXTRACT: find according to these rules", encoding="utf-8")
+    polish.write_text("POLISH: format each type according to these rules", encoding="utf-8")
+    settings = VocabularySettings(source_path=str(source), vocab_path=str(vocab),
+        extract_prompt_path=str(extract), polish_prompt_path=str(polish), model="test")
+    calls = []
+    class Provider:
+        def complete(self, model, prompt, key):
+            calls.append(prompt)
+            if len(calls) == 1: return "intermediate extraction"
+            return json.dumps({"NEW": [["new term", "คำใหม่", "ข้อมูลหนึ่ง", "ข้อมูลสอง", "ข้อมูลสาม"]],
+                "UPDATE": [{"before": ["term", "คำศัพท์", "รายละเอียดคำศัพท์"],
+                            "after": ["term", "คำที่เกลาแล้ว", "รายละเอียดตาม Prompt"]}]}, ensure_ascii=False)
+    result = run_vocabulary(settings, Provider(), "key")
+    assert "EXTRACT: find according to these rules" in calls[0]
+    assert "POLISH: format each type according to these rules" in calls[1]
+    assert "Follow the selected Extract and Polish prompts" in calls[0]
+    assert "Follow the selected Extract and Polish prompts" in calls[1]
+    assert result.added == 1 and result.updated == 1
+    assert "new term\tคำใหม่\tข้อมูลหนึ่ง\tข้อมูลสอง\tข้อมูลสาม" in vocab.read_text(encoding="utf-8")
 
 
 def test_extract_cannot_write_and_polish_controls_commit(tmp_path):

@@ -5,15 +5,29 @@
   "required": ["NEW", "UPDATE"],
   "additionalProperties": false,
   "properties": {
-    "NEW": {"type": "array", "items": {"$ref": "#/$defs/row"}},
-    "UPDATE": {"type": "array", "items": {"$ref": "#/$defs/row"}}
+    "NEW": {"type": "array", "items": {"anyOf": [{"$ref": "#/$defs/row"}, {"$ref": "#/$defs/segGlossaryRow"}]}},
+    "UPDATE": {"type": "array", "items": {"anyOf": [{"$ref": "#/$defs/row"}, {"$ref": "#/$defs/segGlossaryUpdate"}]}}
   },
   "$defs": {
     "row": {
       "type": "object",
       "minProperties": 2,
       "additionalProperties": {"type": "string", "pattern": "^[^\\t\\r\\n\\u0000]*$"}
+    },
+    "segGlossaryRow": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"type": "string", "pattern": "^[^\\t\\r\\n\\u0000]*$"}
+    },
+    "segGlossaryUpdate": {
+      "type": "object",
+      "required": ["before", "after"],
+      "additionalProperties": false,
+      "properties": {
+        "before": {"$ref": "#/$defs/segGlossaryRow"},
+        "after": {"$ref": "#/$defs/segGlossaryRow"}
+      }
     }
   },
-  "$comment": "Runtime additionally requires exact VOCAB columns, nonempty identity/translation, unique identities, NEW absent and UPDATE present. The first VOCAB column is identity."
+  "$comment": "Runtime additionally requires exact VOCAB columns for headered files. Headerless SEGGlossary TSV keeps its per-row schema from the selected prompts and file; each record is a variable-length string array (at least source and translation). SEGGlossary UPDATE items pair an exact before row with an after row to disambiguate repeated source terms."
 }
