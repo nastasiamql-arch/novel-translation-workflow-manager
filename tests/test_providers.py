@@ -171,6 +171,34 @@ def test_maxplus_discovery_checks_other_openai_compatible_pools(monkeypatch):
     assert len(calls) > 1
 
 
+def test_maxplus_discovery_continues_after_temporary_pool_outage(monkeypatch):
+    from novel_workflow.providers import OpenAICompatibleProvider, connect_and_list_models
+    attempted = []
+    def list_models(self, key):
+        attempted.append(self.base_url)
+        if self.base_url.endswith("/gemini-full/v1"):
+            raise ValueError("Provider HTTP 503; check key and API access")
+        if self.base_url.endswith("/gemini/v1"):
+            return ["gemini-3.8-flash"]
+        raise ValueError("Provider HTTP 403; check key and API access")
+    monkeypatch.setattr(OpenAICompatibleProvider, "list_models", list_models)
+    endpoint, models = connect_and_list_models(OpenAICompatibleProvider("https://api.maxplus-ai.cc"), "key")
+    assert endpoint.endswith("/gemini/v1")
+    assert models == ["gemini-3.8-flash"]
+    assert attempted == ["https://api.maxplus-ai.cc/gemini-full/v1", "https://api.maxplus-ai.cc/gemini/v1"]
+
+
+def test_maxplus_discovery_reports_temporary_outage_when_no_pool_works(monkeypatch):
+    from novel_workflow.providers import OpenAICompatibleProvider, connect_and_list_models
+    def list_models(self, key):
+        if self.base_url.endswith("/gemini-full/v1"):
+            raise ValueError("Provider HTTP 503; check key and API access")
+        raise ValueError("Provider HTTP 403; check key and API access")
+    monkeypatch.setattr(OpenAICompatibleProvider, "list_models", list_models)
+    with pytest.raises(ValueError, match="Provider HTTP 503; MaxPlus API/Pool is temporarily unavailable"):
+        connect_and_list_models(OpenAICompatibleProvider("https://api.maxplus-ai.cc"), "key")
+
+
 def test_maxplus_discovery_uses_anthropic_pool_routes_for_anthropic_provider(monkeypatch):
     from novel_workflow.providers import AnthropicProvider, connect_and_list_models
     calls = []

@@ -91,7 +91,15 @@ class ModelListWorker(QThread):
             endpoint, models = connect_and_list_models(self.provider, self.key)
             self.succeeded.emit(endpoint, models)
         except ValueError as error:
-            self.failed.emit(str(error))
+            message = str(error)
+            if any(f"Provider HTTP {code}" in message for code in (500, 502, 503, 504)):
+                self.failed.emit("MaxPlus/API ของ pool ที่ลองยังไม่พร้อม · รอสักครู่แล้วกดเชื่อมต่ออีกครั้ง")
+            elif "Provider HTTP 401" in message:
+                self.failed.emit("API key ไม่ถูกต้องหรือถูกปิดใช้งาน · ตรวจ key ในหน้า MaxPlus")
+            elif "Provider HTTP 403" in message:
+                self.failed.emit("key นี้ไม่มีสิทธิ์เข้าถึง pool · ตรวจ pool ที่ผูกกับ key ในหน้า MaxPlus")
+            else:
+                self.failed.emit(message)
         except Exception:
             self.failed.emit("เชื่อมต่อไม่ได้ ตรวจ URL, API key และสิทธิ์ดูรายการโมเดล")
         finally:
