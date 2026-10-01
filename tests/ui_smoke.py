@@ -333,6 +333,14 @@ def main() -> int:
                 window.translation_dashboard()
                 assert window.main_pages.currentWidget() is window.utility_page
                 assert window._utility_pages["progress"].isVisible()
+                dashboard = window._utility_pages["progress"]
+                assert dashboard.bulk_goal_button.isEnabled()
+                assert dashboard.bulk_goal_hint.text() == "ตั้งได้ 1 เรื่องที่มีไฟล์ Context"
+                dashboard.bulk_goal_target.setValue(12)
+                dashboard.bulk_goal_button.click()
+                saved_goals = {item.id: item.translation_goal_target for item in repo.list_profiles()}
+                assert saved_goals[profile.id] == 12
+                assert saved_goals[second.id] is None
                 window.return_from_utility_page()
 
                 workspace.vocabulary_button.click()

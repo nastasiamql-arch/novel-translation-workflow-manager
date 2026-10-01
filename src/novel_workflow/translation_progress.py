@@ -101,6 +101,8 @@ def sync_profile_context(profile: NovelProfile) -> bool:
     if old_path != canonical_path:
         profile.translation_checkpoint_path = canonical_path
         changed = True
+    if restart_completed_goal_cycles(profile):
+        changed = True
     return changed
 
 
@@ -122,6 +124,19 @@ def reset_goal_progress(profile: NovelProfile) -> bool:
     if profile.translation_goal_target is None or profile.translation_goal_baseline is None:
         return False
     profile.translation_goal_baseline = profile.chapter_state.current_chapter
+    return True
+
+
+def restart_completed_goal_cycles(profile: NovelProfile) -> bool:
+    """Advance the baseline for completed cycles and keep any overflow progress."""
+    progress = goal_progress(profile)
+    if progress is None:
+        return False
+    completed, target, _percentage = progress
+    cycles = completed // target
+    if cycles < 1:
+        return False
+    profile.translation_goal_baseline += cycles * target
     return True
 
 

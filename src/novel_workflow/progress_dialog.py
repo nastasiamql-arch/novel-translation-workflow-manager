@@ -25,6 +25,22 @@ class TranslationDashboardDialog(QWidget):
         self.root = QVBoxLayout(self)
         self.summary = QHBoxLayout()
         self.root.addLayout(self.summary)
+        self.bulk_goal_panel = QFrame()
+        self.bulk_goal_panel.setObjectName("settingsCard")
+        bulk_goal_layout = QHBoxLayout(self.bulk_goal_panel)
+        bulk_goal_layout.addWidget(QLabel("เป้าหมายรอบใหม่ · เรื่องที่กำลังแปล"))
+        self.bulk_goal_target = QSpinBox()
+        self.bulk_goal_target.setRange(1, 100000)
+        self.bulk_goal_target.setValue(10)
+        self.bulk_goal_target.setSuffix(" บทต่อเรื่อง")
+        bulk_goal_layout.addWidget(self.bulk_goal_target)
+        self.bulk_goal_hint = QLabel()
+        self.bulk_goal_hint.setObjectName("mutedLabel")
+        bulk_goal_layout.addWidget(self.bulk_goal_hint, 1)
+        self.bulk_goal_button = QPushButton("ตั้งให้ทุกเรื่องที่กำลังแปล")
+        self.bulk_goal_button.clicked.connect(self._apply_goal_to_translating)
+        bulk_goal_layout.addWidget(self.bulk_goal_button)
+        self.root.addWidget(self.bulk_goal_panel)
         self.days_panel = QFrame()
         self.days_layout = QVBoxLayout(self.days_panel)
         history_title=QLabel("ผลงานย้อนหลัง 7 วัน")
@@ -79,6 +95,12 @@ class TranslationDashboardDialog(QWidget):
         self._clear(self.rows)
         today = date.today()
         today_key = today.isoformat()
+        eligible = self._eligible_translating_profiles()
+        self.bulk_goal_hint.setText(
+            f"ตั้งได้ {len(eligible)} เรื่องที่มีไฟล์ Context"
+            if eligible else "ไม่มีเรื่องที่กำลังแปลพร้อมใช้ Context"
+        )
+        self.bulk_goal_button.setEnabled(bool(eligible))
         today_total = sum(daily_chapter_count(profile, today_key) for profile in self.profiles)
         week_total = sum(profile_week_count(profile, today) for profile in self.profiles)
         active = sum(1 for profile in self.profiles if daily_chapter_count(profile, today_key) > 0)
@@ -109,6 +131,32 @@ class TranslationDashboardDialog(QWidget):
             return
         for profile in self.profiles:
             self.rows.addWidget(self._profile_row(profile, today_key))
+
+    def _eligible_translating_profiles(self) -> list[NovelProfile]:
+        return [
+            profile for profile in self.profiles
+            if str(getattr(profile, "status", "translating") or "translating").strip() == "translating"
+            and bool(profile.context_path and Path(profile.context_path).expanduser().is_file())
+        ]
+
+    def _apply_goal_to_translating(self):
+        target = self.bulk_goal_target.value()
+        eligible = self._eligible_translating_profiles()
+        if not eligible:
+            return
+        try:
+            for profile in eligible:
+                if profile.translation_goal_target is None or profile.translation_goal_baseline is None:
+                    profile.translation_goal_baseline = profile.chapter_state.current_chapter
+                profile.translation_goal_target = target
+                self.repo.save_profile(profile)
+        except OSError as exc:
+            QMessageBox.warning(self, "ตั้งเป้าหมายไม่สำเร็จ", str(exc))
+            self.profiles = self.refresh_callback()
+            self.refresh()
+            return
+        self.profiles = self.refresh_callback()
+        self.refresh()
 
     def _profile_row(self, profile: NovelProfile, today_key: str) -> QFrame:
         row = QFrame()

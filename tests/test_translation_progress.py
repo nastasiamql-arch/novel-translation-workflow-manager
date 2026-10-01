@@ -143,3 +143,30 @@ def test_reset_goal_progress_keeps_target_and_daily_activity():
     assert profile.translation_goal_target == 10
     assert goal_progress(profile) == (0, 10, 0)
     assert daily_chapter_count(profile, "2026-09-27") == 7
+
+
+def test_completed_goal_restarts_automatically_and_keeps_daily_activity(tmp_path):
+    context = tmp_path / "StoryContext.md"
+    profile = make_profile(context, chapter=125)
+    profile.translation_goal_baseline = 125
+    profile.translation_goal_target = 10
+    profile.translation_daily_activity = {"2026-09-27": list(range(126, 136))}
+    write_context(context, 135, datetime(2026, 9, 27, 14, 30))
+
+    assert sync_profile_context(profile)
+    assert profile.chapter_state.current_chapter == 135
+    assert profile.translation_goal_baseline == 135
+    assert goal_progress(profile) == (0, 10, 0)
+    assert daily_chapter_count(profile, "2026-09-27") == 10
+
+
+def test_goal_auto_restart_preserves_overflow_toward_next_cycle(tmp_path):
+    context = tmp_path / "StoryContext.md"
+    profile = make_profile(context, chapter=125)
+    profile.translation_goal_baseline = 125
+    profile.translation_goal_target = 5
+    write_context(context, 137, datetime(2026, 9, 27, 14, 30))
+
+    assert sync_profile_context(profile)
+    assert profile.translation_goal_baseline == 135
+    assert goal_progress(profile) == (2, 5, 40)
