@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
     QCheckBox, QScrollArea)
 
 from .credentials import CredentialStore
-from .providers import create_provider
+from .providers import create_provider, connect_and_list_models
 from .services import ProfileService
 from .vocabulary import run_vocabulary, Cancelled
 
@@ -24,24 +24,62 @@ class VocabularyWorker(QThread):
         super().__init__(parent)
         self.settings, self.provider, self.key = deepcopy(settings), provider, key
         self.result = self.error = None
+        self.current_phase = "snapshot"
+
+    def _failure_message(self, error):
+        phase = self.current_phase
+        provider_hint = None
+        if isinstance(error, ValueError):
+            message = str(error)
+            if message.startswith("Provider HTTP "):
+                code = message.split()[2].rstrip(";")
+                labels = {401: "API key ไม่ถูกต้อง", 403: "key ไม่มีสิทธิ์ใช้ Pool/API นี้",
+                          404: "ไม่พบ endpoint หรือ model", 429: "โควตาหรือ rate limit เต็ม"}
+                try: provider_hint = f"API ตอบ HTTP {code} · {labels.get(int(code), 'ตรวจสิทธิ์หรือสถานะ API')}"
+                except ValueError: provider_hint = "API ปฏิเสธคำขอ ตรวจสิทธิ์และสถานะ API"
+            else:
+                safe_hints = {
+                    "Provider connection failed or timed out": "เชื่อม API ไม่ได้หรือหมดเวลารอ",
+                    "Provider returned invalid JSON": "API ส่งคำตอบที่ไม่ใช่ JSON",
+                    "Provider response is incomplete or refused": "API ตอบไม่ครบหรือปฏิเสธคำขอ",
+                    "Provider returned empty content": "API ส่งคำตอบว่าง",
+                    "Unexpected provider response": "รูปแบบคำตอบจาก API ไม่ตรงที่รองรับ",
+                }
+                provider_hint = safe_hints.get(message)
+
+        if phase in {"extract", "polish"}:
+            step = "หาศัพท์" if phase == "extract" else "เกลาศัพท์"
+            return f"ขั้น{step}ไม่สำเร็จ · {provider_hint or 'ตรวจสิทธิ์ API, ชื่อ model และคำตอบจาก AI'}"
+        if phase == "snapshot":
+            return "อ่านไฟล์ไม่สำเร็จ · ตรวจไฟล์เนื้อหา, VOCAB และ Prompt ว่ายังเปิดได้และรูปแบบถูกต้อง"
+        if phase == "validate":
+            return "ตรวจผล AI ไม่ผ่าน · ผลต้องเป็น JSON NEW/UPDATE และแต่ละแถวต้องตรงคอลัมน์ VOCAB"
+        if phase == "backup":
+            return "สำรอง VOCAB ไม่สำเร็จ · ตรวจสิทธิ์เขียนโฟลเดอร์ที่เก็บ VOCAB"
+        if phase == "commit":
+            return "อัปเดต VOCAB ไม่สำเร็จ · ตรวจสิทธิ์เขียนไฟล์; backup ต้นฉบับยังคงอยู่"
+        return "ทำงาน VOCAB ไม่สำเร็จ · ตรวจไฟล์และการตั้งค่า แล้วลองใหม่"
 
     def run(self):
         try:
+            def set_phase(phase):
+                self.current_phase = phase
+                self.phase.emit(phase)
             self.result = run_vocabulary(self.settings, self.provider, self.key,
-                progress=self.phase.emit, cancelled=self.isInterruptionRequested)
+                progress=set_phase, cancelled=self.isInterruptionRequested)
         except Cancelled:
             self.error = "ยกเลิกแล้ว"
-        except (ValueError, OSError, UnicodeError):
-            # Never show exception bodies which could include source text or credentials.
-            self.error = "ทำงานไม่สำเร็จ ตรวจไฟล์ รูปแบบ VOCAB/ผล AI และการตั้งค่า API แล้วลองใหม่"
+        except (ValueError, OSError, UnicodeError) as error:
+            # Show only phase/category and allowlisted API errors; never include user data or credentials.
+            self.error = self._failure_message(error)
         except Exception:
-            self.error = "เกิดข้อผิดพลาดระหว่างทำงาน VOCAB ไม่ถูกเขียนจากผลที่ไม่ผ่านการตรวจ"
+            self.error = self._failure_message(RuntimeError())
         finally:
             self.key = ""
 
 
 class ModelListWorker(QThread):
-    succeeded = Signal(list)
+    succeeded = Signal(str, list)
     failed = Signal(str)
 
     def __init__(self, provider, key, parent=None):
@@ -50,7 +88,8 @@ class ModelListWorker(QThread):
 
     def run(self):
         try:
-            self.succeeded.emit(self.provider.list_models(self.key))
+            endpoint, models = connect_and_list_models(self.provider, self.key)
+            self.succeeded.emit(endpoint, models)
         except ValueError as error:
             self.failed.emit(str(error))
         except Exception:
@@ -226,12 +265,14 @@ class VocabularyPanel(QWidget):
             connection_status.setText("กำลังเชื่อมต่อและอ่านรายการโมเดล…")
             worker = ModelListWorker(api, credential, dialog)
             dialog.model_worker = worker
-            def succeeded(names):
+            def succeeded(resolved_endpoint, names):
                 previous = model.currentText().strip()
                 model.clear()
                 model.addItems(names)
                 model.setCurrentText(previous if previous in names else names[0])
-                connection_status.setText(f"เชื่อมต่อสำเร็จ · พบ {len(names)} โมเดล")
+                endpoint.setText(resolved_endpoint)
+                pool = resolved_endpoint.removeprefix("https://api.maxplus-ai.cc") or "Native"
+                connection_status.setText(f"เชื่อมต่อสำเร็จ · {pool} · พบ {len(names)} โมเดล")
             def failed(message):
                 connection_status.setText(message)
             def finished():
