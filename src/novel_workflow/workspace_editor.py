@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from bisect import bisect_left
 
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QPainter, QTextBlockFormat, QTextCursor, QTextDocument, QTextFormat, QKeySequence, QShortcut
@@ -44,6 +45,9 @@ class CodeEditor(QPlainTextEdit):
         self.blockCountChanged.connect(self.update_line_number_area_width)
         self.updateRequest.connect(self.update_line_number_area)
         self.cursorPositionChanged.connect(self.highlight_current_line)
+        self.verticalScrollBar().valueChanged.connect(
+            lambda _value: self.highlight_current_line()
+        )
 
         families = set(QFontDatabase.families())
         preferred = ["Segoe UI Variable Text", "Segoe UI", "Leelawadee UI", "Microsoft YaHei UI"]
@@ -164,18 +168,42 @@ class CodeEditor(QPlainTextEdit):
         line.cursor = self.textCursor()
         line.cursor.clearSelection()
         selections.append(line)
-        query = str(getattr(self, "_find_query", ""))
-        if query:
-            cursor = QTextCursor(self.document())
-            while True:
-                cursor = self.document().find(query, cursor)
-                if cursor.isNull():
-                    break
-                match = QTextEdit.ExtraSelection()
-                match.cursor = cursor
-                match.format.setBackground(QColor(self.colors["find"]))
-                match.format.setForeground(QColor(self.colors["find_text"]))
-                selections.append(match)
+
+        matches = getattr(self, "_find_matches_cache", ())
+        if matches:
+            block = self.firstVisibleBlock()
+            if block.isValid():
+                visible_start = block.position()
+                top = self.blockBoundingGeometry(block).translated(
+                    self.contentOffset()
+                ).top()
+                bottom = top + self.blockBoundingRect(block).height()
+                visible_end = visible_start
+                viewport_bottom = self.viewport().rect().bottom()
+                while block.isValid() and top <= viewport_bottom:
+                    if block.isVisible():
+                        visible_end = block.position() + block.length()
+                    block = block.next()
+                    top = bottom
+                    if block.isValid():
+                        bottom = top + self.blockBoundingRect(block).height()
+
+                index = bisect_left(matches, (visible_start, -1))
+                highlighted = 0
+                while index < len(matches) and matches[index][0] < visible_end:
+                    match_start, match_end = matches[index]
+                    match_cursor = QTextCursor(self.document())
+                    match_cursor.setPosition(match_start)
+                    match_cursor.setPosition(match_end, QTextCursor.KeepAnchor)
+                    match = QTextEdit.ExtraSelection()
+                    match.cursor = match_cursor
+                    match.format.setBackground(QColor(self.colors["find"]))
+                    match.format.setForeground(QColor(self.colors["find_text"]))
+                    selections.append(match)
+                    index += 1
+                    highlighted += 1
+                    if highlighted >= 500:
+                        break
         self.setExtraSelections(selections)
 
 
@@ -203,6 +231,10 @@ class EditorTabs(QWidget):
         self._status_text = "พร้อมใช้งาน  ·  0 คำ  ·  0 อักขระ"
         self.tabs.currentChanged.connect(self._handle_tab_change)
         self._search_text = ""
+        self._find_update_timer = QTimer(self)
+        self._find_update_timer.setSingleShot(True)
+        self._find_update_timer.setInterval(180)
+        self._find_update_timer.timeout.connect(self._update_find_matches)
 
         self.status = QLabel("ยังไม่ได้เปิดไฟล์")
         self.status.setObjectName("editorStatus")
@@ -304,6 +336,20 @@ class EditorTabs(QWidget):
         timer = getattr(editor, "autosave_timer", None)
         if timer is not None:
             timer.start(AUTO_SAVE_DELAY_MS)
+        stats_timer = getattr(editor, "stats_timer", None)
+        if stats_timer is not None:
+            stats_timer.start()
+
+    def _recount_document_stats(self, editor):
+        text = editor.toPlainText()
+        editor._cached_character_count = len(text)
+        editor._cached_word_count = len(text.split())
+        if editor is self.tabs.currentWidget():
+            self._update_status(self.tabs.currentIndex())
+
+    def _queue_find_matches(self, editor):
+        if editor is self.tabs.currentWidget() and self.find_input.text():
+            self._find_update_timer.start()
 
     def _autosave_editor(self, editor):
         if self._dirty(editor):
@@ -352,6 +398,8 @@ class EditorTabs(QWidget):
         editor.setPlainText(text)
         editor.blockSignals(False)
         self._format_document(editor)
+        editor._cached_character_count = len(text)
+        editor._cached_word_count = len(text.split())
 
         editor.autosave_timer = QTimer(editor)
         editor.autosave_timer.setSingleShot(True)
@@ -359,11 +407,17 @@ class EditorTabs(QWidget):
         editor.autosave_timer.timeout.connect(
             lambda e=editor: self._autosave_editor(e)
         )
+        editor.stats_timer = QTimer(editor)
+        editor.stats_timer.setSingleShot(True)
+        editor.stats_timer.setInterval(300)
+        editor.stats_timer.timeout.connect(
+            lambda e=editor: self._recount_document_stats(e)
+        )
         editor.textChanged.connect(lambda e=editor: self._on_text_changed(e))
         editor.cursorPositionChanged.connect(
             lambda e=editor: self._update_status(self.tabs.indexOf(e))
         )
-        editor.textChanged.connect(lambda e=editor: self._update_find_matches() if e is self.tabs.currentWidget() else None)
+        editor.textChanged.connect(lambda e=editor: self._queue_find_matches(e))
 
         index = self.tabs.addTab(editor, path.name)
         self.tabs.setTabToolTip(index, str(path))
@@ -494,14 +548,18 @@ class EditorTabs(QWidget):
             f"Ln {cursor.blockNumber()+1}, Col {cursor.positionInBlock()+1}   "
             f"UTF-8   {suffix}   •   {state}"
         )
-        text = editor.toPlainText()
-        words = len(text.split())
+        words = getattr(editor, "_cached_word_count", 0)
+        characters = getattr(editor, "_cached_character_count", 0)
+        selection_size = cursor.selectionEnd() - cursor.selectionStart()
+        selection_status = (
+            f"  ·  เลือก {selection_size:,} อักขระ" if selection_size else ""
+        )
         self._status_text = (
-            f"{state}  ·  {words:,} คำ  ·  {len(text):,} อักขระ  ·  "
+            f"{state}  ·  {words:,} คำ  ·  {characters:,} อักขระ{selection_status}  ·  "
             f"Ln {cursor.blockNumber()+1}, Col {cursor.positionInBlock()+1}  ·  UTF-8 {suffix}"
         )
         self.statusChanged.emit(self._status_text)
-        self._update_find_matches()
+        self._update_find_counter(editor, cursor)
 
     def current_status_text(self):
         return self._status_text
@@ -539,24 +597,25 @@ class EditorTabs(QWidget):
                 background: {colors['gutter']}; border: 0;
             }}
             QTabWidget#editorTabs QTabBar::tab {{
-                background: {colors['gutter']}; color: {colors['gutter_text']};
-                border: 0; border-right: 1px solid {colors['current_line']};
-                padding: 8px 13px; min-width: 92px;
+                background: {colors['tab']}; color: {colors['gutter_text']};
+                border: 0; border-right: 1px solid {colors['border']};
+                border-radius: 9px 9px 0 0;
+                padding: 10px 15px; min-width: 92px;
             }}
             QTabWidget#editorTabs QTabBar::tab:hover {{
                 background: {colors['current_line']}; color: {colors['foreground']};
             }}
             QTabWidget#editorTabs QTabBar::tab:selected {{
-                background: {colors['background']}; color: {colors['foreground']};
-                border-top: 2px solid #0E639C; font-weight: 600;
+                background: {colors['tab_selected']}; color: {colors['foreground']};
+                border-top: 2px solid {colors['accent']}; font-weight: 600;
             }}
             QFrame#editorFindPanel {{
                 background: {colors['background']}; color: {colors['foreground']};
-                border: 1px solid {colors['gutter_text']}; border-radius: 10px;
+                border: 1px solid {colors['border']}; border-radius: 14px;
             }}
             QFrame#editorFindPanel QLineEdit {{
                 background: {colors['background']}; color: {colors['foreground']};
-                border: 1px solid {colors['gutter_text']}; border-radius: 6px;
+                border: 1px solid {colors['border']}; border-radius: 9px;
                 padding: 5px 8px; min-height: 22px;
             }}
             QFrame#editorFindPanel QPushButton {{
@@ -609,18 +668,19 @@ class EditorTabs(QWidget):
                 self.find_count.setText("0/0")
             return
         editor._find_query = query
-        editor.highlight_current_line()
-        cursor = editor.textCursor()
         matches = self._find_matches(editor, query)
-        current = next(
-            (
-                index for index, match in enumerate(matches, 1)
-                if cursor.hasSelection()
-                and cursor.selectionStart() == match[0]
-                and cursor.selectionEnd() == match[1]
-            ),
-            0,
-        )
+        editor._find_matches_cache = matches
+        editor.highlight_current_line()
+        self._update_find_counter(editor, editor.textCursor())
+
+    def _update_find_counter(self, editor, cursor):
+        matches = getattr(editor, "_find_matches_cache", [])
+        current = 0
+        if cursor.hasSelection() and matches:
+            selection = (cursor.selectionStart(), cursor.selectionEnd())
+            index = bisect_left(matches, selection)
+            if index < len(matches) and matches[index] == selection:
+                current = index + 1
         if hasattr(self, "find_count"):
             self.find_count.setText(f"{current}/{len(matches)}")
 
@@ -640,9 +700,10 @@ class EditorTabs(QWidget):
         return matches
 
     def _on_find_text_changed(self, *_args):
-        self._update_find_matches()
         if self.find_input.text():
             self._find_next()
+        else:
+            self._update_find_matches()
 
     def _find_next(self, backward=False):
         editor = self.tabs.currentWidget()
