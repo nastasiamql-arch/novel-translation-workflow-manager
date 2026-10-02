@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.2
+
+- Show a clear Submit success message with the exported filename and next export number.
+
 ## 2.2.1
 
 - Combine TXT export and Context overwrite into a single **Submit** button.

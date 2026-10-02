@@ -238,7 +238,9 @@ class TxtExportTab(QWidget):
         self.current.setValue(self.start.value() if completed >= self.end.value() else completed + 1)
         self._save_settings()
         if update_context:
-            self.status_callback(f"ส่งออก {target.name} และอัปเดต Context แล้ว")
+            self.status_callback(
+                f"ส่งออก {target.name} และอัปเดต Context แล้ว · เลขถัดไป {self.current.value()}"
+            )
         else:
             self.status_callback(f"ส่งออก {target.name} แล้ว")
         return True

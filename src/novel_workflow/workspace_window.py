@@ -175,7 +175,7 @@ class ProfileWorkspace(QWidget):
             appearance=owner.settings.appearance,
             settings=profile.txt_export_settings,
             settings_callback=self._save_txt_export_settings,
-            status_callback=lambda message: owner.statusBar().showMessage(message, 2500),
+            status_callback=lambda message: owner.statusBar().showMessage(message, 5000),
             context_path_callback=self._context_path_for_export,
         )
         self.steps = QListWidget()

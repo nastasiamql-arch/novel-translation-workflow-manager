@@ -55,6 +55,23 @@ def test_export_overwrites_context_and_increments_only_after_both_writes(tmp_pat
     assert export.current.value() == 2
 
 
+def test_submit_success_status_shows_exported_file_and_next_wrapped_number(tmp_path):
+    app()
+    context = tmp_path / "Context.md"
+    context.write_text("old context", encoding="utf-8")
+    messages = []
+    export = panel(
+        tmp_path, context_path_callback=lambda: context,
+        txt_export_start=20, txt_export_end=80, txt_export_current=80,
+    )
+    export.status_callback = messages.append
+    export.editor.setPlainText("เนื้อหา")
+
+    export.submit_button.click()
+
+    assert messages == ["ส่งออก segverified80.txt และอัปเดต Context แล้ว · เลขถัดไป 20"]
+
+
 def test_context_write_failure_keeps_number_and_export_text(tmp_path, monkeypatch):
     app()
     quiet_warning(monkeypatch)
