@@ -36,9 +36,11 @@ def main() -> int:
         chapter = novel_folder / "126.txt"
         context = novel_folder / "Context.md"
         review = novel_folder / "review.txt"
+        polish_terms = novel_folder / "polish-terms.txt"
         chapter.write_text("ตอนที่ 156\nเนื้อหาทดสอบ", encoding="utf-8")
         context.write_text("บทที่ 156\nContext", encoding="utf-8")
         review.write_text("ตรวจคำแปล", encoding="utf-8")
+        polish_terms.write_text("Terms for polish", encoding="utf-8")
 
         profile = ProfileService(repo).create("เรื่อง A", Workflow.defaults())
         profile.main_folder = str(novel_folder)
@@ -62,6 +64,10 @@ def main() -> int:
                 file_type="chapter",
                 order=0,
             )
+        )
+        profile.vocabulary_polish_step.files.append(
+            StepFile(label="Polish Terms", reference_type="external_file",
+                     path=str(polish_terms), file_type="glossary", order=0)
         )
         legacy_vocabulary_file = StepFile(
             label="Find Terms",
@@ -153,6 +159,7 @@ def main() -> int:
                 ]
                 assert [workspace.steps.itemWidget(workspace.steps.item(i)).property("workflowActive") for i in range(2)] == [True, False]
                 assert workspace.vocabulary_button.text() == "หาศัพท์"
+                assert workspace.vocabulary_polish_button.text() == "เกลาศัพท์"
                 assert window.profile.workflow.steps[0].name == "แปล"
                 assert window.profile.vocabulary_step.files[0].id == legacy_vocabulary_file.id
                 saved_profile = repo.list_profiles()[0]
@@ -164,6 +171,16 @@ def main() -> int:
                 assert workspace.vocabulary_button.text() == "หาศัพท์"
                 assert workspace.vocabulary_button.property("workflowActive")
                 assert workspace.files.item(0).text() == "Find Terms"
+                assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [context.resolve()]
+                workspace.vocabulary_polish_button.click()
+                app.processEvents()
+                assert workspace.vocabulary_polish_mode
+                assert window.step().name == "เกลาศัพท์"
+                assert workspace.files.item(0).text() == "Polish Terms"
+                assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [polish_terms.resolve()]
+                workspace.vocabulary_button.click()
+                app.processEvents()
+                assert workspace.vocabulary_mode
                 assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [context.resolve()]
                 translation_button = workspace.steps.itemWidget(workspace.steps.item(0))
                 translation_geometry = translation_button.geometry()
@@ -208,9 +225,27 @@ def main() -> int:
 
                 workspace.editor.open_file(chapter)
                 app.processEvents()
-                assert workspace.editor.tabs.count() == 1
-
+                assert workspace.editor.tabs.count() == 2
+                assert workspace.editor.tabs.tabText(0) == "TXT Export"
+                assert workspace.editor.export_tab is workspace.editor.tabs.widget(0)
+                export_tab = workspace.editor.export_tab
                 editor = workspace.editor.tabs.currentWidget()
+                assert not hasattr(export_tab, "autosave_timer")
+                export_tab.editor.setPlainText("ส่งออกไทย 卡")
+                export_tab.filename.setText("smoke.txt")
+                export_tab.directory.setText(str(root))
+                export_tab.export_button.click()
+                assert (root / "smoke1.txt").read_text(encoding="utf-8") == "ส่งออกไทย 卡"
+                assert export_tab.current.value() == 2
+                assert len(export_tab.editor.font().families()) == 1
+                workspace.editor.close_tab(0)
+                assert workspace.editor.tabs.count() == 2
+                workspace.editor.tabs.setCurrentWidget(export_tab)
+                app.processEvents()
+                assert "TXT Export" in workspace.editor.current_status_text()
+                workspace.editor.tabs.setCurrentWidget(editor)
+                app.processEvents()
+
                 assert editor.objectName() == "codeEditor"
                 assert editor.colors["background"] == "#FFFFFF"
                 assert editor.font().pointSizeF() >= 10.5
@@ -371,6 +406,12 @@ def main() -> int:
                 window.steps.setCurrentRow(vocabulary_row)
                 assert window.step().name == "หาศัพท์"
                 assert window.files.item(0).text() == "Find Terms"
+                polish_row = vocabulary_row + 1
+                assert window.steps.item(polish_row).text() == "เกลาศัพท์"
+                window.steps.setCurrentRow(polish_row)
+                assert window.step().name == "เกลาศัพท์"
+                assert window.files.item(0).text() == "Polish Terms"
+                window.steps.setCurrentRow(vocabulary_row)
                 window.steps.itemDoubleClicked.emit(window.steps.item(vocabulary_row))
                 assert not hasattr(window, "_settings_tabs")
                 window.steps.setCurrentRow(0)
@@ -450,6 +491,7 @@ def main() -> int:
                 status_bar = window.statusBar()
                 assert window.editor_status.geometry().right() < window.progress_status.geometry().left()
                 assert status_bar.height() >= 27
+                assert "Context · บท 161" in window.context_status.fullText()
                 assert window.editor_status.height() >= 20
                 assert window.progress_status.geometry().right() < window.goal_status.geometry().left()
                 assert window.goal_status.geometry().right() < window.goal_status_bar.geometry().left()

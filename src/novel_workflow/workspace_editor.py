@@ -7,11 +7,12 @@ from bisect import bisect_left
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QPainter, QTextBlockFormat, QTextCursor, QTextDocument, QTextFormat, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
-    QPushButton, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
+    QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QPlainTextEdit, QPushButton, QSpinBox, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from .theme import editor_colors
+from .models import AppSettings
 
 
 TEXT_EXTENSIONS = {
@@ -19,6 +20,183 @@ TEXT_EXTENSIONS = {
     ".py", ".js", ".ts", ".css", ".html", ".xml", ".csv", ".tsv",
 }
 AUTO_SAVE_DELAY_MS = 1000
+TXT_EXPORT_TAB = "TXT Export"
+
+
+class TxtExportTab(QWidget):
+    """Application-level text scratchpad with a persistent rotating TXT exporter."""
+
+    instances = WeakSet()
+
+    def __init__(self, settings, status_callback=None, settings_callback=None, parent=None,
+                 font_size=11.0, appearance="Light"):
+        super().__init__(parent)
+        self.instances.add(self)
+        self.settings = settings
+        self.status_callback = status_callback or (lambda _message: None)
+        self.settings_callback = settings_callback or (lambda: None)
+        self.editor = CodeEditor(font_size=font_size, appearance=appearance, parent=self)
+        self.filename = QLineEdit(str(settings.txt_export_filename or "segverified"))
+        self.filename.setObjectName("txtExportFilename")
+        self.directory = QLineEdit(str(settings.txt_export_directory or ""))
+        self.directory.setObjectName("txtExportDirectory")
+        self.directory.setPlaceholderText("เลือกโฟลเดอร์ปลายทาง")
+        self.start = QSpinBox(); self.start.setRange(1, 2_147_483_647)
+        self.end = QSpinBox(); self.end.setRange(1, 2_147_483_647)
+        self.current = QSpinBox(); self.current.setRange(1, 2_147_483_647)
+        self.start.setValue(max(1, int(settings.txt_export_start or 1)))
+        self.end.setValue(max(self.start.value(), int(settings.txt_export_end or 100)))
+        self.current.setValue(max(self.start.value(), min(self.end.value(), int(settings.txt_export_current or 1))))
+        self.word_count = QLabel("0 คำ")
+        self.character_count = QLabel("0 อักขระ")
+        self._cached_word_count = 0
+        self._cached_character_count = 0
+        self.stats_timer = QTimer(self)
+        self.stats_timer.setSingleShot(True)
+        self.stats_timer.setInterval(300)
+        self.stats_timer.timeout.connect(self._update_counts)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 8)
+        layout.setSpacing(8)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("ชื่อไฟล์"))
+        row.addWidget(self.filename, 1)
+        row.addWidget(QLabel("โฟลเดอร์ปลายทาง"))
+        row.addWidget(self.directory, 2)
+        browse = QPushButton("เลือกโฟลเดอร์")
+        browse.clicked.connect(self.choose_directory)
+        row.addWidget(browse)
+        layout.addLayout(row)
+        numbers = QHBoxLayout()
+        for label, field in (("เริ่มต้น", self.start), ("สิ้นสุด", self.end), ("เลขปัจจุบัน", self.current)):
+            numbers.addWidget(QLabel(label)); numbers.addWidget(field)
+        numbers.addStretch(1)
+        numbers.addWidget(self.word_count); numbers.addWidget(self.character_count)
+        layout.addLayout(numbers)
+        layout.addWidget(self.editor, 1)
+        actions = QHBoxLayout()
+        self.copy_button = QPushButton("คัดลอก")
+        self.copy_export_button = QPushButton("คัดลอก + ส่งออก")
+        self.export_button = QPushButton("ส่งออก TXT")
+        self.reset_button = QPushButton("รีเซ็ตเลข")
+        self.export_button.setObjectName("primaryButton")
+        actions.addWidget(self.copy_button); actions.addWidget(self.copy_export_button)
+        actions.addStretch(1); actions.addWidget(self.reset_button); actions.addWidget(self.export_button)
+        layout.addLayout(actions)
+        self.copy_button.clicked.connect(self.copy_text)
+        self.copy_export_button.clicked.connect(self.copy_and_export)
+        self.export_button.clicked.connect(self.export)
+        self.reset_button.clicked.connect(self.reset_number)
+        self.editor.textChanged.connect(lambda: self.stats_timer.start())
+        for field in (self.filename, self.directory):
+            field.textChanged.connect(self._save_settings)
+        for field in (self.start, self.end, self.current):
+            field.valueChanged.connect(self._numbers_changed)
+        self.start.valueChanged.connect(lambda value: self.end.setMinimum(value))
+        self.start.valueChanged.connect(lambda value: self.current.setMinimum(value))
+        self.end.valueChanged.connect(lambda value: self.current.setMaximum(value))
+        self.set_tab_appearance(appearance)
+
+    def set_font_size(self, size):
+        self.editor.set_font_size(size)
+
+    def set_appearance(self, appearance):
+        self.editor.set_appearance(appearance)
+        self.set_tab_appearance(appearance)
+
+    def set_tab_appearance(self, appearance):
+        colors = editor_colors(appearance)
+        self.setStyleSheet(f"background:{colors['background']}; color:{colors['foreground']};")
+
+    def _update_counts(self):
+        text = self.editor.toPlainText()
+        self._cached_word_count = len(text.split())
+        self._cached_character_count = len(text)
+        self.word_count.setText(f"{self._cached_word_count:,} คำ")
+        self.character_count.setText(f"{self._cached_character_count:,} อักขระ")
+
+    def _numbers_changed(self, *_args):
+        self._save_settings()
+
+    def _save_settings(self, *_args):
+        self.settings.txt_export_filename = self.filename.text()
+        self.settings.txt_export_directory = self.directory.text()
+        self.settings.txt_export_start = self.start.value()
+        self.settings.txt_export_end = self.end.value()
+        self.settings.txt_export_current = self.current.value()
+        try:
+            self.settings_callback()
+        except OSError as exc:
+            self.status_callback(f"บันทึกการตั้งค่า TXT Export ไม่สำเร็จ: {exc}")
+        for panel in list(self.instances):
+            if panel is not self and panel.settings is self.settings:
+                panel._load_shared_settings()
+
+    def _load_shared_settings(self):
+        fields = (self.filename, self.directory, self.start, self.end, self.current)
+        old_states = [field.blockSignals(True) for field in fields]
+        try:
+            self.filename.setText(self.settings.txt_export_filename)
+            self.directory.setText(self.settings.txt_export_directory)
+            start = max(1, int(self.settings.txt_export_start or 1))
+            end = max(start, int(self.settings.txt_export_end or 100))
+            current = max(start, min(end, int(self.settings.txt_export_current or start)))
+            self.start.setValue(start)
+            self.end.setRange(start, 2_147_483_647)
+            self.end.setValue(end)
+            self.current.setRange(start, end)
+            self.current.setValue(current)
+        finally:
+            for field, previous in zip(fields, old_states):
+                field.blockSignals(previous)
+
+    def choose_directory(self):
+        folder = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์ปลายทาง", self.directory.text())
+        if folder:
+            self.directory.setText(folder)
+
+    def copy_text(self):
+        QApplication.clipboard().setText(self.editor.toPlainText())
+        self.status_callback("คัดลอกแล้ว")
+
+    def copy_and_export(self):
+        self.copy_text()
+        self.export()
+
+    @staticmethod
+    def normalized_filename(value):
+        name = value.strip()
+        if name.casefold().endswith(".txt"):
+            name = name[:-4]
+        if not name or name in {".", ".."} or any(char in '<>:"/\\|?*' or ord(char) < 32 for char in name):
+            raise ValueError("ชื่อไฟล์ไม่ถูกต้อง")
+        if name.endswith((" ", ".")):
+            raise ValueError("ชื่อไฟล์ไม่สามารถลงท้ายด้วยช่องว่างหรือจุด")
+        if name.split(".")[0].upper() in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}:
+            raise ValueError("ชื่อนี้เป็นชื่อสงวนของ Windows")
+        return name
+
+    def export(self):
+        try:
+            prefix = self.normalized_filename(self.filename.text())
+            folder = Path(self.directory.text().strip()).expanduser()
+            if not folder.is_dir():
+                raise OSError("ไม่พบโฟลเดอร์ปลายทาง")
+            target = folder / f"{prefix}{self.current.value()}.txt"
+            target.write_text(self.editor.toPlainText(), encoding="utf-8", newline="")
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "ส่งออก TXT ไม่สำเร็จ", str(exc))
+            return False
+        completed = self.current.value()
+        self.current.setValue(self.start.value() if completed >= self.end.value() else completed + 1)
+        self._save_settings()
+        self.status_callback(f"ส่งออก {target.name} แล้ว")
+        return True
+
+    def reset_number(self):
+        self.current.setValue(self.start.value())
+        self._save_settings()
 
 
 class LineNumberArea(QWidget):
@@ -50,18 +228,13 @@ class CodeEditor(QPlainTextEdit):
             lambda _value: self.highlight_current_line()
         )
 
-        families = set(QFontDatabase.families())
-        preferred = ["Segoe UI Variable Text", "Segoe UI", "Leelawadee UI", "Microsoft YaHei UI"]
-        chosen = [name for name in preferred if name in families]
-
-        font = QFont()
-        if chosen:
-            font.setFamilies(chosen)
-        else:
-            font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        # Qt's per-script fallback keeps CJK glyphs on one consistent face.
+        font = QFont("Segoe UI")
+        if not QFontDatabase.hasFamily("Segoe UI"):
+            font = QFontDatabase.systemFont(QFontDatabase.GeneralFont)
         font.setPointSizeF(float(font_size))
         try:
-            font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
+            font.setHintingPreference(QFont.HintingPreference.PreferDefaultHinting)
             font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
         except AttributeError:
             pass
@@ -95,6 +268,7 @@ class CodeEditor(QPlainTextEdit):
 
     def _apply_style(self, size):
         colors = self.colors
+        family = self.font().family().replace('"', '')
         self.setStyleSheet(
             f"""
             QPlainTextEdit#codeEditor {{
@@ -104,6 +278,7 @@ class CodeEditor(QPlainTextEdit):
                 padding: 7px 10px;
                 selection-background-color: {colors['selection']};
                 selection-color: {colors['selection_text']};
+                font-family: "{family}";
                 font-size: {float(size):g}pt;
             }}
             """
@@ -217,12 +392,14 @@ class EditorTabs(QWidget):
     locked_paths = set()
     instances = WeakSet()
 
-    def __init__(self, parent=None, font_size=11.0, appearance="Light"):
+    def __init__(self, parent=None, font_size=11.0, appearance="Light",
+                 settings=None, settings_callback=None, status_callback=None):
         super().__init__(parent)
         self.instances.add(self)
         self._font_size = float(font_size)
         self.appearance = appearance
         self.colors = editor_colors(appearance)
+        settings = settings or AppSettings()
         self.tabs = QTabWidget()
         self.tabs.setObjectName("editorTabs")
         self.tabs.setDocumentMode(True)
@@ -231,9 +408,25 @@ class EditorTabs(QWidget):
         self.tabs.tabBar().setDrawBase(False)
         self.tabs.tabBar().setExpanding(False)
         self.tabs.tabCloseRequested.connect(self.close_tab)
+        self.export_tab = None
+        self.export_tab = TxtExportTab(
+            settings, status_callback=status_callback,
+            settings_callback=settings_callback, font_size=font_size,
+            appearance=appearance, parent=self,
+        )
+        self.tabs.addTab(self.export_tab, TXT_EXPORT_TAB)
+        self.tabs.tabBar().setTabButton(0, self.tabs.tabBar().ButtonPosition.LeftSide, None)
+        self.tabs.tabBar().setTabButton(0, self.tabs.tabBar().ButtonPosition.RightSide, None)
+        self.tabs.tabBar().setTabData(0, "txt-export")
         self._active_editor = None
         self._status_text = "พร้อมใช้งาน  ·  0 คำ  ·  0 อักขระ"
         self.tabs.currentChanged.connect(self._handle_tab_change)
+        if self.export_tab is not None:
+            self.export_tab.stats_timer.timeout.connect(lambda: self._update_status(0))
+            self.export_tab.editor.cursorPositionChanged.connect(lambda: self._update_status(0))
+            self.export_tab.editor.textChanged.connect(
+                lambda: self._queue_find_matches(self.export_tab.editor)
+            )
         self._search_text = ""
         self._find_update_timer = QTimer(self)
         self._find_update_timer.setSingleShot(True)
@@ -322,7 +515,13 @@ class EditorTabs(QWidget):
 
     @staticmethod
     def _dirty(editor) -> bool:
+        if editor is None or isinstance(editor, TxtExportTab):
+            return False
         return bool(editor.property("documentDirty"))
+
+    def _current_editor(self):
+        widget = self.tabs.currentWidget()
+        return widget.editor if isinstance(widget, TxtExportTab) else widget
 
     def _set_dirty(self, editor, dirty: bool, state: str | None = None):
         editor.setProperty("documentDirty", dirty)
@@ -348,11 +547,11 @@ class EditorTabs(QWidget):
         text = editor.toPlainText()
         editor._cached_character_count = len(text)
         editor._cached_word_count = len(text.split())
-        if editor is self.tabs.currentWidget():
+        if editor is self._current_editor():
             self._update_status(self.tabs.currentIndex())
 
     def _queue_find_matches(self, editor):
-        if editor is self.tabs.currentWidget() and self.find_input.text():
+        if editor is self._current_editor() and self.find_input.text():
             self._find_update_timer.start()
 
     def _autosave_editor(self, editor):
@@ -375,14 +574,14 @@ class EditorTabs(QWidget):
         for index in range(self.tabs.count()):
             editor = self.tabs.widget(index)
             if self._path(editor) == path:
-                current = self.tabs.currentWidget()
+                current = self._current_editor()
                 if current is not None and current is not editor and self._dirty(current):
                     if not self.save_editor(current, quiet=True):
                         return None
                 self.tabs.setCurrentIndex(index)
                 return editor
 
-        current = self.tabs.currentWidget()
+        current = self._current_editor()
         if current is not None and self._dirty(current):
             if not self.save_editor(current, quiet=True):
                 QMessageBox.warning(self, "บันทึกไฟล์ไม่ได้", "บันทึกไฟล์ปัจจุบันไม่สำเร็จ จึงยังเปิดไฟล์ใหม่ไม่ได้")
@@ -472,7 +671,9 @@ class EditorTabs(QWidget):
         return self._font_size
 
     def save_current(self) -> bool:
-        editor = self.tabs.currentWidget()
+        if isinstance(self.tabs.currentWidget(), TxtExportTab):
+            return False
+        editor = self._current_editor()
         return self.save_editor(editor) if editor else True
 
     def save_all(self) -> bool:
@@ -520,6 +721,8 @@ class EditorTabs(QWidget):
         editor = self.tabs.widget(index)
         if editor is None:
             return
+        if editor is self.export_tab:
+            return
         if self._dirty(editor) and not self.save_editor(editor):
             return
         self.tabs.removeTab(index)
@@ -566,7 +769,7 @@ class EditorTabs(QWidget):
                 self.open_file(candidate)
         if self.tabs.count():
             self.tabs.setCurrentIndex(
-                max(0, min(int(current_index or 0), self.tabs.count() - 1))
+                max(0, min(int(current_index or 0) + (1 if self.export_tab else 0), self.tabs.count() - 1))
             )
 
     def _update_status(self, index):
@@ -575,7 +778,16 @@ class EditorTabs(QWidget):
             self._status_text = "พร้อมใช้งาน  ·  0 คำ  ·  0 อักขระ"
             self.statusChanged.emit(self._status_text)
             return
-        editor = self.tabs.widget(index)
+        widget = self.tabs.widget(index)
+        if isinstance(widget, TxtExportTab):
+            words, characters = widget._cached_word_count, widget._cached_character_count
+            cursor = widget.editor.textCursor()
+            selected = cursor.selectionEnd() - cursor.selectionStart()
+            suffix = f"  ·  เลือก {selected:,} อักขระ" if selected else ""
+            self._status_text = f"พร้อมใช้งาน  ·  {words:,} คำ  ·  {characters:,} อักขระ{suffix}  ·  TXT Export"
+            self.statusChanged.emit(self._status_text)
+            return
+        editor = widget
         if editor is None:
             return
         path = self._path(editor)
@@ -678,7 +890,7 @@ class EditorTabs(QWidget):
             self.replace_input.setFocus(Qt.ShortcutFocusReason)
 
     def show_find(self):
-        editor = self.tabs.currentWidget()
+        editor = self._current_editor()
         selected = editor.textCursor().selectedText() if editor else ""
         selected = selected.replace("\u2029", " ").strip()
         if selected:
@@ -693,13 +905,13 @@ class EditorTabs(QWidget):
     def close_find(self):
         if self.find_panel.isVisible():
             self.find_panel.hide()
-            editor = self.tabs.currentWidget()
+            editor = self._current_editor()
             if editor:
                 editor.setFocus(Qt.ShortcutFocusReason)
                 editor.highlight_current_line()
 
     def _update_find_matches(self, *_args):
-        editor = self.tabs.currentWidget()
+        editor = self._current_editor()
         query = self.find_input.text() if hasattr(self, "find_input") else ""
         if editor is None:
             if hasattr(self, "find_count"):
@@ -744,7 +956,7 @@ class EditorTabs(QWidget):
             self._update_find_matches()
 
     def _find_next(self, backward=False):
-        editor = self.tabs.currentWidget()
+        editor = self._current_editor()
         query = self.find_input.text()
         if editor is None or not query:
             return
@@ -757,7 +969,7 @@ class EditorTabs(QWidget):
         self._update_find_matches()
 
     def _replace_current(self):
-        editor = self.tabs.currentWidget()
+        editor = self._current_editor()
         query = self.find_input.text()
         if editor is None or not query:
             return
@@ -776,7 +988,7 @@ class EditorTabs(QWidget):
         self._update_find_matches()
 
     def _replace_all(self):
-        editor = self.tabs.currentWidget()
+        editor = self._current_editor()
         query = self.find_input.text()
         if editor is None or not query:
             return

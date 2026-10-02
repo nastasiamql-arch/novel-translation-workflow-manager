@@ -36,12 +36,12 @@ def test_profile_settings_are_independent_and_legacy_migrates(tmp_path):
     assert loaded[first.id].vocabulary_settings.source_path == "A.txt"
     assert loaded[second.id].vocabulary_settings.source_path == ""
     raw = json.loads((repo.profile_dir(first.id) / "profile.json").read_text("utf-8"))
-    assert raw["schema_version"] == 2
+    assert raw["schema_version"] == 3
     legacy_dir = repo.profile_dir("a" * 32)
     legacy_dir.mkdir()
     (legacy_dir / "profile.json").write_text('{"id":"' + "a" * 32 + '","name":"Legacy"}')
     repo.list_profiles()
-    assert json.loads((legacy_dir / "profile.json").read_text())["schema_version"] == 2
+    assert json.loads((legacy_dir / "profile.json").read_text(encoding="utf-8"))["schema_version"] == 3
 
 
 def test_snapshot_errors_identify_unreadable_input_without_exposing_path_or_content(tmp_path):

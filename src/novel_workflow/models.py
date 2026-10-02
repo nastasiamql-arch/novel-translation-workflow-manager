@@ -112,6 +112,7 @@ class NovelProfile:
     name: str = "Novel"
     workflow: Workflow = field(default_factory=Workflow.defaults)
     vocabulary_step: WorkflowStep | None = field(default_factory=lambda: WorkflowStep(name="หาศัพท์"))
+    vocabulary_polish_step: WorkflowStep | None = field(default_factory=lambda: WorkflowStep(name="เกลาศัพท์"))
     chapter_state: ChapterState = field(default_factory=ChapterState)
     main_folder: str = ""
     launch_targets: list[LaunchTarget] = field(default_factory=list)
@@ -125,7 +126,7 @@ class NovelProfile:
     working_files: list[StepFile] = field(default_factory=list)
     order: int = 0
     last_browse_directory: str | None = None
-    schema_version: int = 2
+    schema_version: int = 3
     vocabulary_settings: VocabularySettings = field(default_factory=VocabularySettings)
     @classmethod
     def from_dict(cls,d):
@@ -139,6 +140,11 @@ class NovelProfile:
                 WorkflowStep.from_dict(d["vocabulary_step"])
                 if isinstance(d.get("vocabulary_step"), dict)
                 else WorkflowStep(name="หาศัพท์")
+            ),
+            vocabulary_polish_step=(
+                WorkflowStep.from_dict(d["vocabulary_polish_step"])
+                if isinstance(d.get("vocabulary_polish_step"), dict)
+                else WorkflowStep(name="เกลาศัพท์")
             ),
             chapter_state=ChapterState(int(state.get("current_chapter",1)),state.get("statuses",{})),
             main_folder=str(d.get("main_folder","")),
@@ -187,12 +193,18 @@ class AppSettings:
     sidebar_visible: bool = True
     editor_font_size: float = 11.0
     last_update_check_date: str | None = None
+    txt_export_filename: str = "segverified"
+    txt_export_directory: str = ""
+    txt_export_start: int = 1
+    txt_export_end: int = 100
+    txt_export_current: int = 1
 
 @dataclass
 class WorkflowTemplate:
     name: str
     workflow: Workflow
     vocabulary_step: WorkflowStep | None = field(default_factory=lambda: WorkflowStep(name="หาศัพท์"))
+    vocabulary_polish_step: WorkflowStep | None = field(default_factory=lambda: WorkflowStep(name="เกลาศัพท์"))
     @classmethod
     def from_dict(cls, data):
         vocabulary = data.get("vocabulary_step")
@@ -200,4 +212,5 @@ class WorkflowTemplate:
             data.get("name", "Workflow"),
             Workflow.from_dict(data.get("workflow", {})),
             WorkflowStep.from_dict(vocabulary) if isinstance(vocabulary, dict) else WorkflowStep(name="หาศัพท์"),
+            WorkflowStep.from_dict(data["vocabulary_polish_step"]) if isinstance(data.get("vocabulary_polish_step"), dict) else WorkflowStep(name="เกลาศัพท์"),
         )

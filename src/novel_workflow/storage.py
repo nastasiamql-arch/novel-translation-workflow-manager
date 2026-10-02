@@ -42,7 +42,7 @@ class ProjectRepository:
             if not path.is_file():continue
             data=read_json(path,{})
             profile=NovelProfile.from_dict(data)
-            if data.get("schema_version", 1) < 2:
+            if data.get("schema_version", 1) < 3:
                 self.save_profile(profile)
             profiles.append(profile)
             if "order" not in data:missing_order.append(profile)
@@ -97,13 +97,12 @@ class ProjectRepository:
             templates=[WorkflowTemplate("Novel Translation Basic",Workflow.defaults())]
             self.save_templates(templates)
             return templates
-        templates=[WorkflowTemplate(
-            x["name"],
-            Workflow.from_dict(x.get("workflow",{})),
-            WorkflowTemplate.from_dict(x).vocabulary_step,
-        ) for x in data]
+        templates=[WorkflowTemplate.from_dict(x) for x in data]
         changed=False
         for template in templates:
+            original = next((item for item in data if item.get("name") == template.name), {})
+            if "vocabulary_polish_step" not in original:
+                changed = True
             changed=migrate_legacy_basic_workflow(template.workflow) or changed
             profile=NovelProfile(workflow=template.workflow,vocabulary_step=template.vocabulary_step)
             if migrate_legacy_vocabulary_step(profile):
@@ -113,7 +112,7 @@ class ProjectRepository:
         if changed:
             self.save_templates(templates)
         return templates
-    def save_templates(self,items): write_json(self.templates_path,[{"name":x.name,"workflow":asdict(x.workflow),"vocabulary_step":asdict(x.vocabulary_step) if x.vocabulary_step else None} for x in items])
+    def save_templates(self,items): write_json(self.templates_path,[{"name":x.name,"workflow":asdict(x.workflow),"vocabulary_step":asdict(x.vocabulary_step) if x.vocabulary_step else None,"vocabulary_polish_step":asdict(x.vocabulary_polish_step) if x.vocabulary_polish_step else None} for x in items])
     def load_groups(self):
         data=read_json(self.groups_path,[])
         if not isinstance(data,list):raise ValueError("Group data must be a JSON array")

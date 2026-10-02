@@ -280,7 +280,7 @@ def application_stylesheet(appearance: str = "Light") -> str:
         padding: 3px 10px;
         min-height: 20px;
     }}
-    QLabel#progressStatusBar, QLabel#goalStatusBar {{
+    QLabel#progressStatusBar, QLabel#goalStatusBar, QLabel#contextStatusBar {{
         color: {c["secondary"]};
         background: {c["surface"]};
         padding: 3px 8px;
