@@ -32,6 +32,7 @@ PROFILE_STATUSES = (
     ("translating", "กำลังแปล"),
     ("paused", "พักแปล"),
     ("caught_up", "ชนต้นฉบับแล้ว"),
+    ("checking_web", "กำลังเช็กกับเว็บ"),
 )
 
 
@@ -272,6 +273,13 @@ class ProfileWorkspace(QWidget):
             lambda checked=False: self.owner.set_profile_status(self.profile_id, "caught_up")
         )
         header_layout.addWidget(self.caught_up_profile_button)
+        self.checking_web_profile_button = QToolButton()
+        self.checking_web_profile_button.setText("เช็กกับเว็บ")
+        self.checking_web_profile_button.setToolTip("ย้ายเรื่องนี้ไปหมวดกำลังเช็กกับเว็บ")
+        self.checking_web_profile_button.clicked.connect(
+            lambda checked=False: self.owner.set_profile_status(self.profile_id, "checking_web")
+        )
+        header_layout.addWidget(self.checking_web_profile_button)
         self.resume_profile_button = QToolButton()
         self.resume_profile_button.setText("กลับไปแปล")
         self.resume_profile_button.setToolTip("ย้ายเรื่องนี้กลับไปชั้นกำลังแปล")
@@ -430,6 +438,7 @@ class ProfileWorkspace(QWidget):
     def update_profile_status(self, status):
         self.pause_profile_button.setEnabled(status != "paused")
         self.caught_up_profile_button.setEnabled(status != "caught_up")
+        self.checking_web_profile_button.setEnabled(status != "checking_web")
         self.resume_profile_button.setVisible(status != "translating")
 
     def configure(self, profile):

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.0
+
+- Add a **กำลังเช็กกับเว็บ** novel status and library category, with a count and a card label.
+- Add a workspace action to move a novel into this category; use **กลับไปแปล** to move it back.
+
 ## 2.2.2
 
 - Show a clear Submit success message with the exported filename and next export number.

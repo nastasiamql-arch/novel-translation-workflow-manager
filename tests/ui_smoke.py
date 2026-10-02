@@ -93,7 +93,7 @@ def main() -> int:
                 assert window.profile.id == profile.id
                 assert window.main_pages.currentWidget() is window.workspace_stack
                 workspace = window.workspaces[profile.id]
-                assert window.library_status_tabs.count() == 3
+                assert window.library_status_tabs.count() == 4
                 assert [
                     workspace.pause_profile_button.text(),
                     workspace.caught_up_profile_button.text(),
@@ -135,6 +135,21 @@ def main() -> int:
                 )
                 assert not caught_up_card.isHidden()
                 window.workspaces[profile.id].resume_profile_button.click()
+                app.processEvents()
+                assert saved_profile().status == "translating"
+                workspace.checking_web_profile_button.click()
+                app.processEvents()
+                assert saved_profile().status == "checking_web"
+                assert window.library_status_tabs.tabText(3).startswith("กำลังเช็กกับเว็บ (1)")
+                window.library_status_tabs.setCurrentIndex(3)
+                checking_card = next(
+                    window.profile_cards.item(i)
+                    for i in range(window.profile_cards.count())
+                    if window.profile_cards.item(i).data(Qt.UserRole) == profile.id
+                )
+                assert not checking_card.isHidden()
+                assert "กำลังเช็กกับเว็บ" in checking_card.text()
+                workspace.resume_profile_button.click()
                 app.processEvents()
                 assert saved_profile().status == "translating"
                 window.library_status_tabs.setCurrentIndex(0)
