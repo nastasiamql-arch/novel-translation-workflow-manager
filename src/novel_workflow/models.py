@@ -89,30 +89,11 @@ class LaunchTarget:
     def from_dict(cls,d): return cls(**{k:v for k,v in d.items() if k in cls.__dataclass_fields__})
 
 @dataclass
-class VocabularySettings:
-    source_path: str = ""
-    vocab_path: str = ""
-    extract_prompt_path: str = ""
-    polish_prompt_path: str = ""
-    provider: str = "openai"
-    model: str = ""
-    base_url: str = "https://api.openai.com/v1"
-    panel_visible: bool = True
-    panel_width: int = 290
-
-    @classmethod
-    def from_dict(cls, data):
-        if not isinstance(data, dict): return cls()
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
-
-
-@dataclass
 class NovelProfile:
     id: str = field(default_factory=uid)
     name: str = "Novel"
     workflow: Workflow = field(default_factory=Workflow.defaults)
     vocabulary_step: WorkflowStep | None = field(default_factory=lambda: WorkflowStep(name="หาศัพท์"))
-    vocabulary_polish_step: WorkflowStep | None = field(default_factory=lambda: WorkflowStep(name="เกลาศัพท์"))
     chapter_state: ChapterState = field(default_factory=ChapterState)
     main_folder: str = ""
     launch_targets: list[LaunchTarget] = field(default_factory=list)
@@ -126,8 +107,8 @@ class NovelProfile:
     working_files: list[StepFile] = field(default_factory=list)
     order: int = 0
     last_browse_directory: str | None = None
-    schema_version: int = 3
-    vocabulary_settings: VocabularySettings = field(default_factory=VocabularySettings)
+    schema_version: int = 4
+    removed_vocabulary_data: dict = field(default_factory=dict)
     @classmethod
     def from_dict(cls,d):
         state=d.get("chapter_state",{})
@@ -141,11 +122,6 @@ class NovelProfile:
                 if isinstance(d.get("vocabulary_step"), dict)
                 else WorkflowStep(name="หาศัพท์")
             ),
-            vocabulary_polish_step=(
-                WorkflowStep.from_dict(d["vocabulary_polish_step"])
-                if isinstance(d.get("vocabulary_polish_step"), dict)
-                else WorkflowStep(name="เกลาศัพท์")
-            ),
             chapter_state=ChapterState(int(state.get("current_chapter",1)),state.get("statuses",{})),
             main_folder=str(d.get("main_folder","")),
             last_browse_directory=d.get("last_browse_directory"),
@@ -158,7 +134,10 @@ class NovelProfile:
             translation_daily_activity=_daily_activity_from_dict(d.get("translation_daily_activity", {})),
             cover_image_path=d.get("cover_image_path"),
             working_files=[StepFile.from_dict(item) for item in d.get("working_files", [])],
-            vocabulary_settings=VocabularySettings.from_dict(d.get("vocabulary_settings")),
+            removed_vocabulary_data={
+                **(d.get("removed_vocabulary_data", {}) if isinstance(d.get("removed_vocabulary_data"), dict) else {}),
+                **{key: d[key] for key in ("vocabulary_polish_step", "vocabulary_settings") if key in d},
+            },
         )
 
 @dataclass
@@ -204,7 +183,7 @@ class WorkflowTemplate:
     name: str
     workflow: Workflow
     vocabulary_step: WorkflowStep | None = field(default_factory=lambda: WorkflowStep(name="หาศัพท์"))
-    vocabulary_polish_step: WorkflowStep | None = field(default_factory=lambda: WorkflowStep(name="เกลาศัพท์"))
+    removed_vocabulary_data: dict = field(default_factory=dict)
     @classmethod
     def from_dict(cls, data):
         vocabulary = data.get("vocabulary_step")
@@ -212,5 +191,8 @@ class WorkflowTemplate:
             data.get("name", "Workflow"),
             Workflow.from_dict(data.get("workflow", {})),
             WorkflowStep.from_dict(vocabulary) if isinstance(vocabulary, dict) else WorkflowStep(name="หาศัพท์"),
-            WorkflowStep.from_dict(data["vocabulary_polish_step"]) if isinstance(data.get("vocabulary_polish_step"), dict) else WorkflowStep(name="เกลาศัพท์"),
+            {
+                **(data.get("removed_vocabulary_data", {}) if isinstance(data.get("removed_vocabulary_data"), dict) else {}),
+                **{key: data[key] for key in ("vocabulary_polish_step",) if key in data},
+            },
         )

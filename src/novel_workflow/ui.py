@@ -478,7 +478,7 @@ class MainWindow(QMainWindow):
         if not ok:return
         ts=self.repo.load_templates();choice,ok=QInputDialog.getItem(self,"Workflow Template","Template:",[x.name for x in ts],0,False)
         template=next((x for x in ts if x.name==choice),None) if ok else None
-        created=self.ps.create(name,template.workflow if template else Workflow.defaults(),template.vocabulary_step if template else None,template.vocabulary_polish_step if template else None)
+        created=self.ps.create(name,template.workflow if template else Workflow.defaults(),template.vocabulary_step if template else None,template.removed_vocabulary_data if template else None)
         self.refresh_profiles(created.id)
     def duplicate_profile(self):
         if not self.profile:return
@@ -498,7 +498,7 @@ class MainWindow(QMainWindow):
         name,ok=QInputDialog.getText(self,"Save Workflow Template","Template name:",text=self.profile.name+" workflow")
         if not ok or not name.strip():return
         from copy import deepcopy
-        templates=self.repo.load_templates();templates.append(WorkflowTemplate(name.strip(),deepcopy(self.profile.workflow),deepcopy(self.profile.vocabulary_step),deepcopy(self.profile.vocabulary_polish_step)))
+        templates=self.repo.load_templates();templates.append(WorkflowTemplate(name.strip(),deepcopy(self.profile.workflow),deepcopy(self.profile.vocabulary_step),deepcopy(self.profile.removed_vocabulary_data)))
         self.repo.save_templates(templates);self.statusBar().showMessage("Workflow template saved",2500)
     def add_step(self):
         if not self.profile:return

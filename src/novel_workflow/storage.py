@@ -2,7 +2,6 @@ import json, os, re, tempfile
 from pathlib import Path
 from dataclasses import asdict
 from .models import AppSettings, NovelGroup, NovelProfile, Workflow, WorkflowTemplate, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
-from .vocabulary import parse_json
 
 def data_root():
     # Version 1.1 starts with a clean application data namespace. Legacy data is left untouched.
@@ -13,8 +12,15 @@ def read_json(path, default):
     if not path.exists(): return default
     raw=path.read_text(encoding="utf-8")
     if not raw.strip(): return default
-    try: return parse_json(raw)
-    except ValueError as exc: raise ValueError(f"Could not safely recover {path}") from exc
+    try: return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        fixed=re.sub(r",\s*([}\]])",r"\1",raw)
+        if fixed==raw: raise ValueError(f"Invalid JSON in {path}: {exc}") from exc
+        with tempfile.NamedTemporaryFile("w",encoding="utf-8",suffix=".json",delete=False) as f:
+            f.write(fixed); temp=Path(f.name)
+        try: return json.loads(temp.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as err: raise ValueError(f"Could not safely recover {path}: {err}") from err
+        finally: temp.unlink(missing_ok=True)
 
 def write_json(path,value):
     path.parent.mkdir(parents=True,exist_ok=True)
@@ -42,7 +48,7 @@ class ProjectRepository:
             if not path.is_file():continue
             data=read_json(path,{})
             profile=NovelProfile.from_dict(data)
-            if data.get("schema_version", 1) < 3:
+            if data.get("schema_version", 1) < 4:
                 self.save_profile(profile)
             profiles.append(profile)
             if "order" not in data:missing_order.append(profile)
@@ -100,9 +106,6 @@ class ProjectRepository:
         templates=[WorkflowTemplate.from_dict(x) for x in data]
         changed=False
         for template in templates:
-            original = next((item for item in data if item.get("name") == template.name), {})
-            if "vocabulary_polish_step" not in original:
-                changed = True
             changed=migrate_legacy_basic_workflow(template.workflow) or changed
             profile=NovelProfile(workflow=template.workflow,vocabulary_step=template.vocabulary_step)
             if migrate_legacy_vocabulary_step(profile):
@@ -112,7 +115,7 @@ class ProjectRepository:
         if changed:
             self.save_templates(templates)
         return templates
-    def save_templates(self,items): write_json(self.templates_path,[{"name":x.name,"workflow":asdict(x.workflow),"vocabulary_step":asdict(x.vocabulary_step) if x.vocabulary_step else None,"vocabulary_polish_step":asdict(x.vocabulary_polish_step) if x.vocabulary_polish_step else None} for x in items])
+    def save_templates(self,items): write_json(self.templates_path,[{"name":x.name,"workflow":asdict(x.workflow),"vocabulary_step":asdict(x.vocabulary_step) if x.vocabulary_step else None,"removed_vocabulary_data":x.removed_vocabulary_data} for x in items])
     def load_groups(self):
         data=read_json(self.groups_path,[])
         if not isinstance(data,list):raise ValueError("Group data must be a JSON array")

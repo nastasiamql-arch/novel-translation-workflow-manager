@@ -7,10 +7,10 @@ from .storage import ProjectRepository
 DYNAMIC=("CURRENT_SOURCE_CHAPTER","CURRENT_TRANSLATED_CHAPTER","CURRENT_REVIEWED_CHAPTER")
 class ProfileService:
     def __init__(self,repo): self.repo=repo
-    def create(self,name,workflow=None,vocabulary_step=None,vocabulary_polish_step=None):
-        p=NovelProfile(name=name.strip() or "Novel",order=self.repo.next_profile_order(),workflow=deepcopy(workflow or Workflow.defaults()),vocabulary_step=deepcopy(vocabulary_step) if vocabulary_step else WorkflowStep(name="หาศัพท์"),vocabulary_polish_step=deepcopy(vocabulary_polish_step) if vocabulary_polish_step else WorkflowStep(name="เกลาศัพท์")); self.repo.save_profile(p); return p
+    def create(self,name,workflow=None,vocabulary_step=None,removed_vocabulary_data=None):
+        p=NovelProfile(name=name.strip() or "Novel",order=self.repo.next_profile_order(),workflow=deepcopy(workflow or Workflow.defaults()),vocabulary_step=deepcopy(vocabulary_step) if vocabulary_step else WorkflowStep(name="หาศัพท์"),removed_vocabulary_data=deepcopy(removed_vocabulary_data or {})); self.repo.save_profile(p); return p
     def duplicate(self,source,name,glossary=False,characters=False):
-        p=NovelProfile(name=name.strip() or source.name+" Copy",order=self.repo.next_profile_order(),workflow=deepcopy(source.workflow),vocabulary_step=deepcopy(source.vocabulary_step),vocabulary_polish_step=deepcopy(source.vocabulary_polish_step)); self.repo.save_profile(p)
+        p=NovelProfile(name=name.strip() or source.name+" Copy",order=self.repo.next_profile_order(),workflow=deepcopy(source.workflow),vocabulary_step=deepcopy(source.vocabulary_step),removed_vocabulary_data=deepcopy(source.removed_vocabulary_data)); self.repo.save_profile(p)
         src,dst=self.repo.profile_dir(source.id),self.repo.profile_dir(p.id)
         import shutil
         for cat,copy in (("prompts",True),("style",True),("glossary",glossary),("characters",characters)):
@@ -19,8 +19,6 @@ class ProfileService:
             s.files=[f for f in s.files if f.reference_type=="dynamic" or (f.path and (dst/f.path).is_file())]
         if p.vocabulary_step:
             p.vocabulary_step.files=[f for f in p.vocabulary_step.files if f.reference_type=="dynamic" or (f.path and (dst/f.path).is_file())]
-        if p.vocabulary_polish_step:
-            p.vocabulary_polish_step.files=[f for f in p.vocabulary_polish_step.files if f.reference_type=="dynamic" or (f.path and (dst/f.path).is_file())]
         self.repo.save_profile(p); return p
 
     @staticmethod

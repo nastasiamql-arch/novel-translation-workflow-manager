@@ -36,11 +36,9 @@ def main() -> int:
         chapter = novel_folder / "126.txt"
         context = novel_folder / "Context.md"
         review = novel_folder / "review.txt"
-        polish_terms = novel_folder / "polish-terms.txt"
         chapter.write_text("ตอนที่ 156\nเนื้อหาทดสอบ", encoding="utf-8")
         context.write_text("บทที่ 156\nContext", encoding="utf-8")
         review.write_text("ตรวจคำแปล", encoding="utf-8")
-        polish_terms.write_text("Terms for polish", encoding="utf-8")
 
         profile = ProfileService(repo).create("เรื่อง A", Workflow.defaults())
         profile.main_folder = str(novel_folder)
@@ -64,10 +62,6 @@ def main() -> int:
                 file_type="chapter",
                 order=0,
             )
-        )
-        profile.vocabulary_polish_step.files.append(
-            StepFile(label="Polish Terms", reference_type="external_file",
-                     path=str(polish_terms), file_type="glossary", order=0)
         )
         legacy_vocabulary_file = StepFile(
             label="Find Terms",
@@ -159,7 +153,9 @@ def main() -> int:
                 ]
                 assert [workspace.steps.itemWidget(workspace.steps.item(i)).property("workflowActive") for i in range(2)] == [True, False]
                 assert workspace.vocabulary_button.text() == "หาศัพท์"
-                assert workspace.vocabulary_polish_button.text() == "เกลาศัพท์"
+                assert not hasattr(workspace, "vocabulary_polish_button")
+                assert not hasattr(workspace, "vocabulary_panel")
+                assert workspace.workspace_splitter.count() == 3
                 assert window.profile.workflow.steps[0].name == "แปล"
                 assert window.profile.vocabulary_step.files[0].id == legacy_vocabulary_file.id
                 saved_profile = repo.list_profiles()[0]
@@ -172,12 +168,6 @@ def main() -> int:
                 assert workspace.vocabulary_button.property("workflowActive")
                 assert workspace.files.item(0).text() == "Find Terms"
                 assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [context.resolve()]
-                workspace.vocabulary_polish_button.click()
-                app.processEvents()
-                assert workspace.vocabulary_polish_mode
-                assert window.step().name == "เกลาศัพท์"
-                assert workspace.files.item(0).text() == "Polish Terms"
-                assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [polish_terms.resolve()]
                 workspace.vocabulary_button.click()
                 app.processEvents()
                 assert workspace.vocabulary_mode
@@ -406,11 +396,6 @@ def main() -> int:
                 window.steps.setCurrentRow(vocabulary_row)
                 assert window.step().name == "หาศัพท์"
                 assert window.files.item(0).text() == "Find Terms"
-                polish_row = vocabulary_row + 1
-                assert window.steps.item(polish_row).text() == "เกลาศัพท์"
-                window.steps.setCurrentRow(polish_row)
-                assert window.step().name == "เกลาศัพท์"
-                assert window.files.item(0).text() == "Polish Terms"
                 window.steps.setCurrentRow(vocabulary_row)
                 window.steps.itemDoubleClicked.emit(window.steps.item(vocabulary_row))
                 assert not hasattr(window, "_settings_tabs")

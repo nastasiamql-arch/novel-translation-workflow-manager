@@ -26,7 +26,6 @@ from .workspace_editor import EditorTabs
 from . import __version__
 from .updater import UpdateError, UpdateInfo, check_for_update, download_update
 from .file_import import import_files_into_directory
-from .vocabulary_panel import VocabularyPanel
 
 
 PROFILE_STATUSES = (
@@ -187,20 +186,12 @@ class ProfileWorkspace(QWidget):
         self.steps.setSpacing(2)
         self.stage_buttons = []
         self.vocabulary_mode = False
-        self.vocabulary_polish_mode = False
         self.vocabulary_button = WorkflowStageButton("หาศัพท์")
         self.vocabulary_button.setObjectName("vocabularyButton")
         self.vocabulary_button.setProperty("workflowActive", False)
         self.vocabulary_button.setToolTip("คัดลอกไฟล์ของขั้นตอนหาศัพท์ไปยังคลิปบอร์ด")
         self.vocabulary_button.clicked.connect(
             lambda checked=False: self.owner.copy_named_stage(self.profile_id, "vocabulary")
-        )
-        self.vocabulary_polish_button = WorkflowStageButton("เกลาศัพท์")
-        self.vocabulary_polish_button.setObjectName("vocabularyButton")
-        self.vocabulary_polish_button.setProperty("workflowActive", False)
-        self.vocabulary_polish_button.setToolTip("คัดลอกไฟล์ของขั้นตอนเกลาศัพท์ไปยังคลิปบอร์ด")
-        self.vocabulary_polish_button.clicked.connect(
-            lambda checked=False: self.owner.copy_named_stage(self.profile_id, "vocabulary_polish")
         )
         self.files = QListWidget()
         self.files.setSpacing(1)
@@ -230,7 +221,6 @@ class ProfileWorkspace(QWidget):
         step_header.addWidget(self.copy_step_button)
         sidebar_layout.addLayout(step_header)
         sidebar_layout.addWidget(self.vocabulary_button)
-        sidebar_layout.addWidget(self.vocabulary_polish_button)
         sidebar_layout.addWidget(self.steps, 2)
         files_heading = QLabel("ไฟล์ของขั้นตอนปัจจุบัน")
         files_heading.setObjectName("sectionHeading")
@@ -323,7 +313,7 @@ class ProfileWorkspace(QWidget):
         editor_layout.setContentsMargins(0, 0, 0, 0)
         editor_layout.setSpacing(3)
         # Keep header controls reachable without forcing the editor's minimum
-        # width to exceed the available space beside the vocabulary panel.
+        # width to exceed the available space beside the editor.
         header_scroll = QScrollArea()
         header_scroll.setWidgetResizable(True)
         header_scroll.setFrameShape(QFrame.NoFrame)
@@ -381,16 +371,10 @@ class ProfileWorkspace(QWidget):
         self.workspace_splitter.addWidget(self.novel_cover_rail)
         self.workspace_splitter.addWidget(self.sidebar)
         self.workspace_splitter.addWidget(editor_host)
-        self.vocabulary_panel = VocabularyPanel(
-            owner.repo, profile, self.editor.open_file,
-            prepare=self._prepare_vocabulary, release=self.editor.unlock_path,
-        )
-        self.workspace_splitter.addWidget(self.vocabulary_panel)
-        self.workspace_splitter.setCollapsible(3, False)
         self.workspace_splitter.setStretchFactor(0, 0)
         self.workspace_splitter.setStretchFactor(1, 0)
         self.workspace_splitter.setStretchFactor(2, 1)
-        self.workspace_splitter.setSizes([68, 290, 900, profile.vocabulary_settings.panel_width])
+        self.workspace_splitter.setSizes([68, 290, 900])
         self.workspace_splitter.splitterMoved.connect(self._remember_sidebar_width)
 
         self.goal_panel = QFrame()
@@ -429,8 +413,6 @@ class ProfileWorkspace(QWidget):
         self.resume_profile_button.setVisible(status != "translating")
 
     def configure(self, profile):
-        if hasattr(self, "vocabulary_panel"):
-            self.vocabulary_panel.refresh(profile)
         root = (
             Path(profile.main_folder).expanduser()
             if profile.main_folder.strip()
@@ -442,17 +424,6 @@ class ProfileWorkspace(QWidget):
         root_index = self.file_model.setRootPath(str(self.root_path))
         self.file_tree.setRootIndex(root_index)
         self.file_tree.setToolTip(str(self.root_path))
-
-    def _prepare_vocabulary(self, path):
-        target = Path(path).expanduser().resolve()
-        if target in EditorTabs.locked_paths:
-            return False
-        # Save source/prompt buffers before reading snapshots. Clean VOCAB tabs
-        # must not be saved again from stale buffers after the atomic replace.
-        for workspace in self.owner.workspaces.values():
-            if not workspace.editor.save_all(): return False
-        self.editor.lock_path(target)
-        return True
 
     def _choose_context(self):
         self.owner.set_context_file()
@@ -475,7 +446,7 @@ class ProfileWorkspace(QWidget):
             self.owner.settings.sidebar_width = sidebar_width
             self.owner.settings.sidebar_visible = False
             self.workspace_splitter.setSizes([
-                rail_width, 0, max(1, sum(sizes) - rail_width - sizes[3]), sizes[3]
+                rail_width, 0, max(1, sum(sizes) - rail_width)
             ])
         else:
             self.owner.settings.sidebar_visible = True
@@ -483,7 +454,6 @@ class ProfileWorkspace(QWidget):
                 rail_width,
                 max(220, int(self.owner.settings.sidebar_width or 290)),
                 1000,
-                sizes[3],
             ])
         self.owner.repo.save_settings(self.owner.settings)
 
@@ -491,10 +461,6 @@ class ProfileWorkspace(QWidget):
         sizes = self.workspace_splitter.sizes()
         if index == 2 and len(sizes) > 2 and sizes[1] > 0:
             self.owner.settings.sidebar_width = sizes[1]
-        if index == 3 and len(sizes) > 3 and sizes[3] >= 250:
-            profile = self.vocabulary_panel.profile
-            profile.vocabulary_settings.panel_width = min(380, sizes[3])
-            self.owner.repo.save_profile(profile)
 
     def selected_path(self):
         index = self.file_tree.currentIndex()
@@ -513,7 +479,6 @@ class ProfileWorkspace(QWidget):
                 profile = next((item for item in self.owner.ps_list if item.id == self.profile_id), None)
                 step_name = (
                     profile.vocabulary_step.name if profile and self.vocabulary_mode
-                    else profile.vocabulary_polish_step.name if profile and self.vocabulary_polish_mode
                     else profile.workflow.steps[self.step_index].name
                     if profile and self.step_index < len(profile.workflow.steps) else ""
                 )
@@ -805,10 +770,6 @@ class MainWindow(LegacyMainWindow):
         self._show_utility_page("settings", "ตั้งค่าและจัดการ", lambda: self._settings_page_state["page"])
 
     def delete_profile(self):
-        workspace = self.workspaces.get(self.profile.id) if self.profile else None
-        if workspace and workspace.vocabulary_panel.worker and workspace.vocabulary_panel.worker.isRunning():
-            self.statusBar().showMessage("ยกเลิกงานหาศัพท์และรอให้จบก่อนลบนิยาย")
-            return
         super().delete_profile()
 
     def _build_settings_page(self):
@@ -1018,12 +979,10 @@ class MainWindow(LegacyMainWindow):
 
         self._settings_open = True
         self._management_vocabulary_mode = False
-        self._management_vocabulary_polish_mode = False
         self._settings_page_state = {
             "page": page, "original_lists": original_lists,
             "profile_id": previous_profile_id, "step_id": active_step_id,
             "vocabulary_mode": active_vocabulary_mode,
-            "vocabulary_polish_mode": bool(active_workspace and active_workspace.vocabulary_polish_mode),
         }
         self.steps.itemDoubleClicked.connect(self._open_selected_step_files)
         self.refresh_profiles(previous_profile_id)
@@ -1279,8 +1238,6 @@ class MainWindow(LegacyMainWindow):
     def _open_selected_step_files(self, item):
         if item.data(Qt.UserRole) == "vocabulary-step" and self._settings_page_state:
             self._management_vocabulary_mode = True
-        elif item.data(Qt.UserRole) == "vocabulary-polish-step" and self._settings_page_state:
-            self._management_vocabulary_polish_mode = True
 
     def _restore_settings_management(self):
         state = self._settings_page_state
@@ -1291,18 +1248,10 @@ class MainWindow(LegacyMainWindow):
         self._settings_page_state = None
         self._settings_open = False
         self._management_vocabulary_mode = False
-        self._management_vocabulary_polish_mode = False
         self.refresh_profiles(profile_id)
         workspace = self.workspaces.get(profile_id) if profile_id else None
         if workspace and state.get("vocabulary_mode"):
             workspace.vocabulary_mode = True
-            workspace.vocabulary_polish_mode = False
-            self._sync_stage_buttons(workspace)
-            self.refresh_files()
-        elif workspace and state.get("vocabulary_polish_mode"):
-            workspace.vocabulary_mode = False
-            workspace.vocabulary_polish_mode = False
-            workspace.vocabulary_polish_mode = True
             self._sync_stage_buttons(workspace)
             self.refresh_files()
         elif self.profile and self.profile.workflow.steps:
@@ -2068,10 +2017,9 @@ class MainWindow(LegacyMainWindow):
             if self.settings.sidebar_visible:
                 workspace.workspace_splitter.setSizes([
                     68, max(220, int(self.settings.sidebar_width or 290)), 1000,
-                    profile.vocabulary_settings.panel_width if profile.vocabulary_settings.panel_visible else 60,
                 ])
             else:
-                workspace.workspace_splitter.setSizes([68, 0, 1000, profile.vocabulary_settings.panel_width])
+                workspace.workspace_splitter.setSizes([68, 0, 1000])
             positions = self.settings.editor_positions.get(profile.id, {})
             for editor_index in range(workspace.editor.tabs.count()):
                 widget = workspace.editor.tabs.widget(editor_index)
@@ -2133,7 +2081,7 @@ class MainWindow(LegacyMainWindow):
         self.workspace_stack.setCurrentWidget(workspace)
         self.main_pages.setCurrentWidget(self.workspace_stack)
         workspace.copy_step_button.setEnabled(
-            bool(self.profile.workflow.steps or self.profile.vocabulary_step or self.profile.vocabulary_polish_step)
+            bool(self.profile.workflow.steps or self.profile.vocabulary_step)
         )
         self._update_context_button(workspace)
         self.refresh_steps()
@@ -2155,12 +2103,6 @@ class MainWindow(LegacyMainWindow):
                 )
                 vocabulary.setSizeHint(QSize(0, 42))
                 self.steps.addItem(vocabulary)
-            if self.profile and self.profile.vocabulary_polish_step:
-                polish = QListWidgetItem(self.profile.vocabulary_polish_step.name)
-                polish.setData(Qt.UserRole, "vocabulary-polish-step")
-                polish.setToolTip("ดับเบิลคลิกเพื่อไปเพิ่มหรือจัดการไฟล์เกลาศัพท์")
-                polish.setSizeHint(QSize(0, 42))
-                self.steps.addItem(polish)
             if hasattr(self, "settings_step_hint"):
                 active_step = self.step()
                 self.settings_step_hint.setText(
@@ -2202,7 +2144,7 @@ class MainWindow(LegacyMainWindow):
         if self.profile and self.profile.workflow.steps:
             if workspace:
                 workspace.copy_step_button.setEnabled(
-                    bool(self.profile.workflow.steps or self.profile.vocabulary_step or self.profile.vocabulary_polish_step)
+                    bool(self.profile.workflow.steps or self.profile.vocabulary_step)
                 )
             self.si = max(
                 0, min(desired, len(self.profile.workflow.steps) - 1)
@@ -2234,11 +2176,8 @@ class MainWindow(LegacyMainWindow):
                 workspace.steps.blockSignals(False)
                 return
             workspace.vocabulary_mode = False
-            workspace.vocabulary_polish_mode = False
             workspace.vocabulary_button.setProperty("workflowActive", False)
             workspace.vocabulary_button.update()
-            workspace.vocabulary_polish_button.setProperty("workflowActive", False)
-            workspace.vocabulary_polish_button.update()
             workspace.step_index = row
             self.settings.workspace_step_indices[profile_id] = row
         self.si = row
@@ -2251,7 +2190,6 @@ class MainWindow(LegacyMainWindow):
         for index, button in enumerate(workspace.stage_buttons):
             active = (
                 not workspace.vocabulary_mode
-                and not workspace.vocabulary_polish_mode
                 and index == workspace.step_index
             )
             button.setProperty("workflowActive", active)
@@ -2260,10 +2198,6 @@ class MainWindow(LegacyMainWindow):
             "workflowActive", workspace.vocabulary_mode
         )
         workspace.vocabulary_button.update()
-        workspace.vocabulary_polish_button.setProperty(
-            "workflowActive", workspace.vocabulary_polish_mode
-        )
-        workspace.vocabulary_polish_button.update()
 
     def copy_named_stage(self, profile_id, stage):
         """Select a named stage and copy only its files without advancing."""
@@ -2275,18 +2209,12 @@ class MainWindow(LegacyMainWindow):
             return
         if stage == "vocabulary":
             workspace.vocabulary_mode = True
-            workspace.vocabulary_polish_mode = False
-            self.si = workspace.step_index
-        elif stage == "vocabulary_polish":
-            workspace.vocabulary_mode = False
-            workspace.vocabulary_polish_mode = True
             self.si = workspace.step_index
         else:
             row = int(stage)
             if not 0 <= row < len(self.profile.workflow.steps):
                 return
             workspace.vocabulary_mode = False
-            workspace.vocabulary_polish_mode = False
             workspace.step_index = row
             self.si = row
             self.settings.workspace_step_indices[profile_id] = row
@@ -2307,15 +2235,10 @@ class MainWindow(LegacyMainWindow):
                 )
                 if getattr(self, "_management_vocabulary_mode", False) or is_vocabulary_row:
                     return self.profile.vocabulary_step
-                is_polish_row = bool(selected and selected.data(Qt.UserRole) == "vocabulary-polish-step")
-                if getattr(self, "_management_vocabulary_polish_mode", False) or is_polish_row:
-                    return self.profile.vocabulary_polish_step
             else:
                 workspace = self.workspaces.get(self.profile.id)
                 if workspace and workspace.vocabulary_mode:
                     return self.profile.vocabulary_step
-                if workspace and workspace.vocabulary_polish_mode:
-                    return self.profile.vocabulary_polish_step
         return super().step()
 
     def set_vocabulary_mode(self, profile_id, enabled):
@@ -2328,30 +2251,12 @@ class MainWindow(LegacyMainWindow):
             self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนขั้นตอนไม่ได้", 5000)
             return
         workspace.vocabulary_mode = enabled
-        workspace.vocabulary_polish_mode = False
         self.si = workspace.step_index
         self.refresh_files()
         self._sync_stage_buttons(workspace)
         workspace.copy_step_button.setEnabled(bool(self.step()))
         stage = "หาศัพท์" if enabled else self.profile.workflow.steps[self.si].name if self.si >= 0 else ""
         self.statusBar().showMessage(f"ขั้นตอน: {stage}", 2500)
-
-    def set_vocabulary_polish_mode(self, profile_id, enabled=True):
-        workspace = self.workspaces.get(profile_id)
-        if not workspace or not self.profile or self.profile.id != profile_id:
-            return
-        if not workspace.editor.save_all():
-            workspace.vocabulary_polish_button.setProperty("workflowActive", not enabled)
-            workspace.vocabulary_polish_button.update()
-            self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนขั้นตอนไม่ได้", 5000)
-            return
-        workspace.vocabulary_mode = False
-        workspace.vocabulary_polish_mode = enabled
-        self.si = workspace.step_index
-        self.refresh_files()
-        self._sync_stage_buttons(workspace)
-        workspace.copy_step_button.setEnabled(bool(self.step()))
-        self.statusBar().showMessage(f"ขั้นตอน: {self.step().name}", 2500)
 
     def _file_toggled(self, profile_id, item):
         if self.profile and self.profile.id == profile_id:
@@ -2362,10 +2267,8 @@ class MainWindow(LegacyMainWindow):
             selected = self.steps.currentItem() if self.steps else None
             row_type = selected.data(Qt.UserRole) if selected else None
             is_vocabulary_row = row_type == "vocabulary-step"
-            is_polish_row = row_type == "vocabulary-polish-step"
             self._management_vocabulary_mode = is_vocabulary_row
-            self._management_vocabulary_polish_mode = is_polish_row
-            if is_vocabulary_row or is_polish_row:
+            if is_vocabulary_row:
                 self.refresh_files()
                 if hasattr(self, "settings_step_hint"):
                     active_step = self.step()
@@ -2394,7 +2297,7 @@ class MainWindow(LegacyMainWindow):
         workspace = self.workspaces.get(profile_id)
         if not profile or not workspace:
             return
-        step = profile.vocabulary_step if workspace.vocabulary_mode else profile.vocabulary_polish_step if workspace.vocabulary_polish_mode else (
+        step = profile.vocabulary_step if workspace.vocabulary_mode else (
             profile.workflow.steps[workspace.step_index]
             if 0 <= workspace.step_index < len(profile.workflow.steps) else None
         )
@@ -2420,7 +2323,7 @@ class MainWindow(LegacyMainWindow):
     def copy_step(self, advance=True):
         workspace = self.workspaces.get(self.profile.id) if self.profile else None
         super().copy_step(advance=advance)
-        if advance and self.profile and workspace and not workspace.vocabulary_mode and not workspace.vocabulary_polish_mode and self.si >= 0:
+        if advance and self.profile and workspace and not workspace.vocabulary_mode and self.si >= 0:
             workspace.step_index = self.si
         if workspace:
             self._sync_stage_buttons(workspace)
@@ -2663,15 +2566,6 @@ class MainWindow(LegacyMainWindow):
             self.goal_status.setToolTip(f"{self.profile.name}: ยังไม่ได้ตั้งเป้าหมาย")
 
     def closeEvent(self, event):
-        for workspace in self.workspaces.values():
-            panel = workspace.vocabulary_panel
-            if panel.worker and panel.worker.isRunning():
-                panel.cancel()
-                if not getattr(panel.worker, "close_connected", False):
-                    panel.worker.close_connected = True
-                    panel.worker.finished.connect(lambda: QTimer.singleShot(0, self.close))
-                event.ignore()
-                return
         for worker in (self._update_check_worker, self._update_download_worker):
             if worker and worker.isRunning():
                 worker.requestInterruption()
