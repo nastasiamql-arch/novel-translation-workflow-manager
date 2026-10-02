@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.1
+
+- Refresh an open Context editor tab immediately after Submit and cancel stale Auto Save for the replaced text.
+- Show an on-screen completion notification after a successful Submit.
+- Rename the export number label to **เลขถัดไป** to clarify which number will be used next.
+
 ## 2.3.0
 
 - Add a **กำลังเช็กกับเว็บ** novel status and library category, with a count and a card label.

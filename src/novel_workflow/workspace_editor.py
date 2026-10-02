@@ -50,13 +50,16 @@ class TxtExportTab(QWidget):
     instances = WeakSet()
 
     def __init__(self, settings, status_callback=None, settings_callback=None, parent=None,
-                 font_size=11.0, appearance="Light", context_path_callback=None):
+                 font_size=11.0, appearance="Light", context_path_callback=None,
+                 context_saved_callback=None, notification_callback=None):
         super().__init__(parent)
         self.instances.add(self)
         self.settings = settings
         self.status_callback = status_callback or (lambda _message: None)
         self.settings_callback = settings_callback or (lambda: None)
         self.context_path_callback = context_path_callback or (lambda: None)
+        self.context_saved_callback = context_saved_callback or (lambda _path, _text: None)
+        self.notification_callback = notification_callback or (lambda _message: None)
         self.editor = CodeEditor(font_size=font_size, appearance=appearance, parent=self)
         self.filename = QLineEdit(str(settings.txt_export_filename or "segverified"))
         self.filename.setObjectName("txtExportFilename")
@@ -91,8 +94,10 @@ class TxtExportTab(QWidget):
         row.addWidget(browse)
         layout.addLayout(row)
         numbers = QHBoxLayout()
-        for label, field in (("เริ่มต้น", self.start), ("สิ้นสุด", self.end), ("เลขปัจจุบัน", self.current)):
+        for label, field in (("เริ่มต้น", self.start), ("สิ้นสุด", self.end)):
             numbers.addWidget(QLabel(label)); numbers.addWidget(field)
+        self.number_current_label = QLabel("เลขถัดไป")
+        numbers.addWidget(self.number_current_label); numbers.addWidget(self.current)
         numbers.addStretch(1)
         numbers.addWidget(self.word_count); numbers.addWidget(self.character_count)
         layout.addLayout(numbers)
@@ -238,7 +243,11 @@ class TxtExportTab(QWidget):
         self.current.setValue(self.start.value() if completed >= self.end.value() else completed + 1)
         self._save_settings()
         if update_context:
+            self.context_saved_callback(context_path, text)
             self.status_callback(
+                f"ส่งออก {target.name} และอัปเดต Context แล้ว · เลขถัดไป {self.current.value()}"
+            )
+            self.notification_callback(
                 f"ส่งออก {target.name} และอัปเดต Context แล้ว · เลขถัดไป {self.current.value()}"
             )
         else:
@@ -444,7 +453,7 @@ class EditorTabs(QWidget):
 
     def __init__(self, parent=None, font_size=11.0, appearance="Light",
                  settings=None, settings_callback=None, status_callback=None,
-                 context_path_callback=None):
+                 context_path_callback=None, notification_callback=None):
         super().__init__(parent)
         self.instances.add(self)
         self._font_size = float(font_size)
@@ -463,7 +472,9 @@ class EditorTabs(QWidget):
         self.export_tab = TxtExportTab(
             settings, status_callback=status_callback,
             settings_callback=settings_callback, font_size=font_size,
-            appearance=appearance, context_path_callback=context_path_callback, parent=self,
+            appearance=appearance, context_path_callback=context_path_callback,
+            context_saved_callback=self.apply_external_update,
+            notification_callback=notification_callback, parent=self,
         )
         self.tabs.addTab(self.export_tab, TXT_EXPORT_TAB)
         self.tabs.tabBar().setTabButton(0, self.tabs.tabBar().ButtonPosition.LeftSide, None)
@@ -707,6 +718,27 @@ class EditorTabs(QWidget):
         )
         self.documentSaved.emit(str(path))
         return True
+
+    def apply_external_update(self, path: str | Path, text: str):
+        """Refresh an open file tab after an application action replaced its disk contents."""
+        path = Path(path).expanduser().resolve()
+        for index in range(self.tabs.count()):
+            editor = self.tabs.widget(index)
+            existing = self._path(editor)
+            if existing is None or existing.resolve() != path:
+                continue
+            timer = getattr(editor, "autosave_timer", None)
+            if timer is not None:
+                timer.stop()
+            editor.blockSignals(True)
+            editor.setPlainText(text)
+            editor.blockSignals(False)
+            editor._cached_character_count = len(text)
+            editor._cached_word_count = len(text.split())
+            self._set_dirty(editor, False, "บันทึกแล้ว")
+            self.documentSaved.emit(str(path))
+            return True
+        return False
 
     def set_font_size(self, size):
         self._font_size = max(8.0, min(28.0, float(size)))

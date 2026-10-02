@@ -126,6 +126,48 @@ class ElidingStatusLabel(QLabel):
         ))
 
 
+class SubmitToast(QFrame):
+    """Brief in-window notification shown after Submit completes successfully."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setObjectName("submitToast")
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.message = QLabel(self)
+        self.message.setWordWrap(True)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 11, 16, 11)
+        layout.addWidget(self.message)
+        self.hide_timer = QTimer(self)
+        self.hide_timer.setSingleShot(True)
+        self.hide_timer.setInterval(5000)
+        self.hide_timer.timeout.connect(self.hide)
+        self.hide()
+
+    def show_message(self, text):
+        self.message.setText(str(text))
+        dark = getattr(getattr(self.parent(), "settings", None), "appearance", "Light") == "Dark"
+        background, foreground, border = (
+            ("#263449", "#f2f5fa", "#4d6689") if dark
+            else ("#ffffff", "#172033", "#cbd5e1")
+        )
+        self.setStyleSheet(
+            f"QFrame#submitToast {{ background:{background}; color:{foreground}; "
+            f"border:1px solid {border}; border-radius:10px; }}"
+            f"QLabel {{ color:{foreground}; background:transparent; }}"
+        )
+        self.setMaximumWidth(max(320, min(560, self.parent().width() - 40)))
+        self.adjustSize()
+        self.move(
+            max(12, self.parent().width() - self.width() - 24),
+            max(12, self.parent().height() - self.height() - 52),
+        )
+        self.show()
+        self.raise_()
+        self.hide_timer.start()
+
+
 class ReorderableProfileList(QListWidget):
     """Profile list with native click-and-drag reordering."""
 
@@ -178,6 +220,7 @@ class ProfileWorkspace(QWidget):
             settings_callback=self._save_txt_export_settings,
             status_callback=lambda message: owner.statusBar().showMessage(message, 5000),
             context_path_callback=self._context_path_for_export,
+            notification_callback=owner.show_submit_toast,
         )
         self.steps = QListWidget()
         self.steps.setObjectName("workflowSteps")
@@ -710,6 +753,7 @@ class MainWindow(LegacyMainWindow):
     def __init__(self, repo=None):
         super().__init__(repo)
         self.setWindowTitle("Palantir: Novel")
+        self.submit_toast = SubmitToast(self)
         logo = Path(__file__).resolve().parent / "resources" / "palantir_novel.png"
         if logo.is_file():
             self.setWindowIcon(QIcon(str(logo)))
@@ -738,6 +782,9 @@ class MainWindow(LegacyMainWindow):
         super().apply_theme()
         for workspace in getattr(self, "workspaces", {}).values():
             workspace.editor.set_appearance(self.settings.appearance)
+
+    def show_submit_toast(self, message):
+        self.submit_toast.show_message(message)
 
     def _show_utility_page(self, key, title, factory):
         if self._settings_page_state and key != "settings":

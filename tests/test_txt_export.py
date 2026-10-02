@@ -72,6 +72,49 @@ def test_submit_success_status_shows_exported_file_and_next_wrapped_number(tmp_p
     assert messages == ["ส่งออก segverified80.txt และอัปเดต Context แล้ว · เลขถัดไป 20"]
 
 
+def test_submit_refreshes_open_context_tab_and_cancels_stale_autosave(tmp_path):
+    app()
+    context = tmp_path / "Context.md"
+    context.write_text("old context", encoding="utf-8")
+    tabs = EditorTabs(settings=AppSettings())
+    context_editor = tabs.open_file(context)
+    context_editor.setPlainText("stale unsaved edits")
+    assert tabs.dirty_count() == 1
+
+    export = panel(tmp_path, context_path_callback=lambda: context)
+    export.context_saved_callback = lambda path, text: tabs.apply_external_update(path, text)
+    export.editor.setPlainText("บทที่ 126\nเนื้อหาใหม่ 卡")
+    export.submit_button.click()
+
+    assert context.read_text(encoding="utf-8") == "บทที่ 126\nเนื้อหาใหม่ 卡"
+    assert context_editor.toPlainText() == "บทที่ 126\nเนื้อหาใหม่ 卡"
+    assert tabs.dirty_count() == 0
+    assert not context_editor.autosave_timer.isActive()
+    QTest.qWait(1100)
+    assert context.read_text(encoding="utf-8") == "บทที่ 126\nเนื้อหาใหม่ 卡"
+
+
+def test_submit_notifies_screen_callback_with_success_details(tmp_path):
+    app()
+    context = tmp_path / "Context.md"
+    context.write_text("old", encoding="utf-8")
+    export = panel(tmp_path, context_path_callback=lambda: context)
+    notices = []
+    export.notification_callback = notices.append
+    export.editor.setPlainText("new content")
+
+    export.submit_button.click()
+
+    assert notices == ["ส่งออก segverified1.txt และอัปเดต Context แล้ว · เลขถัดไป 2"]
+
+
+def test_export_number_label_explains_next_file_number(tmp_path):
+    app()
+    export = panel(tmp_path)
+
+    assert export.number_current_label.text() == "เลขถัดไป"
+
+
 def test_context_write_failure_keeps_number_and_export_text(tmp_path, monkeypatch):
     app()
     quiet_warning(monkeypatch)
