@@ -482,6 +482,12 @@ def main() -> int:
                 assert window.goal_status.geometry().right() < window.goal_status_bar.geometry().left()
                 assert window.goal_status_bar.geometry().right() <= status_bar.width()
 
+                export_tab.editor.setPlainText("บทที่ 161\nContext จาก TXT Export")
+                export_tab.export_context_button.click()
+                assert (root / "smoke2.txt").read_text(encoding="utf-8") == "บทที่ 161\nContext จาก TXT Export"
+                assert context.read_text(encoding="utf-8") == "บทที่ 161\nContext จาก TXT Export"
+                assert export_tab.current.value() == 3
+
                 smoke_passed = True
                 app.exit(0)
                 print("UI smoke passed: status, Context watcher, in-app utility pages, Find/Replace, Auto Save, COPY STEP")

@@ -14,12 +14,12 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-def panel(tmp_path, **values):
+def panel(tmp_path, context_path_callback=None, **values):
     settings = AppSettings()
     settings.txt_export_directory = str(tmp_path)
     for key, value in values.items():
         setattr(settings, key, value)
-    return TxtExportTab(settings)
+    return TxtExportTab(settings, context_path_callback=context_path_callback)
 
 
 def quiet_warning(monkeypatch):
@@ -38,6 +38,36 @@ def test_export_increments_then_wraps_end_to_start(tmp_path):
     assert export.export()
     assert (tmp_path / "segverified2.txt").exists()
     assert export.current.value() == 1
+
+
+def test_export_overwrites_context_and_increments_only_after_both_writes(tmp_path):
+    app()
+    context = tmp_path / "Context.md"
+    context.write_text("old context", encoding="utf-8")
+    text = "บทที่ 126\nสวัสดี 卡"
+    export = panel(tmp_path, context_path_callback=lambda: context)
+    export.editor.setPlainText(text)
+
+    export.export_context_button.click()
+
+    assert (tmp_path / "segverified1.txt").read_text(encoding="utf-8") == text
+    assert context.read_text(encoding="utf-8") == text
+    assert export.current.value() == 2
+
+
+def test_context_write_failure_keeps_number_and_export_text(tmp_path, monkeypatch):
+    app()
+    quiet_warning(monkeypatch)
+    missing_context = tmp_path / "missing" / "Context.md"
+    export = panel(tmp_path, context_path_callback=lambda: missing_context)
+    text = "ข้อความยังอยู่"
+    export.editor.setPlainText(text)
+
+    export.export_context_button.click()
+
+    assert not (tmp_path / "segverified1.txt").exists()
+    assert export.current.value() == 1
+    assert export.editor.toPlainText() == text
 
 
 def test_custom_range_and_reset(tmp_path):

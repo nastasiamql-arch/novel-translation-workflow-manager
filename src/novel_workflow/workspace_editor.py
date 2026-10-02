@@ -29,12 +29,13 @@ class TxtExportTab(QWidget):
     instances = WeakSet()
 
     def __init__(self, settings, status_callback=None, settings_callback=None, parent=None,
-                 font_size=11.0, appearance="Light"):
+                 font_size=11.0, appearance="Light", context_path_callback=None):
         super().__init__(parent)
         self.instances.add(self)
         self.settings = settings
         self.status_callback = status_callback or (lambda _message: None)
         self.settings_callback = settings_callback or (lambda: None)
+        self.context_path_callback = context_path_callback or (lambda: None)
         self.editor = CodeEditor(font_size=font_size, appearance=appearance, parent=self)
         self.filename = QLineEdit(str(settings.txt_export_filename or "segverified"))
         self.filename.setObjectName("txtExportFilename")
@@ -79,14 +80,21 @@ class TxtExportTab(QWidget):
         self.copy_button = QPushButton("คัดลอก")
         self.copy_export_button = QPushButton("คัดลอก + ส่งออก")
         self.export_button = QPushButton("ส่งออก TXT")
+        self.export_context_button = QPushButton("ส่งออก + อัปเดต Context")
+        self.export_context_button.setToolTip(
+            "ส่งข้อความเดียวกันลงไฟล์ TXT และเขียนทับไฟล์ Context ของนิยายนี้"
+        )
         self.reset_button = QPushButton("รีเซ็ตเลข")
         self.export_button.setObjectName("primaryButton")
+        self.export_context_button.setObjectName("primaryButton")
         actions.addWidget(self.copy_button); actions.addWidget(self.copy_export_button)
-        actions.addStretch(1); actions.addWidget(self.reset_button); actions.addWidget(self.export_button)
+        actions.addStretch(1); actions.addWidget(self.reset_button)
+        actions.addWidget(self.export_button); actions.addWidget(self.export_context_button)
         layout.addLayout(actions)
         self.copy_button.clicked.connect(self.copy_text)
         self.copy_export_button.clicked.connect(self.copy_and_export)
         self.export_button.clicked.connect(self.export)
+        self.export_context_button.clicked.connect(lambda: self.export(update_context=True))
         self.reset_button.clicked.connect(self.reset_number)
         self.editor.textChanged.connect(lambda: self.stats_timer.start())
         for field in (self.filename, self.directory):
@@ -177,21 +185,35 @@ class TxtExportTab(QWidget):
             raise ValueError("ชื่อนี้เป็นชื่อสงวนของ Windows")
         return name
 
-    def export(self):
+    def export(self, update_context=False):
         try:
             prefix = self.normalized_filename(self.filename.text())
             folder = Path(self.directory.text().strip()).expanduser()
             if not folder.is_dir():
                 raise OSError("ไม่พบโฟลเดอร์ปลายทาง")
+            context_path = None
+            if update_context:
+                selected_context = self.context_path_callback()
+                if not selected_context:
+                    raise OSError("ยังไม่ได้เลือกไฟล์ Context สำหรับนิยายนี้")
+                context_path = Path(selected_context).expanduser()
+                if not context_path.is_file():
+                    raise OSError("ไม่พบไฟล์ Context")
             target = folder / f"{prefix}{self.current.value()}.txt"
-            target.write_text(self.editor.toPlainText(), encoding="utf-8", newline="")
+            text = self.editor.toPlainText()
+            target.write_text(text, encoding="utf-8", newline="")
+            if context_path is not None:
+                context_path.write_text(text, encoding="utf-8", newline="")
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "ส่งออก TXT ไม่สำเร็จ", str(exc))
             return False
         completed = self.current.value()
         self.current.setValue(self.start.value() if completed >= self.end.value() else completed + 1)
         self._save_settings()
-        self.status_callback(f"ส่งออก {target.name} แล้ว")
+        if update_context:
+            self.status_callback(f"ส่งออก {target.name} และอัปเดต Context แล้ว")
+        else:
+            self.status_callback(f"ส่งออก {target.name} แล้ว")
         return True
 
     def reset_number(self):
@@ -392,7 +414,8 @@ class EditorTabs(QWidget):
     instances = WeakSet()
 
     def __init__(self, parent=None, font_size=11.0, appearance="Light",
-                 settings=None, settings_callback=None, status_callback=None):
+                 settings=None, settings_callback=None, status_callback=None,
+                 context_path_callback=None):
         super().__init__(parent)
         self.instances.add(self)
         self._font_size = float(font_size)
@@ -411,7 +434,7 @@ class EditorTabs(QWidget):
         self.export_tab = TxtExportTab(
             settings, status_callback=status_callback,
             settings_callback=settings_callback, font_size=font_size,
-            appearance=appearance, parent=self,
+            appearance=appearance, context_path_callback=context_path_callback, parent=self,
         )
         self.tabs.addTab(self.export_tab, TXT_EXPORT_TAB)
         self.tabs.tabBar().setTabButton(0, self.tabs.tabBar().ButtonPosition.LeftSide, None)

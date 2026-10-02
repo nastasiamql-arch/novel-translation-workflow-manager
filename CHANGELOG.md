@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.0
+
+- Add one-step **ส่งออก + อัปเดต Context** to write TXT Export text to the numbered TXT file and overwrite the current novel's Context file. The export number advances only when both writes succeed.
+
 ## 2.1.0
 
 - Keep TXT Export filename, destination folder, number range, and current number independently for each novel profile. Existing profiles inherit the previous shared settings once when migrating.

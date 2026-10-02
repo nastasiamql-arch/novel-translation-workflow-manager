@@ -176,6 +176,7 @@ class ProfileWorkspace(QWidget):
             settings=profile.txt_export_settings,
             settings_callback=self._save_txt_export_settings,
             status_callback=lambda message: owner.statusBar().showMessage(message, 2500),
+            context_path_callback=self._context_path_for_export,
         )
         self.steps = QListWidget()
         self.steps.setObjectName("workflowSteps")
@@ -416,6 +417,15 @@ class ProfileWorkspace(QWidget):
             return
         profile.txt_export_settings = self.editor.export_tab.settings
         self.owner.repo.save_profile(profile)
+
+    def _context_path_for_export(self):
+        profile = next(
+            (item for item in self.owner.repo.list_profiles() if item.id == self.profile_id),
+            None,
+        )
+        if profile is None or not profile.context_path:
+            return None
+        return Path(profile.context_path).expanduser()
 
     def update_profile_status(self, status):
         self.pause_profile_button.setEnabled(status != "paused")
