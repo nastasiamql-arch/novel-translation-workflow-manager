@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 from weakref import WeakSet
 from bisect import bisect_left
@@ -21,6 +23,25 @@ TEXT_EXTENSIONS = {
 }
 AUTO_SAVE_DELAY_MS = 1000
 TXT_EXPORT_TAB = "TXT Export"
+
+
+def _stage_text_file(destination: Path, text: str) -> Path:
+    """Write beside the destination so the completed file can be atomically replaced."""
+    staged_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", newline="", dir=destination.parent,
+            prefix=f".{destination.name}.", suffix=".part", delete=False,
+        ) as staged:
+            staged_path = Path(staged.name)
+            staged.write(text)
+            staged.flush()
+            os.fsync(staged.fileno())
+        return staged_path
+    except OSError:
+        if staged_path is not None:
+            staged_path.unlink(missing_ok=True)
+        raise
 
 
 class TxtExportTab(QWidget):
@@ -79,22 +100,17 @@ class TxtExportTab(QWidget):
         actions = QHBoxLayout()
         self.copy_button = QPushButton("คัดลอก")
         self.copy_export_button = QPushButton("คัดลอก + ส่งออก")
-        self.export_button = QPushButton("ส่งออก TXT")
-        self.export_context_button = QPushButton("ส่งออก + อัปเดต Context")
-        self.export_context_button.setToolTip(
-            "ส่งข้อความเดียวกันลงไฟล์ TXT และเขียนทับไฟล์ Context ของนิยายนี้"
-        )
+        self.submit_button = QPushButton("Submit")
+        self.submit_button.setObjectName("primaryButton")
+        self.submit_button.setToolTip("ส่งออก TXT และเขียนทับ Context ด้วยข้อความเดียวกัน")
         self.reset_button = QPushButton("รีเซ็ตเลข")
-        self.export_button.setObjectName("primaryButton")
-        self.export_context_button.setObjectName("primaryButton")
         actions.addWidget(self.copy_button); actions.addWidget(self.copy_export_button)
         actions.addStretch(1); actions.addWidget(self.reset_button)
-        actions.addWidget(self.export_button); actions.addWidget(self.export_context_button)
+        actions.addWidget(self.submit_button)
         layout.addLayout(actions)
         self.copy_button.clicked.connect(self.copy_text)
         self.copy_export_button.clicked.connect(self.copy_and_export)
-        self.export_button.clicked.connect(self.export)
-        self.export_context_button.clicked.connect(lambda: self.export(update_context=True))
+        self.submit_button.clicked.connect(lambda: self.export(update_context=True))
         self.reset_button.clicked.connect(self.reset_number)
         self.editor.textChanged.connect(lambda: self.stats_timer.start())
         for field in (self.filename, self.directory):
@@ -186,6 +202,7 @@ class TxtExportTab(QWidget):
         return name
 
     def export(self, update_context=False):
+        staged_files = []
         try:
             prefix = self.normalized_filename(self.filename.text())
             folder = Path(self.directory.text().strip()).expanduser()
@@ -201,12 +218,22 @@ class TxtExportTab(QWidget):
                     raise OSError("ไม่พบไฟล์ Context")
             target = folder / f"{prefix}{self.current.value()}.txt"
             text = self.editor.toPlainText()
-            target.write_text(text, encoding="utf-8", newline="")
+            destinations = [target]
             if context_path is not None:
-                context_path.write_text(text, encoding="utf-8", newline="")
+                destinations.append(context_path)
+            for destination in destinations:
+                staged_files.append((destination, _stage_text_file(destination, text)))
+            for destination, staged in staged_files:
+                os.replace(staged, destination)
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "ส่งออก TXT ไม่สำเร็จ", str(exc))
             return False
+        finally:
+            for _destination, staged in staged_files:
+                try:
+                    staged.unlink(missing_ok=True)
+                except OSError:
+                    pass
         completed = self.current.value()
         self.current.setValue(self.start.value() if completed >= self.end.value() else completed + 1)
         self._save_settings()

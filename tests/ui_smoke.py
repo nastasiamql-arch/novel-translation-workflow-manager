@@ -224,7 +224,7 @@ def main() -> int:
                 export_tab.editor.setPlainText("ส่งออกไทย 卡")
                 export_tab.filename.setText("smoke.txt")
                 export_tab.directory.setText(str(root))
-                export_tab.export_button.click()
+                export_tab.submit_button.click()
                 assert (root / "smoke1.txt").read_text(encoding="utf-8") == "ส่งออกไทย 卡"
                 assert export_tab.current.value() == 2
                 assert len(export_tab.editor.font().families()) == 1
@@ -483,7 +483,7 @@ def main() -> int:
                 assert window.goal_status_bar.geometry().right() <= status_bar.width()
 
                 export_tab.editor.setPlainText("บทที่ 161\nContext จาก TXT Export")
-                export_tab.export_context_button.click()
+                export_tab.submit_button.click()
                 assert (root / "smoke2.txt").read_text(encoding="utf-8") == "บทที่ 161\nContext จาก TXT Export"
                 assert context.read_text(encoding="utf-8") == "บทที่ 161\nContext จาก TXT Export"
                 assert export_tab.current.value() == 3

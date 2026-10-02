@@ -48,7 +48,7 @@ def test_export_overwrites_context_and_increments_only_after_both_writes(tmp_pat
     export = panel(tmp_path, context_path_callback=lambda: context)
     export.editor.setPlainText(text)
 
-    export.export_context_button.click()
+    export.submit_button.click()
 
     assert (tmp_path / "segverified1.txt").read_text(encoding="utf-8") == text
     assert context.read_text(encoding="utf-8") == text
@@ -63,11 +63,39 @@ def test_context_write_failure_keeps_number_and_export_text(tmp_path, monkeypatc
     text = "ข้อความยังอยู่"
     export.editor.setPlainText(text)
 
-    export.export_context_button.click()
+    export.submit_button.click()
 
     assert not (tmp_path / "segverified1.txt").exists()
     assert export.current.value() == 1
     assert export.editor.toPlainText() == text
+
+
+def test_context_staging_failure_leaves_existing_files_unchanged(tmp_path, monkeypatch):
+    app()
+    quiet_warning(monkeypatch)
+    import novel_workflow.workspace_editor as workspace_editor
+
+    context = tmp_path / "Context.md"
+    context.write_text("old context", encoding="utf-8")
+    target = tmp_path / "segverified1.txt"
+    target.write_text("old export", encoding="utf-8")
+    export = panel(tmp_path, context_path_callback=lambda: context)
+    export.editor.setPlainText("new text")
+    stage = workspace_editor._stage_text_file
+
+    def fail_context_stage(destination, text):
+        if destination == context:
+            raise OSError("simulated context write failure")
+        return stage(destination, text)
+
+    monkeypatch.setattr(workspace_editor, "_stage_text_file", fail_context_stage)
+    export.submit_button.click()
+
+    assert target.read_text(encoding="utf-8") == "old export"
+    assert context.read_text(encoding="utf-8") == "old context"
+    assert export.current.value() == 1
+    assert export.editor.toPlainText() == "new text"
+    assert not list(tmp_path.glob("*.part"))
 
 
 def test_custom_range_and_reset(tmp_path):
@@ -218,6 +246,23 @@ def test_export_tab_is_permanent_and_not_a_disk_editor_file(tmp_path):
     assert tabs.tabs.count() == 2
     assert tabs.open_paths() == [str(path.resolve())]
     assert tabs.tabs.tabText(0) == "TXT Export"
+
+
+def test_submit_is_single_export_and_context_action(tmp_path):
+    app()
+    context = tmp_path / "Context.md"
+    context.write_text("old", encoding="utf-8")
+    export = panel(tmp_path, context_path_callback=lambda: context)
+    export.editor.setPlainText("new")
+
+    assert export.submit_button.text() == "Submit"
+    assert not hasattr(export, "export_button")
+    assert not hasattr(export, "export_context_button")
+    export.submit_button.click()
+
+    assert (tmp_path / "segverified1.txt").read_text(encoding="utf-8") == "new"
+    assert context.read_text(encoding="utf-8") == "new"
+    assert export.current.value() == 2
 
 
 def test_txt_export_tab_order_persists_after_reopening(tmp_path):

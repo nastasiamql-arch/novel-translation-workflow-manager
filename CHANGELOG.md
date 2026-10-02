@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.1
+
+- Combine TXT export and Context overwrite into a single **Submit** button.
+- Stage both output files before replacing either destination, preserving existing files if staging fails.
+
 ## 2.2.0
 
 - Add one-step **ส่งออก + อัปเดต Context** to write TXT Export text to the numbered TXT file and overwrite the current novel's Context file. The export number advances only when both writes succeed.
