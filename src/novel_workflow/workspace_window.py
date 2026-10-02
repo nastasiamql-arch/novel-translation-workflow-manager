@@ -173,8 +173,8 @@ class ProfileWorkspace(QWidget):
         self.editor = EditorTabs(
             font_size=owner.settings.editor_font_size,
             appearance=owner.settings.appearance,
-            settings=owner.settings,
-            settings_callback=lambda: owner.repo.save_settings(owner.settings),
+            settings=profile.txt_export_settings,
+            settings_callback=self._save_txt_export_settings,
             status_callback=lambda message: owner.statusBar().showMessage(message, 2500),
         )
         self.steps = QListWidget()
@@ -406,6 +406,16 @@ class ProfileWorkspace(QWidget):
 
         self.configure(profile)
         self.set_mode(0)
+
+    def _save_txt_export_settings(self):
+        profile = next(
+            (item for item in self.owner.repo.list_profiles() if item.id == self.profile_id),
+            None,
+        )
+        if profile is None:
+            return
+        profile.txt_export_settings = self.editor.export_tab.settings
+        self.owner.repo.save_profile(profile)
 
     def update_profile_status(self, status):
         self.pause_profile_button.setEnabled(status != "paused")
@@ -2012,6 +2022,8 @@ class MainWindow(LegacyMainWindow):
             workspace.editor.restore_paths(
                 self.settings.editor_tabs.get(profile.id, []),
                 self.settings.editor_active_tabs.get(profile.id, 0),
+                self.settings.editor_tab_order.get(profile.id),
+                self.settings.editor_active_tab_keys.get(profile.id),
             )
             workspace.step_index = int(self.settings.workspace_step_indices.get(profile.id, 0))
             if self.settings.sidebar_visible:
@@ -2483,9 +2495,15 @@ class MainWindow(LegacyMainWindow):
             )
             current_tab = workspace.editor.tabs.currentIndex()
             self.settings.editor_active_tabs[profile_id] = (
-                current_tab - 1 if workspace.editor.export_tab and current_tab > 0
-                else -1 if workspace.editor.export_tab else current_tab
+                sum(
+                    1 for index in range(current_tab)
+                    if workspace.editor._path(workspace.editor.tabs.widget(index))
+                )
             )
+            self.settings.editor_tab_order[profile_id] = workspace.editor.tab_order()
+            active_key = workspace.editor.active_tab_key()
+            if active_key:
+                self.settings.editor_active_tab_keys[profile_id] = active_key
             self.settings.workspace_step_indices[profile_id] = workspace.step_index
             sidebar_size = workspace.workspace_splitter.sizes()[1]
             self.settings.sidebar_visible = sidebar_size > 0

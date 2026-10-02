@@ -77,6 +77,38 @@ class ChapterState:
     statuses: dict[str,str] = field(default_factory=dict)
 
 @dataclass
+class TxtExportSettings:
+    filename: str = "segverified"
+    directory: str = ""
+    start: int = 1
+    end: int = 100
+    current: int = 1
+    @property
+    def txt_export_filename(self): return self.filename
+    @txt_export_filename.setter
+    def txt_export_filename(self, value): self.filename=value
+    @property
+    def txt_export_directory(self): return self.directory
+    @txt_export_directory.setter
+    def txt_export_directory(self, value): self.directory=value
+    @property
+    def txt_export_start(self): return self.start
+    @txt_export_start.setter
+    def txt_export_start(self, value): self.start=value
+    @property
+    def txt_export_end(self): return self.end
+    @txt_export_end.setter
+    def txt_export_end(self, value): self.end=value
+    @property
+    def txt_export_current(self): return self.current
+    @txt_export_current.setter
+    def txt_export_current(self, value): self.current=value
+    @classmethod
+    def from_dict(cls, data):
+        if not isinstance(data, dict): return cls()
+        return cls(**{key: value for key, value in data.items() if key in cls.__dataclass_fields__})
+
+@dataclass
 class LaunchTarget:
     id: str = field(default_factory=uid)
     label: str = ""
@@ -107,8 +139,9 @@ class NovelProfile:
     working_files: list[StepFile] = field(default_factory=list)
     order: int = 0
     last_browse_directory: str | None = None
-    schema_version: int = 4
+    schema_version: int = 5
     removed_vocabulary_data: dict = field(default_factory=dict)
+    txt_export_settings: TxtExportSettings = field(default_factory=TxtExportSettings)
     @classmethod
     def from_dict(cls,d):
         state=d.get("chapter_state",{})
@@ -116,6 +149,7 @@ class NovelProfile:
             id=d.get("id",uid()),
             name=d.get("name","Novel"),
             order=int(d.get("order",0)),
+            schema_version=int(d.get("schema_version",1)),
             workflow=Workflow.from_dict(d.get("workflow",{})),
             vocabulary_step=(
                 WorkflowStep.from_dict(d["vocabulary_step"])
@@ -134,6 +168,7 @@ class NovelProfile:
             translation_daily_activity=_daily_activity_from_dict(d.get("translation_daily_activity", {})),
             cover_image_path=d.get("cover_image_path"),
             working_files=[StepFile.from_dict(item) for item in d.get("working_files", [])],
+            txt_export_settings=TxtExportSettings.from_dict(d.get("txt_export_settings")),
             removed_vocabulary_data={
                 **(d.get("removed_vocabulary_data", {}) if isinstance(d.get("removed_vocabulary_data"), dict) else {}),
                 **{key: d[key] for key in ("vocabulary_polish_step", "vocabulary_settings") if key in d},
@@ -166,6 +201,8 @@ class AppSettings:
     last_profile_id: str | None = None
     editor_tabs: dict[str, list[str]] = field(default_factory=dict)
     editor_active_tabs: dict[str, int] = field(default_factory=dict)
+    editor_tab_order: dict[str, list[str]] = field(default_factory=dict)
+    editor_active_tab_keys: dict[str, str] = field(default_factory=dict)
     workspace_step_indices: dict[str, int] = field(default_factory=dict)
     editor_positions: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
     sidebar_width: int = 290

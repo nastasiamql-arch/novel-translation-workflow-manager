@@ -718,6 +718,22 @@ class EditorTabs(QWidget):
                 self.tabs.setTabText(index, new_path.name + suffix)
                 self.tabs.setTabToolTip(index, str(new_path))
 
+    def _tab_key(self, index: int) -> str | None:
+        widget = self.tabs.widget(index)
+        if widget is self.export_tab:
+            return "txt-export"
+        path = self._path(widget)
+        return str(path) if path else None
+
+    def tab_order(self) -> list[str]:
+        return [
+            key for index in range(self.tabs.count())
+            if (key := self._tab_key(index)) is not None
+        ]
+
+    def active_tab_key(self) -> str | None:
+        return self._tab_key(self.tabs.currentIndex())
+
     def open_paths(self) -> list[str]:
         result = []
         for index in range(self.tabs.count()):
@@ -726,15 +742,29 @@ class EditorTabs(QWidget):
                 result.append(str(path))
         return result
 
-    def restore_paths(self, paths, current_index=0):
+    def restore_paths(self, paths, current_index=0, tab_order=None, active_tab_key=None):
         for path in paths or []:
             candidate = Path(path).expanduser()
             if candidate.is_file() and self.supports(candidate):
                 self.open_file(candidate)
-        if self.tabs.count():
-            self.tabs.setCurrentIndex(
-                max(0, min(int(current_index or 0) + (1 if self.export_tab else 0), self.tabs.count() - 1))
-            )
+        if tab_order:
+            bar = self.tabs.tabBar()
+            current_keys = self.tab_order()
+            ordered_keys = [key for key in tab_order if key in current_keys]
+            ordered_keys.extend(key for key in current_keys if key not in ordered_keys)
+            for target_index, key in enumerate(ordered_keys):
+                current_keys = self.tab_order()
+                source_index = current_keys.index(key)
+                if source_index != target_index:
+                    bar.moveTab(source_index, target_index)
+        if active_tab_key and active_tab_key in self.tab_order():
+            self.tabs.setCurrentIndex(self.tab_order().index(active_tab_key))
+        elif self.tabs.count():
+            # Keep supporting settings saved before tab order was persisted.
+            legacy_index = int(current_index or 0)
+            if self.export_tab and self.tabs.indexOf(self.export_tab) == 0:
+                legacy_index += 1
+            self.tabs.setCurrentIndex(max(0, min(legacy_index, self.tabs.count() - 1)))
 
     def _update_status(self, index):
         if index < 0:

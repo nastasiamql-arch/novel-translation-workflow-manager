@@ -1,11 +1,12 @@
 import os
+from dataclasses import asdict
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from novel_workflow.models import AppSettings
-from novel_workflow.storage import ProjectRepository
+from novel_workflow.models import AppSettings, NovelProfile
+from novel_workflow.storage import ProjectRepository, write_json
 from novel_workflow.workspace_editor import CodeEditor, EditorTabs, TxtExportTab
 
 
@@ -110,18 +111,50 @@ def test_export_settings_persist_across_repository_reload(tmp_path):
     assert (restored.txt_export_start, restored.txt_export_end, restored.txt_export_current) == (20, 80, 38)
 
 
-def test_app_level_export_settings_sync_across_novel_workspaces(tmp_path):
+def test_export_settings_are_independent_per_novel_and_persist(tmp_path):
     app()
-    settings = AppSettings()
-    first = TxtExportTab(settings)
-    second = TxtExportTab(settings)
-    first.filename.setText("shared-prefix.txt")
-    first.start.setValue(20)
-    first.end.setValue(80)
+    repo = ProjectRepository(tmp_path / "data")
+    first_profile = NovelProfile(name="First")
+    second_profile = NovelProfile(name="Second")
+    repo.save_profile(first_profile)
+    repo.save_profile(second_profile)
+    first = TxtExportTab(first_profile.txt_export_settings)
+    second = TxtExportTab(second_profile.txt_export_settings)
+    first.settings_callback = lambda: repo.save_profile(first_profile)
+    first.filename.setText("first.txt")
     first.current.setValue(38)
 
-    assert second.filename.text() == "shared-prefix.txt"
-    assert (second.start.value(), second.end.value(), second.current.value()) == (20, 80, 38)
+    restored = {p.name: p for p in repo.list_profiles()}
+    assert restored["First"].txt_export_settings.filename == "first.txt"
+    assert restored["First"].txt_export_settings.current == 38
+    assert restored["Second"].txt_export_settings.filename == "segverified"
+    assert restored["Second"].txt_export_settings.current == 1
+    assert second.filename.text() == "segverified"
+
+
+def test_legacy_app_export_settings_migrate_to_existing_profiles_once(tmp_path):
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile(name="Legacy", schema_version=4)
+    profile_data = asdict(profile)
+    profile_data.pop("txt_export_settings", None)
+    repo.profiles_dir.joinpath(profile.id).mkdir(parents=True)
+    write_json(repo.profiles_dir / profile.id / "profile.json", profile_data)
+    legacy = repo.load_settings()
+    legacy.txt_export_filename = "old-prefix"
+    legacy.txt_export_directory = str(tmp_path)
+    legacy.txt_export_start = 20
+    legacy.txt_export_end = 80
+    legacy.txt_export_current = 38
+    repo.save_settings(legacy)
+
+    migrated = repo.list_profiles()[0]
+    assert migrated.txt_export_settings.filename == "old-prefix"
+    assert migrated.txt_export_settings.directory == str(tmp_path)
+    assert (migrated.txt_export_settings.start, migrated.txt_export_settings.end,
+            migrated.txt_export_settings.current) == (20, 80, 38)
+    created_later = NovelProfile(name="New")
+    repo.save_profile(created_later)
+    assert repo.list_profiles()[1].txt_export_settings.filename == "segverified"
 
 
 def test_copy_and_copy_export_and_word_character_counts(tmp_path):
@@ -155,6 +188,39 @@ def test_export_tab_is_permanent_and_not_a_disk_editor_file(tmp_path):
     assert tabs.tabs.count() == 2
     assert tabs.open_paths() == [str(path.resolve())]
     assert tabs.tabs.tabText(0) == "TXT Export"
+
+
+def test_txt_export_tab_order_persists_after_reopening(tmp_path):
+    app()
+    first_path = tmp_path / "first.txt"
+    second_path = tmp_path / "second.txt"
+    first_path.write_text("one", encoding="utf-8")
+    second_path.write_text("two", encoding="utf-8")
+    original = EditorTabs(settings=AppSettings())
+    original.open_file(first_path)
+    original.open_file(second_path)
+    original.tabs.tabBar().moveTab(0, 2)
+    original.tabs.setCurrentIndex(2)
+
+    order = original.tab_order()
+    repo = ProjectRepository(tmp_path / "data")
+    saved = repo.load_settings()
+    saved.editor_tab_order["profile"] = order
+    saved.editor_active_tab_keys["profile"] = original.active_tab_key()
+    repo.save_settings(saved)
+    reloaded = repo.load_settings()
+    restored = EditorTabs(settings=AppSettings())
+    restored.restore_paths(
+        original.open_paths(), tab_order=reloaded.editor_tab_order["profile"],
+        active_tab_key=reloaded.editor_active_tab_keys["profile"],
+    )
+
+    assert [restored.tabs.tabText(i) for i in range(restored.tabs.count())] == [
+        "first.txt", "second.txt", "TXT Export",
+    ]
+    assert restored.active_tab_key() == "txt-export"
+    restored.close_tab(restored.tabs.indexOf(restored.export_tab))
+    assert restored.tabs.indexOf(restored.export_tab) == 2
 
 
 def test_editor_font_uses_single_primary_family_and_default_hinting():

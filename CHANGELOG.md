@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0
+
+- Keep TXT Export filename, destination folder, number range, and current number independently for each novel profile. Existing profiles inherit the previous shared settings once when migrating.
+- Remember editor tab order, including TXT Export, and restore the active tab when reopening the application.
+
 ## 2.0.0
 
 - Restore vocabulary handling to the v1.12.0 file-based workflow step; remove AI vocabulary processing, provider/API settings, and the separate **เกลาศัพท์** mode. Legacy per-profile configuration is retained as inactive data, and source files are not deleted.

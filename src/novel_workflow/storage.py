@@ -48,7 +48,15 @@ class ProjectRepository:
             if not path.is_file():continue
             data=read_json(path,{})
             profile=NovelProfile.from_dict(data)
-            if data.get("schema_version", 1) < 4:
+            if data.get("schema_version", 1) < 5:
+                if "txt_export_settings" not in data:
+                    legacy_settings=self.load_settings()
+                    profile.txt_export_settings.filename=legacy_settings.txt_export_filename
+                    profile.txt_export_settings.directory=legacy_settings.txt_export_directory
+                    profile.txt_export_settings.start=legacy_settings.txt_export_start
+                    profile.txt_export_settings.end=legacy_settings.txt_export_end
+                    profile.txt_export_settings.current=legacy_settings.txt_export_current
+                profile.schema_version=5
                 self.save_profile(profile)
             profiles.append(profile)
             if "order" not in data:missing_order.append(profile)
