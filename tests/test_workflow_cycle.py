@@ -70,7 +70,7 @@ def test_removed_vocabulary_data_survives_profile_save_without_becoming_a_featur
     assert not hasattr(restored, "vocabulary_polish_step")
 
 
-def test_schema_three_profile_migrates_to_five_and_keeps_removed_data(tmp_path):
+def test_schema_three_profile_migrates_to_six_and_keeps_removed_data(tmp_path):
     repo = ProjectRepository(tmp_path)
     profile_id = "0123456789abcdef0123456789abcdef"
     profile_path = repo.profile_dir(profile_id) / "profile.json"
@@ -89,9 +89,9 @@ def test_schema_three_profile_migrates_to_five_and_keeps_removed_data(tmp_path):
     loaded = repo.list_profiles()[0]
     persisted = json.loads(profile_path.read_text(encoding="utf-8"))
 
-    assert loaded.schema_version == 5
+    assert loaded.schema_version == 6
     assert loaded.vocabulary_step.files[0].id == "file-id"
-    assert persisted["schema_version"] == 5
+    assert persisted["schema_version"] == 6
     assert persisted["removed_vocabulary_data"]["vocabulary_polish_step"]["files"][0]["path"] == "polish.txt"
     assert persisted["removed_vocabulary_data"]["vocabulary_settings"]["model"] == "legacy"
 

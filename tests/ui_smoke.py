@@ -468,6 +468,26 @@ def main() -> int:
                 assert window.utility_title.text() == "จัดการไฟล์โครงการ"
                 window.return_from_utility_page()
 
+                workspace = window.workspaces[profile.id]
+                assert workspace.web_source_button.text() == "ต้นฉบับเว็บ"
+                import novel_workflow.downloader_ui.panel as downloader_panel
+                downloader_panel.data_root = lambda: root / "data"
+                window.open_downloader()
+                downloader_page = window._utility_pages[f"downloader:{profile.id}"]
+                assert window.utility_title.text() == "ต้นฉบับเว็บ"
+                assert downloader_page.profile.source_binding is None
+                assert downloader_page.inspect_button.isEnabled()
+                window.return_from_utility_page()
+
+                from novel_workflow.downloader.worker import DownloaderWorker
+                worker_errors = []
+                failed_worker = DownloaderWorker(lambda cancel, progress: (_ for _ in ()).throw(RuntimeError("expected worker error")))
+                failed_worker.failed.connect(worker_errors.append)
+                failed_worker.start()
+                assert failed_worker.wait(2000)
+                app.processEvents()
+                assert worker_errors == ["expected worker error"]
+
                 window.preview()
                 assert window.main_pages.currentWidget() is window.utility_page
                 assert window.utility_title.text().startswith("ตัวอย่าง ·")
@@ -514,7 +534,7 @@ def main() -> int:
 
                 smoke_passed = True
                 app.exit(0)
-                print("UI smoke passed: status, Context watcher, in-app utility pages, Find/Replace, Auto Save, COPY STEP")
+                print("UI smoke passed: status, Context watcher, downloader page, worker errors, in-app utility pages, Find/Replace, Auto Save, COPY STEP")
             except Exception as exc:
                 traceback.print_exc()
                 print(f"UI smoke failed: {type(exc).__name__}: {exc}")
