@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 
 from PySide6.QtCore import QDir, QFileSystemWatcher, QSize, Qt, QTimer, Signal, QThread
-from PySide6.QtGui import QAction, QFontMetrics, QIcon, QPixmap, QPainter, QPalette
+from PySide6.QtGui import QAction, QFontMetrics, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QDialog, QFileDialog, QFileSystemModel, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
@@ -88,16 +88,13 @@ class _UpdateDownloadWorker(QThread):
 
 
 class WorkflowStageButton(QPushButton):
-    """Draw the active marker in a reserved gutter without changing the label."""
+    """Workflow action button; active state is styled without overpainting text."""
 
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if not self.property("workflowActive"):
-            return
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.TextAntialiasing)
-        painter.setPen(self.palette().color(QPalette.ButtonText))
-        painter.drawText(8, 0, 18, self.height(), Qt.AlignCenter, "›")
+    def setWorkflowActive(self, active):
+        self.setProperty("workflowActive", bool(active))
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
 
 
 class ElidingStatusLabel(QLabel):
@@ -231,7 +228,7 @@ class ProfileWorkspace(QWidget):
         self.vocabulary_mode = False
         self.vocabulary_button = WorkflowStageButton("หาศัพท์")
         self.vocabulary_button.setObjectName("vocabularyButton")
-        self.vocabulary_button.setProperty("workflowActive", False)
+        self.vocabulary_button.setWorkflowActive(False)
         self.vocabulary_button.setToolTip("คัดลอกไฟล์ของขั้นตอนหาศัพท์ไปยังคลิปบอร์ด")
         self.vocabulary_button.clicked.connect(
             lambda checked=False: self.owner.copy_named_stage(self.profile_id, "vocabulary")
@@ -2221,7 +2218,7 @@ class MainWindow(LegacyMainWindow):
                     button.setObjectName("workflowStageButton")
                     button.setAccessibleName(step.name)
                     button.setProperty("workflowStageName", step.name)
-                    button.setProperty("workflowActive", False)
+                    button.setWorkflowActive(False)
                     button.setMinimumHeight(38)
                     button.setCursor(Qt.PointingHandCursor)
                     button.setToolTip(f"เลือกและคัดลอกไฟล์ของขั้นตอน{step.name}")
@@ -2268,7 +2265,7 @@ class MainWindow(LegacyMainWindow):
                 workspace.steps.blockSignals(False)
                 return
             workspace.vocabulary_mode = False
-            workspace.vocabulary_button.setProperty("workflowActive", False)
+            workspace.vocabulary_button.setWorkflowActive(False)
             workspace.vocabulary_button.update()
             workspace.step_index = row
             self.settings.workspace_step_indices[profile_id] = row
@@ -2284,12 +2281,8 @@ class MainWindow(LegacyMainWindow):
                 not workspace.vocabulary_mode
                 and index == workspace.step_index
             )
-            button.setProperty("workflowActive", active)
-            button.update()
-        workspace.vocabulary_button.setProperty(
-            "workflowActive", workspace.vocabulary_mode
-        )
-        workspace.vocabulary_button.update()
+            button.setWorkflowActive(active)
+        workspace.vocabulary_button.setWorkflowActive(workspace.vocabulary_mode)
 
     def copy_named_stage(self, profile_id, stage):
         """Select a named stage and copy only its files without advancing."""
@@ -2338,7 +2331,7 @@ class MainWindow(LegacyMainWindow):
         if not workspace or not self.profile or self.profile.id != profile_id:
             return
         if not workspace.editor.save_all():
-            workspace.vocabulary_button.setProperty("workflowActive", not enabled)
+            workspace.vocabulary_button.setWorkflowActive(not enabled)
             workspace.vocabulary_button.update()
             self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนขั้นตอนไม่ได้", 5000)
             return
