@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.2
+
+- Add a confirmed **ยกเลิกเป้าหมายทั้งหมด** action to clear goal targets across every novel while keeping chapter history and daily activity.
+
 ## 2.3.1
 
 - Refresh an open Context editor tab immediately after Submit and cancel stale Auto Save for the replaced text.

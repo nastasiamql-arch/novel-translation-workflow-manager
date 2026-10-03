@@ -40,6 +40,12 @@ class TranslationDashboardDialog(QWidget):
         self.bulk_goal_button = QPushButton("ตั้งให้ทุกเรื่องที่กำลังแปล")
         self.bulk_goal_button.clicked.connect(self._apply_goal_to_translating)
         bulk_goal_layout.addWidget(self.bulk_goal_button)
+        self.clear_all_goals_button = QPushButton("ยกเลิกเป้าหมายทั้งหมด")
+        self.clear_all_goals_button.setToolTip(
+            "ล้างเป้าหมายทุกนิยาย โดยเก็บประวัติการแปลและความคืบหน้ารายวันไว้"
+        )
+        self.clear_all_goals_button.clicked.connect(self._clear_all_goals)
+        bulk_goal_layout.addWidget(self.clear_all_goals_button)
         self.root.addWidget(self.bulk_goal_panel)
         self.days_panel = QFrame()
         self.days_layout = QVBoxLayout(self.days_panel)
@@ -101,6 +107,9 @@ class TranslationDashboardDialog(QWidget):
             if eligible else "ไม่มีเรื่องที่กำลังแปลพร้อมใช้ Context"
         )
         self.bulk_goal_button.setEnabled(bool(eligible))
+        self.clear_all_goals_button.setEnabled(any(
+            profile.translation_goal_target is not None for profile in self.profiles
+        ))
         today_total = sum(daily_chapter_count(profile, today_key) for profile in self.profiles)
         week_total = sum(profile_week_count(profile, today) for profile in self.profiles)
         active = sum(1 for profile in self.profiles if daily_chapter_count(profile, today_key) > 0)
@@ -155,6 +164,38 @@ class TranslationDashboardDialog(QWidget):
             self.profiles = self.refresh_callback()
             self.refresh()
             return
+        self.profiles = self.refresh_callback()
+        self.refresh()
+
+    def _clear_all_goals(self):
+        targets = [
+            profile for profile in self.profiles
+            if profile.translation_goal_target is not None
+        ]
+        if not targets:
+            return
+        answer = QMessageBox.question(
+            self,
+            "ยกเลิกเป้าหมายทั้งหมด",
+            f"ยกเลิกเป้าหมายของนิยาย {len(targets)} เรื่องใช่ไหม?\n\n"
+            "ประวัติการแปลและจำนวนบทที่แปลรายวันจะยังอยู่",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        for profile in targets:
+            profile.translation_goal_target = None
+            try:
+                self.repo.save_profile(profile)
+            except OSError as exc:
+                QMessageBox.warning(
+                    self, "ยกเลิกเป้าหมายไม่สำเร็จ",
+                    f"บันทึกการยกเลิกของ {profile.name} ไม่สำเร็จ: {exc}",
+                )
+                self.profiles = self.refresh_callback()
+                self.refresh()
+                return
         self.profiles = self.refresh_callback()
         self.refresh()
 

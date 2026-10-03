@@ -384,6 +384,8 @@ def main() -> int:
                 assert window._utility_pages["progress"].isVisible()
                 dashboard = window._utility_pages["progress"]
                 assert dashboard.bulk_goal_button.isEnabled()
+                assert dashboard.clear_all_goals_button.text() == "ยกเลิกเป้าหมายทั้งหมด"
+                assert dashboard.clear_all_goals_button.isEnabled()
                 assert dashboard.bulk_goal_hint.text() == "ตั้งได้ 1 เรื่องที่มีไฟล์ Context"
                 dashboard.bulk_goal_target.setValue(12)
                 dashboard.bulk_goal_button.click()
