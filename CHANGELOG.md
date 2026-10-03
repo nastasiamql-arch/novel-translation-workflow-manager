@@ -2,6 +2,11 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.3.4 - 2026-10-04
+
+- Prevent workflow stage buttons from extending into the next row by removing vertical padding that made them taller than their list items.
+- Add a UI smoke assertion that each workflow button remains inside its own row.
+
 ## 3.3.3 - 2026-10-04
 
 - Remove the underline and bottom border from COPY STEP hover and keyboard focus states while retaining a clear text-color focus indicator.
