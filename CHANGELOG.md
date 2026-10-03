@@ -2,6 +2,10 @@
 
 All notable changes to Palantir: Novel and Novel Downloader are documented here.
 
+## 2.5.3 - 2026-10-03
+
+- Keep add-from-URL progress and failure guidance visible in the Downloader panel so users know why a book has not appeared in the library and how to retry.
+
 ## 2.5.2 - 2026-10-03
 
 - Clarify that **รีเฟรชรายชื่อเว็บ** only reloads source definitions and is not a chapter download action.
