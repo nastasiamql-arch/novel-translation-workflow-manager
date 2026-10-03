@@ -63,6 +63,26 @@ def test_copy_step_action_uses_flat_text_style():
         assert "QPushButton#copyStepButton:hover {" in stylesheet
         assert "QPushButton#copyStepButton:focus {" in stylesheet
         assert "QPushButton#copyStepButton:disabled {" in stylesheet
+        focus_style = stylesheet.split(
+            "QPushButton#copyStepButton:focus {", 1
+        )[1].split("}", 1)[0]
+        hover_style = stylesheet.split(
+            "QPushButton#copyStepButton:hover {", 1
+        )[1].split("}", 1)[0]
+        assert "border: 0;" in focus_style
+        assert "text-decoration: none;" in hover_style
+        assert "text-decoration: underline;" not in hover_style
+
+
+def test_workflow_active_state_and_cover_selection_do_not_draw_underlines():
+    stylesheet = application_stylesheet("Dark")
+    assert 'QPushButton#workflowStageButton[workflowActive="true"]' in stylesheet
+    assert 'QPushButton#vocabularyButton[workflowActive="true"]' in stylesheet
+    cover_style = stylesheet.split(
+        "QListWidget#novelCoverRail::item:selected {", 1
+    )[1].split("}", 1)[0]
+    assert "border: 0;" in cover_style
+    assert "border-left" not in cover_style
 
 
 def test_native_palette_keeps_disabled_toolbar_labels_legible():

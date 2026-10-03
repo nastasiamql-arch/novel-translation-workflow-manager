@@ -154,7 +154,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QListWidget#novelCoverRail {{ background: transparent; border: 0; padding: 5px 2px; }}
     QListWidget#novelCoverRail::item {{ background: transparent; border: 0; padding: 1px; }}
     QListWidget#novelCoverRail::item:hover {{ background: {c['hover']}; }}
-    QListWidget#novelCoverRail::item:selected {{ background: transparent; border-left: 3px solid {c['accent']}; }}
+    QListWidget#novelCoverRail::item:selected {{ background: transparent; border: 0; }}
     QLabel#emptyStateIcon {{ color: {c['accent']}; font-size: 28pt; }}
     QLineEdit#librarySearch {{ background: {c['input']}; border: 1px solid {c['border']}; border-radius: 0; padding: 7px 10px; min-height: 30px; }}
     QTabBar#libraryStatusTabs {{ background: transparent; border: 0; }}
@@ -166,12 +166,12 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QListWidget#workflowSteps {{ background: transparent; border: 0; outline: 0; }}
     QListWidget#workflowSteps::item, QListWidget#workflowSteps::item:selected, QListWidget#workflowSteps::item:focus {{ background: transparent; color: {c['text']}; border: 0; }}
     QListWidget#workflowSteps::item:hover {{ background: {c['hover']}; }}
-    QPushButton#workflowStageButton, QPushButton#vocabularyButton {{ color: {c['text']}; background: transparent; border: 0; border-left: 3px solid transparent; border-radius: 0; min-height: 36px; padding: 7px 10px 7px 32px; text-align: left; }}
+    QPushButton#workflowStageButton, QPushButton#vocabularyButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 36px; padding: 7px 10px; text-align: left; }}
     QPushButton#workflowStageButton:hover, QPushButton#vocabularyButton:hover {{ background: {c['hover']}; }}
-    QPushButton#workflowStageButton:checked, QPushButton#vocabularyButton:checked {{ background: {c['hover']}; border-left-color: {c['accent']}; }}
+    QPushButton#workflowStageButton[workflowActive="true"], QPushButton#vocabularyButton[workflowActive="true"] {{ background: {c['hover']}; }}
     QPushButton#copyStepButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 34px; padding: 7px 14px; font-weight: 600; }}
-    QPushButton#copyStepButton:hover {{ color: {c['text']}; background: transparent; text-decoration: underline; }}
-    QPushButton#copyStepButton:focus {{ color: {c['text']}; background: transparent; border-bottom: 2px solid {c['focus']}; }}
+    QPushButton#copyStepButton:hover {{ color: {c['muted']}; background: transparent; text-decoration: none; }}
+    QPushButton#copyStepButton:focus {{ color: {c['focus']}; background: transparent; border: 0; text-decoration: none; }}
     QPushButton#copyStepButton:disabled {{ color: {c['disabled_text']}; background: transparent; }}
     QLabel#editorStatusBar, QLabel#progressStatusBar, QLabel#goalStatusBar, QLabel#contextStatusBar {{ color: {c['status_text']}; background: transparent; border: 0; padding: 3px 9px; min-height: 24px; font-size: 10pt; }}
     QProgressBar#goalProgressStatusBar {{ background: {c['surface2']}; border: 0; border-radius: 0; min-height: 8px; max-height: 8px; }}

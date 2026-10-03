@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.3.3 - 2026-10-04
+
+- Remove the underline and bottom border from COPY STEP hover and keyboard focus states while retaining a clear text-color focus indicator.
+- Replace the painted workflow-stage arrow with a simple active-row background to prevent it from colliding with the stage label.
+- Remove the selected-item border beneath novel covers.
+
 ## 3.3.2 - 2026-10-04
 
 - Fix duplicated workflow step labels in the workspace sidebar and expose each step name directly to assistive technology.
