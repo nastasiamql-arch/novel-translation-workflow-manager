@@ -149,6 +149,9 @@ class DownloadService:
         for position, chapter in enumerate(chapters, 1):
             if cancel and cancel.is_set():
                 break
+            if position > 1 and getattr(snapshot["source"], "chapter_request_interval", 0) and progress:
+                waiting_chapter = replace(chapter, title=f"รอข้อจำกัดเว็บก่อนโหลด: {chapter.title}")
+                progress(position - 1, total, waiting_chapter, result)
             filename = format_chapter_filename(chapter.index, chapter.title)
             target = source_dir / filename
             existing_record = manifest.data["chapters"].get(chapter.remote_id, {})
@@ -186,6 +189,11 @@ class DownloadService:
             except Exception as exc:
                 result.failed += 1
                 result.errors.append(f"{chapter.index} {chapter.title}: {exc}")
+                # Stop immediately when a source asks us to stop. Repeating the
+                # same blocked request for every remaining chapter only adds load.
+                if "anti-bot challenge" in str(exc).casefold() or "rate limit" in str(exc).casefold():
+                    result.errors.append("หยุดดาวน์โหลดแล้ว เพื่อรอให้เว็บไซต์อนุญาตให้ลองใหม่")
+                    break
             if progress: progress(position, total, chapter, result)
         return result
 

@@ -74,7 +74,7 @@ Novel Downloader เป็นแอป Windows แยกจาก Palantir: Nove
 
 เลือกโฟลเดอร์ส่งออกหลัก แล้วแอปจะสร้างโฟลเดอร์ย่อยตามชื่อนิยายและบันทึกตอนเป็น `0001 ชื่อตอน.txt` (UTF-8) ผู้ใช้สามารถนำไฟล์ไปใช้กับ Palantir เองได้โดยเลือกไฟล์ในหน้าโปรเจกต์
 
-ดาวน์โหลดตอนใหม่หรือช่วงตอนที่เลือกได้ ข้ามไฟล์เดิม resume ผ่าน manifest และจัดการแหล่ง HTML ที่กำหนดเองได้ TomatoMTL ใช้ Chinese Raw / 原文 หากเว็บแสดง anti-bot challenge โปรแกรมจะแจ้งและเปิดหน้าเว็บใน browser ให้ แต่จะไม่ข้าม challenge, paywall หรือการยืนยันตัวตน
+ดาวน์โหลดตอนใหม่หรือช่วงตอนที่เลือกได้ ข้ามไฟล์เดิม resume ผ่าน manifest และจัดการแหล่ง HTML ที่กำหนดเองได้ TomatoMTL ใช้ Chinese Raw / 原文 และเว้นช่วงการอ่านตอนเพื่อเคารพ rate limit ที่เว็บไซต์ประกาศ หากเว็บแสดง anti-bot challenge หรือ rate limit โปรแกรมจะหยุด batch เพื่อไม่ส่งคำขอซ้ำถี่ ๆ และเปิดหน้าเว็บใน browser ให้เมื่อเป็น challenge แต่จะไม่ข้าม challenge, paywall หรือการยืนยันตัวตน
 
 custom source เก็บใน `%LOCALAPPDATA%/NovelDownloader/sources/` ตัวอย่าง config:
 

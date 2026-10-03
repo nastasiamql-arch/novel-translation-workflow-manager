@@ -1,4 +1,6 @@
 import re
+import threading
+import time
 from html import unescape
 from urllib.parse import urljoin
 
@@ -14,11 +16,14 @@ class TomatoMTLSource(NovelSource):
     name = "TomatoMTL"
     domains = ("tomatomtl.com",)
     min_request_interval = 1.0
+    chapter_request_interval = 37.0
     capabilities = SourceCapabilities(supports_raw=True, supports_incremental_update=True)
     _BOOK = re.compile(r"/book/([^/?#]+)")
 
     def __init__(self, client=None):
         self.client = client or HttpClient(min_interval=self.min_request_interval)
+        self._last_chapter_request = None
+        self._chapter_request_lock = threading.Lock()
 
     def extract_book_id(self, url):
         if not self.can_handle(url):
@@ -77,6 +82,7 @@ class TomatoMTLSource(NovelSource):
             raise ValueError("TomatoMTL currently supports Chinese Raw / 原文 only")
         if not chapter.url:
             raise ValueError("Chapter URL is missing")
+        self._wait_for_chapter_interval()
         response = self.client.get(chapter.url)
         self._check_challenge(response.text)
         tree = HTMLParser(response.text)
@@ -89,6 +95,23 @@ class TomatoMTLSource(NovelSource):
             raise ValueError("TomatoMTL did not expose verifiable Chinese raw text; no chapter was saved")
         return ChapterContent(chapter.remote_id, chapter.index, chapter.title, content,
                               "zh", chapter.url)
+
+    def _wait_for_chapter_interval(self):
+        """Stay below TomatoMTL's published per-hour reading threshold."""
+        with self._chapter_request_lock:
+            now = time.monotonic()
+            if self._last_chapter_request is not None:
+                delay = self.chapter_request_interval - (now - self._last_chapter_request)
+                cancel = getattr(self.client, "cancel_event", None)
+                if delay > 0:
+                    if cancel and cancel.wait(delay):
+                        raise InterruptedError("Download cancelled")
+                    if not cancel:
+                        time.sleep(delay)
+            cancel = getattr(self.client, "cancel_event", None)
+            if cancel and cancel.is_set():
+                raise InterruptedError("Download cancelled")
+            self._last_chapter_request = time.monotonic()
 
     @staticmethod
     def _check_challenge(text):
