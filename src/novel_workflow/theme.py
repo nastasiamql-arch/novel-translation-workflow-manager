@@ -166,7 +166,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QListWidget#workflowSteps {{ background: transparent; border: 0; outline: 0; }}
     QListWidget#workflowSteps::item, QListWidget#workflowSteps::item:selected, QListWidget#workflowSteps::item:focus {{ background: transparent; color: {c['text']}; border: 0; }}
     QListWidget#workflowSteps::item:hover {{ background: {c['hover']}; }}
-    QPushButton#workflowStageButton, QPushButton#vocabularyButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 36px; padding: 7px 10px; text-align: left; }}
+    QPushButton#workflowStageButton, QPushButton#vocabularyButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 36px; padding: 0 10px; text-align: left; }}
     QPushButton#workflowStageButton:hover, QPushButton#vocabularyButton:hover {{ background: {c['hover']}; }}
     QPushButton#workflowStageButton[workflowActive="true"], QPushButton#vocabularyButton[workflowActive="true"] {{ background: {c['hover']}; }}
     QPushButton#copyStepButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 34px; padding: 7px 14px; font-weight: 600; }}

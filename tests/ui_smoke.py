@@ -199,6 +199,12 @@ def main() -> int:
                     workspace.steps.itemWidget(workspace.steps.item(i)).accessibleName()
                     for i in range(2)
                 ] == ["แปล", "ตรวจคำแปล"]
+                for index in range(workspace.steps.count()):
+                    item = workspace.steps.item(index)
+                    button = workspace.steps.itemWidget(item)
+                    assert workspace.steps.visualItemRect(item).contains(
+                        button.geometry()
+                    ), (index, button.geometry(), workspace.steps.visualItemRect(item))
                 assert [workspace.steps.itemWidget(workspace.steps.item(i)).property("workflowActive") for i in range(2)] == [True, False]
                 assert workspace.vocabulary_button.text() == "หาศัพท์"
                 assert not hasattr(workspace, "vocabulary_polish_button")
