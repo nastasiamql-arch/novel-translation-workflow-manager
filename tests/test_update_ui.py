@@ -4,7 +4,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QProgressBar
 
 from novel_workflow.models import NovelProfile
 from novel_workflow.storage import ProjectRepository
@@ -25,15 +25,40 @@ class Signal:
 
 
 class FakeDialog:
+    instance = None
+
     def __init__(self, *_args):
+        type(self).instance = self
         self.canceled = Signal()
+        self.bar = FakeProgressBar()
+        self.label = FakeLabel()
+        self.label_text = _args[0]
 
     def setWindowTitle(self, *_args): pass
     def setWindowModality(self, *_args): pass
     def setMinimumDuration(self, *_args): pass
-    def setValue(self, *_args): pass
+    def setMinimumWidth(self, *_args): pass
+    def resize(self, *_args): pass
+    def setObjectName(self, *_args): pass
+    def setAutoClose(self, *_args): pass
+    def setAutoReset(self, *_args): pass
+    def setValue(self, value): self.value = value
+    def setLabelText(self, text): self.label_text = text
+    def findChild(self, widget_type):
+        return self.bar if widget_type is QProgressBar else self.label
     def close(self): pass
     def deleteLater(self): pass
+
+
+class FakeProgressBar:
+    def setObjectName(self, *_args): pass
+    def setTextVisible(self, visible): self.text_visible = visible
+
+
+class FakeLabel:
+    def setObjectName(self, *_args): pass
+    def setWordWrap(self, value): self.word_wrap = value
+    def setMinimumHeight(self, height): self.minimum_height = height
 
 
 class FakeWorker:
@@ -45,6 +70,7 @@ class FakeWorker:
     def requestInterruption(self): pass
 
     def start(self):
+        self.progress.emit(63)
         self.finished_download.emit(self.destination, "")
 
 
@@ -97,6 +123,8 @@ def test_verified_update_saves_editor_and_settings_before_launch(tmp_path, monke
     window._download_update(update, tmp_path / "verified-installer.exe")
 
     assert launched == [str(tmp_path / "verified-installer.exe")]
+    assert FakeDialog.instance.bar.text_visible is False
+    assert "63%" in FakeDialog.instance.label_text
     assert workspace.editor.dirty_count() == 0
     window.close()
     app.processEvents()

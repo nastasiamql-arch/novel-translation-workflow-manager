@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.2.0 - 2026-10-04
+
+- Improve readability across the full application with larger base text, stronger inactive/disabled states, clearer keyboard focus, and larger toolbar targets.
+- Clarify navigation hierarchy with more legible page headings, tabs, toolbar labels, and status-bar text.
+- Make updater progress easier to follow: show the percentage once outside the progress fill and give the download dialog enough room for its message and cancel action.
+
 ## 3.1.0 - 2026-10-04
 
 - Refresh the full interface with flat Visual Studio Code Dark+ colors and keep a matching Light theme available in settings.
