@@ -1846,9 +1846,9 @@ class MainWindow(LegacyMainWindow):
         dialog.setWindowTitle(f"ดาวน์โหลด v{update.version}")
         dialog.setWindowModality(Qt.WindowModal)
         dialog.setMinimumDuration(0)
-        progress_bar = QProgressBar(dialog)
-        progress_bar.setTextVisible(False)
-        dialog.setBar(progress_bar)
+        progress_bar = dialog.bar() if hasattr(dialog, "bar") else None
+        if progress_bar is not None:
+            progress_bar.setTextVisible(False)
         worker = _UpdateDownloadWorker(update, destination, self)
         self._update_download_worker = worker
         self._update_progress = dialog
