@@ -469,15 +469,8 @@ def main() -> int:
                 window.return_from_utility_page()
 
                 workspace = window.workspaces[profile.id]
-                assert workspace.web_source_button.text() == "ต้นฉบับเว็บ"
-                import novel_workflow.downloader_ui.panel as downloader_panel
-                downloader_panel.data_root = lambda: root / "data"
-                window.open_downloader()
-                downloader_page = window._utility_pages[f"downloader:{profile.id}"]
-                assert window.utility_title.text() == "ต้นฉบับเว็บ"
-                assert downloader_page.profile.source_binding is None
-                assert downloader_page.inspect_button.isEnabled()
-                window.return_from_utility_page()
+                assert not hasattr(workspace, "web_source_button")
+                assert not hasattr(window, "open_downloader")
 
                 from novel_workflow.downloader.worker import DownloaderWorker
                 worker_errors = []
@@ -534,7 +527,7 @@ def main() -> int:
 
                 smoke_passed = True
                 app.exit(0)
-                print("UI smoke passed: status, Context watcher, downloader page, worker errors, in-app utility pages, Find/Replace, Auto Save, COPY STEP")
+                print("UI smoke passed: status, Context watcher, no embedded downloader mode, worker errors, in-app utility pages, Find/Replace, Auto Save, COPY STEP")
             except Exception as exc:
                 traceback.print_exc()
                 print(f"UI smoke failed: {type(exc).__name__}: {exc}")

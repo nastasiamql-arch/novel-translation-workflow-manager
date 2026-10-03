@@ -1,3 +1,6 @@
+"""Downloader workflows backed only by Downloader-owned storage."""
+from __future__ import annotations
+
 import hashlib
 import os
 import tempfile
@@ -5,8 +8,7 @@ from datetime import datetime, timezone
 from dataclasses import replace
 from pathlib import Path
 
-from ..models import NovelSourceBinding
-from .models import DownloadResult
+from .models import DownloadResult, DownloaderBook, DownloaderSourceBinding
 from .filename import format_chapter_filename
 from .manifest import ChapterManifest
 
@@ -24,52 +26,63 @@ class DownloadService:
             book = replace(book, total_chapters=len(chapters))
         return source, book
 
-    def bind(self, profile, url, book=None, source=None):
-        if source is None or book is None:
-            source, book = self.inspect_book(url)
-        previous = profile.source_binding
-        manifest_path = self.repository.profile_dir(profile.id) / "source_meta" / "manifest.json"
-        if previous and (previous.source_id, previous.remote_book_id) != (source.id, book.book_id) and manifest_path.exists():
-            archived = manifest_path.with_name(f"manifest.{previous.source_id}.{previous.remote_book_id}.json")
+    def add_book(self, url, output_root):
+        source, info = self.inspect_book(url)
+        book = DownloaderBook(title=info.title, author=info.author)
+        book.output_dir = str(self.repository.output_path(book.id, info.title, output_root))
+        book.source_binding = DownloaderSourceBinding(source.id, info.url, info.book_id,
+                                                       last_known_chapter_count=info.total_chapters)
+        self.repository.save_book(book)
+        self._manifest(book).configure(source.id, info.book_id, info.url)
+        self._manifest(book).save()
+        return book, info
+
+    def bind(self, book, url, book_info=None, source=None):
+        if source is None or book_info is None:
+            source, book_info = self.inspect_book(url)
+        previous = book.source_binding
+        manifest_path = self.repository.manifest_path(book.id)
+        if previous and (previous.source_id, previous.remote_book_id) != (source.id, book_info.book_id) and manifest_path.exists():
+            suffix = hashlib.sha256(f"{previous.source_id}:{previous.remote_book_id}".encode()).hexdigest()[:12]
+            archived = manifest_path.with_name(f"manifest.{suffix}.json")
             if not archived.exists():
                 archived.parent.mkdir(parents=True, exist_ok=True)
                 archived.write_bytes(manifest_path.read_bytes())
-            # Start an independent chapter identity map for the newly bound book.
             manifest = ChapterManifest(manifest_path)
-            manifest.data = {
-                "schema_version": ChapterManifest.SCHEMA_VERSION,
-                "source_id": source.id, "book_id": book.book_id,
-                "book_url": book.url, "chapters": {},
-            }
+            manifest.data = {"schema_version": ChapterManifest.SCHEMA_VERSION,
+                             "source_id": source.id, "book_id": book_info.book_id,
+                             "book_url": book_info.url, "chapters": {}}
             manifest.save()
-        same_book = bool(previous and (previous.source_id, previous.remote_book_id) == (source.id, book.book_id))
-        profile.source_binding = NovelSourceBinding(
-            source.id, book.url, book.book_id,
+        same_book = bool(previous and (previous.source_id, previous.remote_book_id) == (source.id, book_info.book_id))
+        book.title = book_info.title
+        book.author = book_info.author
+        book.source_binding = DownloaderSourceBinding(
+            source.id, book_info.url, book_info.book_id,
             content_mode=previous.content_mode if same_book else "raw_zh",
-            last_known_chapter_count=book.total_chapters,
+            last_known_chapter_count=book_info.total_chapters,
             last_downloaded_chapter=previous.last_downloaded_chapter if same_book else 0,
             last_checked_at=previous.last_checked_at if same_book else None,
             last_downloaded_at=previous.last_downloaded_at if same_book else None,
             skip_existing=previous.skip_existing if same_book else True,
         )
-        self.repository.save_profile(profile)
-        manifest = self._manifest(profile)
-        manifest.configure(source.id, book.book_id, book.url)
+        self.repository.save_book(book)
+        manifest = self._manifest(book)
+        manifest.configure(source.id, book_info.book_id, book_info.url)
         manifest.save()
-        return book
+        return book_info
 
-    def check_updates(self, profile):
-        binding = self._binding(profile)
+    def check_updates(self, book):
+        binding = self._binding(book)
         source = self.registry.get(binding.source_id)
-        book = source.get_book(binding.book_url)
-        if book.book_id != binding.remote_book_id:
+        info = source.get_book(binding.book_url)
+        if info.book_id != binding.remote_book_id:
             raise ValueError("Source book id changed; confirm the source binding before continuing")
-        chapters = source.get_chapters(book)
-        manifest = self._manifest(profile)
+        chapters = source.get_chapters(info)
+        manifest = self._manifest(book)
         known = manifest.data["chapters"]
         missing = [chapter for chapter in chapters
                    if not (known.get(chapter.remote_id, {}).get("downloaded")
-                           and (self._source_dir(profile) / known[chapter.remote_id].get("filename", "")).is_file())]
+                           and (self._source_dir(book) / known[chapter.remote_id].get("filename", "")).is_file())]
         changed = []
         for chapter in chapters:
             record = known.get(chapter.remote_id)
@@ -80,53 +93,52 @@ class DownloadService:
                     changed.append(f"{chapter.remote_id}: title {record['title']} → {chapter.title}")
         binding.last_known_chapter_count = len(chapters)
         binding.last_checked_at = datetime.now(timezone.utc).isoformat()
-        self.repository.save_profile(profile)
-        return {"book": book, "chapters": chapters, "missing": missing,
+        self.repository.save_book(book)
+        return {"book": info, "chapters": chapters, "missing": missing,
                 "downloaded": len(chapters) - len(missing), "warnings": changed}
 
-    def download_range(self, profile, start, end, skip_existing=True, *, overwrite=False, cancel=None, progress=None):
+    def download_range(self, book, start, end, skip_existing=True, *, overwrite=False, cancel=None, progress=None):
         if start < 1 or end < start:
             raise ValueError("Chapter range must satisfy 1 ≤ start ≤ end")
-        snapshot = self._catalog(profile)
+        snapshot = self._catalog(book)
         selected = [item for item in snapshot["chapters"] if start <= item.index <= end]
-        return self._download(profile, snapshot, selected, skip_existing, overwrite, cancel, progress)
+        return self._download(book, snapshot, selected, skip_existing, overwrite, cancel, progress)
 
-    def download_missing(self, profile, **kwargs):
-        snapshot = self._catalog(profile)
-        return self._download(profile, snapshot, snapshot["missing"], **kwargs)
+    def download_missing(self, book, **kwargs):
+        snapshot = self._catalog(book)
+        return self._download(book, snapshot, snapshot["missing"], **kwargs)
 
-    def download_updates(self, profile, **kwargs):
-        return self.download_missing(profile, **kwargs)
+    def download_updates(self, book, **kwargs):
+        return self.download_missing(book, **kwargs)
 
-    def download_selected(self, profile, chapter_ids, **kwargs):
-        snapshot = self._catalog(profile)
+    def download_selected(self, book, chapter_ids, **kwargs):
+        snapshot = self._catalog(book)
         selected = [chapter for chapter in snapshot["chapters"] if chapter.remote_id in set(chapter_ids)]
-        return self._download(profile, snapshot, selected, **kwargs)
+        return self._download(book, snapshot, selected, **kwargs)
 
-    def _catalog(self, profile):
-        binding = self._binding(profile)
+    def _catalog(self, book):
+        binding = self._binding(book)
         source = self.registry.get(binding.source_id)
-        book = source.get_book(binding.book_url)
-        if book.book_id != binding.remote_book_id:
-            raise ValueError("Source book id changed; verify the profile binding")
-        chapters = source.get_chapters(book)
-        manifest = self._manifest(profile)
+        info = source.get_book(binding.book_url)
+        if info.book_id != binding.remote_book_id:
+            raise ValueError("Source book id changed; verify the saved book before continuing")
+        chapters = source.get_chapters(info)
+        manifest = self._manifest(book)
         known = manifest.data["chapters"]
         missing = [chapter for chapter in chapters
                    if not (known.get(chapter.remote_id, {}).get("downloaded")
-                           and (self._source_dir(profile) / known[chapter.remote_id].get("filename", "")).is_file())]
+                           and (self._source_dir(book) / known[chapter.remote_id].get("filename", "")).is_file())]
         binding.last_known_chapter_count = len(chapters)
         binding.last_checked_at = datetime.now(timezone.utc).isoformat()
-        self.repository.save_profile(profile)
-        return {"binding": binding, "source": source, "book": book, "chapters": chapters,
+        self.repository.save_book(book)
+        return {"binding": binding, "source": source, "book": info, "chapters": chapters,
                 "missing": missing, "manifest": manifest}
 
-    def _download(self, profile, snapshot, chapters, skip_existing=True, overwrite=False, cancel=None, progress=None):
-        result = DownloadResult()
-        result.chapters = list(chapters)
-        source_dir = self._source_dir(profile)
+    def _download(self, book, snapshot, chapters, skip_existing=True, overwrite=False, cancel=None, progress=None):
+        result = DownloadResult(chapters=list(chapters))
+        source_dir = self._source_dir(book)
         source_dir.mkdir(parents=True, exist_ok=True)
-        manifest = snapshot.get("manifest") or self._manifest(profile)
+        manifest = snapshot.get("manifest") or self._manifest(book)
         binding = snapshot["binding"]
         client = getattr(snapshot["source"], "client", None)
         if hasattr(client, "cancel_event"):
@@ -145,7 +157,6 @@ class DownloadService:
                 if progress: progress(position, total, chapter, result)
                 continue
             if target.exists() and not overwrite:
-                # Existing untracked files are user data; don't assume they belong to this source.
                 result.skipped += 1
                 if progress: progress(position, total, chapter, result)
                 continue
@@ -169,7 +180,7 @@ class DownloadService:
                 result.downloaded += 1
                 binding.last_downloaded_chapter = max(binding.last_downloaded_chapter, chapter.index)
                 binding.last_downloaded_at = datetime.now(timezone.utc).isoformat()
-                self.repository.save_profile(profile)
+                self.repository.save_book(book)
             except InterruptedError:
                 break
             except Exception as exc:
@@ -178,17 +189,20 @@ class DownloadService:
             if progress: progress(position, total, chapter, result)
         return result
 
-    def _binding(self, profile):
-        if not profile.source_binding:
-            raise ValueError("No website source is linked to this profile")
-        return profile.source_binding
+    def _binding(self, book):
+        if not book.source_binding:
+            raise ValueError("No website source is linked to this Downloader book")
+        if not book.output_dir:
+            raise ValueError("Choose an output folder before downloading chapters")
+        return book.source_binding
 
-    def _source_dir(self, profile):
-        return self.repository.profile_dir(profile.id) / "source"
+    @staticmethod
+    def _source_dir(book):
+        return Path(book.output_dir)
 
-    def _manifest(self, profile):
-        manifest = ChapterManifest(self.repository.profile_dir(profile.id) / "source_meta" / "manifest.json")
-        binding = profile.source_binding
+    def _manifest(self, book):
+        manifest = ChapterManifest(self.repository.manifest_path(book.id))
+        binding = book.source_binding
         if binding:
             manifest.configure(binding.source_id, binding.remote_book_id, binding.book_url)
         return manifest

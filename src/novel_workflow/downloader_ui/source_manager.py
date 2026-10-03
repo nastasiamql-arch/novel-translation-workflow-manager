@@ -4,18 +4,17 @@ from pathlib import Path
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QListWidget, QHBoxLayout, QPushButton, QFileDialog, QMessageBox
 
-from ..storage import data_root
 from ..downloader.registry import SourceRegistry
 
 
 class SourceManagerDialog(QDialog):
     sources_changed = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, sources_dir, parent=None):
         super().__init__(parent)
         self.setWindowTitle("จัดการแหล่งต้นฉบับ")
         self.resize(540, 420)
-        self.sources_dir = data_root() / "sources"
+        self.sources_dir = Path(sources_dir)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("แหล่งที่มาพร้อมโปรแกรมและเว็บที่ตั้งค่าด้วย JSON"))
         self.list = QListWidget()

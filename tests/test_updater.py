@@ -10,7 +10,7 @@ from novel_workflow import __version__
 from novel_workflow import updater
 
 
-def release_payload(version="1.8.0", content=b"installer bytes"):
+def release_payload(version="1.8.0", content=b"installer bytes", installer_prefix="NovelWorkflow"):
     digest = hashlib.sha256(content).hexdigest()
     return {
         "tag_name": f"v{version}",
@@ -24,12 +24,12 @@ def release_payload(version="1.8.0", content=b"installer bytes"):
                 "https://api.github.com/repos/nastasiamql-arch/novel-translation-workflow-manager/"
                 "releases/assets/123456"
             ),
-            "name": f"NovelWorkflow-Setup-{version}.exe",
+            "name": f"{installer_prefix}-Setup-{version}.exe",
             "size": len(content),
             "digest": f"sha256:{digest}",
             "browser_download_url": (
                 "https://github.com/nastasiamql-arch/novel-translation-workflow-manager/"
-                f"releases/download/v{version}/NovelWorkflow-Setup-{version}.exe"
+                f"releases/download/v{version}/{installer_prefix}-Setup-{version}.exe"
             ),
         }],
     }
@@ -106,6 +106,15 @@ def test_invalid_release_version_and_wrong_installer_asset_are_rejected():
     payload["assets"][0]["name"] = "Other-Setup-1.8.0.exe"
     with pytest.raises(updater.UpdateError, match="ไฟล์ติดตั้ง"):
         updater.parse_latest_release(payload, "1.7.5")
+
+
+def test_downloader_update_selects_only_its_own_release_asset():
+    payload = release_payload(installer_prefix="NovelDownloader")
+
+    update = updater.parse_latest_release(payload, "1.7.5", installer_prefix="NovelDownloader")
+    assert update.download_url.endswith("/NovelDownloader-Setup-1.8.0.exe")
+    with pytest.raises(updater.UpdateError, match="ติดตั้ง"):
+        updater.parse_latest_release(payload, "1.7.5", installer_prefix="NovelWorkflow")
 
 
 def test_bad_download_is_removed_instead_of_left_as_installer(tmp_path, monkeypatch):
