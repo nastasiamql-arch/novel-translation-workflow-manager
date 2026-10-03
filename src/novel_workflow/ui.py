@@ -9,7 +9,7 @@ from .launcher import LauncherService
 from .storage import ProjectRepository
 from .translation_progress import latest_context_chapter, sync_profile_context, daily_chapter_count, goal_progress
 from .progress_dialog import TranslationDashboardDialog
-from .theme import application_stylesheet
+from .theme import application_stylesheet, capture_system_appearance, qt_palette
 
 class Editor(QDialog):
     def __init__(self,parent,title,text=""):
@@ -45,7 +45,11 @@ class MainWindow(QMainWindow):
     def apply_theme(self):
         app=QApplication.instance()
         if app:
+            capture_system_appearance(app)
             app.setStyleSheet(application_stylesheet(self.settings.appearance))
+            # Qt's stylesheet engine can repopulate disabled roles with its
+            # generic pale gray; restore our contrast-checked palette after it.
+            app.setPalette(qt_palette(self.settings.appearance))
 
     def build(self):
         bar=self.addToolBar("Main")

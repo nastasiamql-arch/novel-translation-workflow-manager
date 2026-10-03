@@ -941,7 +941,10 @@ class EditorTabs(QWidget):
                 background: {colors['tab']}; color: {colors['gutter_text']};
                 border: 0; border-right: 1px solid {colors['border']};
                 border-radius: 0;
-                padding: 10px 15px; min-width: 92px;
+                padding: 10px 15px; min-width: 92px; min-height: 32px;
+            }}
+            QTabWidget#editorTabs QTabBar::tab:disabled {{
+                color: {colors['disabled_text']}; background: {colors['tab']};
             }}
             QTabWidget#editorTabs QTabBar::tab:hover {{
                 background: {colors['current_line']}; color: {colors['foreground']};
@@ -949,6 +952,9 @@ class EditorTabs(QWidget):
             QTabWidget#editorTabs QTabBar::tab:selected {{
                 background: {colors['tab_selected']}; color: {colors['foreground']};
                 border-top: 2px solid {colors['accent']}; font-weight: 600;
+            }}
+            QTabWidget#editorTabs QTabBar::tab:focus {{
+                border-bottom: 3px solid {colors['focus']};
             }}
             QFrame#editorFindPanel {{
                 background: {colors['background']}; color: {colors['foreground']};
@@ -962,7 +968,7 @@ class EditorTabs(QWidget):
             QFrame#editorFindPanel QPushButton {{
                 background: {colors['current_line']}; color: {colors['foreground']};
                 border: 1px solid {colors['border']}; border-radius: 0;
-                padding: 5px 9px; min-height: 22px;
+                padding: 6px 10px; min-height: 30px;
             }}
             QFrame#editorFindPanel QPushButton:hover {{
                 background: {colors['selection']};
