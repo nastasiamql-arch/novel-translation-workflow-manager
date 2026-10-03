@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.0.1 - 2026-10-04
+
+- Improve readability across light and dark themes with clearer text, stronger control borders, solid surfaces, and larger interface text.
+- Keep progress values beside their bars and make update progress text remain legible.
+- Make editor text wrap to the available width and change search matches to subtle underlines with a distinct active result.
+
 ## 3.0.0 - 2026-10-03
 
 - Remove the standalone web novel Downloader and its adapters, library, configuration, installer, updater path, and related workflow integration.

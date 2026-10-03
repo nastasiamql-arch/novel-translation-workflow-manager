@@ -94,8 +94,10 @@ class MainWindow(QMainWindow):
         goal_layout.setContentsMargins(10,7,10,7)
         goal_layout.setSpacing(4)
         self.goal_label=QLabel("เป้าหมายวันนี้")
+        self.goal_label.setWordWrap(True)
         self.goal_bar=QProgressBar()
         self.goal_bar.setFixedHeight(15)
+        self.goal_bar.setTextVisible(False)
         self.latest_chapter_label=QLabel("บทล่าสุดจากไฟล์ Context")
         self.latest_chapter_label.setObjectName("mutedLabel")
         goal_layout.addWidget(self.goal_label)
@@ -230,7 +232,7 @@ class MainWindow(QMainWindow):
         goal=goal_progress(self.profile)
         if goal:
             completed,target,percentage=goal
-            self.goal_label.setText(f"เป้าหมาย {completed}/{target} บท · วันนี้ +{today} บท")
+            self.goal_label.setText(f"เป้าหมาย {completed}/{target} บท · {percentage}% · วันนี้ +{today} บท")
             self.goal_bar.setRange(0,100)
             self.goal_bar.setValue(percentage)
             self.goal_bar.setFormat(f"{percentage}%")
