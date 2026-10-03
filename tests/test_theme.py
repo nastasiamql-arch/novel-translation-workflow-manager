@@ -16,6 +16,16 @@ def _contrast(foreground: str, background: str) -> float:
     return (first + 0.05) / (second + 0.05)
 
 
+def test_accent_and_editor_search_colors_are_neutral_grayscale():
+    for appearance, tokens in (("Dark", _DARK), ("Light", _LIGHT)):
+        for role in ("accent", "focus", "primary", "primary_hover", "selection"):
+            color = tokens[role]
+            assert color[1:3] == color[3:5] == color[5:7], (appearance, role, color)
+        assert theme.editor_colors(appearance)["find"][1:3] == (
+            theme.editor_colors(appearance)["find"][3:5]
+        ) == theme.editor_colors(appearance)["find"][5:7]
+
+
 def test_theme_text_and_status_bar_meet_readable_contrast():
     for palette in (_DARK, _LIGHT):
         for background in ("app", "surface", "sidebar", "surface2"):
