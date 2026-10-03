@@ -21,7 +21,7 @@ class DownloaderBookPanel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignTop)
-        self.heading = QLabel("เลือกนิยายหรือเพิ่มจาก URL")
+        self.heading = QLabel("เริ่มต้นดาวน์โหลด")
         self.heading.setObjectName("pageTitle")
         layout.addWidget(self.heading)
 
@@ -51,7 +51,11 @@ class DownloaderBookPanel(QWidget):
 
         download_group = QGroupBox("ดาวน์โหลดต้นฉบับ")
         download_layout = QVBoxLayout(download_group)
-        self.summary = QLabel("เพิ่มนิยายจาก URL เพื่อเริ่มต้น")
+        self.summary = QLabel(
+            "1. กด + เพิ่มจาก URL ที่มุมขวาบน\n"
+            "2. เลือกนิยายจากรายการทางซ้าย\n"
+            "3. กด ตรวจตอนล่าสุด แล้วเลือก ดาวน์โหลดตอนใหม่"
+        )
         self.summary.setWordWrap(True)
         download_layout.addWidget(self.summary)
         download_actions = QHBoxLayout()
@@ -90,7 +94,7 @@ class DownloaderBookPanel(QWidget):
     def set_book(self, book):
         self.book = book
         binding = book.source_binding if book else None
-        self.heading.setText(book.title if book else "เลือกนิยายหรือเพิ่มจาก URL")
+        self.heading.setText(book.title if book else "เริ่มต้นดาวน์โหลด")
         self.source_value.setText(binding.source_id if binding else "ยังไม่ผูกแหล่ง")
         self.author_value.setText(book.author or "—" if book else "—")
         self.url_value.setText(binding.book_url if binding else "—")
@@ -102,7 +106,11 @@ class DownloaderBookPanel(QWidget):
             )
             self.end.setValue(max(1, binding.last_known_chapter_count))
         else:
-            self.summary.setText("เพิ่มนิยายจาก URL เพื่อเริ่มต้น")
+            self.summary.setText(
+                "1. กด + เพิ่มจาก URL ที่มุมขวาบน\n"
+                "2. เลือกนิยายจากรายการทางซ้าย\n"
+                "3. กด ตรวจตอนล่าสุด แล้วเลือก ดาวน์โหลดตอนใหม่"
+            )
         self.chapter_list.clear()
         self._busy(False)
 

@@ -2,6 +2,11 @@
 
 All notable changes to Palantir: Novel and Novel Downloader are documented here.
 
+## 2.5.2 - 2026-10-03
+
+- Clarify that **รีเฟรชรายชื่อเว็บ** only reloads source definitions and is not a chapter download action.
+- Add step-by-step first-use guidance to the Downloader panel when no novel is selected.
+
 ## 2.5.1 - 2026-10-03
 
 - Offer **เปิดหน้าเว็บใน Browser** when testing a source URL returns a TomatoMTL anti-bot challenge, matching the download and add-book flows.

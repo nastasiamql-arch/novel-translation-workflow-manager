@@ -17,11 +17,16 @@ class SourceManagerDialog(QDialog):
         self.resize(540, 420)
         self.sources_dir = Path(sources_dir)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("แหล่งที่มาพร้อมโปรแกรมและเว็บที่ตั้งค่าด้วย JSON"))
+        self.purpose_label = QLabel(
+            "หน้านี้ใช้จัดการรายชื่อเว็บต้นทาง ไม่ได้ดาวน์โหลดนิยาย\n"
+            "หากต้องการโหลด ให้ปิดหน้านี้ แล้วกด + เพิ่มจาก URL ที่หน้าหลัก"
+        )
+        self.purpose_label.setWordWrap(True)
+        layout.addWidget(self.purpose_label)
         self.list = QListWidget()
         layout.addWidget(self.list, 1)
         actions = QHBoxLayout()
-        for label, callback in (("โหลดใหม่", self.reload), ("นำเข้า JSON", self.import_json),
+        for label, callback in (("รีเฟรชรายชื่อเว็บ", self.reload), ("นำเข้า JSON", self.import_json),
                                 ("เปิดโฟลเดอร์", self.open_folder), ("ทดสอบ URL", self.test_url)):
             button = QPushButton(label)
             button.clicked.connect(callback)
