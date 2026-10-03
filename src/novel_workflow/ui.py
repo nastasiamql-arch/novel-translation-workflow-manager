@@ -40,7 +40,7 @@ class MainWindow(QMainWindow):
         self.refresh_profiles()
 
     @staticmethod
-    def theme_stylesheet(appearance="Light"):
+    def theme_stylesheet(appearance="Dark"):
         return application_stylesheet(appearance)
     def apply_theme(self):
         app=QApplication.instance()

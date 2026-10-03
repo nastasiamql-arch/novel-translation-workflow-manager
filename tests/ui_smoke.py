@@ -155,7 +155,7 @@ def main() -> int:
                 window.library_status_tabs.setCurrentIndex(0)
                 app.processEvents()
                 workspace = window.workspaces[profile.id]
-                assert window.settings.appearance == "Light"
+                assert window.settings.appearance == "Dark"
                 assert workspace.root_path == novel_folder.resolve()
                 assert workspace.steps.count() == 2
                 assert [workspace.steps.item(i).text() for i in range(2)] == [
@@ -252,7 +252,7 @@ def main() -> int:
                 app.processEvents()
 
                 assert editor.objectName() == "codeEditor"
-                assert editor.colors["background"] == "#FFFFFF"
+                assert editor.colors["background"] == "#1E1E1E"
                 assert editor.font().pointSizeF() >= 10.5
                 window.adjust_editor_font_size(1)
                 assert round(editor.font().pointSizeF(), 2) == 12.0, editor.font().pointSizeF()

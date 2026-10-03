@@ -199,8 +199,9 @@ class NovelGroup:
 
 @dataclass
 class AppSettings:
-    appearance: str = "Light"
+    appearance: str = "Dark"
     appearance_migrated: bool = False
+    flat_vscode_theme_migrated: bool = False
     editor_style_migrated: bool = False
     separator: str = "==============================\n{FILE_NAME}\n=============================="
     show_filename_heading: bool = True

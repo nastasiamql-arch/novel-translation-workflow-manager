@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.1.0 - 2026-10-04
+
+- Refresh the full interface with flat Visual Studio Code Dark+ colors and keep a matching Light theme available in settings.
+- Remove decorative cards, rounded frames, and pill-shaped controls throughout the app; retain clear input borders, keyboard focus, and selection indicators.
+- Restyle editor tabs, find controls, notifications, progress indicators, and the status bar as flat workbench elements.
+
 ## 3.0.1 - 2026-10-04
 
 - Improve readability across light and dark themes with clearer text, stronger control borders, solid surfaces, and larger interface text.

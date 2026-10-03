@@ -50,7 +50,7 @@ class TxtExportTab(QWidget):
     instances = WeakSet()
 
     def __init__(self, settings, status_callback=None, settings_callback=None, parent=None,
-                 font_size=11.0, appearance="Light", context_path_callback=None,
+                 font_size=11.0, appearance="Dark", context_path_callback=None,
                  context_saved_callback=None, notification_callback=None):
         super().__init__(parent)
         self.instances.add(self)
@@ -274,7 +274,7 @@ class LineNumberArea(QWidget):
 class CodeEditor(QPlainTextEdit):
     """Native text editor with a VS Code-style line-number gutter."""
 
-    def __init__(self, parent=None, font_size=11.0, appearance="Light"):
+    def __init__(self, parent=None, font_size=11.0, appearance="Dark"):
         super().__init__(parent)
         self.appearance = appearance
         self.colors = editor_colors(appearance)
@@ -464,7 +464,7 @@ class EditorTabs(QWidget):
     documentSaved = Signal(str)
     instances = WeakSet()
 
-    def __init__(self, parent=None, font_size=11.0, appearance="Light",
+    def __init__(self, parent=None, font_size=11.0, appearance="Dark",
                  settings=None, settings_callback=None, status_callback=None,
                  context_path_callback=None, notification_callback=None):
         super().__init__(parent)
@@ -940,7 +940,7 @@ class EditorTabs(QWidget):
             QTabWidget#editorTabs QTabBar::tab {{
                 background: {colors['tab']}; color: {colors['gutter_text']};
                 border: 0; border-right: 1px solid {colors['border']};
-                border-radius: 9px 9px 0 0;
+                border-radius: 0;
                 padding: 10px 15px; min-width: 92px;
             }}
             QTabWidget#editorTabs QTabBar::tab:hover {{
@@ -952,16 +952,16 @@ class EditorTabs(QWidget):
             }}
             QFrame#editorFindPanel {{
                 background: {colors['background']}; color: {colors['foreground']};
-                border: 1px solid {colors['border']}; border-radius: 14px;
+                border: 0; border-radius: 0;
             }}
             QFrame#editorFindPanel QLineEdit {{
                 background: {colors['background']}; color: {colors['foreground']};
-                border: 1px solid {colors['border']}; border-radius: 9px;
+                border: 1px solid {colors['border']}; border-radius: 0;
                 padding: 5px 8px; min-height: 22px;
             }}
             QFrame#editorFindPanel QPushButton {{
                 background: {colors['current_line']}; color: {colors['foreground']};
-                border: 1px solid {colors['gutter_text']}; border-radius: 6px;
+                border: 1px solid {colors['border']}; border-radius: 0;
                 padding: 5px 9px; min-height: 22px;
             }}
             QFrame#editorFindPanel QPushButton:hover {{
