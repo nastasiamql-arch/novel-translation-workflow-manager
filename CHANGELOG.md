@@ -2,6 +2,10 @@
 
 All notable changes to Palantir: Novel and Novel Downloader are documented here.
 
+## 2.5.1 - 2026-10-03
+
+- Offer **เปิดหน้าเว็บใน Browser** when testing a source URL returns a TomatoMTL anti-bot challenge, matching the download and add-book flows.
+
 ## 2.5.0 - 2026-10-03
 
 - Move novel downloading into the standalone Novel Downloader application with separate library, settings, source configs, manifests, and output folders.
