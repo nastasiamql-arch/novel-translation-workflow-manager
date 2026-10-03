@@ -147,14 +147,11 @@ class SubmitToast(QFrame):
 
     def show_message(self, text):
         self.message.setText(str(text))
-        dark = getattr(getattr(self.parent(), "settings", None), "appearance", "Light") == "Dark"
-        background, foreground, border = (
-            ("#263449", "#f2f5fa", "#4d6689") if dark
-            else ("#ffffff", "#172033", "#cbd5e1")
-        )
+        dark = getattr(getattr(self.parent(), "settings", None), "appearance", "Dark") == "Dark"
+        background, foreground = ("#252526", "#D4D4D4") if dark else ("#F3F3F3", "#333333")
         self.setStyleSheet(
             f"QFrame#submitToast {{ background:{background}; color:{foreground}; "
-            f"border:1px solid {border}; border-radius:10px; }}"
+            "border:0; border-bottom:1px solid #007ACC; border-radius:0; }"
             f"QLabel {{ color:{foreground}; background:transparent; }}"
         )
         self.setMaximumWidth(max(320, min(560, self.parent().width() - 40)))
@@ -404,8 +401,8 @@ class ProfileWorkspace(QWidget):
             }
             QListWidget#novelCoverRail::item {
                 background: transparent;
-                border: 2px solid transparent;
-                border-radius: 7px;
+                border: 0;
+                border-radius: 0;
                 padding: 1px;
             }
             QListWidget#novelCoverRail::item:hover {
@@ -414,7 +411,7 @@ class ProfileWorkspace(QWidget):
             }
             QListWidget#novelCoverRail::item:selected {
                 background: transparent;
-                border: 2px solid #2684FF;
+                border-left: 2px solid #007ACC;
             }
         """)
 
@@ -761,12 +758,17 @@ class MainWindow(LegacyMainWindow):
             self.setWindowIcon(QIcon(str(logo)))
         changed = False
         if not self.settings.appearance_migrated:
-            # Dark was the old default. Honor the user's newer request for the
-            # readable light workspace once, while preserving future choices.
+            # Preserve the one-time appearance migration used by older builds.
             if self.settings.appearance == "Dark":
                 self.settings.appearance = "Light"
                 changed = True
             self.settings.appearance_migrated = True
+            changed = True
+        if not self.settings.flat_vscode_theme_migrated:
+            # Adopt the user's requested VS Code Dark+ default once. They can
+            # switch back to Light from settings and that choice is preserved.
+            self.settings.appearance = "Dark"
+            self.settings.flat_vscode_theme_migrated = True
             changed = True
         if not self.settings.editor_style_migrated:
             # The previous default was 11 pt; move unusually enlarged legacy
