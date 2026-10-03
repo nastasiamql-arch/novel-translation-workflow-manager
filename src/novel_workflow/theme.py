@@ -4,95 +4,102 @@ from PySide6.QtWidgets import QApplication
 
 TOKENS = {
     "spacing": (4, 8, 12, 16, 20, 24, 32),
-    "radius": 12,
-    "radius_card": 18,
-    "radius_glass": 22,
-    "control_height": 40,
+    "radius": 10,
+    "radius_small": 8,
+    "radius_control": 12,
+    "radius_card": 16,
+    "radius_glass": 20,
+    "radius_floating": 24,
+    "control_height": 38,
     "motion_ms": 160,
 }
 
-# Dark follows VS Code's softer charcoal contrast instead of pure black.
+# Dark glass values are deliberately opaque enough to preserve dense Thai text.
 _DARK = {
-    "app": "#111318",
-    "surface": "#191C23",
-    "surface2": "#222733",
-    "hover": "#2B3442",
-    "elevated": "#293241",
-    "glass": "rgba(28, 34, 44, 0.84)",
-    "glass_strong": "rgba(31, 38, 50, 0.96)",
-    "border": "rgba(220, 230, 245, 0.10)",
-    "border_strong": "rgba(220, 230, 245, 0.18)",
-    "text": "#F5F7FA",
-    "secondary": "#B4BBC7",
-    "muted": "#858E9C",
-    "accent": "#5AA9FF",
-    "accent_hover": "#83BEFF",
-    "success": "#56C596",
-    "warning": "#F3C969",
-    "danger": "#F17A78",
-    "selection": "#284B71",
+    "app": "#101216",
+    "surface": "#171A20",
+    "surface2": "#20242C",
+    "hover": "#292E38",
+    "elevated": "#262B35",
+    "glass": "#20242C",
+    "glass_strong": "#262B35",
+    "border": "rgba(255, 255, 255, 0.16)",
+    "border_strong": "rgba(255, 255, 255, 0.28)",
+    "text": "#F5F5F7",
+    "secondary": "#D0D4DB",
+    "muted": "#B0B6C0",
+    "accent": "#55A4FF",
+    "accent_hover": "#3B9AFF",
+    "success": "#30D158",
+    "warning": "#FFD60A",
+    "danger": "#FF453A",
+    "selection": "#294E74",
     "input": "#171A20",
-    "primary": "#4C9FFF",
-    "primary_hover": "#6AAEFF",
-    "primary_text": "#08121F",
+    "primary": "#1769B0",
+    "primary_hover": "#125A98",
+    "primary_text": "#FFFFFF",
 }
 
-# Light follows the quiet neutral shell used by modern ChatGPT desktop UI.
+# Cool manuscript-paper surfaces keep the editor distinct from glass controls.
 _LIGHT = {
-    "app": "#F3F6FA",
+    "app": "#F3F5F8",
     "surface": "#FFFFFF",
-    "surface2": "#F3F6FA",
-    "hover": "#E8F1FB",
+    "surface2": "#EDF1F6",
+    "hover": "#E8EFF7",
     "elevated": "#FFFFFF",
-    "glass": "rgba(255, 255, 255, 0.78)",
-    "glass_strong": "rgba(255, 255, 255, 0.96)",
-    "border": "rgba(35, 64, 105, 0.10)",
-    "border_strong": "rgba(35, 64, 105, 0.18)",
-    "text": "#182333",
-    "secondary": "#566579",
-    "muted": "#8290A2",
-    "accent": "#1677D2",
-    "accent_hover": "#0E68BF",
-    "success": "#21815B",
-    "warning": "#986D15",
-    "danger": "#C7474F",
-    "selection": "#D9EAFB",
+    "glass": "#FFFFFF",
+    "glass_strong": "#FFFFFF",
+    "border": "rgba(20, 30, 50, 0.16)",
+    "border_strong": "rgba(20, 30, 50, 0.28)",
+    "text": "#17181A",
+    "secondary": "#343B45",
+    "muted": "#505966",
+    "accent": "#075DBA",
+    "accent_hover": "#3196FF",
+    "success": "#248A4B",
+    "warning": "#A56A00",
+    "danger": "#D33D36",
+    "selection": "#D6E7F8",
     "input": "#FFFFFF",
-    "primary": "#1677D2",
-    "primary_hover": "#0E68BF",
+    "primary": "#075DBA",
+    "primary_hover": "#064D99",
     "primary_text": "#FFFFFF",
 }
 
 _EDITOR_DARK = {
-    "background": "#1E1E1E",
-    "foreground": "#D4D4D4",
-    "gutter": "#18191B",
-    "gutter_text": "#858B95",
-    "current_line": "#252A32",
-    "selection": "#264F78",
+    "background": "#171A20",
+    "foreground": "#E6E8ED",
+    "gutter": "#14171C",
+    "gutter_text": "#B0B6C0",
+    "current_line": "#202630",
+    "selection": "#294E74",
     "selection_text": "#FFFFFF",
     "find": "#665523",
+    "find_active": "#385B36",
     "find_text": "#FFF4CE",
-    "tab": "#292D35",
-    "tab_selected": "#353C48",
-    "border": "#343A44",
-    "accent": "#69AEFF",
+    "tab": "#14171C",
+    "tab_selected": "#171A20",
+    "border": "rgba(255, 255, 255, 0.18)",
+    "accent": "#55A4FF",
+    "panel": "#20242C",
 }
 
 _EDITOR_LIGHT = {
     "background": "#FFFFFF",
-    "foreground": "#24262B",
-    "gutter": "#F7F7F8",
-    "gutter_text": "#697386",
-    "current_line": "#F1F5FA",
-    "selection": "#B9D7F5",
-    "selection_text": "#202123",
-    "find": "#FFE08A",
-    "find_text": "#202123",
-    "tab": "#F2F5F9",
+    "foreground": "#252A32",
+    "gutter": "#F7F9FC",
+    "gutter_text": "#505966",
+    "current_line": "#F4F7FB",
+    "selection": "#C9DDF2",
+    "selection_text": "#17181A",
+    "find": "#F4E6B2",
+    "find_active": "#D4E5F7",
+    "find_text": "#17181A",
+    "tab": "#F3F5F8",
     "tab_selected": "#FFFFFF",
-    "border": "#E4EAF1",
-    "accent": "#1677D2",
+    "border": "rgba(20, 30, 50, 0.16)",
+    "accent": "#075DBA",
+    "panel": "#FFFFFF",
 }
 
 
@@ -113,56 +120,53 @@ def editor_colors(appearance: str = "Light") -> dict[str, str]:
 
 
 def application_stylesheet(appearance: str = "Light") -> str:
-    """Return a softer, readable shell with adaptive light or dark work surfaces."""
+    """Return the adaptive Palantir: Novel writing-workspace design system."""
     c = _DARK if _use_dark(appearance) else _LIGHT
     return f"""
     QWidget {{
         color: {c["text"]};
         font-family: "Segoe UI Variable Text", "Leelawadee UI", "Segoe UI", "Tahoma", sans-serif;
-        font-size: 10pt;
+        font-size: 11pt;
     }}
-    QMainWindow, QDialog {{ background: {c["app"]}; }}
-    QWidget#appShell {{ background: transparent; }}
-    QFrame#editorHeader, QFrame#utilityHeader, QFrame#profileHeader {{
-        background: {c["glass_strong"]};
-        border: 1px solid {c["border"]};
-        border-radius: 16px;
+    QWidget:disabled {{ color: {c["muted"]}; }}
+    QMainWindow, QDialog {{
+        background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+            stop: 0 {c["app"]}, stop: 1 {c["surface2"]});
     }}
-    QFrame#settingsCard, QFrame#groupCard, QFrame#progressCard,
-    QFrame#metricCard, QFrame#goalPanel, QFrame#progressRow,
-    QFrame#explorerPanel, QFrame#editorPanel {{
-        background: {c["glass_strong"]};
-        border: 1px solid {c["border"]};
-        border-radius: 18px;
-    }}
-    QLabel#pageTitle {{ font-size: 22pt; font-weight: 650; color: {c["text"]}; }}
-    QLabel#pageSubtitle {{ color: {c["secondary"]}; font-size: 10pt; }}
-    QLineEdit#librarySearch {{ min-height: 24px; border-radius: 18px; padding: 8px 15px; }}
+    QWidget#appShell, QWidget#novelLibraryPage {{ background: transparent; }}
 
     QToolBar#mainToolbar {{
         background: {c["glass_strong"]};
-        border: 1px solid {c["border"]};
-        border-radius: 18px;
-        spacing: 5px;
-        margin: 8px 14px 4px 14px;
-        padding: 7px 12px;
+        border: 1px solid {c["border_strong"]};
+        border-radius: 20px;
+        spacing: 6px;
+        padding: 4px 10px;
+        margin: 10px 16px 4px 16px;
+        min-height: 48px;
     }}
     QToolBar#mainToolbar QToolButton {{
         padding: 8px 11px;
-        border-radius: 11px;
-        font-size: 9.5pt;
+        border-radius: 12px;
+        font-size: 10.5pt;
     }}
-    QToolBar#mainToolbar QToolButton:hover {{ background: {c["hover"]}; }}
-    QToolBar#mainToolbar QToolButton:pressed {{ background: {c["selection"]}; }}
+    QToolBar#mainToolbar QToolButton:hover {{
+        background: {c["hover"]};
+    }}
     QLabel#brandTitle {{
         color: {c["text"]};
         font-size: 15pt;
-        font-weight: 600;
-        padding-left: 3px;
+        font-weight: 650;
+        padding: 0 8px 0 3px;
+    }}
+    QLabel#toolbarStory {{
+        color: {c["muted"]};
+        font-size: 10.5pt;
+        padding-left: 14px;
+        border-left: 1px solid {c["border_strong"]};
     }}
     QLabel#sectionHeading {{
         color: {c["secondary"]};
-        font-size: 9pt;
+        font-size: 10pt;
         font-weight: 600;
         letter-spacing: 0.4px;
         padding: 2px 3px 5px 3px;
@@ -173,27 +177,33 @@ def application_stylesheet(appearance: str = "Light") -> str:
     QLabel#bodyLabel {{ color: {c["secondary"]}; }}
 
     QFrame#storyStrip, QFrame#modeStrip, QFrame#bottomBar {{
-        background: {c["surface"]};
+        background: {c["glass"]};
         border: 1px solid {c["border"]};
-        border-radius: 12px;
+        border-radius: 16px;
     }}
     QFrame#goalPanel, QFrame#metricCard, QFrame#progressRow {{
-        background: {c["surface"]};
+        background: {c["elevated"]};
         border: 1px solid {c["border"]};
-        border-radius: 10px;
+        border-radius: 18px;
     }}
-    QFrame#explorerPanel, QFrame#editorPanel {{
-        background: {c["surface"]};
+    QFrame#explorerPanel, QFrame#editorPanel, QFrame#editorHeader,
+    QFrame#utilityHeader {{
+        background: {c["glass"]};
         border: 1px solid {c["border"]};
-        border-radius: 10px;
+        border-radius: 14px;
+    }}
+    QFrame#settingsCard {{
+        background: {c["glass"]};
+        border: 1px solid {c["border"]};
+        border-radius: 18px;
     }}
 
     QToolButton {{
         color: {c["text"]};
         background: transparent;
         border: 1px solid transparent;
-        border-radius: 8px;
-        padding: 7px 9px;
+        border-radius: 11px;
+        padding: 8px 10px;
         font-weight: 550;
     }}
     QToolButton:hover {{ color: {c["text"]}; background: {c["hover"]}; }}
@@ -211,29 +221,74 @@ def application_stylesheet(appearance: str = "Light") -> str:
         selection-color: {c["text"]};
     }}
     QListWidget#novelLibrary {{
-        background: {c["app"]};
+        background: transparent;
         border: 0;
-        padding: 8px;
+        padding: 10px 2px 14px 2px;
     }}
     QListWidget#novelLibrary::item {{
-        background: {c["surface"]};
+        background: {c["glass_strong"]};
         border: 1px solid {c["border"]};
         border-radius: 18px;
         padding: 10px;
-        min-height: 274px;
+        min-height: 270px;
     }}
     QListWidget#novelLibrary::item:hover {{
         background: {c["hover"]};
         border-color: {c["border_strong"]};
     }}
     QListWidget#novelLibrary::item:selected {{
-        background: {c["surface2"]};
+        background: {c["elevated"]};
         border: 1px solid {c["accent"]};
     }}
     QFrame#workflowSidebar {{
-        background: {c["surface"]};
+        background: {c["glass"]};
+        border: 1px solid {c["border_strong"]};
+        border-radius: 20px;
+    }}
+    QFrame#libraryEmptyState {{
+        background: {c["glass"]};
         border: 1px solid {c["border"]};
-        border-radius: 18px;
+        border-radius: 22px;
+    }}
+    QLabel#librarySubtitle, QLabel#emptyStateDescription {{
+        color: {c["muted"]};
+        font-size: 10.5pt;
+    }}
+    QLabel#emptyStateIcon {{
+        color: {c["accent"]};
+        font-size: 28pt;
+        font-weight: 300;
+    }}
+    QLineEdit#librarySearch {{
+        min-height: 28px;
+        border-radius: 20px;
+        padding-left: 14px;
+        background: {c["glass_strong"]};
+    }}
+    QTabBar#libraryStatusTabs {{
+        background: {c["glass"]};
+        border: 1px solid {c["border"]};
+        border-radius: 16px;
+        padding: 4px;
+    }}
+    QTabBar#libraryStatusTabs::tab {{
+        color: {c["muted"]};
+        background: transparent;
+        border: 0;
+        border-radius: 12px;
+        min-height: 34px;
+        padding: 5px 20px;
+        margin-right: 3px;
+    }}
+    QTabBar#libraryStatusTabs::tab:hover {{
+        color: {c["text"]};
+        background: {c["hover"]};
+    }}
+    QTabBar#libraryStatusTabs::tab:selected {{
+        color: {c["text"]};
+        background: {c["elevated"]};
+        border: 1px solid {c["border"]};
+        font-weight: 600;
     }}
     QListWidget#workflowSteps {{
         background: transparent;
@@ -253,8 +308,8 @@ def application_stylesheet(appearance: str = "Light") -> str:
         color: {c["text"]};
         background: {c["surface2"]};
         border: 1px solid {c["border"]};
-        border-radius: 12px;
-        padding: 9px 14px 9px 34px;
+        border-radius: 8px;
+        padding: 7px 12px 7px 32px;
         text-align: left;
         font-weight: 600;
     }}
@@ -270,9 +325,9 @@ def application_stylesheet(appearance: str = "Light") -> str:
         color: {c["text"]};
         background: {c["selection"]};
         border: 1px solid {c["accent"]};
-        border-radius: 12px;
-        padding: 8px 14px;
-        font-weight: 650;
+        border-radius: 8px;
+        padding: 7px 12px;
+        font-weight: 700;
     }}
     QLabel#editorStatusBar {{
         color: {c["secondary"]};
@@ -280,7 +335,7 @@ def application_stylesheet(appearance: str = "Light") -> str:
         padding: 3px 10px;
         min-height: 20px;
     }}
-    QLabel#progressStatusBar, QLabel#goalStatusBar, QLabel#contextStatusBar {{
+    QLabel#progressStatusBar, QLabel#goalStatusBar {{
         color: {c["secondary"]};
         background: {c["surface"]};
         padding: 3px 8px;
@@ -335,17 +390,17 @@ def application_stylesheet(appearance: str = "Light") -> str:
         background: {c["surface2"]};
         color: {c["text"]};
         border: 1px solid {c["border"]};
-        border-radius: 12px;
-        padding: 9px 14px;
-        font-weight: 550;
+        border-radius: 9px;
+        padding: 7px 12px;
+        font-weight: 500;
     }}
     QPushButton:hover {{ background: {c["hover"]}; border-color: {c["border_strong"]}; }}
     QPushButton:pressed {{ background: {c["elevated"]}; }}
-    QPushButton:focus {{ border-color: {c["border_strong"]}; }}
+    QPushButton:focus {{ border: 2px solid {c["accent"]}; }}
     QPushButton:disabled {{
-        color: {c["muted"]};
-        background: {c["surface"]};
-        border-color: {c["border"]};
+        color: {c["secondary"]};
+        background: {c["surface2"]};
+        border-color: {c["border_strong"]};
     }}
     QPushButton#primaryButton {{
         background: {c["primary"]};
@@ -369,8 +424,8 @@ def application_stylesheet(appearance: str = "Light") -> str:
         background: {c["input"]};
         color: {c["text"]};
         border: 1px solid {c["border"]};
-        border-radius: 12px;
-        padding: 8px 12px;
+        border-radius: 9px;
+        padding: 7px 9px;
         selection-background-color: {c["selection"]};
         min-height: 20px;
     }}
@@ -384,7 +439,7 @@ def application_stylesheet(appearance: str = "Light") -> str:
     QLineEdit:hover, QTextEdit:hover, QSpinBox:hover,
     QDoubleSpinBox:hover, QComboBox:hover {{ border-color: {c["border_strong"]}; }}
     QLineEdit:focus, QTextEdit:focus, QSpinBox:focus,
-    QDoubleSpinBox:focus, QComboBox:focus {{ border-color: {c["accent"]}; }}
+    QDoubleSpinBox:focus, QComboBox:focus {{ border: 2px solid {c["accent"]}; }}
     QLineEdit::placeholder {{ color: {c["muted"]}; }}
     QComboBox::drop-down {{ border: 0; width: 24px; }}
     QComboBox QAbstractItemView {{
@@ -420,11 +475,10 @@ def application_stylesheet(appearance: str = "Light") -> str:
         top: -1px;
     }}
     QTabBar::tab {{
-        color: {c["secondary"]};
+        color: {c["text"]};
         background: transparent;
-        padding: 10px 14px;
-        margin-right: 3px;
-        border-radius: 10px;
+        padding: 9px 13px;
+        margin-right: 2px;
         border: 0;
         border-bottom: 2px solid transparent;
     }}
@@ -434,34 +488,11 @@ def application_stylesheet(appearance: str = "Light") -> str:
         border-bottom-color: {c["accent"]};
         font-weight: 600;
     }}
-    QTabBar#libraryStatusTabs {{
-        background: {c["glass"]};
-        border: 1px solid {c["border"]};
-        border-radius: 15px;
-        padding: 4px;
-    }}
-    QTabBar#libraryStatusTabs::tab {{
-        min-width: 112px;
-        min-height: 28px;
-        padding: 8px 16px;
-        margin: 0 2px;
-        border: 0;
-        border-radius: 11px;
-    }}
-    QTabBar#libraryStatusTabs::tab:selected {{
-        color: {c["text"]};
-        background: {c["surface"]};
-        border: 1px solid {c["border"]};
-    }}
-    QTabBar#libraryStatusTabs::tab:hover {{
-        background: {c["hover"]};
-    }}
-
 
     QGroupBox {{
-        background: {c["glass_strong"]};
+        background: {c["surface"]};
         border: 1px solid {c["border"]};
-        border-radius: 16px;
+        border-radius: 10px;
         margin-top: 14px;
         padding-top: 10px;
         font-weight: 600;
@@ -475,13 +506,21 @@ def application_stylesheet(appearance: str = "Light") -> str:
 
     QProgressBar {{
         background: {c["surface2"]};
-        color: {c["secondary"]};
+        color: {c["text"]};
         border: 0;
         border-radius: 4px;
         text-align: center;
-        min-height: 10px;
+        min-height: 18px;
+        font-weight: 600;
     }}
     QProgressBar::chunk {{ background: {c["accent"]}; border-radius: 4px; }}
+
+    QProgressDialog QLabel {{
+        color: {c["text"]};
+        font-size: 11pt;
+        font-weight: 600;
+    }}
+    QMessageBox QLabel {{ color: {c["text"]}; font-size: 11pt; }}
 
     QStatusBar {{
         background: {c["surface"]};
@@ -516,8 +555,8 @@ def application_stylesheet(appearance: str = "Light") -> str:
         background: {c["surface2"]};
         border: 0;
         margin: 1px;
-        width: 10px;
-        height: 10px;
+        width: 16px;
+        height: 16px;
     }}
     QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
         background: {c["border_strong"]};

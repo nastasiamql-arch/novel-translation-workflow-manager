@@ -7,7 +7,7 @@ from weakref import WeakSet
 from bisect import bisect_left
 
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QPainter, QTextBlockFormat, QTextCursor, QTextDocument, QTextFormat, QKeySequence, QShortcut
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QPainter, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPlainTextEdit, QPushButton, QSpinBox, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
@@ -301,7 +301,7 @@ class CodeEditor(QPlainTextEdit):
 
         self.setFont(font)
         self.setCursorWidth(2)
-        self.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.setLineWrapMode(QPlainTextEdit.WidgetWidth)
         self.document().setDefaultStyleSheet(
             "p { margin-top: 0; margin-bottom: 2px; line-height: 120%; }"
         )
@@ -433,8 +433,21 @@ class CodeEditor(QPlainTextEdit):
                     match_cursor.setPosition(match_end, QTextCursor.KeepAnchor)
                     match = QTextEdit.ExtraSelection()
                     match.cursor = match_cursor
-                    match.format.setBackground(QColor(self.colors["find"]))
-                    match.format.setForeground(QColor(self.colors["find_text"]))
+                    active_cursor = self.textCursor()
+                    is_active = (
+                        active_cursor.hasSelection()
+                        and active_cursor.selectionStart() == match_start
+                        and active_cursor.selectionEnd() == match_end
+                    )
+                    if is_active:
+                        match.format.setBackground(QColor(self.colors["find_active"]))
+                        match.format.setForeground(QColor(self.colors["find_text"]))
+                    else:
+                        match.format.setForeground(QColor(self.colors["foreground"]))
+                        match.format.setUnderlineStyle(
+                            QTextCharFormat.UnderlineStyle.SingleUnderline
+                        )
+                        match.format.setUnderlineColor(QColor(self.colors["accent"]))
                     selections.append(match)
                     index += 1
                     highlighted += 1

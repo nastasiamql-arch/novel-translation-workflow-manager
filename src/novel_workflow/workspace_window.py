@@ -433,8 +433,10 @@ class ProfileWorkspace(QWidget):
         self.goal_panel.setObjectName("goalPanel")
         goal_layout = QVBoxLayout(self.goal_panel)
         self.goal_label = QLabel("เป้าหมายวันนี้")
+        self.goal_label.setWordWrap(True)
         self.goal_bar = QProgressBar()
         self.goal_bar.setFixedHeight(15)
+        self.goal_bar.setTextVisible(False)
         self.latest_chapter_label = QLabel("บทล่าสุดจาก Context")
         self.latest_chapter_label.setObjectName("mutedLabel")
         goal_layout.addWidget(self.goal_label)
@@ -1840,15 +1842,18 @@ class MainWindow(LegacyMainWindow):
             self._download_update(update, destination)
 
     def _download_update(self, update: UpdateInfo, destination: Path):
-        dialog = QProgressDialog("กำลังดาวน์โหลดและตรวจสอบไฟล์ติดตั้ง…", "ยกเลิก", 0, 100, self)
+        dialog = QProgressDialog("กำลังดาวน์โหลดและตรวจสอบไฟล์ติดตั้ง…   0%", "ยกเลิก", 0, 100, self)
         dialog.setWindowTitle(f"ดาวน์โหลด v{update.version}")
         dialog.setWindowModality(Qt.WindowModal)
         dialog.setMinimumDuration(0)
+        progress_bar = dialog.bar() if hasattr(dialog, "bar") else None
+        if progress_bar is not None:
+            progress_bar.setTextVisible(False)
         worker = _UpdateDownloadWorker(update, destination, self)
         self._update_download_worker = worker
         self._update_progress = dialog
         dialog.canceled.connect(worker.requestInterruption)
-        worker.progress.connect(dialog.setValue)
+        worker.progress.connect(self._update_download_progress)
 
         def complete(path, error):
             self._update_download_worker = None
@@ -1871,6 +1876,15 @@ class MainWindow(LegacyMainWindow):
 
         worker.finished_download.connect(complete)
         worker.start()
+
+    def _update_download_progress(self, value: int):
+        dialog = self._update_progress
+        if dialog is None:
+            return
+        dialog.setValue(value)
+        dialog.setLabelText(
+            f"กำลังดาวน์โหลดและตรวจสอบไฟล์ติดตั้ง… {value:3d}%"
+        )
 
     def refresh_profiles(self, pid=None):
         if getattr(self, "_settings_open", False):
