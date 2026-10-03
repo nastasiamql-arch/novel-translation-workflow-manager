@@ -1,1 +1,1 @@
-"""Downloader screens embedded in the existing profile workspace."""
+"""User interface for the standalone Novel Downloader application."""

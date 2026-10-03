@@ -99,6 +99,34 @@ if ($runtimeProbe.ExitCode -ne 0) {
     throw "The frozen app could not load its Qt runtime (exit $($runtimeProbe.ExitCode))."
 }
 
+& $venvPython -m PyInstaller --noconfirm --clean (Join-Path $PSScriptRoot "NovelDownloader.spec")
+if ($LASTEXITCODE -ne 0) { throw "Could not build Novel Downloader." }
+
+$downloaderExe = Join-Path $PSScriptRoot "dist\NovelDownloader\NovelDownloader.exe"
+if (-not (Test-Path -LiteralPath $downloaderExe)) {
+    throw "The Novel Downloader executable was not created."
+}
+& $venvPython $runtimeCheckScript (Join-Path $PSScriptRoot "dist\NovelDownloader\_internal")
+if ($LASTEXITCODE -ne 0) {
+    throw "The packaged Novel Downloader Qt runtime could not import PySide6 modules."
+}
+$runtimeProbePath = $env:PATH
+try {
+    # Keep unrelated Qt/ICU installations from the developer machine out of
+    # the frozen runtime probe. The application adds its own bundled paths.
+    $env:PATH = @(
+        (Split-Path -Parent $venvPython),
+        (Join-Path $env:SystemRoot "System32"),
+        $env:SystemRoot
+    ) -join [System.IO.Path]::PathSeparator
+    $downloaderRuntimeProbe = Start-Process -FilePath $downloaderExe -ArgumentList "--check-runtime" -PassThru -Wait -WindowStyle Hidden
+} finally {
+    $env:PATH = $runtimeProbePath
+}
+if ($downloaderRuntimeProbe.ExitCode -ne 0) {
+    throw "The frozen Novel Downloader app could not load its Qt runtime (exit $($downloaderRuntimeProbe.ExitCode))."
+}
+
 $isccCandidates = @(
     (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
     (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"),
@@ -113,9 +141,18 @@ $iscc = $isccCandidates | Select-Object -First 1
 & $iscc "/DMyAppVersion=$version" (Join-Path $PSScriptRoot "installer.iss")
 if ($LASTEXITCODE -ne 0) { throw "Could not build the Windows installer." }
 
+& $iscc "/DMyAppVersion=$version" (Join-Path $PSScriptRoot "downloader_installer.iss")
+if ($LASTEXITCODE -ne 0) { throw "Could not build the Novel Downloader installer." }
+
 $installer = Join-Path $PSScriptRoot "dist\NovelWorkflow-Setup-$version.exe"
 if (-not (Test-Path -LiteralPath $installer)) {
     throw "The Windows installer was not created: $installer"
 }
 
 Write-Output "Installer ready: $installer"
+
+$downloaderInstaller = Join-Path $PSScriptRoot "dist\NovelDownloader-Setup-$version.exe"
+if (-not (Test-Path -LiteralPath $downloaderInstaller)) {
+    throw "The Novel Downloader installer was not created: $downloaderInstaller"
+}
+Write-Output "Installer ready: $downloaderInstaller"

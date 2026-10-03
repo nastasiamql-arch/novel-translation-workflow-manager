@@ -335,11 +335,6 @@ class ProfileWorkspace(QWidget):
         self.context_button.setToolTip("เลือกไฟล์ Context ที่ติดตามความคืบหน้า")
         self.context_button.clicked.connect(self._choose_context)
         header_layout.addWidget(self.context_button)
-        self.web_source_button = QToolButton()
-        self.web_source_button.setText("ต้นฉบับเว็บ")
-        self.web_source_button.setToolTip("ดาวน์โหลดต้นฉบับเว็บเข้าสู่โฟลเดอร์ source ของเรื่องนี้")
-        self.web_source_button.clicked.connect(self.owner.open_downloader)
-        header_layout.addWidget(self.web_source_button)
         find_button = QToolButton()
         find_button.setText("ค้นหา")
         find_button.setToolTip("ค้นหาในไฟล์ปัจจุบัน  ·  Ctrl+H")
@@ -835,14 +830,6 @@ class MainWindow(LegacyMainWindow):
 
     def groups_dialog(self):
         self._show_utility_page("groups", "กลุ่มนิยาย", lambda: NovelGroupsPage(self))
-
-    def open_downloader(self):
-        if not self.profile:
-            QMessageBox.information(self, "เลือกนิยาย", "เปิดโปรไฟล์นิยายก่อนใช้ระบบต้นฉบับเว็บ")
-            return
-        from .downloader_ui.panel import DownloaderPage
-        key = f"downloader:{self.profile.id}"
-        self._show_utility_page(key, "ต้นฉบับเว็บ", lambda: DownloaderPage(self))
 
     def translation_dashboard(self):
         profiles = self.refresh_translation_progress()
@@ -2664,11 +2651,6 @@ class MainWindow(LegacyMainWindow):
 
     def closeEvent(self, event):
         workers = [self._update_check_worker, self._update_download_worker]
-        workers.extend(
-            getattr(page, "worker", None)
-            for key, page in self._utility_pages.items()
-            if key.startswith("downloader:")
-        )
         for worker in workers:
             if worker and worker.isRunning():
                 worker.requestInterruption()

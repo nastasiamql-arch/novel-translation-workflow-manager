@@ -68,15 +68,15 @@ Palantir: Novel คือโปรแกรมเดสก์ท็อปสำ�
 
 รองรับ Dynamic Reference ได้แก่ `CURRENT_SOURCE_CHAPTER`, `CURRENT_TRANSLATED_CHAPTER` และ `CURRENT_REVIEWED_CHAPTER` โดยไฟล์บทสามารถใช้ชื่ออะไรก็ได้ ตราบใดที่ชื่อไฟล์มีเลขบทอยู่
 
-## ต้นฉบับเว็บ
+## Novel Downloader
 
-ในหน้าโปรไฟล์ ให้กด **ต้นฉบับเว็บ** เพื่อผูก URL หนังสือกับนิยายปัจจุบัน หรือสร้างโปรไฟล์จาก URL ได้โดยตรง โปรแกรมจำ Source และ Book ID ไว้ในโปรไฟล์ ตรวจรายการตอนจาก remote ID และบันทึกเนื้อหาที่ดาวน์โหลดลง `source/` ด้วยชื่อ `0001 ชื่อตอน.txt` (UTF-8) ซึ่งใช้กับ `CURRENT_SOURCE_CHAPTER` ได้ทันที
+Novel Downloader เป็นแอป Windows แยกจาก Palantir: Novel มี library, settings, manifests และ source configs ของตัวเองใน `%LOCALAPPDATA%/NovelDownloader/`. มันไม่อ่านโปรไฟล์ Palantir และไม่เขียนไฟล์ลงโปรเจกต์แปลโดยอัตโนมัติ
 
-ดาวน์โหลดได้เฉพาะตอนใหม่ เลือกช่วงตอน ข้ามไฟล์ที่มีอยู่ และเริ่มต่อได้หลังยกเลิกผ่าน manifest ที่ `source_meta/manifest.json` การเปลี่ยน source เมื่อมีไฟล์ต้นฉบับอยู่แล้วจะแสดงคำถามยืนยันก่อน
+เลือกโฟลเดอร์ส่งออกหลัก แล้วแอปจะสร้างโฟลเดอร์ย่อยตามชื่อนิยายและบันทึกตอนเป็น `0001 ชื่อตอน.txt` (UTF-8) ผู้ใช้สามารถนำไฟล์ไปใช้กับ Palantir เองได้โดยเลือกไฟล์ในหน้าโปรเจกต์
 
-Source ในรุ่นนี้มี TomatoMTL และ custom source แบบ JSON สำหรับหน้า HTML ทั่วไป โดย TomatoMTL ตั้งค่าเป็น Chinese Raw / 原文 และจะหยุดพร้อมข้อความแจ้งเมื่อเว็บส่ง anti-bot challenge หรือไม่มีข้อความจีนที่ตรวจได้ โปรแกรมไม่พยายามข้าม challenge, paywall หรือการยืนยันตัวตน การตรวจและดาวน์โหลดทำงานเบื้องหลัง ไม่ค้างหน้า workspace
+ดาวน์โหลดตอนใหม่หรือช่วงตอนที่เลือกได้ ข้ามไฟล์เดิม resume ผ่าน manifest และจัดการแหล่ง HTML ที่กำหนดเองได้ TomatoMTL ใช้ Chinese Raw / 原文 หากเว็บแสดง anti-bot challenge โปรแกรมจะแจ้งและเปิดหน้าเว็บใน browser ให้ แต่จะไม่ข้าม challenge, paywall หรือการยืนยันตัวตน
 
-custom source เก็บใน `%LOCALAPPDATA%/NovelWorkflow/sources/` ตัวอย่าง config:
+custom source เก็บใน `%LOCALAPPDATA%/NovelDownloader/sources/` ตัวอย่าง config:
 
 ```json
 {
@@ -88,7 +88,7 @@ custom source เก็บใน `%LOCALAPPDATA%/NovelWorkflow/sources/` ตั�
 }
 ```
 
-เปิด **จัดการ Sources** จากหน้าต้นฉบับเว็บเพื่อนำเข้า JSON ตรวจการตั้งค่า และเปิดโฟลเดอร์ config
+เปิด **จัดการ Sources** ใน Novel Downloader เพื่อนำเข้า JSON ตรวจการตั้งค่า และเปิดโฟลเดอร์ config ตัวติดตั้ง `NovelDownloader-Setup-<version>.exe` เผยแพร่คู่กับ installer ของ Palantir ใน GitHub Release; repository เป็น Private ผู้ดาวน์โหลดต้องมีสิทธิ์เข้าถึง repository
 
 ## ความคืบหน้าการแปล
 

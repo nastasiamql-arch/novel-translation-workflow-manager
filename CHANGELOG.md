@@ -1,6 +1,13 @@
 # Changelog
 
-All notable changes to Palantir: Novel are documented here.
+All notable changes to Palantir: Novel and Novel Downloader are documented here.
+
+## 2.5.0 - 2026-10-03
+
+- Move novel downloading into the standalone Novel Downloader application with separate library, settings, source configs, manifests, and output folders.
+- Remove the downloader page and profile integration from Palantir: Novel while preserving legacy source-binding profile data.
+- Build and publish separate Windows installers for Palantir: Novel and Novel Downloader.
+- Add an explicit browser action when TomatoMTL blocks requests with an anti-bot challenge; no protection bypass is attempted.
 
 ## 2.4.0 - 2026-10-03
 

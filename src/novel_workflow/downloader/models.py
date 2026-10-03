@@ -1,4 +1,5 @@
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from uuid import uuid4
 
 
 @dataclass(frozen=True)
@@ -51,3 +52,46 @@ class DownloadResult:
     failed: int = 0
     errors: list[str] = field(default_factory=list)
     chapters: list[ChapterInfo] = field(default_factory=list)
+
+
+@dataclass
+class DownloaderSourceBinding:
+    source_id: str
+    book_url: str
+    remote_book_id: str
+    content_mode: str = "raw_zh"
+    last_known_chapter_count: int = 0
+    last_downloaded_chapter: int = 0
+    last_checked_at: str | None = None
+    last_downloaded_at: str | None = None
+    skip_existing: bool = True
+
+    @classmethod
+    def from_dict(cls, value):
+        if not isinstance(value, dict):
+            return None
+        fields = cls.__dataclass_fields__
+        data = {key: item for key, item in value.items() if key in fields}
+        if not all(data.get(key) for key in ("source_id", "book_url", "remote_book_id")):
+            return None
+        return cls(**data)
+
+
+@dataclass
+class DownloaderBook:
+    id: str = field(default_factory=lambda: uuid4().hex)
+    title: str = "Novel"
+    author: str = ""
+    source_binding: DownloaderSourceBinding | None = None
+    output_dir: str = ""
+
+    @classmethod
+    def from_dict(cls, value):
+        if not isinstance(value, dict):
+            raise ValueError("Saved Downloader book must be an object")
+        data = {key: item for key, item in value.items() if key in cls.__dataclass_fields__}
+        data["source_binding"] = DownloaderSourceBinding.from_dict(value.get("source_binding"))
+        return cls(**data)
+
+    def to_dict(self):
+        return asdict(self)
