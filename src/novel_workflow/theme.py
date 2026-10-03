@@ -169,8 +169,10 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QPushButton#workflowStageButton, QPushButton#vocabularyButton {{ color: {c['text']}; background: transparent; border: 0; border-left: 3px solid transparent; border-radius: 0; min-height: 36px; padding: 7px 10px 7px 32px; text-align: left; }}
     QPushButton#workflowStageButton:hover, QPushButton#vocabularyButton:hover {{ background: {c['hover']}; }}
     QPushButton#workflowStageButton:checked, QPushButton#vocabularyButton:checked {{ background: {c['hover']}; border-left-color: {c['accent']}; }}
-    QPushButton#copyStepButton {{ color: {c['primary_text']}; background: {c['primary']}; border: 0; border-radius: 0; min-height: 34px; padding: 7px 14px; font-weight: 600; }}
-    QPushButton#copyStepButton:hover {{ background: {c['primary_hover']}; }}
+    QPushButton#copyStepButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 34px; padding: 7px 14px; font-weight: 600; }}
+    QPushButton#copyStepButton:hover {{ color: {c['text']}; background: transparent; text-decoration: underline; }}
+    QPushButton#copyStepButton:focus {{ color: {c['text']}; background: transparent; border-bottom: 2px solid {c['focus']}; }}
+    QPushButton#copyStepButton:disabled {{ color: {c['disabled_text']}; background: transparent; }}
     QLabel#editorStatusBar, QLabel#progressStatusBar, QLabel#goalStatusBar, QLabel#contextStatusBar {{ color: {c['status_text']}; background: transparent; border: 0; padding: 3px 9px; min-height: 24px; font-size: 10pt; }}
     QProgressBar#goalProgressStatusBar {{ background: {c['surface2']}; border: 0; border-radius: 0; min-height: 8px; max-height: 8px; }}
     QProgressBar#goalProgressStatusBar::chunk {{ background: {c['accent']}; border-radius: 0; }}

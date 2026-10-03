@@ -2211,12 +2211,15 @@ class MainWindow(LegacyMainWindow):
 
         if self.profile:
             for index, step in enumerate(self.profile.workflow.steps):
-                item = QListWidgetItem(step.name)
+                # With an item widget the list paints both the item's text and
+                # the button label. Keep the row text only when no button is used.
+                item = QListWidgetItem("" if workspace else step.name)
                 item.setSizeHint(QSize(0, 42))
                 self.steps.addItem(item)
                 if workspace:
                     button = WorkflowStageButton(step.name)
                     button.setObjectName("workflowStageButton")
+                    button.setAccessibleName(step.name)
                     button.setProperty("workflowStageName", step.name)
                     button.setProperty("workflowActive", False)
                     button.setMinimumHeight(38)

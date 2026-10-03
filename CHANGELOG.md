@@ -2,6 +2,11 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.3.2 - 2026-10-04
+
+- Fix duplicated workflow step labels in the workspace sidebar and expose each step name directly to assistive technology.
+- Restyle COPY STEP as a flat text action that matches surrounding labels instead of a filled button.
+
 ## 3.3.1 - 2026-10-04
 
 - Replace the warm amber palette with a restrained grayscale theme across the editor, navigation, selections, search matches, focus indicators, and status bar in both Dark and Light appearances.
