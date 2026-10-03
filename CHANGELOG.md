@@ -1,5 +1,13 @@
 # Changelog
 
+All notable changes to Palantir: Novel are documented here.
+
+## 2.4.0 - 2026-10-03
+
+- Add an in-app web novel downloader with profile source binding, TomatoMTL and configurable HTML sources, chapter manifests, resume support, Unicode filenames, and background worker UI.
+- Keep `CURRENT_SOURCE_CHAPTER` compatible with padded downloader filenames and legacy chapter names.
+- Migrate old profile documents additively and preserve unrecognized legacy fields.
+
 ## 2.3.2
 
 - Add a confirmed **ยกเลิกเป้าหมายทั้งหมด** action to clear goal targets across every novel while keeping chapter history and daily activity.

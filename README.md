@@ -68,6 +68,28 @@ Palantir: Novel คือโปรแกรมเดสก์ท็อปสำ�
 
 รองรับ Dynamic Reference ได้แก่ `CURRENT_SOURCE_CHAPTER`, `CURRENT_TRANSLATED_CHAPTER` และ `CURRENT_REVIEWED_CHAPTER` โดยไฟล์บทสามารถใช้ชื่ออะไรก็ได้ ตราบใดที่ชื่อไฟล์มีเลขบทอยู่
 
+## ต้นฉบับเว็บ
+
+ในหน้าโปรไฟล์ ให้กด **ต้นฉบับเว็บ** เพื่อผูก URL หนังสือกับนิยายปัจจุบัน หรือสร้างโปรไฟล์จาก URL ได้โดยตรง โปรแกรมจำ Source และ Book ID ไว้ในโปรไฟล์ ตรวจรายการตอนจาก remote ID และบันทึกเนื้อหาที่ดาวน์โหลดลง `source/` ด้วยชื่อ `0001 ชื่อตอน.txt` (UTF-8) ซึ่งใช้กับ `CURRENT_SOURCE_CHAPTER` ได้ทันที
+
+ดาวน์โหลดได้เฉพาะตอนใหม่ เลือกช่วงตอน ข้ามไฟล์ที่มีอยู่ และเริ่มต่อได้หลังยกเลิกผ่าน manifest ที่ `source_meta/manifest.json` การเปลี่ยน source เมื่อมีไฟล์ต้นฉบับอยู่แล้วจะแสดงคำถามยืนยันก่อน
+
+Source ในรุ่นนี้มี TomatoMTL และ custom source แบบ JSON สำหรับหน้า HTML ทั่วไป โดย TomatoMTL ตั้งค่าเป็น Chinese Raw / 原文 และจะหยุดพร้อมข้อความแจ้งเมื่อเว็บส่ง anti-bot challenge หรือไม่มีข้อความจีนที่ตรวจได้ โปรแกรมไม่พยายามข้าม challenge, paywall หรือการยืนยันตัวตน การตรวจและดาวน์โหลดทำงานเบื้องหลัง ไม่ค้างหน้า workspace
+
+custom source เก็บใน `%LOCALAPPDATA%/NovelWorkflow/sources/` ตัวอย่าง config:
+
+```json
+{
+  "id": "example_novel",
+  "name": "Example Novel",
+  "domains": ["novel.example.com"],
+  "book": {"title": "h1.title", "author": ".author", "chapters": ".chapter-list a"},
+  "chapter": {"title": "h1.chapter-title", "content": ".chapter-content", "remove": [".ads"]}
+}
+```
+
+เปิด **จัดการ Sources** จากหน้าต้นฉบับเว็บเพื่อนำเข้า JSON ตรวจการตั้งค่า และเปิดโฟลเดอร์ config
+
 ## ความคืบหน้าการแปล
 
 - หน้าความคืบหน้าจะแสดงจำนวนบทที่ทำเสร็จวันนี้ สัปดาห์นี้ และในช่วง 7 วันที่ผ่านมา พร้อมยอดรวมแยกตามนิยายแต่ละเรื่อง

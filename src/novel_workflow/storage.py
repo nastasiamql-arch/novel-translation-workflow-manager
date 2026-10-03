@@ -1,7 +1,7 @@
 import json, os, re, tempfile
 from pathlib import Path
 from dataclasses import asdict
-from .models import AppSettings, NovelGroup, NovelProfile, Workflow, WorkflowTemplate, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
+from .models import AppSettings, NovelGroup, NovelProfile, Workflow, WorkflowTemplate, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step, migrate_profile_schema
 
 def data_root():
     # Version 1.1 starts with a clean application data namespace. Legacy data is left untouched.
@@ -48,6 +48,7 @@ class ProjectRepository:
             if not path.is_file():continue
             data=read_json(path,{})
             profile=NovelProfile.from_dict(data)
+            changed=False
             if data.get("schema_version", 1) < 5:
                 if "txt_export_settings" not in data:
                     legacy_settings=self.load_settings()
@@ -57,6 +58,10 @@ class ProjectRepository:
                     profile.txt_export_settings.end=legacy_settings.txt_export_end
                     profile.txt_export_settings.current=legacy_settings.txt_export_current
                 profile.schema_version=5
+                changed=True
+            if migrate_profile_schema(profile):
+                changed=True
+            if changed:
                 self.save_profile(profile)
             profiles.append(profile)
             if "order" not in data:missing_order.append(profile)
@@ -87,7 +92,15 @@ class ProjectRepository:
     def save_profile(self,p):
         folder=self.profile_dir(p.id); folder.mkdir(parents=True,exist_ok=True)
         for c in self.CATEGORIES: (folder/c).mkdir(exist_ok=True)
-        write_json(folder/"profile.json",asdict(p))
+        path=folder/"profile.json"
+        serialized=asdict(p)
+        # Preserve fields written by newer schema versions or extensions that this
+        # version does not understand; known model fields remain authoritative.
+        existing=read_json(path,{})
+        if isinstance(existing,dict):
+            known=NovelProfile.__dataclass_fields__
+            serialized={**{key:value for key,value in existing.items() if key not in known},**serialized}
+        write_json(path,serialized)
     def delete_profile(self,pid):
         import shutil; shutil.rmtree(self.profile_dir(pid))
         for order,profile in enumerate(self.list_profiles()):
