@@ -1,7 +1,8 @@
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QListWidget, QHBoxLayout, QPushButton, QFileDialog, QMessageBox
 
 from ..downloader.registry import SourceRegistry
@@ -71,8 +72,22 @@ class SourceManagerDialog(QDialog):
         from ..downloader.worker import DownloaderWorker
         self.test_worker = DownloaderWorker(lambda cancel, progress: source.get_book(url), self)
         self.test_worker.completed.connect(lambda book: QMessageBox.information(self, "ทดสอบสำเร็จ", f"{source.name}\n{book.title}\n{book.total_chapters} ตอน"))
-        self.test_worker.failed.connect(lambda message: QMessageBox.warning(self, "ทดสอบไม่สำเร็จ", message))
+        self.test_worker.failed.connect(lambda message: self._test_failed(message, url))
         self.test_worker.start()
+
+    def _test_failed(self, message, url):
+        if "anti-bot challenge" not in message.casefold():
+            QMessageBox.warning(self, "ทดสอบไม่สำเร็จ", message)
+            return
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Warning)
+        dialog.setWindowTitle("เว็บขอให้ยืนยันว่าเป็นผู้ใช้")
+        dialog.setText(message)
+        open_button = dialog.addButton("เปิดหน้าเว็บใน Browser", QMessageBox.AcceptRole)
+        dialog.addButton(QMessageBox.Ok)
+        dialog.exec()
+        if dialog.clickedButton() is open_button:
+            QDesktopServices.openUrl(QUrl(url))
 
     def closeEvent(self, event):
         worker = getattr(self, "test_worker", None)
