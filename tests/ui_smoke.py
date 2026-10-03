@@ -189,14 +189,16 @@ def main() -> int:
                 assert window.settings.appearance == "Dark"
                 assert workspace.root_path == novel_folder.resolve()
                 assert workspace.steps.count() == 2
-                assert [workspace.steps.item(i).text() for i in range(2)] == [
-                    "แปล", "ตรวจคำแปล",
-                ]
+                assert [workspace.steps.item(i).text() for i in range(2)] == ["", ""]
                 assert all(workspace.steps.itemWidget(workspace.steps.item(i)) for i in range(2))
                 assert workspace.steps.objectName() == "workflowSteps"
                 assert [workspace.steps.itemWidget(workspace.steps.item(i)).text() for i in range(2)] == [
                     "แปล", "ตรวจคำแปล",
                 ]
+                assert [
+                    workspace.steps.itemWidget(workspace.steps.item(i)).accessibleName()
+                    for i in range(2)
+                ] == ["แปล", "ตรวจคำแปล"]
                 assert [workspace.steps.itemWidget(workspace.steps.item(i)).property("workflowActive") for i in range(2)] == [True, False]
                 assert workspace.vocabulary_button.text() == "หาศัพท์"
                 assert not hasattr(workspace, "vocabulary_polish_button")

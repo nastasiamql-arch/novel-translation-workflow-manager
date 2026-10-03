@@ -53,6 +53,18 @@ def test_theme_styles_disabled_controls_and_keyboard_focus_explicitly():
         assert "font-size: 12pt" in stylesheet
 
 
+def test_copy_step_action_uses_flat_text_style():
+    for appearance, tokens in (("Dark", _DARK), ("Light", _LIGHT)):
+        stylesheet = application_stylesheet(appearance)
+        assert (
+            f"QPushButton#copyStepButton {{ color: {tokens['text']}; "
+            "background: transparent;"
+        ) in stylesheet
+        assert "QPushButton#copyStepButton:hover {" in stylesheet
+        assert "QPushButton#copyStepButton:focus {" in stylesheet
+        assert "QPushButton#copyStepButton:disabled {" in stylesheet
+
+
 def test_native_palette_keeps_disabled_toolbar_labels_legible():
     for appearance, tokens in (("Dark", _DARK), ("Light", _LIGHT)):
         palette = qt_palette(appearance)
