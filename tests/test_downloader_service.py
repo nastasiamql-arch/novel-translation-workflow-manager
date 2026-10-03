@@ -20,6 +20,16 @@ class FakeSource:
         return ChapterContent(chapter.remote_id, chapter.index, chapter.title, f"原文 {chapter.index}")
 
 
+class ChallengedSource(FakeSource):
+    def __init__(self):
+        super().__init__()
+        self.requests = 0
+
+    def get_chapter(self, chapter, mode="raw_zh"):
+        self.requests += 1
+        raise RuntimeError("TomatoMTL is presenting an anti-bot challenge")
+
+
 def setup(tmp_path):
     repo = DownloaderRepository(tmp_path / "downloader-data")
     source = FakeSource()
@@ -72,3 +82,16 @@ def test_rebinding_archives_old_manifest_without_reusing_remote_ids(tmp_path):
     manifests = list((tmp_path / "downloader-data" / "books" / book.id).glob("manifest.*.json"))
     assert manifests
     assert json.loads((tmp_path / "downloader-data" / "books" / book.id / "manifest.json").read_text(encoding="utf-8"))["chapters"] == {}
+
+
+def test_download_stops_after_source_challenge_instead_of_requesting_every_chapter(tmp_path):
+    repo = DownloaderRepository(tmp_path / "downloader-data")
+    source = ChallengedSource()
+    service = DownloadService(repo, SourceRegistry([source]))
+    book, _ = service.add_book("https://example.test/book", tmp_path / "exports")
+
+    result = service.download_updates(book)
+
+    assert result.failed == 1
+    assert source.requests == 1
+    assert any("หยุดดาวน์โหลดแล้ว" in message for message in result.errors)

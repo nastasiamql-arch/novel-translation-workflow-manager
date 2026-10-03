@@ -143,6 +143,11 @@ class DownloaderWindow(QMainWindow):
 
         self.add_button.setEnabled(False)
         self._pending_url = url.strip()
+        self.panel.summary.setText(
+            "กำลังตรวจ URL และเพิ่มนิยายเข้ารายการทางซ้าย…\n"
+            "ถ้าเว็บไซต์บล็อกคำขอ โปรแกรมจะแจ้งสาเหตุและจะยังไม่เพิ่มนิยาย"
+        )
+        self.statusBar().showMessage("กำลังตรวจ URL และเพิ่มนิยาย…")
         worker = DownloaderWorker(
             lambda _cancel, _progress: self.service.add_book(self._pending_url, output_root), self
         )
@@ -155,21 +160,37 @@ class DownloaderWindow(QMainWindow):
     def _book_added(self, result):
         book, info = result
         self.refresh_books(book.id)
+        self.panel.summary.setText(
+            f"เพิ่มนิยายแล้ว · พบ {info.total_chapters} ตอน\n"
+            "กด ตรวจตอนล่าสุด แล้วกด ดาวน์โหลดตอนใหม่"
+        )
         self.statusBar().showMessage(f"เพิ่ม {info.title} แล้ว · {info.total_chapters} ตอน", 8000)
 
     def _add_failed(self, message):
         dialog = QMessageBox(self)
         dialog.setIcon(QMessageBox.Warning)
-        dialog.setWindowTitle("เพิ่มนิยายไม่สำเร็จ")
+        dialog.setWindowTitle("ยังเพิ่มนิยายไม่ได้")
         dialog.setText(message)
-        if "anti-bot challenge" in message.casefold():
+        challenged = "anti-bot challenge" in message.casefold()
+        if challenged:
             open_button = dialog.addButton("เปิดหน้าเว็บใน Browser", QMessageBox.AcceptRole)
             dialog.addButton(QMessageBox.Ok)
             dialog.exec()
             if dialog.clickedButton() is open_button:
                 QDesktopServices.openUrl(QUrl(self._pending_url))
+            self.panel.summary.setText(
+                "ยังไม่ได้เพิ่มนิยาย จึงยังไม่แสดงในรายการทางซ้าย\n"
+                "เว็บกำลังขอให้ยืนยันตัวตน: เปิด URL ใน Browser แล้วกลับมากด + เพิ่มจาก URL อีกครั้ง "
+                "การยืนยันใน Browser อาจไม่ถูกส่งต่อให้ตัวดาวน์โหลด"
+            )
+            self.statusBar().showMessage("ยังไม่ได้เพิ่มนิยาย · เปิด URL แล้วลองกด + เพิ่มจาก URL อีกครั้ง")
             return
         dialog.exec()
+        self.panel.summary.setText(
+            f"ยังไม่ได้เพิ่มนิยาย จึงยังไม่แสดงในรายการทางซ้าย\n"
+            f"สาเหตุ: {message}\nตรวจ URL หรือการเชื่อมต่อ แล้วกด + เพิ่มจาก URL อีกครั้ง"
+        )
+        self.statusBar().showMessage("เพิ่มนิยายไม่สำเร็จ · ดูสาเหตุและวิธีลองใหม่ในกรอบนี้")
 
     def _select_book(self, current, _previous=None):
         if current is None:

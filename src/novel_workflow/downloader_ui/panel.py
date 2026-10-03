@@ -190,9 +190,32 @@ class DownloaderBookPanel(QWidget):
                 QMessageBox.warning(self, "แคตตาล็อกเปลี่ยนแปลง",
                                     "ตรวจพบการเปลี่ยนลำดับตอน:\n" + "\n".join(result["warnings"][:12]))
         else:
-            self.summary.setText(f"เสร็จแล้ว · โหลด {result.downloaded} · ข้าม {result.skipped} · ผิดพลาด {result.failed}")
+            blocked = any("anti-bot challenge" in error.casefold() for error in result.errors)
+            limited = any("rate limit" in error.casefold() for error in result.errors)
+            if blocked:
+                self.summary.setText(
+                    f"เว็บไซต์ขอให้หยุด · โหลด {result.downloaded} · ข้าม {result.skipped} · "
+                    "เปิดเว็บแล้วลองใหม่ภายหลังได้"
+                )
+            elif limited:
+                self.summary.setText(
+                    f"เว็บไซต์จำกัดความถี่ · โหลด {result.downloaded} · ข้าม {result.skipped} · "
+                    "รอสักครู่แล้วเริ่มใหม่เพื่อทำต่อ"
+                )
+            else:
+                self.summary.setText(f"เสร็จแล้ว · โหลด {result.downloaded} · ข้าม {result.skipped} · ผิดพลาด {result.failed}")
             if result.errors:
-                QMessageBox.warning(self, "บางตอนไม่สำเร็จ", "\n".join(result.errors[:10]))
+                dialog = QMessageBox(self)
+                dialog.setIcon(QMessageBox.Warning)
+                dialog.setWindowTitle("หยุดดาวน์โหลดตามคำขอของเว็บไซต์" if blocked or limited else "บางตอนไม่สำเร็จ")
+                dialog.setText("\n".join(result.errors[:10]))
+                open_button = None
+                if blocked and self.book and self.book.source_binding:
+                    open_button = dialog.addButton("เปิดหน้าเว็บใน Browser", QMessageBox.AcceptRole)
+                dialog.addButton(QMessageBox.Ok)
+                dialog.exec()
+                if dialog.clickedButton() is open_button and open_button is not None:
+                    QDesktopServices.openUrl(QUrl(self.book.source_binding.book_url))
 
     def _failed(self, message):
         if "anti-bot challenge" not in message.casefold() or not self.book or not self.book.source_binding:

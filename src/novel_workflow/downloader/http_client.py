@@ -4,6 +4,10 @@ import threading
 import httpx
 
 
+class SourceRateLimitError(RuntimeError):
+    """The source has asked the client to slow down."""
+
+
 class HttpClient:
     def __init__(self, *, timeout=20.0, min_interval=1.0, retries=2, user_agent="PalantirNovel/2.4.0"):
         self.client = httpx.Client(timeout=timeout, headers={"User-Agent": user_agent, "Accept": "text/html,application/json"})
@@ -28,6 +32,10 @@ class HttpClient:
                 self._last_request = time.monotonic()
             try:
                 response = self.client.get(url)
+                if response.status_code == 429:
+                    raise SourceRateLimitError(
+                        "Source rate limit reached (HTTP 429). Wait before retrying; downloader stopped."
+                    )
                 if response.status_code in (408, 425, 429, 500, 502, 503, 504) and attempt < self.retries:
                     self._backoff(0.75 * (2 ** attempt), cancel)
                     continue
