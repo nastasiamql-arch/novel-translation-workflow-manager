@@ -8,23 +8,23 @@ Primary flow: **Novel Library → open a novel → choose a workflow step and fi
 
 ## Visual direction
 
-Use the restrained **Minimalism & Swiss Style** direction returned by UI/UX Pro Max for productivity tools: flat surfaces, clear type hierarchy, deliberate spacing, no decorative cards or rounded chrome. The initial broad search returned a documentation landing pattern that did not fit a desktop writing tool; the narrower desktop-writing search was used instead. Colors are adapted from its warm-ink and amber palette and checked against WCAG contrast targets.
+Use a restrained **Minimalism & Swiss Style** direction for a desktop writing tool: neutral grayscale surfaces, clear type hierarchy, deliberate spacing, no decorative cards or rounded chrome. Keep accent and focus grayscale so chrome does not compete with novel text. Preserve distinct semantic colors for success, warning, and error states. Check foreground/background pairs against WCAG contrast targets.
 
 ### Semantic palette
 
 | Role | Light | Dark |
 | --- | --- | --- |
-| App background | `#F7F7F5` | `#1C1D1B` |
-| Editor / surface | `#FFFFFF` | `#222320` |
-| Sidebar | `#F0EFEA` | `#272824` |
-| Secondary surface | `#E8E6E0` | `#30312D` |
-| Main text | `#24231F` | `#F1F0EA` |
-| Secondary text | `#3D3B35` | `#D5D3C9` |
-| Muted / disabled text | `#57544D` | `#C1BFB5` |
-| Accent / primary action | `#A45100` | `#F2B94B` |
-| Keyboard focus | `#8D4700` | `#FFC95C` |
-| Selection | `#DCE9F4` | `#433D31` |
-| Status strip | `#374151` | `#343630` |
+| App background | `#F5F5F5` | `#1E1E1E` |
+| Editor / surface | `#FFFFFF` | `#252526` |
+| Sidebar | `#F0F0F0` | `#252526` |
+| Secondary surface | `#E8E8E8` | `#303030` |
+| Main text | `#242424` | `#E6E6E6` |
+| Secondary text | `#555555` | `#C2C2C2` |
+| Muted / disabled text | `#606060` | `#A0A0A0` |
+| Accent / primary action | `#686868` | `#A6A6A6` |
+| Keyboard focus | `#5C5C5C` | `#B8B8B8` |
+| Selection | `#E2E2E2` | `#414141` |
+| Status strip | `#E8E8E8` | `#252526` |
 
 All semantic foreground/background pairs for normal, secondary, muted, disabled, primary-button, selection, status, and focus states must be checked in both appearances. Normal text targets at least 4.5:1 contrast; focus indicators target at least 3:1 against adjacent surfaces.
 
@@ -38,7 +38,7 @@ All semantic foreground/background pairs for normal, secondary, muted, disabled,
 
 ## Interaction and accessibility
 
-- Keep every main action keyboard-operable and in visual tab order; show a strong amber focus marker on buttons, tabs, fields, lists, and menus.
+- Keep every main action keyboard-operable and in visual tab order; show a clear grayscale focus marker on buttons, tabs, fields, lists, and menus.
 - Disabled actions remain legible and are distinguished by a quiet surface as well as text; do not use opacity alone to communicate state.
 - Use hover and pressed surfaces consistently. State is not communicated by color alone; preserve labels, selected indicators, and status copy.
 - Use visible labels/help for complex controls, retain cancel/back routes in dialogs, and show progress feedback for long work.

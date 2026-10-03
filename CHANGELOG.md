@@ -2,6 +2,11 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.3.1 - 2026-10-04
+
+- Replace the warm amber palette with a restrained grayscale theme across the editor, navigation, selections, search matches, focus indicators, and status bar in both Dark and Light appearances.
+- Keep success, warning, and error colors distinct so status meaning remains easy to recognize.
+
 ## 3.3.0 - 2026-10-04
 
 - Redesign the app-wide Dark and Light palettes with a warm neutral workbench, coordinated amber focus/action colors, and consistent editor, dialog, notification, and progress surfaces.

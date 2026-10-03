@@ -7,30 +7,30 @@ from PySide6.QtWidgets import QApplication
 _SYSTEM_APPEARANCE_DARK: bool | None = None
 
 
-# The light palette follows the warm, restrained Swiss/minimal direction from
-# UI/UX Pro Max. Dark is paired by role so the same hierarchy survives a theme
-# switch. Disabled text stays readable; state is also communicated by surface.
+# Neutral grayscale palettes keep attention on novel text and work consistently
+# across editor, navigation, dialogs, and progress surfaces. Semantic status
+# colors remain distinct so success, warning, and error are never ambiguous.
 _LIGHT = {
-    "app": "#F7F7F5", "surface": "#FFFFFF", "sidebar": "#F0EFEA",
-    "surface2": "#E8E6E0", "hover": "#EDE8DD", "elevated": "#FFFFFF",
-    "border": "#C9C6BE", "text": "#24231F", "secondary": "#3D3B35",
-    "muted": "#57544D", "disabled_text": "#57544D",
-    "accent": "#A45100", "focus": "#8D4700", "success": "#246B45",
-    "warning": "#7A4E00", "danger": "#B42318", "selection": "#DCE9F4",
-    "selection_text": "#24231F", "input": "#FFFFFF", "primary": "#A45100",
-    "primary_hover": "#873F00", "primary_text": "#FFFFFF",
-    "status": "#374151", "status_text": "#FFFFFF",
+    "app": "#F5F5F5", "surface": "#FFFFFF", "sidebar": "#F0F0F0",
+    "surface2": "#E8E8E8", "hover": "#EAEAEA", "elevated": "#FFFFFF",
+    "border": "#D8D8D8", "text": "#242424", "secondary": "#555555",
+    "muted": "#606060", "disabled_text": "#606060",
+    "accent": "#686868", "focus": "#5C5C5C", "success": "#246B45",
+    "warning": "#735100", "danger": "#A51D15", "selection": "#E2E2E2",
+    "selection_text": "#242424", "input": "#FFFFFF", "primary": "#686868",
+    "primary_hover": "#535353", "primary_text": "#FFFFFF",
+    "status": "#E8E8E8", "status_text": "#242424",
 }
 _DARK = {
-    "app": "#1C1D1B", "surface": "#222320", "sidebar": "#272824",
-    "surface2": "#30312D", "hover": "#383931", "elevated": "#2B2C28",
-    "border": "#4A4B43", "text": "#F1F0EA", "secondary": "#D5D3C9",
-    "muted": "#C1BFB5", "disabled_text": "#C1BFB5",
-    "accent": "#F2B94B", "focus": "#FFC95C", "success": "#91D49A",
-    "warning": "#F1C66D", "danger": "#FF8A80", "selection": "#433D31",
-    "selection_text": "#F1F0EA", "input": "#30312D", "primary": "#F2B94B",
-    "primary_hover": "#FFD078", "primary_text": "#292318",
-    "status": "#343630", "status_text": "#F1F0EA",
+    "app": "#1E1E1E", "surface": "#252526", "sidebar": "#252526",
+    "surface2": "#303030", "hover": "#383838", "elevated": "#2B2B2B",
+    "border": "#3F3F3F", "text": "#E6E6E6", "secondary": "#C2C2C2",
+    "muted": "#A0A0A0", "disabled_text": "#A0A0A0",
+    "accent": "#A6A6A6", "focus": "#B8B8B8", "success": "#91D49A",
+    "warning": "#F1C66D", "danger": "#FF8A80", "selection": "#414141",
+    "selection_text": "#F2F2F2", "input": "#303030", "primary": "#A6A6A6",
+    "primary_hover": "#BDBDBD", "primary_text": "#1E1E1E",
+    "status": "#252526", "status_text": "#E6E6E6",
 }
 
 
@@ -78,7 +78,7 @@ def editor_colors(appearance: str = "Dark") -> dict[str, str]:
         "gutter": c["sidebar"], "gutter_text": c["muted"],
         "current_line": c["hover"], "selection": c["selection"],
         "selection_text": c["selection_text"],
-        "find": "#5C4826" if is_dark else "#FCE8B2",
+        "find": "#454545" if is_dark else "#E5E5E5",
         "find_active": c["accent"],
         "find_text": c["primary_text"] if is_dark else c["text"],
         "tab": c["surface2"], "tab_selected": c["surface"],
