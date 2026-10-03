@@ -1844,13 +1844,24 @@ class MainWindow(LegacyMainWindow):
             self._download_update(update, destination)
 
     def _download_update(self, update: UpdateInfo, destination: Path):
-        dialog = QProgressDialog("กำลังดาวน์โหลดและตรวจสอบไฟล์ติดตั้ง…   0%", "ยกเลิก", 0, 100, self)
-        dialog.setWindowTitle(f"ดาวน์โหลด v{update.version}")
+        dialog = QProgressDialog("กำลังดาวน์โหลดและตรวจสอบตัวติดตั้ง… 0%", "ยกเลิก", 0, 100, self)
+        dialog.setObjectName("updateProgressDialog")
+        dialog.setWindowTitle(f"อัปเดตเป็น v{update.version}")
         dialog.setWindowModality(Qt.WindowModal)
         dialog.setMinimumDuration(0)
-        progress_bar = dialog.bar() if hasattr(dialog, "bar") else None
+        dialog.setMinimumWidth(460)
+        dialog.resize(480, 132)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        progress_bar = dialog.findChild(QProgressBar)
         if progress_bar is not None:
+            progress_bar.setObjectName("updateProgressBar")
             progress_bar.setTextVisible(False)
+        progress_label = dialog.findChild(QLabel)
+        if progress_label is not None:
+            progress_label.setObjectName("updateProgressLabel")
+            progress_label.setWordWrap(True)
+            progress_label.setMinimumHeight(28)
         worker = _UpdateDownloadWorker(update, destination, self)
         self._update_download_worker = worker
         self._update_progress = dialog
@@ -1885,7 +1896,7 @@ class MainWindow(LegacyMainWindow):
             return
         dialog.setValue(value)
         dialog.setLabelText(
-            f"กำลังดาวน์โหลดและตรวจสอบไฟล์ติดตั้ง… {value:3d}%"
+            f"กำลังดาวน์โหลดและตรวจสอบตัวติดตั้ง… {value}%"
         )
 
     def refresh_profiles(self, pid=None):
