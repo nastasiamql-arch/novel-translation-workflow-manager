@@ -23,6 +23,7 @@ from .translation_progress import (
 )
 from .ui import MainWindow as LegacyMainWindow
 from .workspace_editor import EditorTabs
+from .theme import theme_colors
 from . import __version__
 from .updater import UpdateError, UpdateInfo, check_for_update, download_update
 from .file_import import import_files_into_directory
@@ -147,12 +148,12 @@ class SubmitToast(QFrame):
 
     def show_message(self, text):
         self.message.setText(str(text))
-        dark = getattr(getattr(self.parent(), "settings", None), "appearance", "Dark") == "Dark"
-        background, foreground = ("#252526", "#D4D4D4") if dark else ("#F3F3F3", "#333333")
+        appearance = getattr(getattr(self.parent(), "settings", None), "appearance", "Dark")
+        colors = theme_colors(appearance)
         self.setStyleSheet(
-            f"QFrame#submitToast {{ background:{background}; color:{foreground}; "
-            "border:0; border-bottom:1px solid #007ACC; border-radius:0; }"
-            f"QLabel {{ color:{foreground}; background:transparent; }}"
+            f"QFrame#submitToast {{ background:{colors['elevated']}; color:{colors['text']}; "
+            f"border:0; border-bottom:2px solid {colors['accent']}; border-radius:0; }}"
+            f"QLabel {{ color:{colors['text']}; background:transparent; }}"
         )
         self.setMaximumWidth(max(320, min(560, self.parent().width() - 40)))
         self.adjustSize()
@@ -290,6 +291,7 @@ class ProfileWorkspace(QWidget):
 
         self.sidebar_toggle = QToolButton()
         self.sidebar_toggle.setText("☰")
+        self.sidebar_toggle.setAccessibleName("ซ่อนหรือแสดงแถบด้านข้าง")
         self.sidebar_toggle.setToolTip("ซ่อน/แสดงแถบด้านข้าง")
         self.sidebar_toggle.clicked.connect(self.toggle_sidebar)
         self.editor_header = QFrame()
@@ -334,11 +336,13 @@ class ProfileWorkspace(QWidget):
         header_layout.addWidget(self.context_button)
         find_button = QToolButton()
         find_button.setText("ค้นหา")
+        find_button.setAccessibleName("ค้นหาในไฟล์ปัจจุบัน")
         find_button.setToolTip("ค้นหาในไฟล์ปัจจุบัน  ·  Ctrl+H")
         find_button.clicked.connect(self.editor.show_find)
         header_layout.addWidget(find_button)
         decrease_font = QToolButton()
         decrease_font.setText("A−")
+        decrease_font.setAccessibleName("ลดขนาดตัวอักษร")
         decrease_font.setToolTip("ลดขนาดตัวอักษร  ·  Ctrl+-")
         decrease_font.clicked.connect(lambda: self.owner.adjust_editor_font_size(-1))
         header_layout.addWidget(decrease_font)
@@ -349,11 +353,13 @@ class ProfileWorkspace(QWidget):
         header_layout.addWidget(self.font_size_label)
         increase_font = QToolButton()
         increase_font.setText("A+")
+        increase_font.setAccessibleName("เพิ่มขนาดตัวอักษร")
         increase_font.setToolTip("เพิ่มขนาดตัวอักษร  ·  Ctrl++")
         increase_font.clicked.connect(lambda: self.owner.adjust_editor_font_size(1))
         header_layout.addWidget(increase_font)
         reset_font = QToolButton()
         reset_font.setText("A")
+        reset_font.setAccessibleName("คืนขนาดตัวอักษรเริ่มต้น")
         reset_font.setToolTip("คืนขนาดตัวอักษรเริ่มต้น")
         reset_font.clicked.connect(lambda: self.owner.set_editor_font_size(11.0))
         header_layout.addWidget(reset_font)
@@ -393,28 +399,6 @@ class ProfileWorkspace(QWidget):
         self.novel_cover_rail.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.novel_cover_rail.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.novel_cover_rail.itemClicked.connect(self.owner._open_novel_cover_item)
-        self.novel_cover_rail.setStyleSheet("""
-            QListWidget#novelCoverRail {
-                background: transparent;
-                border: 0;
-                padding: 5px 2px;
-            }
-            QListWidget#novelCoverRail::item {
-                background: transparent;
-                border: 0;
-                border-radius: 0;
-                padding: 1px;
-            }
-            QListWidget#novelCoverRail::item:hover {
-                background: transparent;
-                border-color: transparent;
-            }
-            QListWidget#novelCoverRail::item:selected {
-                background: transparent;
-                border-left: 2px solid #007ACC;
-            }
-        """)
-
         self.workspace_splitter = QSplitter(Qt.Horizontal)
         self.workspace_splitter.setChildrenCollapsible(True)
         self.workspace_splitter.addWidget(self.novel_cover_rail)

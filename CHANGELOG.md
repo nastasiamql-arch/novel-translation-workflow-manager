@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.3.0 - 2026-10-04
+
+- Redesign the app-wide Dark and Light palettes with a warm neutral workbench, coordinated amber focus/action colors, and consistent editor, dialog, notification, and progress surfaces.
+- Keep disabled controls readable, make keyboard focus easier to locate, and enlarge base text and common control targets across the application.
+- Align the Editor toolbar, editor tabs, cover rail, notifications, and native Qt palette with the shared theme tokens.
+
 ## 3.2.0 - 2026-10-04
 
 - Improve readability across the full application with larger base text, stronger inactive/disabled states, clearer keyboard focus, and larger toolbar targets.

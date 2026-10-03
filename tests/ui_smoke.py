@@ -10,14 +10,26 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("NOVELWORKFLOW_DISABLE_WEBENGINE", "1")
 
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QTextCursor
+from PySide6.QtGui import QColor, QPalette, QTextCursor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QPushButton, QToolBar
 
 from novel_workflow.models import LaunchTarget, StepFile, Workflow, WorkflowStep
 from novel_workflow.services import ProfileService
 from novel_workflow.storage import ProjectRepository
+from novel_workflow.theme import _DARK, _LIGHT
 from novel_workflow.workspace_window import ElidingStatusLabel, MainWindow
+
+
+def _contrast_ratio(foreground, background):
+    def luminance(color):
+        channels = [getattr(color, channel)() / 255 for channel in ("red", "green", "blue")]
+        linear = [value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+                  for value in channels]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    first, second = sorted((luminance(foreground), luminance(background)), reverse=True)
+    return (first + 0.05) / (second + 0.05)
 
 
 def main() -> int:
@@ -93,6 +105,25 @@ def main() -> int:
                 assert window.profile.id == profile.id
                 assert window.main_pages.currentWidget() is window.workspace_stack
                 workspace = window.workspaces[profile.id]
+                for appearance, tokens in (("Dark", _DARK), ("Light", _LIGHT)):
+                    window.settings.appearance = appearance
+                    window.apply_theme()
+                    app.processEvents()
+                    disabled_text = app.palette().color(
+                        QPalette.Disabled, QPalette.ButtonText
+                    )
+                    assert _contrast_ratio(
+                        disabled_text, QColor(tokens["sidebar"])
+                    ) >= 4.5, (
+                        appearance, disabled_text.name(), tokens["sidebar"]
+                    )
+                    assert "QFrame#editorHeader QToolButton:disabled" in app.styleSheet()
+                    assert "QTabWidget#editorTabs QTabBar::tab:disabled" in (
+                        workspace.editor.tabs.styleSheet()
+                    )
+                window.settings.appearance = "Dark"
+                window.apply_theme()
+                app.processEvents()
                 assert window.library_status_tabs.count() == 4
                 assert [
                     workspace.pause_profile_button.text(),
@@ -252,7 +283,7 @@ def main() -> int:
                 app.processEvents()
 
                 assert editor.objectName() == "codeEditor"
-                assert editor.colors["background"] == "#1E1E1E"
+                assert editor.colors["background"] == _DARK["surface"]
                 assert editor.font().pointSizeF() >= 10.5
                 window.adjust_editor_font_size(1)
                 assert round(editor.font().pointSizeF(), 2) == 12.0, editor.font().pointSizeF()
