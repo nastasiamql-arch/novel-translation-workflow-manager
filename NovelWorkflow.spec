@@ -1,11 +1,6 @@
 from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
-hiddenimports = [
-    module for module in collect_submodules('novel_workflow')
-    if not module.startswith((
-        'novel_workflow.downloader',
-    ))
-]
+hiddenimports = collect_submodules('novel_workflow')
 datas = [
     ('src/novel_workflow/resources/novelworkflow.png', 'novel_workflow/resources'),
     ('src/novel_workflow/resources/palantir_novel.png', 'novel_workflow/resources'),
@@ -21,7 +16,6 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["novel_workflow.downloader", "novel_workflow.downloader_ui", "novel_workflow.downloader_main"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

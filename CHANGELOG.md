@@ -1,32 +1,14 @@
 # Changelog
 
-All notable changes to Palantir: Novel and Novel Downloader are documented here.
+All notable changes to Palantir: Novel are documented here.
 
-## 2.5.3 - 2026-10-03
+## 3.0.0 - 2026-10-03
 
-- Keep add-from-URL progress and failure guidance visible in the Downloader panel so users know why a book has not appeared in the library and how to retry.
-- Slow TomatoMTL chapter requests to stay below its published reading threshold, show when the Downloader is waiting, and stop the batch when the site returns a challenge or rate limit.
-
-## 2.5.2 - 2026-10-03
-
-- Clarify that **รีเฟรชรายชื่อเว็บ** only reloads source definitions and is not a chapter download action.
-- Add step-by-step first-use guidance to the Downloader panel when no novel is selected.
-
-## 2.5.1 - 2026-10-03
-
-- Offer **เปิดหน้าเว็บใน Browser** when testing a source URL returns a TomatoMTL anti-bot challenge, matching the download and add-book flows.
-
-## 2.5.0 - 2026-10-03
-
-- Move novel downloading into the standalone Novel Downloader application with separate library, settings, source configs, manifests, and output folders.
-- Remove the downloader page and profile integration from Palantir: Novel while preserving legacy source-binding profile data.
-- Build and publish separate Windows installers for Palantir: Novel and Novel Downloader.
-- Add an explicit browser action when TomatoMTL blocks requests with an anti-bot challenge; no protection bypass is attempted.
+- Remove the standalone web novel Downloader and its adapters, library, configuration, installer, updater path, and related workflow integration.
+- Keep Palantir: Novel focused on translation workflows and existing source, translated, and reviewed chapter references.
 
 ## 2.4.0 - 2026-10-03
 
-- Add an in-app web novel downloader with profile source binding, TomatoMTL and configurable HTML sources, chapter manifests, resume support, Unicode filenames, and background worker UI.
-- Keep `CURRENT_SOURCE_CHAPTER` compatible with padded downloader filenames and legacy chapter names.
 - Migrate old profile documents additively and preserve unrecognized legacy fields.
 
 ## 2.3.2

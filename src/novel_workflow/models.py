@@ -117,25 +117,6 @@ class TxtExportSettings:
         return cls(**{key: value for key, value in data.items() if key in cls.__dataclass_fields__})
 
 @dataclass
-class NovelSourceBinding:
-    source_id: str
-    book_url: str
-    remote_book_id: str
-    content_mode: str = "raw_zh"
-    last_known_chapter_count: int = 0
-    last_downloaded_chapter: int = 0
-    last_checked_at: str | None = None
-    last_downloaded_at: str | None = None
-    skip_existing: bool = True
-    @classmethod
-    def from_dict(cls, value):
-        if not isinstance(value, dict): return None
-        fields = cls.__dataclass_fields__
-        data = {key: item for key, item in value.items() if key in fields}
-        if not all(data.get(key) for key in ("source_id", "book_url", "remote_book_id")): return None
-        return cls(**data)
-
-@dataclass
 class LaunchTarget:
     id: str = field(default_factory=uid)
     label: str = ""
@@ -169,7 +150,6 @@ class NovelProfile:
     schema_version: int = PROFILE_SCHEMA_VERSION
     removed_vocabulary_data: dict = field(default_factory=dict)
     txt_export_settings: TxtExportSettings = field(default_factory=TxtExportSettings)
-    source_binding: NovelSourceBinding | None = None
     @classmethod
     def from_dict(cls,d):
         state=d.get("chapter_state",{})
@@ -201,7 +181,6 @@ class NovelProfile:
                 **(d.get("removed_vocabulary_data", {}) if isinstance(d.get("removed_vocabulary_data"), dict) else {}),
                 **{key: d[key] for key in ("vocabulary_polish_step", "vocabulary_settings") if key in d},
             },
-            source_binding=NovelSourceBinding.from_dict(d.get("source_binding")),
         )
 
 @dataclass

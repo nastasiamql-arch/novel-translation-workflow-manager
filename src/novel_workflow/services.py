@@ -66,19 +66,10 @@ class AssemblyService:
         folder=self.repo.profile_dir(p.id)/cat; n=p.chapter_state.current_chapter
         if not folder.exists(): raise FileNotFoundError(f"No {cat} folder exists for chapter {n}")
         supported={".txt",".md",".json"}
-        matches=[]
-        prefix=re.compile(r"^0*(\d+)(?:\s|[-_.])")
-        legacy=re.compile(r"^chapter[_\s-]*0*(\d+)$",re.IGNORECASE)
-        token=re.compile(rf"(?<!\d)0*{n}(?!\d)")
-        for path in folder.iterdir():
-            if not path.is_file() or path.suffix.lower() not in supported:
-                continue
-            stem=path.stem
-            first=prefix.match(stem)
-            if ((first and int(first.group(1)) == n)
-                    or (legacy.match(stem) and int(legacy.match(stem).group(1)) == n)
-                    or token.search(stem)):
-                matches.append(path)
+        matches=[f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in supported
+                 and re.search(rf"(?<!\d){n}(?!\d)",f.stem)]
+        exact=[f for f in matches if f.stem.casefold()==f"chapter_{n}".casefold()]
+        matches=exact or matches
         if len(matches)==1:return matches[0]
         if len(matches)>1:raise ValueError(f"Multiple {cat} files match chapter {n}: "+", ".join(f.name for f in matches))
         raise FileNotFoundError(f"No {cat} file contains chapter number {n}")

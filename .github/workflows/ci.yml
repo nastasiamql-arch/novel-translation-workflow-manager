@@ -20,9 +20,6 @@ jobs:
       - name: Run desktop UI smoke test
         timeout-minutes: 2
         run: python tests/ui_smoke.py
-      - name: Run standalone Downloader UI smoke test
-        timeout-minutes: 2
-        run: python tests/downloader_ui_smoke.py
       - name: Run test suite
         run: python -m pytest -q
 
@@ -46,10 +43,9 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
       - uses: actions/upload-artifact@v4
         with:
-          name: Novel-Installers-${{ steps.version.outputs.version }}
+          name: NovelWorkflow-Installer-${{ steps.version.outputs.version }}
           path: |
             dist/NovelWorkflow-Setup-${{ steps.version.outputs.version }}.exe
-            dist/NovelDownloader-Setup-${{ steps.version.outputs.version }}.exe
       - name: Create version tag
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
         shell: pwsh
@@ -75,4 +71,3 @@ jobs:
           generate_release_notes: true
           files: |
             dist/NovelWorkflow-Setup-${{ steps.version.outputs.version }}.exe
-            dist/NovelDownloader-Setup-${{ steps.version.outputs.version }}.exe
