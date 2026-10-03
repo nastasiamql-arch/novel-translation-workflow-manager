@@ -68,28 +68,6 @@ Palantir: Novel คือโปรแกรมเดสก์ท็อปสำ�
 
 รองรับ Dynamic Reference ได้แก่ `CURRENT_SOURCE_CHAPTER`, `CURRENT_TRANSLATED_CHAPTER` และ `CURRENT_REVIEWED_CHAPTER` โดยไฟล์บทสามารถใช้ชื่ออะไรก็ได้ ตราบใดที่ชื่อไฟล์มีเลขบทอยู่
 
-## Novel Downloader
-
-Novel Downloader เป็นแอป Windows แยกจาก Palantir: Novel มี library, settings, manifests และ source configs ของตัวเองใน `%LOCALAPPDATA%/NovelDownloader/`. มันไม่อ่านโปรไฟล์ Palantir และไม่เขียนไฟล์ลงโปรเจกต์แปลโดยอัตโนมัติ
-
-เลือกโฟลเดอร์ส่งออกหลัก แล้วแอปจะสร้างโฟลเดอร์ย่อยตามชื่อนิยายและบันทึกตอนเป็น `0001 ชื่อตอน.txt` (UTF-8) ผู้ใช้สามารถนำไฟล์ไปใช้กับ Palantir เองได้โดยเลือกไฟล์ในหน้าโปรเจกต์
-
-ดาวน์โหลดตอนใหม่หรือช่วงตอนที่เลือกได้ ข้ามไฟล์เดิม resume ผ่าน manifest และจัดการแหล่ง HTML ที่กำหนดเองได้ TomatoMTL ใช้ Chinese Raw / 原文 และเว้นช่วงการอ่านตอนเพื่อเคารพ rate limit ที่เว็บไซต์ประกาศ หากเว็บแสดง anti-bot challenge หรือ rate limit โปรแกรมจะหยุด batch เพื่อไม่ส่งคำขอซ้ำถี่ ๆ และเปิดหน้าเว็บใน browser ให้เมื่อเป็น challenge แต่จะไม่ข้าม challenge, paywall หรือการยืนยันตัวตน
-
-custom source เก็บใน `%LOCALAPPDATA%/NovelDownloader/sources/` ตัวอย่าง config:
-
-```json
-{
-  "id": "example_novel",
-  "name": "Example Novel",
-  "domains": ["novel.example.com"],
-  "book": {"title": "h1.title", "author": ".author", "chapters": ".chapter-list a"},
-  "chapter": {"title": "h1.chapter-title", "content": ".chapter-content", "remove": [".ads"]}
-}
-```
-
-เปิด **จัดการ Sources** ใน Novel Downloader เพื่อนำเข้า JSON ตรวจการตั้งค่า และเปิดโฟลเดอร์ config ตัวติดตั้ง `NovelDownloader-Setup-<version>.exe` เผยแพร่คู่กับ installer ของ Palantir ใน GitHub Release; repository เป็น Private ผู้ดาวน์โหลดต้องมีสิทธิ์เข้าถึง repository
-
 ## ความคืบหน้าการแปล
 
 - หน้าความคืบหน้าจะแสดงจำนวนบทที่ทำเสร็จวันนี้ สัปดาห์นี้ และในช่วง 7 วันที่ผ่านมา พร้อมยอดรวมแยกตามนิยายแต่ละเรื่อง

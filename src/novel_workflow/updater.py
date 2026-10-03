@@ -72,11 +72,7 @@ def _version_parts(value: str) -> tuple[int, int, int]:
     return tuple(int(part) for part in match.groups())
 
 
-def parse_latest_release(
-    payload: dict,
-    current_version: str,
-    installer_prefix: str = "NovelWorkflow",
-) -> UpdateInfo | None:
+def parse_latest_release(payload: dict, current_version: str) -> UpdateInfo | None:
     """Return a verified release descriptor only when it is newer."""
     if not isinstance(payload, dict) or payload.get("draft") or payload.get("prerelease"):
         raise UpdateError("ข้อมูล Release ไม่ถูกต้องหรือไม่ใช่รุ่นเสถียร")
@@ -91,9 +87,7 @@ def parse_latest_release(
     if release_url != expected_release_url:
         raise UpdateError("ลิงก์ Release ไม่ตรงกับ repository ทางการ")
 
-    if not re.fullmatch(r"[A-Za-z0-9_-]+", installer_prefix):
-        raise UpdateError("ชื่อไฟล์ติดตั้งไม่ถูกต้อง")
-    asset_name = f"{installer_prefix}-Setup-{version}.exe"
+    asset_name = f"NovelWorkflow-Setup-{version}.exe"
     assets = payload.get("assets")
     asset = next((item for item in assets or [] if item.get("name") == asset_name), None)
     if not asset:
@@ -133,11 +127,7 @@ def parse_latest_release(
     )
 
 
-def check_for_update(
-    current_version: str,
-    timeout: int = 8,
-    installer_prefix: str = "NovelWorkflow",
-) -> UpdateInfo | None:
+def check_for_update(current_version: str, timeout: int = 8) -> UpdateInfo | None:
     request = Request(
         LATEST_RELEASE_URL,
         headers={
@@ -158,7 +148,7 @@ def check_for_update(
         raise UpdateError(f"ตรวจสอบอัปเดตไม่ได้: {exc}") from exc
     except (URLError, TimeoutError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise UpdateError(f"ตรวจสอบอัปเดตไม่ได้: {exc}") from exc
-    return parse_latest_release(payload, current_version, installer_prefix)
+    return parse_latest_release(payload, current_version)
 
 
 def download_update(

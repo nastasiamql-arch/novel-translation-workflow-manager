@@ -469,18 +469,6 @@ def main() -> int:
                 window.return_from_utility_page()
 
                 workspace = window.workspaces[profile.id]
-                assert not hasattr(workspace, "web_source_button")
-                assert not hasattr(window, "open_downloader")
-
-                from novel_workflow.downloader.worker import DownloaderWorker
-                worker_errors = []
-                failed_worker = DownloaderWorker(lambda cancel, progress: (_ for _ in ()).throw(RuntimeError("expected worker error")))
-                failed_worker.failed.connect(worker_errors.append)
-                failed_worker.start()
-                assert failed_worker.wait(2000)
-                app.processEvents()
-                assert worker_errors == ["expected worker error"]
-
                 window.preview()
                 assert window.main_pages.currentWidget() is window.utility_page
                 assert window.utility_title.text().startswith("ตัวอย่าง ·")
@@ -527,7 +515,7 @@ def main() -> int:
 
                 smoke_passed = True
                 app.exit(0)
-                print("UI smoke passed: status, Context watcher, no embedded downloader mode, worker errors, in-app utility pages, Find/Replace, Auto Save, COPY STEP")
+                print("UI smoke passed: status, Context watcher, in-app utility pages, Find/Replace, Auto Save, COPY STEP")
             except Exception as exc:
                 traceback.print_exc()
                 print(f"UI smoke failed: {type(exc).__name__}: {exc}")
