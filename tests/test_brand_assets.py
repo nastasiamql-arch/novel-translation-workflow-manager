@@ -11,12 +11,19 @@ from PySide6.QtWidgets import QApplication
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_stage_e_svg_masters_render_and_windows_icon_has_favicon_sizes():
+def test_n_monogram_svg_masters_render_and_windows_icon_has_favicon_sizes():
     app = QApplication.instance() or QApplication([])
     masters = ROOT / "assets" / "brand"
     svg_files = list(masters.glob("*.svg"))
     assert len(svg_files) == 4
     assert all(QSvgRenderer(str(path)).isValid() for path in svg_files)
+    assert all(
+        'd="M22 30h15l26 27V30h15v40H63L37 43v27H22z"'
+        in path.read_text(encoding="utf-8")
+        for path in svg_files
+    )
+    app_icon = ROOT / "src" / "novel_workflow" / "resources" / "palantir_novel.svg"
+    assert app_icon.read_bytes() == (masters / "palantir_novel_app_dark.svg").read_bytes()
 
     icon = QIcon(str(ROOT / "assets" / "palantir_novel.ico"))
     assert not icon.isNull()
