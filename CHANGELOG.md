@@ -2,6 +2,10 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.3.6 - 2026-10-04
+
+- Replace the Stage E mark with the selected N monogram across the app icon, installer, SVG masters, favicon, and desktop/mobile exports.
+
 ## 3.3.5 - 2026-10-04
 
 - Save editor documents by writing a complete temporary file and atomically replacing the original, preserving the last saved copy if Windows blocks the replacement.
