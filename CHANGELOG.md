@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.3.5 - 2026-10-04
+
+- Save editor documents by writing a complete temporary file and atomically replacing the original, preserving the last saved copy if Windows blocks the replacement.
+- Retry failed automatic saves and keep the document marked as unsaved until the write succeeds.
+- Adopt the selected Stage E mark as the Palantir: Novel icon, with monochrome light/dark SVG masters, favicon sizes, and desktop/mobile PNG exports.
+
 ## 3.3.4 - 2026-10-04
 
 - Prevent workflow stage buttons from extending into the next row by removing vertical padding that made them taller than their list items.

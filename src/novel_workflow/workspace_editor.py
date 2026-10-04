@@ -712,17 +712,27 @@ class EditorTabs(QWidget):
         if timer is not None:
             timer.stop()
 
+        staged_path = None
         try:
-            path.write_text(editor.toPlainText(), encoding="utf-8")
+            staged_path = _stage_text_file(path, editor.toPlainText())
+            os.replace(staged_path, path)
         except OSError as exc:
             editor.setProperty(
                 "saveState",
                 "บันทึกอัตโนมัติไม่สำเร็จ" if autosave else "บันทึกไม่สำเร็จ",
             )
             self._update_status(self.tabs.indexOf(editor))
+            if autosave and self._dirty(editor) and timer is not None:
+                timer.start(AUTO_SAVE_DELAY_MS)
             if not quiet:
                 QMessageBox.warning(self, "บันทึกไฟล์ไม่ได้", str(exc))
             return False
+        finally:
+            if staged_path is not None:
+                try:
+                    staged_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
         self._set_dirty(
             editor,

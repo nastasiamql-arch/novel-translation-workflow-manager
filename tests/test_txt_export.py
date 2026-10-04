@@ -1,5 +1,6 @@
 import os
 from dataclasses import asdict
+import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtTest import QTest
@@ -92,6 +93,48 @@ def test_submit_refreshes_open_context_tab_and_cancels_stale_autosave(tmp_path):
     assert not context_editor.autosave_timer.isActive()
     QTest.qWait(1100)
     assert context.read_text(encoding="utf-8") == "บทที่ 126\nเนื้อหาใหม่ 卡"
+
+
+def test_editor_save_keeps_original_file_when_atomic_replace_fails(tmp_path, monkeypatch):
+    app()
+    import novel_workflow.workspace_editor as workspace_editor
+
+    source = tmp_path / "Context.md"
+    source.write_text("บันทึกเดิม 原文", encoding="utf-8")
+    tabs = EditorTabs(settings=AppSettings())
+    editor = tabs.open_file(source)
+    editor.setPlainText("ฉบับแก้ไขใหม่ 新内容")
+
+    def fail_replace(_source, _destination):
+        raise PermissionError("ไฟล์ถูกล็อกโดยโปรแกรมอื่น")
+
+    monkeypatch.setattr(workspace_editor.os, "replace", fail_replace)
+
+    assert not tabs.save_editor(editor, quiet=True, autosave=True)
+    assert source.read_text(encoding="utf-8") == "บันทึกเดิม 原文"
+    assert tabs.dirty_count() == 1
+    assert editor.property("saveState") == "บันทึกอัตโนมัติไม่สำเร็จ"
+    assert editor.autosave_timer.isActive()
+    assert list(tmp_path.glob(".Context.md.*.part")) == []
+
+
+@pytest.mark.parametrize("appearance", ["Dark", "Light"])
+def test_save_all_persists_open_utf8_files_in_every_appearance(tmp_path, appearance):
+    app()
+    source = tmp_path / "บทต้นฉบับ.txt"
+    context = tmp_path / "Context.md"
+    source.write_text("ต้นฉบับเดิม", encoding="utf-8")
+    context.write_text("บทที่ 1\nข้อความเดิม", encoding="utf-8")
+    tabs = EditorTabs(settings=AppSettings(), appearance=appearance)
+    source_editor = tabs.open_file(source)
+    context_editor = tabs.open_file(context)
+    source_editor.setPlainText("ต้นฉบับแก้แล้ว 原文")
+    context_editor.setPlainText("บทที่ 1\nContext แก้แล้ว 新内容")
+
+    assert tabs.save_all()
+    assert source.read_text(encoding="utf-8") == "ต้นฉบับแก้แล้ว 原文"
+    assert context.read_text(encoding="utf-8") == "บทที่ 1\nContext แก้แล้ว 新内容"
+    assert tabs.dirty_count() == 0
 
 
 def test_submit_notifies_screen_callback_with_success_details(tmp_path):
