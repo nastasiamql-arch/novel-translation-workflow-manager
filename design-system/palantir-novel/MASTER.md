@@ -72,3 +72,9 @@ Frozen executable version comes from an embedded app-version.txt generated from 
 Main navigation is a permanent 60 logical-pixel icon rail. There is no expand/collapse control; each item retains its Thai tooltip, accessible name, keyboard focus and selected background. Legacy navigation width/collapse settings remain stored for compatibility but do not change the icon rail.
 
 Scrollbar tracks and add/sub-page areas use a solid neutral surface rather than native patterned rendering. Handles have at least 3:1 contrast against their track in both appearances, a 16-pixel hit area and 36-pixel minimum length. Hover/pressed handles become more prominent. Vertical and horizontal orientation metrics are separate.
+
+## 3.4.4 desktop drag and responsive progress
+
+Settings novel rows start a native Move drag when pointer movement reaches QApplication.startDragDistance(), with a snapshot anchored to the press position. Loading details happens on click release or keyboard navigation, not pointer press. Accepted drops persist the order and update the row-to-profile mapping. Focus colors are neutral in both themes; item delegates suppress native text focus frames. Text selection remains blue.
+
+Context parsing caches only chapter results (up to 128 entries) keyed by absolute path, mtime/ctime nanoseconds, size and file identity. Polling/watcher refresh still checks file metadata and reparses changes, including atomic replacement and rollback.

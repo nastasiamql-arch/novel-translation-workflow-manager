@@ -331,3 +331,91 @@ def test_shell_ignores_legacy_expanded_navigation_width(window):
     assert window.navigation.width() == 60
     assert all(button.toolButtonStyle() == Qt.ToolButtonIconOnly
                for button in window.navigation.buttons.values())
+
+
+def test_unchanged_context_is_not_read_repeatedly(tmp_path, monkeypatch):
+    from novel_workflow.translation_progress import sync_profile_context
+    path = tmp_path / 'Context.md'
+    path.write_text('Chapter 12', encoding='utf-8')
+    profile = NovelProfile(context_path=str(path))
+    original = Path.read_text
+    reads = []
+    def tracked(self, *args, **kwargs):
+        if self == path: reads.append(self)
+        return original(self, *args, **kwargs)
+    monkeypatch.setattr(Path, 'read_text', tracked)
+    sync_profile_context(profile)
+    sync_profile_context(profile)
+    assert len(reads) == 1
+    path.write_text('Chapter 123', encoding='utf-8')
+    sync_profile_context(profile)
+    assert profile.chapter_state.current_chapter == 123
+    assert len(reads) == 2
+
+
+def test_profile_mouse_press_does_not_load_details():
+    from novel_workflow.workspace_window import ReorderableProfileList
+    app = QApplication.instance() or QApplication([])
+    listing = ReorderableProfileList()
+    listing.addItems(['one', 'two'])
+    listing.resize(300, 200); listing.show(); app.processEvents()
+    activated = []
+    listing.selectionCommitted.connect(activated.append)
+    point = listing.visualItemRect(listing.item(1)).center()
+    QTest.mousePress(listing.viewport(), Qt.LeftButton, pos=point)
+    assert activated == []
+    QTest.mouseRelease(listing.viewport(), Qt.LeftButton, pos=point)
+    assert activated == [1]
+    listing.close()
+
+
+def test_desktop_drag_starts_on_movement_with_preview(monkeypatch):
+    from PySide6.QtCore import QPoint, QEvent, QPointF
+    from PySide6.QtGui import QMouseEvent
+    import novel_workflow.workspace_window as module
+    app = QApplication.instance() or QApplication([])
+    listing = module.ReorderableProfileList()
+    listing.addItems(['one', 'two'])
+    listing.resize(300, 200); listing.show(); app.processEvents()
+    started = []
+    class Drag:
+        def __init__(self, source): pass
+        def setMimeData(self, data): assert data.formats()
+        def setPixmap(self, pixmap): assert not pixmap.isNull()
+        def setHotSpot(self, point): pass
+        def exec(self, *args): started.append(True); return Qt.IgnoreAction
+    monkeypatch.setattr(module, 'QDrag', Drag)
+    point = listing.visualItemRect(listing.item(0)).center()
+    QTest.mousePress(listing.viewport(), Qt.LeftButton, pos=point)
+    moved = point + QPoint(QApplication.startDragDistance() + 2, 0)
+    event = QMouseEvent(QEvent.MouseMove, QPointF(moved), QPointF(moved), Qt.NoButton, Qt.LeftButton, Qt.NoModifier)
+    QApplication.sendEvent(listing.viewport(), event)
+    assert started == [True]
+    listing.close()
+
+
+def test_profile_reorder_updates_selection_mapping_and_survives_restart(window):
+    for name in ('two', 'three'):
+        window.repo.save_profile(NovelProfile(name=name))
+    window.refresh_profiles()
+    ids = list(reversed([p.id for p in window.ps_list]))
+    window._persist_profile_order(ids)
+    assert [p.id for p in window.ps_list] == ids
+    assert [p.id for p in window.repo.list_profiles()] == ids
+
+
+def test_all_focus_tokens_are_neutral_and_profile_delegate_removes_frame():
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QStyle, QStyleOptionViewItem
+    from novel_workflow.theme import theme_colors
+    from novel_workflow.workspace_window import ReorderableProfileList
+    app = QApplication.instance() or QApplication([])
+    for appearance in ('Dark', 'Light'):
+        color = QColor(theme_colors(appearance)['focus'])
+        assert color.red() == color.green() == color.blue()
+    listing = ReorderableProfileList(); listing.addItem('novel')
+    option = QStyleOptionViewItem()
+    option.state = QStyle.State_HasFocus | QStyle.State_Selected
+    listing.itemDelegate().initStyleOption(option, listing.model().index(0, 0))
+    assert not option.state & QStyle.State_HasFocus
+    assert option.font.bold()

@@ -7,6 +7,7 @@ the durable checkpoint, so changes made while the app is closed are included.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 import os
 from pathlib import Path
 import re
@@ -47,6 +48,20 @@ def latest_context_chapter(text: str) -> int | None:
     return max(chapters) if chapters else None
 
 
+@lru_cache(maxsize=128)
+def _context_chapter_snapshot(path, mtime_ns, ctime_ns, size, inode):
+    # Retain only the parsed chapter, never entire Context documents.
+    return latest_context_chapter(Path(path).read_text(encoding="utf-8-sig", errors="replace"))
+
+
+def read_context_chapter(path, stat=None):
+    """Reuse parsing while file identity/size/timestamps remain unchanged."""
+    path = Path(path).expanduser().absolute()
+    stat = stat or path.stat()
+    return _context_chapter_snapshot(str(path), stat.st_mtime_ns,
+                                    stat.st_ctime_ns, stat.st_size, stat.st_ino)
+
+
 def sync_profile_context(profile: NovelProfile) -> bool:
     """Read one profile's Context and record each newly reached chapter once.
 
@@ -61,11 +76,10 @@ def sync_profile_context(profile: NovelProfile) -> bool:
         stat = path.stat()
         if not path.is_file():
             return False
-        text = path.read_text(encoding="utf-8-sig", errors="replace")
+        latest = read_context_chapter(path, stat)
     except OSError:
         return False
 
-    latest = latest_context_chapter(text)
     if latest is None:
         return False
 

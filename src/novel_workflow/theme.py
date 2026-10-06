@@ -15,7 +15,7 @@ _LIGHT = {
     "surface2": "#ECECEC", "item_selection": "#E0E0E0", "hover": "#F0F0F0", "current_line": "#F6F6F6", "elevated": "#FFFFFF",
     "border": "#E5E5E5", "text": "#303030", "secondary": "#555555",
     "muted": "#606060", "disabled_text": "#606060",
-    "accent": "#3269A8", "focus": "#155CA4", "success": "#246B45",
+    "accent": "#3269A8", "focus": "#555555", "success": "#246B45",
     "warning": "#735100", "danger": "#A51D15", "selection": "#BDD8F4",
     "selection_text": "#242424", "input": "#FFFFFF", "primary": "#303030",
     "primary_hover": "#454545", "primary_text": "#FFFFFF",
@@ -27,7 +27,7 @@ _DARK = {
     "surface2": "#303030", "item_selection": "#444444", "hover": "#343434", "current_line": "#2D2D2D", "elevated": "#2B2B2B",
     "border": "#3F3F3F", "text": "#E6E6E6", "secondary": "#C2C2C2",
     "muted": "#A0A0A0", "disabled_text": "#A0A0A0",
-    "accent": "#80B9EF", "focus": "#A5D2FF", "success": "#91D49A",
+    "accent": "#80B9EF", "focus": "#C2C2C2", "success": "#91D49A",
     "warning": "#F1C66D", "danger": "#FF8A80", "selection": "#285582",
     "selection_text": "#F2F2F2", "input": "#303030", "primary": "#E6E6E6",
     "primary_hover": "#FFFFFF", "primary_text": "#1E1E1E",
@@ -179,10 +179,11 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QProgressBar#goalProgressStatusBar {{ background: {c['surface2']}; border: 0; border-radius: 0; min-height: 8px; max-height: 8px; }}
     QProgressBar#goalProgressStatusBar::chunk {{ background: {c['accent']}; border-radius: 0; }}
     QTreeView#fileTree {{ border: 0; padding: 2px; background: {c['surface']}; }}
-    QListWidget[keyboardFocus="true"], QTreeWidget[keyboardFocus="true"], QTreeView[keyboardFocus="true"], QTableWidget[keyboardFocus="true"], QTableView[keyboardFocus="true"] {{ outline: 2px solid {c['focus']}; }}
+    QListWidget[keyboardFocus="true"], QTreeWidget[keyboardFocus="true"], QTreeView[keyboardFocus="true"], QTableWidget[keyboardFocus="true"], QTableView[keyboardFocus="true"] {{ outline: 0; border-bottom: 2px solid {c['focus']}; }}
     QListWidget::item, QTreeWidget::item, QTreeView::item {{ color: {c['text']}; min-height: 28px; padding: 4px 7px; margin: 0; border: 0; }}
     QListWidget::item:hover, QTreeWidget::item:hover, QTreeView::item:hover {{ background: {c['hover']}; }}
     QListWidget::item:selected, QTreeWidget::item:selected, QTreeView::item:selected {{ background: {c['item_selection']}; color: {c['selection_text']}; }}
+    QListWidget::item:focus, QTreeWidget::item:focus, QTreeView::item:focus, QTableView::item:focus {{ outline: 0; border: 0; }}
     QHeaderView::section {{ color: {c['secondary']}; background: {c['sidebar']}; border: 0; border-bottom: 1px solid {c['border']}; padding: 7px; }}
     QPushButton {{ min-height: 34px; background: {c['surface2']}; color: {c['text']}; border: 1px solid {c['border']}; border-radius: 0; padding: 6px 12px; }}
     QPushButton:hover {{ background: {c['hover']}; }}

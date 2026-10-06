@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 
 from PySide6.QtCore import QDir, QFileSystemWatcher, QSize, Qt, QTimer, Signal, QThread
-from PySide6.QtGui import QAction, QFontMetrics, QIcon, QPixmap
+from PySide6.QtGui import QAction, QFontMetrics, QIcon, QPixmap, QDrag
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QDialog, QFileDialog, QFileSystemModel, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from .models import LaunchTarget, StepFile, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
 from .translation_progress import (
     daily_chapter_count, goal_progress, latest_context_chapter,
-    sync_profile_context,
+    sync_profile_context, read_context_chapter,
 )
 from .ui import ManagementActionsMixin
 from .shell_components import NovelHeader, NavigationSidebar, ElidingLabel, EditorToolbar, MainPageStack
@@ -192,10 +192,65 @@ class ReorderableProfileList(QListWidget):
         self.setDropIndicatorShown(True)
         self.setDragDropMode(QAbstractItemView.InternalMove)
         self.setDefaultDropAction(Qt.MoveAction)
-        self.setToolTip("คลิกค้างที่นิยายแล้วลากเพื่อจัดลำดับ")
+        self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.setToolTip("กดแล้วลากนิยายเพื่อจัดลำดับ")
+        self._press_position = None
+        self._dragging = False
+        from .library_page import LibraryCardDelegate
+        self.setItemDelegate(LibraryCardDelegate(self))
+
+    selectionCommitted = Signal(int)
+
+    def mousePressEvent(self, event):
+        point = event.position().toPoint()
+        self._press_position = point if event.button() == Qt.LeftButton and self.indexAt(point).isValid() else None
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._press_position is not None and event.buttons() & Qt.LeftButton:
+            if (event.position().toPoint() - self._press_position).manhattanLength() >= QApplication.startDragDistance():
+                self._dragging = True
+                try:
+                    self.startDrag(Qt.MoveAction)
+                finally:
+                    self._press_position = None
+                    self._dragging = False
+                return
+        super().mouseMoveEvent(event)
+
+    def startDrag(self, supported_actions):
+        item = self.currentItem()
+        if item is None:
+            return
+        drag = QDrag(self)
+        drag.setMimeData(self.mimeData([item]))
+        rect = self.visualItemRect(item).intersected(self.viewport().rect())
+        drag.setPixmap(self.viewport().grab(rect))
+        if self._press_position is not None:
+            drag.setHotSpot(self._press_position - rect.topLeft())
+        drag.exec(Qt.MoveAction)
+
+    def mouseReleaseEvent(self, event):
+        clicked = self._press_position is not None and not self._dragging
+        self._press_position = None
+        super().mouseReleaseEvent(event)
+        if clicked and event.button() == Qt.LeftButton:
+            self.selectionCommitted.emit(self.currentRow())
+
+    def keyPressEvent(self, event):
+        previous = self.currentRow()
+        super().keyPressEvent(event)
+        if self.currentRow() != previous or event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.selectionCommitted.emit(self.currentRow())
 
     def dropEvent(self, event):
-        super().dropEvent(event)
+        self.blockSignals(True)
+        try:
+            super().dropEvent(event)
+        finally:
+            self.blockSignals(False)
+        if not event.isAccepted():
+            return
         self.orderChanged.emit([
             self.item(index).data(Qt.UserRole)
             for index in range(self.count())
@@ -1170,6 +1225,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if profile.order != order:
                 profile.order = order
                 self.repo.save_profile(profile)
+        self.ps_list = [profiles[profile_id] for profile_id in profile_ids]
 
     def launcher_dialog(self):
         """Compatibility action that now leads to the one-page novel settings."""
@@ -2327,11 +2383,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             try:
                 context = Path(self.profile.context_path).expanduser()
                 if context.is_file():
-                    latest = latest_context_chapter(
-                        context.read_text(
-                            encoding="utf-8-sig", errors="replace"
-                        )
-                    )
+                    latest = read_context_chapter(context)
             except OSError:
                 latest = None
 

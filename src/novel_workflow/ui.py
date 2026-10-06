@@ -7,7 +7,7 @@ from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow, W
 from .services import ProfileService, WorkflowService, AssemblyService
 from .launcher import LauncherService
 from .storage import ProjectRepository
-from .translation_progress import latest_context_chapter, sync_profile_context, daily_chapter_count, goal_progress
+from .translation_progress import sync_profile_context, read_context_chapter, daily_chapter_count, goal_progress
 from .progress_dialog import TranslationDashboardDialog
 from .theme import application_stylesheet, capture_system_appearance, qt_palette
 
@@ -229,7 +229,7 @@ class ManagementActionsMixin:
             try:
                 context=Path(self.profile.context_path).expanduser()
                 if context.is_file():
-                    latest=latest_context_chapter(context.read_text(encoding="utf-8-sig",errors="replace"))
+                    latest=read_context_chapter(context)
             except OSError:
                 latest=None
         self.latest_chapter_label.setText(
@@ -432,7 +432,7 @@ class ManagementActionsMixin:
         if not path:return
         context=Path(path).expanduser()
         try:
-            chapter=latest_context_chapter(context.read_text(encoding="utf-8-sig",errors="replace"))
+            chapter=read_context_chapter(context)
         except OSError as exc:
             QMessageBox.warning(self,"อ่าน Context ไม่ได้",str(exc))
             return

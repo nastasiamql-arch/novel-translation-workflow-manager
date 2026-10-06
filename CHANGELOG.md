@@ -2,6 +2,13 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.4.4 - 2026-10-07
+
+- Start novel reordering in Settings on the standard movement threshold, without a hold delay; show the dragged row beside the pointer using native Move drag/drop.
+- Commit mouse selection on release rather than loading novel details on press; keep keyboard selection and persistent order consistent after a drop.
+- Remove the remaining native profile focus frame and use neutral keyboard focus indicators throughout the app.
+- Cache only parsed Context chapter results in a bounded cache keyed by file identity, timestamps and size; unchanged progress refreshes avoid repeated document reads/parsing, while external changes and rollback still refresh.
+
 ## 3.4.3 - 2026-10-07
 
 - Keep main navigation permanently icon-only; remove the expand/collapse button while preserving named tooltips, keyboard access and legacy settings data.
