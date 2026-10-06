@@ -13,6 +13,18 @@ import uuid
 BACKUP_LIMIT = 10
 
 
+def replace_with_retry(source, destination):
+    """Allow short Windows watcher/scanner locks without abandoning a transaction."""
+    for attempt in range(7):
+        try:
+            os.replace(source, destination)
+            return
+        except OSError as error:
+            if getattr(error, 'winerror', None) not in (5, 32, 33) or attempt == 6:
+                raise
+            time.sleep(0.02 * (2 ** attempt))
+
+
 def backup_file(path):
     path = Path(path)
     if not path.exists(): return None
@@ -43,7 +55,7 @@ def commit_staged(staged_files, commit_metadata=None):
     try:
         for destination, staged in staged_files:
             destination = Path(destination).resolve()
-            os.replace(staged, destination)
+            replace_with_retry(staged, destination)
             replaced.append(destination)
         if commit_metadata: commit_metadata()
     except Exception as original:
@@ -57,7 +69,7 @@ def commit_staged(staged_files, commit_metadata=None):
                     os.close(fd)
                     try:
                         shutil.copyfile(backup, name)
-                        os.replace(name, destination)
+                        replace_with_retry(name, destination)
                     finally: Path(name).unlink(missing_ok=True)
             except OSError as error: errors.append(str(error))
         if errors:
@@ -74,5 +86,5 @@ def restore_backup(destination, backup):
             shutil.copyfileobj(source, output); output.flush(); os.fsync(output.fileno())
         # Stage the chosen copy before pruning, which may remove the oldest backup.
         backup_file(destination)
-        os.replace(name, destination)
+        replace_with_retry(name, destination)
     finally: Path(name).unlink(missing_ok=True)

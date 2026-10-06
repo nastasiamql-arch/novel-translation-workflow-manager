@@ -64,7 +64,7 @@ def test_verified_unlimited_goal(count,text):
     assert daily_export_count(p,'2026-10-07')==count
     assert daily_export_count(p,'2026-10-06')==0
 
-@pytest.mark.parametrize('failure', ['txt','context','metadata'])
+@pytest.mark.parametrize('failure', ['txt','context','context-lock','metadata'])
 def test_failed_submit_restores_files_and_does_not_count(window,tmp_path,monkeypatch,failure):
     from novel_workflow import recovery
     ws=window.workspaces[window.profile.id]; panel=ws.editor.export_tab
@@ -74,6 +74,10 @@ def test_failed_submit_restores_files_and_does_not_count(window,tmp_path,monkeyp
     original=recovery.os.replace
     def replace(source,dest):
         if Path(dest)==(target if failure=='txt' else context) and str(source).endswith('.part'):
+            if failure == 'context-lock':
+                error = PermissionError('persistent Windows lock')
+                error.winerror = 5
+                raise error
             raise OSError('simulated locked file')
         return original(source,dest)
     if failure=='metadata':
@@ -86,6 +90,30 @@ def test_failed_submit_restores_files_and_does_not_count(window,tmp_path,monkeyp
     profile=window.repo.list_profiles()[0]
     assert profile.verified_goal_count==0 and profile.verified_export_history==[]
     assert panel.current.value()==1
+
+
+def test_submit_retries_transient_windows_context_lock(window, monkeypatch):
+    from novel_workflow import recovery
+    context = Path(window.profile.context_path).resolve()
+    original = recovery.os.replace
+    attempts = []
+    def replace(source, destination):
+        if Path(destination) == context and str(source).endswith('.part'):
+            attempts.append(source)
+            if len(attempts) < 3:
+                error = PermissionError('transient scanner lock')
+                error.winerror = 5
+                raise error
+        return original(source, destination)
+    monkeypatch.setattr(recovery.os, 'replace', replace)
+    panel = window.workspaces[window.profile.id].editor.export_tab
+    panel.editor.setPlainText('บทที่ 124')
+    assert panel.export(update_context=True)
+    assert len(attempts) == 3
+    profile = window.repo.list_profiles()[0]
+    assert profile.verified_goal_count == 1
+    assert len(profile.verified_export_history) == 1
+    assert context.read_text(encoding='utf-8') == 'บทที่ 124'
 
 
 def test_goal_wrap_manual_reset_and_immediate_header(window,tmp_path):

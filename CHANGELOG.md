@@ -11,6 +11,7 @@ All notable changes to Palantir: Novel are documented here.
 - Add active-editor Undo/Redo controls, standard keyboard editing, and alternate redo. Fix shortcut actions accidentally receiving Qt's checked flag. Preserve undo history through autosave.
 - Track successful verified export events and daily history per profile. Add unlimited manual-reset goal cycles, archived achievements and over-target progress; rotating filename numbers remain independent.
 - Add rollback when a staged TXT/Context/metadata replacement fails and bounded recovery before overwriting existing documents. Preserve legacy export ranges, preferences and unknown nested fields in additive schema 7 migration.
+- Retry transient Windows locks during transaction replacement/recovery; persistent locks roll back without increasing counters.
 - Simplify TXT Export with Advanced settings, persistent drafts and immediate progress refresh; provide status-action toast undo and file recovery.
 - Replace interactive update launching with a detached silent in-place helper that waits for app exit, rechecks SHA-256/size, logs installer exit status and relaunches. Preserve installer AppId, install directory, tasks, shortcuts and user data.
 - Extend behavior tests, actual QTest keyboard coverage, Windows helper simulations and a four-scale Light/Dark geometry matrix before CI builds and release.
