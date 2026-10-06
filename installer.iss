@@ -25,6 +25,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 CloseApplications=yes
 RestartApplications=no
+UsePreviousAppDir=yes
+UsePreviousTasks=yes
+UsePreviousGroup=yes
 
 [Files]
 Source: "dist\NovelWorkflow\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -46,4 +49,12 @@ Name: "{autodesktop}\Palantir Novel"; Filename: "{app}\{#MyAppExeName}"; IconFil
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch Palantir: Novel"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch Palantir: Novel"; Flags: nowait postinstall; Check: IsManualInteractiveInstall
+
+
+[Code]
+function IsManualInteractiveInstall(): Boolean;
+begin
+  { In-app updates are relaunched by the detached helper after checking exit code. }
+  Result := (not WizardSilent) and (ExpandConstant('{param:PALANTIRUPDATE|0}') <> '1');
+end;

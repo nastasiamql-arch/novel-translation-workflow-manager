@@ -6,15 +6,16 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QMessageBox,
-    QPushButton, QProgressBar, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
+    QPushButton, QProgressBar, QScrollArea, QSpinBox, QVBoxLayout, QWidget, QGridLayout, QLayout,
 )
 
 from .models import NovelProfile
+from .export_service import daily_export_count, verified_goal_text
 from .storage import ProjectRepository
 from .translation_progress import daily_chapter_count, goal_progress, profile_week_count, reset_goal_progress
 
 
-class TranslationDashboardDialog(QWidget):
+class StatisticsPage(QWidget):
     """Embedded overview of chapter activity and goals for all novels."""
 
     def __init__(self, parent, profiles: list[NovelProfile], repo: ProjectRepository, refresh_callback):
@@ -22,37 +23,50 @@ class TranslationDashboardDialog(QWidget):
         self.profiles = profiles
         self.repo = repo
         self.refresh_callback = refresh_callback
-        self.root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.overview_scroll = QScrollArea(); self.overview_scroll.setWidgetResizable(True)
+        self.body = QWidget()
+        self.root = QVBoxLayout(self.body)
+        self.root.setSizeConstraint(QLayout.SetMinimumSize)
+        self.overview_scroll.setWidget(self.body)
+        outer.addWidget(self.overview_scroll)
         self.summary = QHBoxLayout()
         self.root.addLayout(self.summary)
         self.bulk_goal_panel = QFrame()
         self.bulk_goal_panel.setObjectName("settingsCard")
-        bulk_goal_layout = QHBoxLayout(self.bulk_goal_panel)
-        bulk_goal_layout.addWidget(QLabel("เป้าหมายรอบใหม่ · เรื่องที่กำลังแปล"))
+        bulk_goal_layout = QGridLayout(self.bulk_goal_panel)
+        bulk_goal_layout.addWidget(QLabel("เป้าหมายรอบใหม่ · เรื่องที่กำลังแปล"), 0, 0, 1, 2)
         self.bulk_goal_target = QSpinBox()
         self.bulk_goal_target.setRange(1, 100000)
         self.bulk_goal_target.setValue(10)
         self.bulk_goal_target.setSuffix(" บทต่อเรื่อง")
-        bulk_goal_layout.addWidget(self.bulk_goal_target)
+        bulk_goal_layout.addWidget(self.bulk_goal_target, 1, 0)
         self.bulk_goal_hint = QLabel()
         self.bulk_goal_hint.setObjectName("mutedLabel")
-        bulk_goal_layout.addWidget(self.bulk_goal_hint, 1)
+        self.bulk_goal_hint.setWordWrap(True)
+        bulk_goal_layout.addWidget(self.bulk_goal_hint, 1, 1)
         self.bulk_goal_button = QPushButton("ตั้งให้ทุกเรื่องที่กำลังแปล")
         self.bulk_goal_button.clicked.connect(self._apply_goal_to_translating)
-        bulk_goal_layout.addWidget(self.bulk_goal_button)
+        bulk_goal_layout.addWidget(self.bulk_goal_button, 2, 0)
         self.clear_all_goals_button = QPushButton("ยกเลิกเป้าหมายทั้งหมด")
         self.clear_all_goals_button.setToolTip(
             "ล้างเป้าหมายทุกนิยาย โดยเก็บประวัติการแปลและความคืบหน้ารายวันไว้"
         )
         self.clear_all_goals_button.clicked.connect(self._clear_all_goals)
-        bulk_goal_layout.addWidget(self.clear_all_goals_button)
+        bulk_goal_layout.addWidget(self.clear_all_goals_button, 2, 1)
+        self.goal_disclosure = QPushButton("จัดการเป้าหมายแปล ▾"); self.goal_disclosure.setCheckable(True)
+        self.goal_disclosure.toggled.connect(self.bulk_goal_panel.setVisible)
+        self.root.addWidget(self.goal_disclosure)
         self.root.addWidget(self.bulk_goal_panel)
+        self.bulk_goal_panel.hide()
         self.days_panel = QFrame()
         self.days_layout = QVBoxLayout(self.days_panel)
-        history_title=QLabel("ผลงานย้อนหลัง 7 วัน")
-        history_title.setObjectName("sectionHeading")
+        history_title = QPushButton("ผลงานย้อนหลัง 7 วัน ▾"); history_title.setCheckable(True)
+        history_title.toggled.connect(self.days_panel.setVisible)
         self.root.addWidget(history_title)
         self.root.addWidget(self.days_panel)
+        self.days_panel.hide()
 
         progress_title=QLabel("ความคืบหน้ารายเรื่อง")
         progress_title.setObjectName("sectionHeading")
@@ -80,13 +94,13 @@ class TranslationDashboardDialog(QWidget):
             elif item.layout():
                 self._clear(item.layout())
 
-    def _metric(self, title: str, value: int, note: str):
+    def _metric(self, title: str, value: int, note: str, unit="บท"):
         card = QFrame()
         card.setObjectName("metricCard")
         layout = QVBoxLayout(card)
         title_label = QLabel(title)
         title_label.setObjectName("metricLabel")
-        number = QLabel(f"{value:,} บท")
+        number = QLabel(f"{value:,} {unit}")
         number.setObjectName("metricValue")
         note_label = QLabel(note)
         note_label.setObjectName("mutedLabel")
@@ -115,7 +129,7 @@ class TranslationDashboardDialog(QWidget):
         active = sum(1 for profile in self.profiles if daily_chapter_count(profile, today_key) > 0)
         self._metric("วันนี้", today_total, f"จาก {active} เรื่อง")
         self._metric("สัปดาห์นี้", week_total, "นับตั้งแต่วันจันทร์")
-        self._metric("นิยายทั้งหมด", len(self.profiles), "เป้าหมายแยกแต่ละเรื่อง")
+        self._metric("วันนี้ส่ง verified", sum(daily_export_count(p, today_key) for p in self.profiles), f"ทั้งหมด {len(self.profiles)} เรื่อง", "ไฟล์")
 
         recent = [today - timedelta(days=offset) for offset in range(6, -1, -1)]
         max_count = max((sum(daily_chapter_count(profile, day.isoformat()) for profile in self.profiles) for day in recent), default=0)
@@ -130,6 +144,7 @@ class TranslationDashboardDialog(QWidget):
             bar.setRange(0, max_count)
             bar.setValue(count)
             bar.setTextVisible(False)
+            label.setMinimumHeight(label.fontMetrics().height() + 8)
             count_label = QLabel(f"{count} บท")
             count_label.setObjectName("bodyLabel")
             line.addWidget(label)
@@ -219,6 +234,15 @@ class TranslationDashboardDialog(QWidget):
         today_label = QLabel(f"วันนี้แปลเพิ่ม {count} บท")
         today_label.setObjectName("bodyLabel")
         layout.addWidget(today_label)
+        verified = QLabel(f"วันนี้ส่ง verified {daily_export_count(profile, today_key)} ไฟล์ · รอบส่ง {verified_goal_text(profile)}")
+        verified.setWordWrap(True); layout.addWidget(verified)
+        if profile.verified_goal_cycles:
+            details = QPushButton(f"รอบส่งก่อนหน้า ({len(profile.verified_goal_cycles)}) ▾")
+            details.setCheckable(True)
+            history = QLabel("\n".join(f"{cycle.get('reset_at', '')[:10]} · {cycle['count']}/{cycle.get('target') or '—'}" for cycle in profile.verified_goal_cycles))
+            history.setWordWrap(True); history.hide()
+            details.toggled.connect(history.setVisible)
+            layout.addWidget(details); layout.addWidget(history)
 
         goal = goal_progress(profile)
         controls = QHBoxLayout()
@@ -302,3 +326,6 @@ class TranslationDashboardDialog(QWidget):
             return
         self.profiles = self.refresh_callback()
         self.refresh()
+
+
+TranslationDashboardDialog = StatisticsPage

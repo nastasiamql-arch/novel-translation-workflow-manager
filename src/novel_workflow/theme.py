@@ -7,29 +7,28 @@ from PySide6.QtWidgets import QApplication
 _SYSTEM_APPEARANCE_DARK: bool | None = None
 
 
-# Neutral grayscale palettes keep attention on novel text and work consistently
-# across editor, navigation, dialogs, and progress surfaces. Semantic status
-# colors remain distinct so success, warning, and error are never ambiguous.
+# Quiet neutral surfaces share an understated blue accent. Selection, focus,
+# current line and hover have independent roles across every appearance.
 _LIGHT = {
     "app": "#F5F5F5", "surface": "#FFFFFF", "sidebar": "#F0F0F0",
-    "surface2": "#E8E8E8", "hover": "#EAEAEA", "elevated": "#FFFFFF",
+    "surface2": "#E8E8E8", "hover": "#EAEAEA", "current_line": "#F0F5FB", "elevated": "#FFFFFF",
     "border": "#D8D8D8", "text": "#242424", "secondary": "#555555",
     "muted": "#606060", "disabled_text": "#606060",
-    "accent": "#686868", "focus": "#5C5C5C", "success": "#246B45",
-    "warning": "#735100", "danger": "#A51D15", "selection": "#E2E2E2",
-    "selection_text": "#242424", "input": "#FFFFFF", "primary": "#686868",
-    "primary_hover": "#535353", "primary_text": "#FFFFFF",
+    "accent": "#3269A8", "focus": "#155CA4", "success": "#246B45",
+    "warning": "#735100", "danger": "#A51D15", "selection": "#BDD8F4",
+    "selection_text": "#242424", "input": "#FFFFFF", "primary": "#3269A8",
+    "primary_hover": "#23578F", "primary_text": "#FFFFFF",
     "status": "#E8E8E8", "status_text": "#242424",
 }
 _DARK = {
     "app": "#1E1E1E", "surface": "#252526", "sidebar": "#252526",
-    "surface2": "#303030", "hover": "#383838", "elevated": "#2B2B2B",
+    "surface2": "#303030", "hover": "#383838", "current_line": "#2C3540", "elevated": "#2B2B2B",
     "border": "#3F3F3F", "text": "#E6E6E6", "secondary": "#C2C2C2",
     "muted": "#A0A0A0", "disabled_text": "#A0A0A0",
-    "accent": "#A6A6A6", "focus": "#B8B8B8", "success": "#91D49A",
-    "warning": "#F1C66D", "danger": "#FF8A80", "selection": "#414141",
-    "selection_text": "#F2F2F2", "input": "#303030", "primary": "#A6A6A6",
-    "primary_hover": "#BDBDBD", "primary_text": "#1E1E1E",
+    "accent": "#80B9EF", "focus": "#A5D2FF", "success": "#91D49A",
+    "warning": "#F1C66D", "danger": "#FF8A80", "selection": "#285582",
+    "selection_text": "#F2F2F2", "input": "#303030", "primary": "#80B9EF",
+    "primary_hover": "#A2CDFA", "primary_text": "#1E1E1E",
     "status": "#252526", "status_text": "#E6E6E6",
 }
 
@@ -76,7 +75,7 @@ def editor_colors(appearance: str = "Dark") -> dict[str, str]:
     return {
         "background": c["surface"], "foreground": c["text"],
         "gutter": c["sidebar"], "gutter_text": c["muted"],
-        "current_line": c["hover"], "selection": c["selection"],
+        "current_line": c["current_line"], "selection": c["selection"],
         "selection_text": c["selection_text"],
         "find": "#454545" if is_dark else "#E5E5E5",
         "find_active": c["accent"],
@@ -116,6 +115,10 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     c = theme_colors(appearance)
     return f"""
     QWidget {{ color: {c['text']}; font-family: "Segoe UI", "Leelawadee UI", "Tahoma", sans-serif; font-size: 12pt; }}
+    QFrame#navigationSidebar, QFrame#novelHeader {{ background: {c['sidebar']}; }}
+    QToolButton#navigationItem {{ border: 0; border-left: 3px solid transparent; border-radius: 6px; padding: 8px 6px; text-align: left; }}
+    QToolButton#navigationItem:checked {{ background: {c['selection']}; border-left: 3px solid {c['accent']}; font-weight: 600; }}
+    QToolButton#navigationItem:focus {{ border-bottom: 2px solid {c['focus']}; }}
     QWidget:disabled {{ color: {c['disabled_text']}; }}
     QLabel:disabled, QAbstractButton:disabled, QTabBar::tab:disabled {{ color: {c['disabled_text']}; }}
     QMainWindow, QDialog, QWidget#appShell, QWidget#novelLibraryPage {{ background: {c['app']}; }}
@@ -154,7 +157,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QListWidget#novelCoverRail {{ background: transparent; border: 0; padding: 5px 2px; }}
     QListWidget#novelCoverRail::item {{ background: transparent; border: 0; padding: 1px; }}
     QListWidget#novelCoverRail::item:hover {{ background: {c['hover']}; }}
-    QListWidget#novelCoverRail::item:selected {{ background: transparent; border: 0; }}
+    QListWidget#novelCoverRail::item:selected {{ background: {c["selection"]}; border-left: 3px solid {c["accent"]}; }}
     QLabel#emptyStateIcon {{ color: {c['accent']}; font-size: 28pt; }}
     QLineEdit#librarySearch {{ background: {c['input']}; border: 1px solid {c['border']}; border-radius: 0; padding: 7px 10px; min-height: 30px; }}
     QTabBar#libraryStatusTabs {{ background: transparent; border: 0; }}
@@ -168,7 +171,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QListWidget#workflowSteps::item:hover {{ background: {c['hover']}; }}
     QPushButton#workflowStageButton, QPushButton#vocabularyButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 36px; padding: 0 10px; text-align: left; }}
     QPushButton#workflowStageButton:hover, QPushButton#vocabularyButton:hover {{ background: {c['hover']}; }}
-    QPushButton#workflowStageButton[workflowActive="true"], QPushButton#vocabularyButton[workflowActive="true"] {{ background: {c['hover']}; }}
+    QPushButton#workflowStageButton[workflowActive="true"], QPushButton#vocabularyButton[workflowActive="true"] {{ background: {c['selection']}; border-left: 3px solid {c['accent']}; font-weight: 600; }}
     QPushButton#copyStepButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 34px; padding: 7px 14px; font-weight: 600; }}
     QPushButton#copyStepButton:hover {{ color: {c['muted']}; background: transparent; text-decoration: none; }}
     QPushButton#copyStepButton:focus {{ color: {c['focus']}; background: transparent; border: 0; text-decoration: none; }}

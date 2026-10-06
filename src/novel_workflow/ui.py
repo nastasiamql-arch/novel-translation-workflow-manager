@@ -19,7 +19,8 @@ class Editor(QDialog):
         self.edit.addAction(QAction(self.edit,shortcut=QKeySequence.Save,triggered=self.accept))
     def text(self):return self.edit.toPlainText()
 
-class MainWindow(QMainWindow):
+class ManagementActionsMixin:
+    """Shared profile management actions; shell owns layout and navigation."""
     def __init__(self,repo=None):
         super().__init__()
         self.repo=repo or ProjectRepository()
@@ -156,7 +157,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(actions)
         return panel
 
-    def shortcut(self,key,fn):a=QAction(self);a.setShortcut(QKeySequence(key));a.triggered.connect(fn);self.addAction(a)
+    def shortcut(self,key,fn):a=QAction(self);a.setShortcut(QKeySequence(key));a.triggered.connect(lambda _checked=False: fn());self.addAction(a)
     def refresh(self):self.refresh_profiles(self.profile.id if self.profile else None)
 
     def profile_browse_directory(self):
@@ -815,3 +816,8 @@ class MainWindow(QMainWindow):
             else:
                 self.si=-1
                 self.refresh_files()
+
+
+class MainWindow(ManagementActionsMixin, QMainWindow):
+    """Compatibility shell for integrations using the previous window."""
+    pass

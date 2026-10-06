@@ -57,6 +57,7 @@ class ProjectRepository:
                     profile.txt_export_settings.start=legacy_settings.txt_export_start
                     profile.txt_export_settings.end=legacy_settings.txt_export_end
                     profile.txt_export_settings.current=legacy_settings.txt_export_current
+                    profile.txt_export_settings.advanced_range=True
                 profile.schema_version=5
                 changed=True
             if migrate_profile_schema(profile):
@@ -100,7 +101,20 @@ class ProjectRepository:
         if isinstance(existing,dict):
             known=NovelProfile.__dataclass_fields__
             serialized={**{key:value for key,value in existing.items() if key not in known},**serialized}
-        write_json(path,serialized)
+        def preserve_unknown(previous, current):
+            if isinstance(previous, dict) and isinstance(current, dict):
+                return {**previous, **{key: preserve_unknown(previous.get(key), value) for key, value in current.items()}}
+            if isinstance(previous, list) and isinstance(current, list):
+                by_id = {item.get("id"): item for item in previous if isinstance(item, dict) and item.get("id")}
+                result=[]
+                for index,item in enumerate(current):
+                    old=by_id.get(item.get("id"), {}) if isinstance(item,dict) else {}
+                    if not old and index < len(previous) and isinstance(previous[index],dict) and not previous[index].get("id"):
+                        old=previous[index]
+                    result.append(preserve_unknown(old,item) if isinstance(item,dict) else item)
+                return result
+            return current
+        write_json(path,preserve_unknown(existing, serialized))
     def delete_profile(self,pid):
         import shutil; shutil.rmtree(self.profile_dir(pid))
         for order,profile in enumerate(self.list_profiles()):
@@ -117,7 +131,9 @@ class ProjectRepository:
     def load_settings(self):
         d=read_json(self.settings_path,{})
         return AppSettings(**{k:v for k,v in d.items() if k in AppSettings.__dataclass_fields__})
-    def save_settings(self,s): write_json(self.settings_path,asdict(s))
+    def save_settings(self,s):
+        existing=read_json(self.settings_path,{})
+        write_json(self.settings_path,{**(existing if isinstance(existing,dict) else {}),**asdict(s)})
     def load_templates(self):
         data=read_json(self.templates_path,None)
         if data is None:

@@ -94,16 +94,16 @@ def test_verified_update_saves_editor_and_settings_before_launch(tmp_path, monke
 
     launched = []
 
-    def launch(args, **_kwargs):
+    def launch(path, update, data_dir):
         assert source.read_text(encoding="utf-8") == "save before update"
         saved_settings = repo.load_settings()
         assert saved_settings.txt_export_filename == "release-notes"
         assert saved_settings.txt_export_current == 38
-        launched.append(args[0])
+        launched.append(str(path))
 
     monkeypatch.setattr(workspace_window, "QProgressDialog", FakeDialog)
     monkeypatch.setattr(workspace_window, "_UpdateDownloadWorker", FakeWorker)
-    monkeypatch.setattr(workspace_window.subprocess, "Popen", launch)
+    monkeypatch.setattr(workspace_window, "launch_update", launch)
     monkeypatch.setattr(workspace_window.QApplication, "quit", lambda: None)
     monkeypatch.setattr(
         QMessageBox, "question",

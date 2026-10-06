@@ -47,7 +47,7 @@ class Workflow:
     def from_dict(cls,d): return cls([WorkflowStep.from_dict(x) for x in d.get("steps",[])])
 
 _LEGACY_BASIC_STEP_NAMES = ("หาศัพท์","แปล","ตรวจคำแปล","เกลาสำนวน")
-PROFILE_SCHEMA_VERSION = 6
+PROFILE_SCHEMA_VERSION = 7
 
 def migrate_profile_schema(profile: "NovelProfile") -> bool:
     """Advance old profile documents after additive, non-destructive upgrades."""
@@ -91,6 +91,7 @@ class TxtExportSettings:
     start: int = 1
     end: int = 100
     current: int = 1
+    advanced_range: bool = False
     @property
     def txt_export_filename(self): return self.filename
     @txt_export_filename.setter
@@ -114,7 +115,9 @@ class TxtExportSettings:
     @classmethod
     def from_dict(cls, data):
         if not isinstance(data, dict): return cls()
-        return cls(**{key: value for key, value in data.items() if key in cls.__dataclass_fields__})
+        values = {key: value for key, value in data.items() if key in cls.__dataclass_fields__}
+        values.setdefault("advanced_range", any(key in data for key in ("start", "end", "current")))
+        return cls(**values)
 
 @dataclass
 class LaunchTarget:
@@ -149,6 +152,11 @@ class NovelProfile:
     last_browse_directory: str | None = None
     schema_version: int = PROFILE_SCHEMA_VERSION
     removed_vocabulary_data: dict = field(default_factory=dict)
+    txt_export_draft: str = ""
+    verified_goal_target: int | None = None
+    verified_goal_count: int = 0
+    verified_export_history: list[dict] = field(default_factory=list)
+    verified_goal_cycles: list[dict] = field(default_factory=list)
     txt_export_settings: TxtExportSettings = field(default_factory=TxtExportSettings)
     @classmethod
     def from_dict(cls,d):
@@ -176,6 +184,11 @@ class NovelProfile:
             translation_daily_activity=_daily_activity_from_dict(d.get("translation_daily_activity", {})),
             cover_image_path=d.get("cover_image_path"),
             working_files=[StepFile.from_dict(item) for item in d.get("working_files", [])],
+            txt_export_draft=str(d.get("txt_export_draft", "")),
+            verified_goal_target=d.get("verified_goal_target"),
+            verified_goal_count=max(0, int(d.get("verified_goal_count", 0))),
+            verified_export_history=d.get("verified_export_history", []),
+            verified_goal_cycles=d.get("verified_goal_cycles", []),
             txt_export_settings=TxtExportSettings.from_dict(d.get("txt_export_settings")),
             removed_vocabulary_data={
                 **(d.get("removed_vocabulary_data", {}) if isinstance(d.get("removed_vocabulary_data"), dict) else {}),
@@ -214,6 +227,8 @@ class AppSettings:
     editor_active_tab_keys: dict[str, str] = field(default_factory=dict)
     workspace_step_indices: dict[str, int] = field(default_factory=dict)
     editor_positions: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
+    navigation_width: int = 180
+    navigation_collapsed: bool = False
     sidebar_width: int = 290
     sidebar_visible: bool = True
     editor_font_size: float = 11.0

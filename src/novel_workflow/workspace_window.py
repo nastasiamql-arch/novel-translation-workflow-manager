@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
     QProgressBar, QPushButton, QSizePolicy, QSplitter, QStackedWidget,
     QTabBar, QToolButton, QTreeView, QVBoxLayout, QWidget, QInputDialog, QComboBox, QTextEdit,
-    QCheckBox, QProgressDialog, QScrollArea, QSpinBox,
+    QCheckBox, QProgressDialog, QScrollArea, QSpinBox, QMenu, QMainWindow,
 )
 
 from .models import LaunchTarget, StepFile, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
@@ -21,10 +21,15 @@ from .translation_progress import (
     daily_chapter_count, goal_progress, latest_context_chapter,
     sync_profile_context,
 )
-from .ui import MainWindow as LegacyMainWindow
+from .ui import ManagementActionsMixin
+from .shell_components import NovelHeader, NavigationSidebar, ElidingLabel, EditorToolbar, MainPageStack
+from .library_page import LibraryPage
+from .settings_page import SettingsPage
+from .export_service import ExportService, daily_export_count, verified_goal_text
 from .workspace_editor import EditorTabs
 from .theme import theme_colors
 from . import __version__
+from .update_bootstrap import launch_update, read_update_result
 from .updater import UpdateError, UpdateInfo, check_for_update, download_update
 from .file_import import import_files_into_directory
 
@@ -136,14 +141,26 @@ class SubmitToast(QFrame):
         self.message.setWordWrap(True)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 11, 16, 11)
-        layout.addWidget(self.message)
+        layout.addWidget(self.message, 1)
+        self.undo_button = QPushButton("ย้อนกลับ")
+        self.undo_button.clicked.connect(self._undo)
+        layout.addWidget(self.undo_button)
+        self.undo_callback = None
         self.hide_timer = QTimer(self)
         self.hide_timer.setSingleShot(True)
         self.hide_timer.setInterval(5000)
         self.hide_timer.timeout.connect(self.hide)
         self.hide()
 
-    def show_message(self, text):
+    def _undo(self):
+        callback = self.undo_callback
+        self.undo_callback = None
+        if callback: callback()
+        self.hide()
+
+    def show_message(self, text, undo_callback=None):
+        self.undo_callback = undo_callback
+        self.undo_button.setVisible(undo_callback is not None)
         self.message.setText(str(text))
         appearance = getattr(getattr(self.parent(), "settings", None), "appearance", "Dark")
         colors = theme_colors(appearance)
@@ -185,7 +202,7 @@ class ReorderableProfileList(QListWidget):
         ])
 
 
-class ProfileWorkspace(QWidget):
+class WorkspacePage(QWidget):
     """One independent workspace for one novel profile."""
 
     def __init__(self, owner: "MainWindow", profile):
@@ -216,6 +233,7 @@ class ProfileWorkspace(QWidget):
             status_callback=lambda message: owner.statusBar().showMessage(message, 5000),
             context_path_callback=self._context_path_for_export,
             notification_callback=owner.show_submit_toast,
+            export_service=ExportService(owner.repo, profile.id),
         )
         self.steps = QListWidget()
         self.steps.setObjectName("workflowSteps")
@@ -291,46 +309,50 @@ class ProfileWorkspace(QWidget):
         self.sidebar_toggle.setAccessibleName("ซ่อนหรือแสดงแถบด้านข้าง")
         self.sidebar_toggle.setToolTip("ซ่อน/แสดงแถบด้านข้าง")
         self.sidebar_toggle.clicked.connect(self.toggle_sidebar)
-        self.editor_header = QFrame()
+        self.editor_header = EditorToolbar()
+        self.editor_header.setObjectName("editorHeader")
         header_layout = QHBoxLayout(self.editor_header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        self.breadcrumb = QLabel("เลือกไฟล์จากแถบด้านข้าง")
+        self.breadcrumb = ElidingLabel()
+        self.breadcrumb.setText("เลือกไฟล์จากแถบด้านข้าง")
+        self.breadcrumb.setMinimumWidth(0)
+        self.breadcrumb.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self.breadcrumb.setObjectName("mutedLabel")
         header_layout.addWidget(self.sidebar_toggle)
         header_layout.addWidget(self.breadcrumb, 1)
-        self.pause_profile_button = QToolButton()
+        self.pause_profile_button = QToolButton(self.editor_header)
         self.pause_profile_button.setText("พักแปล")
         self.pause_profile_button.setToolTip("ย้ายเรื่องนี้ไปชั้นพักแปล")
         self.pause_profile_button.clicked.connect(
             lambda checked=False: self.owner.set_profile_status(self.profile_id, "paused")
         )
-        header_layout.addWidget(self.pause_profile_button)
-        self.caught_up_profile_button = QToolButton()
+        self.pause_profile_button.hide()
+        self.caught_up_profile_button = QToolButton(self.editor_header)
         self.caught_up_profile_button.setText("ชนต้นฉบับแล้ว")
         self.caught_up_profile_button.setToolTip("ย้ายเรื่องนี้ไปชั้นชนต้นฉบับแล้ว")
         self.caught_up_profile_button.clicked.connect(
             lambda checked=False: self.owner.set_profile_status(self.profile_id, "caught_up")
         )
-        header_layout.addWidget(self.caught_up_profile_button)
-        self.checking_web_profile_button = QToolButton()
+        self.caught_up_profile_button.hide()
+        self.checking_web_profile_button = QToolButton(self.editor_header)
         self.checking_web_profile_button.setText("เช็กกับเว็บ")
         self.checking_web_profile_button.setToolTip("ย้ายเรื่องนี้ไปหมวดกำลังเช็กกับเว็บ")
         self.checking_web_profile_button.clicked.connect(
             lambda checked=False: self.owner.set_profile_status(self.profile_id, "checking_web")
         )
-        header_layout.addWidget(self.checking_web_profile_button)
-        self.resume_profile_button = QToolButton()
+        self.checking_web_profile_button.hide()
+        self.resume_profile_button = QToolButton(self.editor_header)
         self.resume_profile_button.setText("กลับไปแปล")
         self.resume_profile_button.setToolTip("ย้ายเรื่องนี้กลับไปชั้นกำลังแปล")
         self.resume_profile_button.clicked.connect(
             lambda checked=False: self.owner.set_profile_status(self.profile_id, "translating")
         )
-        header_layout.addWidget(self.resume_profile_button)
-        self.context_button = QToolButton()
+        self.resume_profile_button.hide()
+        self.context_button = QToolButton(self.editor_header)
         self.context_button.setText("Context")
         self.context_button.setToolTip("เลือกไฟล์ Context ที่ติดตามความคืบหน้า")
         self.context_button.clicked.connect(self._choose_context)
-        header_layout.addWidget(self.context_button)
+        self.context_button.hide()
         find_button = QToolButton()
         find_button.setText("ค้นหา")
         find_button.setAccessibleName("ค้นหาในไฟล์ปัจจุบัน")
@@ -359,21 +381,34 @@ class ProfileWorkspace(QWidget):
         reset_font.setAccessibleName("คืนขนาดตัวอักษรเริ่มต้น")
         reset_font.setToolTip("คืนขนาดตัวอักษรเริ่มต้น")
         reset_font.clicked.connect(lambda: self.owner.set_editor_font_size(11.0))
-        header_layout.addWidget(reset_font)
+        reset_font.hide()
+        self.more_menu = QMenu(self)
+        for button in (self.pause_profile_button, self.caught_up_profile_button, self.checking_web_profile_button, self.resume_profile_button, self.context_button, reset_font):
+            self.more_menu.addAction(button.text(), button.click)
+        self.more_menu.addAction("เปิดรายการของเรื่อง", self.owner.launch_profile)
+        self.more_menu.addAction("History / กู้ไฟล์", self.show_recovery)
+        more = QToolButton(); more.setText("..."); more.setAccessibleName("คำสั่งเพิ่มเติม")
+        more.setMenu(self.more_menu); more.setPopupMode(QToolButton.InstantPopup)
+        header_layout.addWidget(more)
+        self.undo_button = QToolButton(); self.undo_button.setText("Undo"); self.undo_button.setToolTip("Undo · Ctrl+Z"); self.undo_button.setAccessibleName("Undo")
+        self.redo_button = QToolButton(); self.redo_button.setText("Redo"); self.redo_button.setToolTip("Redo · Ctrl+Y / Ctrl+Shift+Z"); self.redo_button.setAccessibleName("Redo")
+        self.undo_button.clicked.connect(lambda: self.editor._current_editor().undo())
+        self.redo_button.clicked.connect(lambda: self.editor._current_editor().redo())
+        header_layout.insertWidget(1, self.undo_button); header_layout.insertWidget(2, self.redo_button)
+        self.editor.tabs.currentChanged.connect(self.bind_history)
+        self.bind_history()
+        self.more_menu.addAction("ค้นหา · Ctrl+H", self.editor.show_find)
+        self.more_menu.addAction("ลดขนาดตัวอักษร", lambda: self.owner.adjust_editor_font_size(-1))
+        self.more_menu.addAction("เพิ่มขนาดตัวอักษร", lambda: self.owner.adjust_editor_font_size(1))
+        self.editor_header.overflow_controls = [(self.font_size_label, 500), (find_button, 420), (decrease_font, 340), (increase_font, 340)]
         self.update_profile_status(_profile_status(profile))
         editor_layout = QVBoxLayout()
         editor_layout.setContentsMargins(0, 0, 0, 0)
         editor_layout.setSpacing(3)
-        # Keep header controls reachable without forcing the editor's minimum
-        # width to exceed the available space beside the editor.
-        header_scroll = QScrollArea()
-        header_scroll.setWidgetResizable(True)
-        header_scroll.setFrameShape(QFrame.NoFrame)
-        header_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        header_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        header_scroll.setFixedHeight(self.editor_header.sizeHint().height() + 20)
-        header_scroll.setWidget(self.editor_header)
-        editor_layout.addWidget(header_scroll)
+        self.novel_header = NovelHeader()
+        self.novel_header.refresh(profile)
+        editor_layout.addWidget(self.novel_header)
+        editor_layout.addWidget(self.editor_header)
         editor_layout.addWidget(self.editor, 1)
         editor_host = QWidget()
         editor_host.setLayout(editor_layout)
@@ -413,7 +448,7 @@ class ProfileWorkspace(QWidget):
         self.goal_label = QLabel("เป้าหมายวันนี้")
         self.goal_label.setWordWrap(True)
         self.goal_bar = QProgressBar()
-        self.goal_bar.setFixedHeight(15)
+        self.goal_bar.setMinimumHeight(15)
         self.goal_bar.setTextVisible(False)
         self.latest_chapter_label = QLabel("บทล่าสุดจาก Context")
         self.latest_chapter_label.setObjectName("mutedLabel")
@@ -439,6 +474,49 @@ class ProfileWorkspace(QWidget):
         self.configure(profile)
         self.set_mode(0)
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        sizes = self.workspace_splitter.sizes()
+        if self.width() < 900 and sizes[1] > 220:
+            self.workspace_splitter.setSizes([68, 220, max(210, self.width() - 288)])
+
+    def bind_history(self, *_args):
+        editor = self.editor._current_editor()
+        if editor is None: return
+        if not getattr(editor, "_history_bound", False):
+            editor.undoAvailable.connect(lambda _value: self.refresh_history())
+            editor.redoAvailable.connect(lambda _value: self.refresh_history())
+            editor._history_bound = True
+        self.refresh_history()
+
+    def refresh_history(self):
+        editor = self.editor._current_editor()
+        self.undo_button.setEnabled(bool(editor and editor.document().isUndoAvailable()))
+        self.redo_button.setEnabled(bool(editor and editor.document().isRedoAvailable()))
+
+    def show_recovery(self):
+        from .recovery import restore_backup
+        from hashlib import sha256
+        editor = self.editor._current_editor()
+        path = self.editor._path(editor)
+        if path is None:
+            path = self._context_path_for_export()
+        if path is None: return
+        path = Path(path)
+        key = sha256(path.name.encode("utf-8")).hexdigest()[:16]
+        backups = sorted((path.parent / ".palantir-recovery").glob(f"{key}-*.bak"), reverse=True)
+        if not backups:
+            QMessageBox.information(self, "History", "ยังไม่มีไฟล์สำรองสำหรับเอกสารนี้")
+            return
+        selected, ok = QInputDialog.getItem(self, "กู้ไฟล์", str(path), [item.name for item in backups], 0, False)
+        if ok:
+            if QMessageBox.question(self, "กู้ไฟล์", "แทนที่เอกสารด้วยไฟล์สำรองที่เลือก? เอกสารปัจจุบันจะถูกสำรองไว้", QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes: return
+            try:
+                restore_backup(path, next(item for item in backups if item.name == selected))
+                self.editor.apply_external_update(path, path.read_text(encoding="utf-8-sig"))
+                self.owner.refresh_translation_progress()
+            except OSError as exc: QMessageBox.warning(self, "กู้ไฟล์ไม่ได้", str(exc))
+
     def _save_txt_export_settings(self):
         profile = next(
             (item for item in self.owner.repo.list_profiles() if item.id == self.profile_id),
@@ -462,7 +540,8 @@ class ProfileWorkspace(QWidget):
         self.pause_profile_button.setEnabled(status != "paused")
         self.caught_up_profile_button.setEnabled(status != "caught_up")
         self.checking_web_profile_button.setEnabled(status != "checking_web")
-        self.resume_profile_button.setVisible(status != "translating")
+        self.resume_profile_button.setEnabled(status != "translating")
+        self.resume_profile_button.hide()
 
     def configure(self, profile):
         root = (
@@ -727,41 +806,29 @@ class NovelGroupsPage(QWidget):
             self.owner.statusBar().showMessage(f"เปิดกลุ่ม {group.name} แล้ว", 4000)
 
 
-class MainWindow(LegacyMainWindow):
+class MainShell(ManagementActionsMixin, QMainWindow):
     """Novel Library with a focused workflow sidebar and full-size editor."""
 
     def __init__(self, repo=None):
         super().__init__(repo)
         self.setWindowTitle("Palantir: Novel")
         self.submit_toast = SubmitToast(self)
+        result = read_update_result(self.repo.root)
+        if result:
+            if result.get("success") and result.get("version") == __version__:
+                QTimer.singleShot(100, lambda: self.show_submit_toast(f"อัปเดตเป็น v{__version__} สำเร็จ ✓"))
+            else:
+                message = result.get("error") or "เวอร์ชันที่เปิดกลับมาไม่ตรงกับรุ่นที่อัปเดต"
+                QTimer.singleShot(100, lambda: QMessageBox.warning(self, "อัปเดตไม่สำเร็จ", f"{message}\nLog: {result.get('log', '')}"))
         logo = Path(__file__).resolve().parent / "resources" / "palantir_novel.png"
         if logo.is_file():
             self.setWindowIcon(QIcon(str(logo)))
-        changed = False
-        if not self.settings.appearance_migrated:
-            # Preserve the one-time appearance migration used by older builds.
-            if self.settings.appearance == "Dark":
-                self.settings.appearance = "Light"
-                changed = True
-            self.settings.appearance_migrated = True
-            changed = True
-        if not self.settings.flat_vscode_theme_migrated:
-            # Adopt the user's requested VS Code Dark+ default once. They can
-            # switch back to Light from settings and that choice is preserved.
-            self.settings.appearance = "Dark"
-            self.settings.flat_vscode_theme_migrated = True
-            changed = True
-        if not self.settings.editor_style_migrated:
-            # The previous default was 11 pt; move unusually enlarged legacy
-            # settings back to the requested compact reference size once.
-            if self.settings.editor_font_size > 12.0:
-                self.settings.editor_font_size = 11.0
-                changed = True
-            self.settings.editor_style_migrated = True
-            changed = True
-        if changed:
-            self.apply_theme()
-            self.repo.save_settings(self.settings)
+        # Mark historical cosmetic migrations without changing saved preferences.
+        changed = not all((self.settings.appearance_migrated, self.settings.flat_vscode_theme_migrated, self.settings.editor_style_migrated))
+        self.settings.appearance_migrated = True
+        self.settings.flat_vscode_theme_migrated = True
+        self.settings.editor_style_migrated = True
+        if changed: self.repo.save_settings(self.settings)
 
     def apply_theme(self):
         super().apply_theme()
@@ -834,219 +901,7 @@ class MainWindow(LegacyMainWindow):
         super().delete_profile()
 
     def _build_settings_page(self):
-        original_lists = (self.profiles, self.steps, self.files)
-        previous_profile_id = self.profile.id if self.profile else None
-        active_step = self.step()
-        active_step_id = active_step.id if active_step else None
-        active_workspace = self.workspaces.get(previous_profile_id) if previous_profile_id else None
-        active_vocabulary_mode = bool(active_workspace and active_workspace.vocabulary_mode)
-        page = QWidget()
-        root = QHBoxLayout(page)
-        root.setContentsMargins(12, 12, 12, 12)
-        root.setSpacing(12)
-
-        self.profiles = ReorderableProfileList()
-        self.profiles.orderChanged.connect(self._persist_profile_order)
-        self.profiles.setSpacing(1)
-        self.profiles.setCursor(Qt.PointingHandCursor)
-        self.profiles.setAccessibleName("รายการนิยาย")
-        self.profiles.currentRowChanged.connect(self.select_profile)
-        self.steps = QListWidget()
-        self.steps.setSpacing(1)
-        self.steps.setCursor(Qt.PointingHandCursor)
-        self.steps.setAccessibleName("ขั้นตอนงาน")
-        self.steps.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.steps.currentRowChanged.connect(self.select_step)
-        self.files = QListWidget()
-        self.files.setSpacing(1)
-        self.files.setCursor(Qt.PointingHandCursor)
-        self.files.setAccessibleName("ไฟล์ของขั้นตอน")
-        self.files.itemChanged.connect(self.toggle_file)
-
-        profile_panel = QFrame()
-        profile_panel.setObjectName("settingsCard")
-        profile_layout = QVBoxLayout(profile_panel)
-        profile_layout.addWidget(QLabel("นิยายของฉัน"))
-        profile_layout.addWidget(self.profiles, 1)
-        profile_actions = QGridLayout()
-        for index, (label, callback) in enumerate((
-            ("＋ เพิ่มนิยาย", self.new_profile), ("ทำสำเนา", self.duplicate_profile),
-            ("เลื่อนขึ้น", lambda: self.move_profile(-1)), ("เลื่อนลง", lambda: self.move_profile(1)),
-        )):
-            button = QPushButton(label)
-            button.clicked.connect(callback)
-            profile_actions.addWidget(button, index // 2, index % 2)
-        profile_layout.addLayout(profile_actions)
-        profile_panel.setMinimumWidth(230)
-        root.addWidget(profile_panel, 1)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        detail_page = QWidget()
-        detail = QVBoxLayout(detail_page)
-        detail.setContentsMargins(4, 4, 4, 4)
-        self.settings_profile_heading = QLabel("เลือกนิยายเพื่อจัดการการตั้งค่า")
-        self.settings_profile_heading.setObjectName("sectionHeading")
-        detail.addWidget(self.settings_profile_heading)
-
-        info_frame = QFrame()
-        info_frame.setObjectName("settingsCard")
-        info_layout = QHBoxLayout(info_frame)
-        self.settings_context_hint = QLabel("ยังไม่ได้เลือกไฟล์ Context")
-        self.settings_context_hint.setObjectName("mutedLabel")
-        info_layout.addWidget(self.settings_context_hint, 1)
-        info_layout.addWidget(QLabel("เป้าหมายบท/รอบ"))
-        self.settings_goal_target = QSpinBox()
-        self.settings_goal_target.setRange(0, 100000)
-        self.settings_goal_target.setSpecialValueText("ยังไม่ตั้ง")
-        info_layout.addWidget(self.settings_goal_target)
-        save_goal = QPushButton("บันทึกเป้าหมาย")
-        save_goal.clicked.connect(self.save_settings_goal_target)
-        info_layout.addWidget(save_goal)
-        detail.addWidget(info_frame)
-
-        story_actions = QHBoxLayout()
-        for label, callback in (
-            ("เปลี่ยนชื่อ", self.rename_profile), ("ตั้งรูปปก", self.set_cover),
-            ("เอารูปปกออก", self.remove_cover), ("เลือก Context", self.set_context_file),
-            ("ลบนิยาย", self.delete_profile),
-        ):
-            button = QPushButton(label)
-            button.clicked.connect(callback)
-            story_actions.addWidget(button)
-        detail.addLayout(story_actions)
-
-        launcher_frame = QFrame()
-        launcher_frame.setObjectName("settingsCard")
-        launcher_layout = QVBoxLayout(launcher_frame)
-        launcher_layout.addWidget(QLabel("โฟลเดอร์และรายการที่เปิดพร้อมเรื่องนี้"))
-        folder_row = QHBoxLayout()
-        self.settings_main_folder = QLineEdit()
-        self.settings_main_folder.setPlaceholderText("โฟลเดอร์หลักของนิยาย (ถ้ามี)")
-        folder_row.addWidget(self.settings_main_folder, 1)
-        choose_folder = QPushButton("เลือกโฟลเดอร์")
-        choose_folder.clicked.connect(self.choose_settings_main_folder)
-        folder_row.addWidget(choose_folder)
-        save_folder = QPushButton("บันทึกโฟลเดอร์")
-        save_folder.clicked.connect(self.save_settings_main_folder)
-        folder_row.addWidget(save_folder)
-        launcher_layout.addLayout(folder_row)
-        self.settings_launch_targets = QListWidget()
-        self.settings_launch_targets.itemChanged.connect(self.save_settings_launch_target_state)
-        launcher_layout.addWidget(self.settings_launch_targets)
-        launch_actions = QHBoxLayout()
-        for label, kind in (("＋ App", "application"), ("＋ ไฟล์", "file"),
-                            ("＋ โฟลเดอร์", "folder"), ("＋ Website", "website")):
-            button = QPushButton(label)
-            button.clicked.connect(lambda checked=False, value=kind: self.add_settings_launch_target(value))
-            launch_actions.addWidget(button)
-        remove_target = QPushButton("เอารายการที่เลือกออก")
-        remove_target.clicked.connect(self.remove_settings_launch_target)
-        launch_actions.addWidget(remove_target)
-        launcher_layout.addLayout(launch_actions)
-        detail.addWidget(launcher_frame)
-
-        def workflow_step_action(callback):
-            def run(*_args):
-                if self._management_vocabulary_mode:
-                    self.statusBar().showMessage(
-                        "หาศัพท์แยกจากขั้นตอนแปล จัดการไฟล์ได้จากรายการไฟล์ด้านขวา", 3500
-                    )
-                    return
-                callback()
-            return run
-        workflow_frame = QFrame()
-        workflow_frame.setObjectName("settingsCard")
-        workflow_frame.setMinimumHeight(470)
-        workflow_layout = QVBoxLayout(workflow_frame)
-        workflow_layout.addWidget(QLabel("ขั้นตอนและไฟล์แนบ"))
-        workflow_columns = QHBoxLayout()
-        steps_column = QVBoxLayout()
-        steps_column.addWidget(QLabel("เลือกขั้นตอน"))
-        self.steps.setMinimumHeight(250)
-        self.steps.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        steps_column.addWidget(self.steps, 1)
-        step_actions = QGridLayout()
-        for index, (label, callback) in enumerate((
-            ("เพิ่มขั้นตอน", self.add_step),
-            ("เปลี่ยนชื่อ", workflow_step_action(self.rename_step)),
-            ("ทำสำเนา", workflow_step_action(self.duplicate_step)),
-            ("ลบขั้นตอน", workflow_step_action(self.delete_step)),
-            ("ขึ้น", workflow_step_action(lambda: self.move_step(-1))),
-            ("ลง", workflow_step_action(lambda: self.move_step(1))),
-            ("บันทึกแม่แบบ", workflow_step_action(self.save_template)),
-        )):
-            button = QPushButton(label)
-            button.clicked.connect(callback)
-            step_actions.addWidget(button, index // 2, index % 2)
-        steps_column.addLayout(step_actions)
-        workflow_columns.addLayout(steps_column, 1)
-
-        files_column = QVBoxLayout()
-        files_header = QHBoxLayout()
-        files_header.addWidget(QLabel("ไฟล์แนบของขั้นตอนที่เลือก"), 1)
-        self.settings_step_hint = QLabel("เลือกขั้นตอนเพื่อจัดการไฟล์")
-        self.settings_step_hint.setObjectName("mutedLabel")
-        files_header.addWidget(self.settings_step_hint)
-        files_column.addLayout(files_header)
-        self.files.setMinimumHeight(250)
-        self.files.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        files_column.addWidget(self.files, 1)
-        file_actions = QGridLayout()
-        for index, (label, callback) in enumerate((
-            ("＋ เพิ่มหลายไฟล์", self.add_file), ("ไฟล์บทปัจจุบัน", self.add_dynamic),
-            ("เอาออก", self.remove_file), ("ขึ้น", lambda: self.move_file(-1)),
-            ("ลง", lambda: self.move_file(1)), ("เปลี่ยนชื่อแสดง", self.rename_file_label),
-            ("จัดการไฟล์", self.file_manager), ("ดูตัวอย่าง", self.preview),
-        )):
-            button = QPushButton(label)
-            button.clicked.connect(callback)
-            file_actions.addWidget(button, index // 2, index % 2)
-        files_column.addLayout(file_actions)
-        workflow_columns.addLayout(files_column, 2)
-        workflow_layout.addLayout(workflow_columns)
-        detail.addWidget(workflow_frame, 1)
-
-        work_frame = QFrame()
-        work_frame.setObjectName("settingsCard")
-        work_layout = QVBoxLayout(work_frame)
-        work_header = QHBoxLayout()
-        work_header.addWidget(QLabel("ไฟล์สำหรับเปิดทำงาน"), 1)
-        self.working_files_hint = QLabel("เลือกไฟล์ที่ต้องการเปิดเป็นแท็บ โดยไม่ผูกกับขั้นตอน")
-        self.working_files_hint.setObjectName("mutedLabel")
-        work_header.addWidget(self.working_files_hint)
-        work_layout.addLayout(work_header)
-        self.working_files = QListWidget()
-        self.working_files.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.working_files.itemDoubleClicked.connect(self.open_selected_working_file)
-        work_layout.addWidget(self.working_files)
-        work_actions = QHBoxLayout()
-        for label, callback in (
-            ("＋ เลือกหลายไฟล์", self.add_working_files),
-            ("เปิดไฟล์ที่เลือก", self.open_selected_working_file),
-            ("เอาออกจากรายการ", self.remove_working_file),
-        ):
-            button = QPushButton(label)
-            button.clicked.connect(callback)
-            work_actions.addWidget(button)
-        work_layout.addLayout(work_actions)
-        detail.addWidget(work_frame)
-
-        program_settings = QPushButton("ตั้งค่าโปรแกรม")
-        program_settings.clicked.connect(self.program_settings_dialog)
-        detail.addWidget(program_settings, alignment=Qt.AlignRight)
-        scroll.setWidget(detail_page)
-        root.addWidget(scroll, 4)
-
-        self._settings_open = True
-        self._management_vocabulary_mode = False
-        self._settings_page_state = {
-            "page": page, "original_lists": original_lists,
-            "profile_id": previous_profile_id, "step_id": active_step_id,
-            "vocabulary_mode": active_vocabulary_mode,
-        }
-        self.steps.itemDoubleClicked.connect(self._open_selected_step_files)
-        self.refresh_profiles(previous_profile_id)
+        return SettingsPage.build(self, ReorderableProfileList)
 
     def program_settings_dialog(self):
         dialog = QDialog(self)
@@ -1582,6 +1437,13 @@ class MainWindow(LegacyMainWindow):
                 except OSError as exc:
                     self.statusBar().showMessage(f"บันทึกความคืบหน้าไม่ได้: {exc}", 6000)
         self.ps_list = profiles
+        by_id = {profile.id: profile for profile in profiles}
+        for index in range(self.profile_cards.count()):
+            card = self.profile_cards.item(index)
+            profile = by_id.get(card.data(Qt.UserRole))
+            if profile:
+                card.setText(f"{profile.name}\nแปลถึงบท {profile.chapter_state.current_chapter} · วันนี้ +{daily_chapter_count(profile)}\nวันนี้ส่ง {daily_export_count(profile)} ไฟล์ · {verified_goal_text(profile)}\n{_profile_status_label(_profile_status(profile))}")
+                card.setToolTip(f"{profile.name}\nแปลถึงบท {profile.chapter_state.current_chapter}\nverified {verified_goal_text(profile)}")
         if self.profile:
             fresh = next((item for item in profiles if item.id == self.profile.id), None)
             if fresh:
@@ -1613,17 +1475,12 @@ class MainWindow(LegacyMainWindow):
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         bar.addWidget(spacer)
 
-        for label, callback in (
-            ("คลังนิยาย", self.show_library),
-            ("เปิดรายการของเรื่อง", self.launch_profile),
-            ("กลุ่มนิยาย", self.groups_dialog),
-            ("สถิติ", self.translation_dashboard),
-            ("ตรวจสอบอัปเดต", self.check_updates),
-            ("ตั้งค่า", self.settings_dialog),
-        ):
-            action = QAction(label, self)
-            action.triggered.connect(callback)
-            bar.addAction(action)
+        update_action = QAction("ตรวจสอบอัปเดต", self)
+        update_action.triggered.connect(self.check_updates)
+        self.menuBar().addMenu("โปรแกรม").addAction(update_action)
+        self.navigation = NavigationSidebar(self.settings.navigation_collapsed)
+        self.navigation.selected.connect(self.navigate)
+        self.navigation.collapsedChanged.connect(self._navigation_collapsed)
 
         root = QWidget()
         root.setObjectName("appShell")
@@ -1631,54 +1488,8 @@ class MainWindow(LegacyMainWindow):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
-        self.main_pages = QStackedWidget()
-        self.library_page = QWidget()
-        library_layout = QVBoxLayout(self.library_page)
-        library_layout.setContentsMargins(28, 24, 28, 24)
-        library_layout.setSpacing(14)
-        library_header = QHBoxLayout()
-        library_title = QLabel("คลังนิยาย")
-        library_title.setObjectName("pageTitle")
-        library_header.addWidget(library_title, 1)
-        self.library_search = QLineEdit()
-        self.library_search.setObjectName("librarySearch")
-        self.library_search.setPlaceholderText("ค้นหานิยาย…")
-        self.library_search.setMaximumWidth(340)
-        self.library_search.textChanged.connect(self.filter_profiles)
-        library_header.addWidget(self.library_search)
-        add_story = QPushButton("＋ เพิ่มนิยาย")
-        add_story.setObjectName("primaryButton")
-        add_story.clicked.connect(self.new_profile)
-        library_header.addWidget(add_story)
-        library_layout.addLayout(library_header)
-        self.library_status_tabs = QTabBar()
-        self.library_status_tabs.setObjectName("libraryStatusTabs")
-        self.library_status_tabs.setAccessibleName("หมวดนิยาย")
-        self.library_status_tabs.setMovable(False)
-        for status, label in PROFILE_STATUSES:
-            index = self.library_status_tabs.addTab(f"{label} (0)")
-            self.library_status_tabs.setTabData(index, status)
-        self.library_status_tabs.currentChanged.connect(
-            lambda _index: self.filter_profiles(self.library_search.text())
-        )
-        library_layout.addWidget(self.library_status_tabs)
-        self.profile_cards = QListWidget()
-        self.profile_cards.setObjectName("novelLibrary")
-        self.profile_cards.setViewMode(QListWidget.IconMode)
-        self.profile_cards.setFlow(QListWidget.LeftToRight)
-        self.profile_cards.setWrapping(True)
-        self.profile_cards.setResizeMode(QListWidget.Adjust)
-        self.profile_cards.setMovement(QListWidget.Static)
-        self.profile_cards.setSpacing(18)
-        self.profile_cards.setIconSize(QSize(148, 188))
-        self.profile_cards.setGridSize(QSize(216, 298))
-        self.profile_cards.itemClicked.connect(self._open_profile_card)
-        library_layout.addWidget(self.profile_cards, 1)
-        self.library_empty_label = QLabel()
-        self.library_empty_label.setObjectName("mutedLabel")
-        self.library_empty_label.setAlignment(Qt.AlignCenter)
-        self.library_empty_label.hide()
-        library_layout.addWidget(self.library_empty_label, 1)
+        self.main_pages = MainPageStack()
+        self.library_page = LibraryPage(self, PROFILE_STATUSES)
         self.main_pages.addWidget(self.library_page)
 
         self.workspace_stack = QStackedWidget()
@@ -1707,7 +1518,14 @@ class MainWindow(LegacyMainWindow):
         self._active_utility_page = None
         self._utility_return_page = None
         self._settings_page_state = None
-        root_layout.addWidget(self.main_pages, 1)
+        self.shell_splitter = QSplitter(Qt.Horizontal)
+        self.shell_splitter.addWidget(self.navigation); self.shell_splitter.addWidget(self.main_pages)
+        self.shell_splitter.setStretchFactor(1, 1)
+        self.shell_splitter.setChildrenCollapsible(False)
+        self.shell_splitter.setSizes([60 if self.settings.navigation_collapsed else self.settings.navigation_width, 1200])
+        self.shell_splitter.splitterMoved.connect(self._navigation_resized)
+        root_layout.addWidget(self.shell_splitter, 1)
+        self.main_pages.currentChanged.connect(self._sync_navigation)
 
 
         self.setCentralWidget(root)
@@ -1735,25 +1553,25 @@ class MainWindow(LegacyMainWindow):
         self.progress_status.setMinimumWidth(100)
         self.progress_status.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
         self.progress_status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.statusBar().addPermanentWidget(self.progress_status)
-        self.context_status = ElidingStatusLabel("Context · ยังไม่ได้เลือก")
+        self.progress_status.hide()
+        self.context_status = ElidingStatusLabel("ยังไม่ได้เลือก Context")
         self.context_status.setObjectName("contextStatusBar")
         self.context_status.setMinimumWidth(150)
         self.context_status.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
         self.context_status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.statusBar().addPermanentWidget(self.context_status)
+        self.context_status.hide()
         self.goal_status = ElidingStatusLabel("ยังไม่ได้ตั้งเป้าหมาย")
         self.goal_status.setObjectName("goalStatusBar")
         self.goal_status.setMinimumWidth(150)
         self.goal_status.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
         self.goal_status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.statusBar().addPermanentWidget(self.goal_status)
+        self.goal_status.hide()
         self.goal_status_bar = QProgressBar()
         self.goal_status_bar.setObjectName("goalProgressStatusBar")
         self.goal_status_bar.setRange(0, 100)
         self.goal_status_bar.setFixedSize(92, 12)
         self.goal_status_bar.setTextVisible(False)
-        self.statusBar().addPermanentWidget(self.goal_status_bar)
+        self.goal_status_bar.hide()
         self.shortcut("Ctrl+Shift+C", self.copy_step)
         self.shortcut("Ctrl+P", self.preview)
         self.shortcut("Ctrl+R", self.refresh)
@@ -1781,6 +1599,33 @@ class MainWindow(LegacyMainWindow):
         self._update_progress = None
         if self.settings.last_update_check_date != date.today().isoformat():
             QTimer.singleShot(2500, lambda: self.check_updates(manual=False))
+
+    def navigate(self, key):
+        if key == "library": self.show_library()
+        elif key == "workspace":
+            self._utility_return_page = self.workspace_stack
+            self.return_from_utility_page()
+        elif key == "progress": self.translation_dashboard()
+        elif key == "groups": self.groups_dialog()
+        elif key == "settings": self.settings_dialog()
+        self._sync_navigation()
+
+    def _sync_navigation(self, *_args):
+        page = self.main_pages.currentWidget()
+        key = "library" if page is self.library_page else "workspace"
+        if page is self.utility_page:
+            key = {"progress":"progress", "groups":"groups", "settings":"settings"}.get(self._active_utility_page, "workspace")
+        self.navigation.select(key)
+
+    def _navigation_collapsed(self, collapsed):
+        self.settings.navigation_collapsed = collapsed
+        self.shell_splitter.setSizes([60 if collapsed else self.settings.navigation_width, self.width()])
+        self.repo.save_settings(self.settings)
+
+    def _navigation_resized(self, *_args):
+        if not self.navigation.collapsed:
+            self.settings.navigation_width = self.shell_splitter.sizes()[0]
+            self.repo.save_settings(self.settings)
 
     def check_updates(self, checked=False, manual=None):
         manual = True if manual is None else manual
@@ -1863,9 +1708,9 @@ class MainWindow(LegacyMainWindow):
                         raise OSError("บันทึกไฟล์ใน Editor ไม่สำเร็จ")
                 self.save()
                 self.repo.save_settings(self.settings)
-                subprocess.Popen([str(path)], close_fds=True)
-                QApplication.quit()
-            except OSError as exc:
+                launch_update(path, update, self.repo.root)
+                self.close()
+            except (OSError, UpdateError) as exc:
                 QMessageBox.warning(self, "เปิดตัวติดตั้งไม่ได้", str(exc))
 
         worker.finished_download.connect(complete)
@@ -1953,11 +1798,11 @@ class MainWindow(LegacyMainWindow):
                 pixmap = pixmap.copy((pixmap.width()-148)//2, (pixmap.height()-188)//2, 148, 188)
             status = _profile_status(profile)
             card = QListWidgetItem(
-                QIcon(pixmap), f"{profile.name}\n{_profile_status_label(status)}"
+                QIcon(pixmap), f"{profile.name}\nแปลถึงบท {profile.chapter_state.current_chapter} · วันนี้ +{daily_chapter_count(profile)}\nวันนี้ส่ง {daily_export_count(profile)} ไฟล์ · {verified_goal_text(profile)}\n{_profile_status_label(status)}"
             )
             card.setData(Qt.UserRole, profile.id)
             card.setData(Qt.UserRole + 1, status)
-            card.setToolTip(profile.name)
+            card.setToolTip(f"{profile.name}\nแปลถึงบท {profile.chapter_state.current_chapter}\nverified {verified_goal_text(profile)}")
             self.profile_cards.addItem(card)
 
         target_id = pid or (
@@ -2061,9 +1906,16 @@ class MainWindow(LegacyMainWindow):
             QMessageBox.warning(self, "บันทึกสถานะไม่ได้", str(exc))
             return
         self.refresh_profiles(profile_id)
-        self.statusBar().showMessage(
-            f"ย้าย {profile.name} ไปหมวด{_profile_status_label(status)}แล้ว", 4500
-        )
+        def undo():
+            current = next((item for item in self.repo.list_profiles() if item.id == profile_id), None)
+            if current is None or current.status != status: return
+            current.status = old_status
+            try: self.repo.save_profile(current)
+            except OSError as exc:
+                QMessageBox.warning(self, "ย้อนกลับไม่ได้", str(exc)); return
+            self.refresh_profiles(profile_id)
+        self.submit_toast.show_message(f"ย้าย {profile.name} ไป{_profile_status_label(status)}แล้ว", undo)
+
 
     def show_library(self):
         if self._settings_page_state:
@@ -2080,7 +1932,7 @@ class MainWindow(LegacyMainWindow):
     def _workspace(self, profile):
         workspace = self.workspaces.get(profile.id)
         if workspace is None:
-            workspace = ProfileWorkspace(self, profile)
+            workspace = WorkspacePage(self, profile)
             workspace.files.itemChanged.connect(
                 lambda item, pid=profile.id: self._file_toggled(pid, item)
             )
@@ -2427,6 +2279,9 @@ class MainWindow(LegacyMainWindow):
         self.set_editor_font_size(size)
 
     def _document_saved(self, saved_path):
+        for workspace in self.workspaces.values():
+            workspace.refresh_history()
+        self.refresh_translation_progress()
         if not self.profile:
             return
         if self.profile.context_path:
@@ -2551,11 +2406,11 @@ class MainWindow(LegacyMainWindow):
 
         self._latest_context_chapter = latest
         if not self.profile.context_path:
-            self.context_status.setFullText("Context · ยังไม่ได้เลือก")
+            self.context_status.setFullText("ยังไม่ได้เลือก Context")
         elif latest is None:
-            self.context_status.setFullText("Context · ไม่พบบท")
+            self.context_status.setFullText("ไม่พบบทใน Context")
         else:
-            self.context_status.setFullText(f"Context · บท {latest}")
+            self.context_status.setFullText(f"แปลถึงบท {latest}")
         self._latest_chapter_status = (
             f"  ·  ล่าสุดบท {latest}" if latest is not None else ""
         )
@@ -2612,7 +2467,7 @@ class MainWindow(LegacyMainWindow):
                         latest = latest_context_chapter(text_editor.toPlainText())
                         self._latest_context_chapter = latest
                         self.context_status.setFullText(
-                            f"Context · บท {latest}" if latest is not None else "Context · ไม่พบบท"
+                            f"แปลถึงบท {latest}" if latest is not None else "ไม่พบบทใน Context"
                         )
                         break
             self._update_editor_status(text)
@@ -2630,7 +2485,7 @@ class MainWindow(LegacyMainWindow):
         if not self.profile:
             self.progress_status.setFullText("วันนี้ +0 บท")
             self.goal_status.setFullText("ยังไม่ได้ตั้งเป้าหมาย")
-            self.context_status.setFullText("Context · ยังไม่ได้เลือก")
+            self.context_status.setFullText("ยังไม่ได้เลือก Context")
             self.goal_status_bar.hide()
             return
 
@@ -2642,6 +2497,9 @@ class MainWindow(LegacyMainWindow):
         else:
             progress_tooltip = "จำนวนบทที่ Context บันทึกเพิ่มในวันนี้"
         self.progress_status.setFullText(today_text)
+        if workspace:
+            workspace.novel_header.refresh(self.profile, latest)
+            workspace.editor.export_tab.refresh_verified()
         self.progress_status.setToolTip(progress_tooltip)
 
         goal = goal_progress(self.profile)
@@ -2649,7 +2507,7 @@ class MainWindow(LegacyMainWindow):
             completed, target, percentage = goal
             self.goal_status.setFullText(f"เป้าหมาย {completed}/{target} บท · {percentage}%")
             self.goal_status_bar.setValue(percentage)
-            self.goal_status_bar.show()
+            self.goal_status_bar.hide()
             self.goal_status.setToolTip(f"{self.profile.name}: {completed} จาก {target} บท")
         else:
             self.goal_status.setFullText("ยังไม่ได้ตั้งเป้าหมาย")
@@ -2675,3 +2533,11 @@ class MainWindow(LegacyMainWindow):
         self._capture_sessions()
         self.repo.save_settings(self.settings)
         event.accept()
+
+
+ProfileWorkspace = WorkspacePage
+
+
+class MainWindow(MainShell):
+    """Public entry point for the composed desktop shell."""
+    pass

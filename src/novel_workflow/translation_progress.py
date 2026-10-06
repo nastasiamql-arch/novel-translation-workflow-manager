@@ -15,7 +15,7 @@ import time
 from .models import NovelProfile
 
 _CHAPTER_LINE = re.compile(
-    r"(?im)^\s*(?:"
+    r"(?im)^[ \t]*(?:#{1,6}[ \t]+)?(?:"
     r"บทที่\s*(\d+)(?:\s*[-–—~至]\s*(\d+))?"
     r"|第\s*(\d+)(?:\s*[-–—~至]\s*(\d+))?\s*章"
     r"|chapter\s+(\d+)(?:(?:\s*[-–—~]\s*|\s+to\s+)(\d+))?"
@@ -41,8 +41,10 @@ def latest_context_chapter(text: str) -> int | None:
             None,
         )
         if end_of_range or chapter:
-            chapters.append(int(end_of_range or chapter))
-    return chapters[-1] if chapters else None
+            start, end = int(chapter), int(end_of_range or chapter)
+            if 0 < start <= end <= 2_147_483_647:
+                chapters.append(end)
+    return max(chapters) if chapters else None
 
 
 def sync_profile_context(profile: NovelProfile) -> bool:

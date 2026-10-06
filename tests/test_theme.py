@@ -16,14 +16,12 @@ def _contrast(foreground: str, background: str) -> float:
     return (first + 0.05) / (second + 0.05)
 
 
-def test_accent_and_editor_search_colors_are_neutral_grayscale():
+def test_semantic_selection_is_distinct_from_hover_and_current_line():
     for appearance, tokens in (("Dark", _DARK), ("Light", _LIGHT)):
-        for role in ("accent", "focus", "primary", "primary_hover", "selection"):
-            color = tokens[role]
-            assert color[1:3] == color[3:5] == color[5:7], (appearance, role, color)
-        assert theme.editor_colors(appearance)["find"][1:3] == (
-            theme.editor_colors(appearance)["find"][3:5]
-        ) == theme.editor_colors(appearance)["find"][5:7]
+        assert tokens["selection"] != tokens["hover"]
+        assert tokens["selection"] != tokens["surface"]
+        assert theme.editor_colors(appearance)["current_line"] != tokens["selection"]
+        assert _contrast(tokens["selection_text"], tokens["selection"]) >= 4.5
 
 
 def test_theme_text_and_status_bar_meet_readable_contrast():
@@ -81,8 +79,8 @@ def test_workflow_active_state_and_cover_selection_do_not_draw_underlines():
     cover_style = stylesheet.split(
         "QListWidget#novelCoverRail::item:selected {", 1
     )[1].split("}", 1)[0]
-    assert "border: 0;" in cover_style
-    assert "border-left" not in cover_style
+    assert "border-left: 3px" in cover_style
+    assert "background: transparent" not in cover_style
 
 
 def test_native_palette_keeps_disabled_toolbar_labels_legible():

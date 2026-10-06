@@ -348,7 +348,7 @@ def test_export_tab_is_permanent_and_not_a_disk_editor_file(tmp_path):
     tabs.open_file(path)
     assert tabs.tabs.count() == 2
     assert tabs.open_paths() == [str(path.resolve())]
-    assert tabs.tabs.tabText(0) == "TXT Export"
+    assert tabs.tabs.tabText(tabs.tabs.count()-1) == "TXT Export"
 
 
 def test_submit_is_single_export_and_context_action(tmp_path):
@@ -394,7 +394,7 @@ def test_txt_export_tab_order_persists_after_reopening(tmp_path):
     )
 
     assert [restored.tabs.tabText(i) for i in range(restored.tabs.count())] == [
-        "first.txt", "second.txt", "TXT Export",
+        "second.txt", "first.txt", "TXT Export",
     ]
     assert restored.active_tab_key() == "txt-export"
     restored.close_tab(restored.tabs.indexOf(restored.export_tab))

@@ -12,7 +12,7 @@ os.environ.setdefault("NOVELWORKFLOW_DISABLE_WEBENGINE", "1")
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QColor, QPalette, QTextCursor
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QAbstractItemView, QApplication, QPushButton, QToolBar
+from PySide6.QtWidgets import QAbstractItemView, QApplication, QPushButton, QToolBar, QLabel
 
 from novel_workflow.models import LaunchTarget, StepFile, Workflow, WorkflowStep
 from novel_workflow.services import ProfileService
@@ -100,7 +100,7 @@ def main() -> int:
             try:
                 toolbar = window.findChild(QToolBar, "mainToolbar")
                 assert toolbar is not None
-                assert any(action.text() == "ตรวจสอบอัปเดต" for action in toolbar.actions())
+                assert window.navigation.buttons["workspace"].isChecked()
                 assert window.profile_cards.count() == 2
                 assert window.profile.id == profile.id
                 assert window.main_pages.currentWidget() is window.workspace_stack
@@ -270,8 +270,8 @@ def main() -> int:
                 workspace.editor.open_file(chapter)
                 app.processEvents()
                 assert workspace.editor.tabs.count() == 2
-                assert workspace.editor.tabs.tabText(0) == "TXT Export"
-                assert workspace.editor.export_tab is workspace.editor.tabs.widget(0)
+                assert workspace.editor.tabs.tabText(workspace.editor.tabs.count()-1) == "TXT Export"
+                assert workspace.editor.export_tab is workspace.editor.tabs.widget(workspace.editor.tabs.count()-1)
                 export_tab = workspace.editor.export_tab
                 editor = workspace.editor.tabs.currentWidget()
                 assert not hasattr(export_tab, "autosave_timer")
@@ -282,7 +282,7 @@ def main() -> int:
                 assert (root / "smoke1.txt").read_text(encoding="utf-8") == "ส่งออกไทย 卡"
                 assert export_tab.current.value() == 2
                 assert len(export_tab.editor.font().families()) == 1
-                workspace.editor.close_tab(0)
+                workspace.editor.close_tab(workspace.editor.tabs.indexOf(export_tab))
                 assert workspace.editor.tabs.count() == 2
                 workspace.editor.tabs.setCurrentWidget(export_tab)
                 app.processEvents()
@@ -477,7 +477,7 @@ def main() -> int:
                 working_row = window.working_files.item(0)
                 row_widget = window.working_files.itemWidget(working_row)
                 open_button = row_widget.findChild(QPushButton)
-                assert row_widget.findChild(type(window.settings_profile_heading)).text() == "working.txt"
+                assert row_widget.findChild(QLabel).text() == "working.txt"
                 assert open_button.text() == "เปิด"
                 open_button.click()
                 window.return_from_utility_page()
@@ -531,13 +531,13 @@ def main() -> int:
                 app.processEvents()
                 assert window.width() == 1100
                 status_bar = window.statusBar()
-                assert window.editor_status.geometry().right() < window.progress_status.geometry().left()
+                assert window.editor_status.geometry().right() <= status_bar.width()
                 assert status_bar.height() >= 27
-                assert "Context · บท 161" in window.context_status.fullText()
+                assert "แปลถึงบท 161" in window.context_status.fullText()
                 assert window.editor_status.height() >= 20
-                assert window.progress_status.geometry().right() < window.goal_status.geometry().left()
-                assert window.goal_status.geometry().right() < window.goal_status_bar.geometry().left()
-                assert window.goal_status_bar.geometry().right() <= status_bar.width()
+                assert workspace.novel_header.isVisible()
+                assert "แปลถึงบท" in workspace.novel_header.progress.text()
+                assert "วันนี้ส่ง" in workspace.novel_header.progress.text()
 
                 context_editor = workspace.editor.open_file(context)
                 context_editor.setPlainText("ข้อความเก่าที่รอ Auto Save")

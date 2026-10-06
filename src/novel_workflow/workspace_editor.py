@@ -10,11 +10,12 @@ from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QPainter, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
-    QPlainTextEdit, QPushButton, QSpinBox, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
+    QPlainTextEdit, QPushButton, QSpinBox, QTabWidget, QTextEdit, QVBoxLayout, QWidget, QMenu, QToolButton, QGridLayout, QDialog,
 )
 
 from .theme import editor_colors
 from .models import AppSettings
+from .recovery import commit_staged
 
 
 TEXT_EXTENSIONS = {
@@ -51,9 +52,10 @@ class TxtExportTab(QWidget):
 
     def __init__(self, settings, status_callback=None, settings_callback=None, parent=None,
                  font_size=11.0, appearance="Dark", context_path_callback=None,
-                 context_saved_callback=None, notification_callback=None):
+                 context_saved_callback=None, notification_callback=None, export_service=None):
         super().__init__(parent)
         self.instances.add(self)
+        self.export_service = export_service
         self.settings = settings
         self.status_callback = status_callback or (lambda _message: None)
         self.settings_callback = settings_callback or (lambda: None)
@@ -71,6 +73,7 @@ class TxtExportTab(QWidget):
         self.current = QSpinBox(); self.current.setRange(1, 2_147_483_647)
         self.start.setValue(max(1, int(settings.txt_export_start or 1)))
         self.end.setValue(max(self.start.value(), int(settings.txt_export_end or 100)))
+        self.current.setRange(self.start.value(), self.end.value())
         self.current.setValue(max(self.start.value(), min(self.end.value(), int(settings.txt_export_current or 1))))
         self.word_count = QLabel("0 คำ")
         self.character_count = QLabel("0 อักขระ")
@@ -85,22 +88,59 @@ class TxtExportTab(QWidget):
         layout.setContentsMargins(12, 10, 12, 8)
         layout.setSpacing(8)
         row = QHBoxLayout()
-        row.addWidget(QLabel("ชื่อไฟล์"))
+        self.basic_row = row
+        row.addWidget(QLabel("Prefix"))
         row.addWidget(self.filename, 1)
-        row.addWidget(QLabel("โฟลเดอร์ปลายทาง"))
-        row.addWidget(self.directory, 2)
-        browse = QPushButton("เลือกโฟลเดอร์")
-        browse.clicked.connect(self.choose_directory)
-        row.addWidget(browse)
+        self.number_current_label = QLabel("เลขถัดไป"); self.number_current_label.hide()
+        self.current.setPrefix("เลข "); self.current.setToolTip("เลขชื่อไฟล์ถัดไป")
+        self.current.setAccessibleName("เลขถัดไป")
+        row.addWidget(self.current)
+        self.advanced_button = QPushButton("Advanced")
+        self.advanced_button.setCheckable(True)
+        row.addWidget(self.advanced_button)
         layout.addLayout(row)
+        self.number_row = QHBoxLayout()
+        layout.addLayout(self.number_row)
+        self._compact_basic = None
+        goals = QHBoxLayout()
+        self.daily_label = QLabel("วันนี้ส่ง 0 ไฟล์")
+        self.goal_label = QLabel("0 ไฟล์")
+        self.goal_target = QSpinBox(); self.goal_target.setRange(0, 100000)
+        self.goal_target.setSpecialValueText("ไม่ตั้งเป้า")
+        self.goal_target.setAccessibleName("เป้าหมาย verified")
+        self.goal_reset = QPushButton("Reset รอบส่ง")
+        self.daily_label.setWordWrap(True); self.goal_label.setWordWrap(True)
+        goals.addWidget(self.daily_label); goals.addWidget(self.goal_label, 1)
+        layout.addLayout(goals)
+        self.advanced_panel = QDialog(self)
+        self.advanced_panel.setWindowTitle("TXT Export · Advanced")
+        self.advanced_panel.resize(540, 220)
+        advanced = QVBoxLayout(self.advanced_panel)
+        advanced.setContentsMargins(0, 0, 0, 0)
+        directory_row = QHBoxLayout()
+        directory_row.addWidget(QLabel("ปลายทาง")); directory_row.addWidget(self.directory, 1)
+        browse = QPushButton("เลือกโฟลเดอร์"); browse.clicked.connect(self.choose_directory)
+        directory_row.addWidget(browse); advanced.addLayout(directory_row)
         numbers = QHBoxLayout()
         for label, field in (("เริ่มต้น", self.start), ("สิ้นสุด", self.end)):
             numbers.addWidget(QLabel(label)); numbers.addWidget(field)
-        self.number_current_label = QLabel("เลขถัดไป")
-        numbers.addWidget(self.number_current_label); numbers.addWidget(self.current)
         numbers.addStretch(1)
-        numbers.addWidget(self.word_count); numbers.addWidget(self.character_count)
-        layout.addLayout(numbers)
+        self.word_count.hide(); self.character_count.hide()
+        advanced.addLayout(numbers)
+        self.range_override = QPushButton("ใช้ช่วงเลข Advanced")
+        self.range_override.setCheckable(True)
+        self.range_override.setChecked(bool(getattr(settings, "advanced_range", False)))
+        self.range_override.toggled.connect(self._range_override_changed)
+        advanced.addWidget(self.range_override)
+        goal_controls = QHBoxLayout()
+        goal_controls.addWidget(QLabel("เป้าหมาย verified")); goal_controls.addWidget(self.goal_target)
+        goal_controls.addWidget(self.goal_reset)
+        advanced.addLayout(goal_controls)
+        self.advanced_panel.finished.connect(lambda _result: self.advanced_button.setChecked(False))
+        self.advanced_panel.hide()
+        self.advanced_button.toggled.connect(self.advanced_panel.setVisible)
+        self.goal_target.valueChanged.connect(self._goal_changed)
+        self.goal_reset.clicked.connect(self._reset_goal)
         layout.addWidget(self.editor, 1)
         actions = QHBoxLayout()
         self.copy_button = QPushButton("คัดลอก")
@@ -109,8 +149,15 @@ class TxtExportTab(QWidget):
         self.submit_button.setObjectName("primaryButton")
         self.submit_button.setToolTip("ส่งออก TXT และเขียนทับ Context ด้วยข้อความเดียวกัน")
         self.reset_button = QPushButton("รีเซ็ตเลข")
-        actions.addWidget(self.copy_button); actions.addWidget(self.copy_export_button)
-        actions.addStretch(1); actions.addWidget(self.reset_button)
+        actions.addWidget(self.copy_button)
+        self.copy_export_button.hide(); self.reset_button.hide()
+        export_more = QToolButton(); export_more.setText("..."); export_more.setAccessibleName("คำสั่งส่งออกเพิ่มเติม")
+        export_menu = QMenu(export_more)
+        export_menu.addAction("คัดลอก + ส่งออก", self.copy_and_export)
+        export_menu.addAction("Reset รอบส่ง", self._reset_goal)
+        export_menu.addAction("รีเซ็ตเลขชื่อไฟล์", self.reset_number)
+        export_more.setMenu(export_menu); export_more.setPopupMode(QToolButton.InstantPopup)
+        actions.addWidget(export_more); actions.addStretch(1)
         actions.addWidget(self.submit_button)
         layout.addLayout(actions)
         self.copy_button.clicked.connect(self.copy_text)
@@ -126,6 +173,57 @@ class TxtExportTab(QWidget):
         self.start.valueChanged.connect(lambda value: self.current.setMinimum(value))
         self.end.valueChanged.connect(lambda value: self.current.setMaximum(value))
         self.set_tab_appearance(appearance)
+        self.refresh_verified()
+        if self.export_service:
+            self.editor.setPlainText(self.export_service.profile().txt_export_draft)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        compact = self.width() < 380
+        if compact != self._compact_basic:
+            self._compact_basic = compact
+            destination = self.number_row if compact else self.basic_row
+            for widget in (self.current, self.advanced_button):
+                self.basic_row.removeWidget(widget); self.number_row.removeWidget(widget)
+                destination.addWidget(widget)
+
+    def refresh_verified(self):
+        if not self.export_service:
+            self.goal_target.hide(); self.goal_reset.hide()
+            return
+        from .export_service import daily_export_count, verified_goal_text
+        profile = self.export_service.profile()
+        self.daily_label.setText(f"วันนี้ส่ง {daily_export_count(profile)} ไฟล์")
+        self.goal_label.setText(f"รอบส่ง {verified_goal_text(profile)}")
+        self.goal_target.blockSignals(True)
+        self.goal_target.setValue(profile.verified_goal_target or 0)
+        self.goal_target.blockSignals(False)
+
+    def _goal_changed(self, target):
+        if not self.export_service: return
+        try:
+            profile = self.export_service.set_target(target)
+            self.settings = profile.txt_export_settings
+            self._load_shared_settings()
+            self.refresh_verified()
+            self.context_saved_callback(None, "")
+        except OSError as exc:
+            QMessageBox.warning(self, "บันทึกเป้าหมายไม่ได้", str(exc))
+            self.refresh_verified()
+
+    def _reset_goal(self):
+        if not self.export_service: return
+        try:
+            self.export_service.reset()
+            self.refresh_verified()
+            self.context_saved_callback(None, "")
+        except OSError as exc:
+            QMessageBox.warning(self, "Reset ไม่สำเร็จ", str(exc))
+
+    def _range_override_changed(self, checked):
+        self.settings.advanced_range = checked
+        self._save_settings()
+        if not checked: self._goal_changed(self.goal_target.value())
 
     def set_font_size(self, size):
         self.editor.set_font_size(size)
@@ -228,8 +326,12 @@ class TxtExportTab(QWidget):
                 destinations.append(context_path)
             for destination in destinations:
                 staged_files.append((destination, _stage_text_file(destination, text)))
-            for destination, staged in staged_files:
-                os.replace(staged, destination)
+            completed = self.current.value()
+            next_number = self.start.value() if completed >= self.end.value() else completed + 1
+            metadata = (lambda: self.export_service.commit(
+                target.name, prefix, completed, next_number, self.settings
+            )) if self.export_service else None
+            commit_staged(staged_files, metadata)
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "ส่งออก TXT ไม่สำเร็จ", str(exc))
             return False
@@ -242,6 +344,7 @@ class TxtExportTab(QWidget):
         completed = self.current.value()
         self.current.setValue(self.start.value() if completed >= self.end.value() else completed + 1)
         self._save_settings()
+        self.refresh_verified()
         if update_context:
             self.context_saved_callback(context_path, text)
             self.status_callback(
@@ -252,6 +355,7 @@ class TxtExportTab(QWidget):
             )
         else:
             self.status_callback(f"ส่งออก {target.name} แล้ว")
+            if self.export_service: self.context_saved_callback(None, "")
         return True
 
     def reset_number(self):
@@ -300,6 +404,9 @@ class CodeEditor(QPlainTextEdit):
             pass
 
         self.setFont(font)
+        self._alternate_redo = QShortcut(QKeySequence("Ctrl+Shift+Z"), self)
+        self._alternate_redo.setContext(Qt.WidgetShortcut)
+        self._alternate_redo.activated.connect(self.redo)
         self.setCursorWidth(2)
         self.setLineWrapMode(QPlainTextEdit.WidgetWidth)
         self.document().setDefaultStyleSheet(
@@ -466,12 +573,13 @@ class EditorTabs(QWidget):
 
     def __init__(self, parent=None, font_size=11.0, appearance="Dark",
                  settings=None, settings_callback=None, status_callback=None,
-                 context_path_callback=None, notification_callback=None):
+                 context_path_callback=None, notification_callback=None, export_service=None):
         super().__init__(parent)
         self.instances.add(self)
         self._font_size = float(font_size)
         self.appearance = appearance
         self.colors = editor_colors(appearance)
+        self.context_path_callback = context_path_callback or (lambda: None)
         settings = settings or AppSettings()
         self.tabs = QTabWidget()
         self.tabs.setObjectName("editorTabs")
@@ -480,6 +588,8 @@ class EditorTabs(QWidget):
         self.tabs.setMovable(True)
         self.tabs.tabBar().setDrawBase(False)
         self.tabs.tabBar().setExpanding(False)
+        self.tabs.tabBar().setUsesScrollButtons(True)
+        self.tabs.tabBar().setElideMode(Qt.ElideMiddle)
         self.tabs.tabCloseRequested.connect(self.close_tab)
         self.export_tab = None
         self.export_tab = TxtExportTab(
@@ -487,12 +597,19 @@ class EditorTabs(QWidget):
             settings_callback=settings_callback, font_size=font_size,
             appearance=appearance, context_path_callback=context_path_callback,
             context_saved_callback=self.apply_external_update,
-            notification_callback=notification_callback, parent=self,
+            notification_callback=notification_callback, parent=self, export_service=export_service,
         )
         self.tabs.addTab(self.export_tab, TXT_EXPORT_TAB)
         self.tabs.tabBar().setTabButton(0, self.tabs.tabBar().ButtonPosition.LeftSide, None)
         self.tabs.tabBar().setTabButton(0, self.tabs.tabBar().ButtonPosition.RightSide, None)
         self.tabs.tabBar().setTabData(0, "txt-export")
+        self.tabs.tabBar().tabMoved.connect(self._pin_export)
+        self._tab_shortcuts = []
+        for sequence, delta in (("Ctrl+Tab", 1), ("Ctrl+Shift+Tab", -1)):
+            shortcut = QShortcut(QKeySequence(sequence), self)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(lambda delta=delta: self.cycle_tab(delta))
+            self._tab_shortcuts.append(shortcut)
         self._active_editor = None
         self._status_text = "พร้อมใช้งาน  ·  0 คำ  ·  0 อักขระ"
         self.tabs.currentChanged.connect(self._handle_tab_change)
@@ -676,6 +793,7 @@ class EditorTabs(QWidget):
         editor.setPlainText(text)
         editor.blockSignals(False)
         self._format_document(editor)
+        editor.document().clearUndoRedoStacks()
         editor._cached_character_count = len(text)
         editor._cached_word_count = len(text.split())
 
@@ -697,7 +815,7 @@ class EditorTabs(QWidget):
         )
         editor.textChanged.connect(lambda e=editor: self._queue_find_matches(e))
 
-        index = self.tabs.addTab(editor, path.name)
+        index = self.tabs.insertTab(self.tabs.indexOf(self.export_tab), editor, path.name)
         self.tabs.setTabToolTip(index, str(path))
         self.tabs.setCurrentIndex(index)
         editor.setFocus()
@@ -715,7 +833,11 @@ class EditorTabs(QWidget):
         staged_path = None
         try:
             staged_path = _stage_text_file(path, editor.toPlainText())
-            os.replace(staged_path, path)
+            context = self.context_path_callback()
+            if context and Path(context).expanduser().resolve() == path:
+                commit_staged([(path, staged_path)])
+            else:
+                os.replace(staged_path, path)
         except OSError as exc:
             editor.setProperty(
                 "saveState",
@@ -744,6 +866,9 @@ class EditorTabs(QWidget):
 
     def apply_external_update(self, path: str | Path, text: str):
         """Refresh an open file tab after an application action replaced its disk contents."""
+        if path is None:
+            self.documentSaved.emit("")
+            return False
         path = Path(path).expanduser().resolve()
         for index in range(self.tabs.count()):
             editor = self.tabs.widget(index)
@@ -761,6 +886,7 @@ class EditorTabs(QWidget):
             self._set_dirty(editor, False, "บันทึกแล้ว")
             self.documentSaved.emit(str(path))
             return True
+        self.documentSaved.emit(str(path))
         return False
 
     def set_font_size(self, size):
@@ -774,11 +900,21 @@ class EditorTabs(QWidget):
 
     def save_current(self) -> bool:
         if isinstance(self.tabs.currentWidget(), TxtExportTab):
-            return False
+            if self.export_tab.export_service:
+                try: self.export_tab.export_service.save_draft(self.export_tab.editor.toPlainText())
+                except OSError as exc:
+                    QMessageBox.warning(self, "บันทึก draft ไม่สำเร็จ", str(exc))
+                    return False
+            return True
         editor = self._current_editor()
         return self.save_editor(editor) if editor else True
 
     def save_all(self) -> bool:
+        if self.export_tab.export_service:
+            try: self.export_tab.export_service.save_draft(self.export_tab.editor.toPlainText())
+            except OSError as exc:
+                QMessageBox.warning(self, "บันทึก TXT Export draft ไม่สำเร็จ", str(exc))
+                return False
         for index in range(self.tabs.count()):
             editor = self.tabs.widget(index)
             if self._dirty(editor) and not self.save_editor(editor):
@@ -849,6 +985,19 @@ class EditorTabs(QWidget):
                 result.append(str(path))
         return result
 
+    def _pin_export(self, *_args):
+        index = self.tabs.indexOf(self.export_tab)
+        last = self.tabs.count() - 1
+        if index >= 0 and index != last:
+            bar = self.tabs.tabBar()
+            bar.moveTab(index, last)
+
+    def cycle_tab(self, delta):
+        if self.tabs.count():
+            self.tabs.setCurrentIndex((self.tabs.currentIndex() + delta) % self.tabs.count())
+            editor = self._current_editor()
+            if editor: editor.setFocus()
+
     def restore_paths(self, paths, current_index=0, tab_order=None, active_tab_key=None):
         for path in paths or []:
             candidate = Path(path).expanduser()
@@ -857,8 +1006,9 @@ class EditorTabs(QWidget):
         if tab_order:
             bar = self.tabs.tabBar()
             current_keys = self.tab_order()
-            ordered_keys = [key for key in tab_order if key in current_keys]
-            ordered_keys.extend(key for key in current_keys if key not in ordered_keys)
+            ordered_keys = [key for key in tab_order if key in current_keys and key != "txt-export"]
+            ordered_keys.extend(key for key in current_keys if key not in ordered_keys and key != "txt-export")
+            ordered_keys.append("txt-export")
             for target_index, key in enumerate(ordered_keys):
                 current_keys = self.tab_order()
                 source_index = current_keys.index(key)
