@@ -233,6 +233,10 @@ def test_export_primary_action_renders_theme_contrast(window, appearance):
     button = ws.editor.export_tab.submit_button
     image = button.grab().toImage()
     assert image.pixelColor(8, image.height() // 2).name().upper() == theme_colors(appearance)['primary']
+    button.setFocus(Qt.TabFocusReason)
+    QApplication.processEvents()
+    image = button.grab().toImage()
+    assert image.pixelColor(4, image.height() - 1).name().upper() == theme_colors(appearance)['focus']
 
 
 def test_legacy_ranges_and_unknown_fields_preserved(tmp_path):

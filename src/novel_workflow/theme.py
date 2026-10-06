@@ -168,6 +168,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QPushButton#workflowStageButton, QPushButton#vocabularyButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 36px; padding: 0 10px; text-align: left; }}
     QPushButton#workflowStageButton:hover, QPushButton#vocabularyButton:hover {{ background: {c['hover']}; }}
     QPushButton#workflowStageButton[workflowActive="true"], QPushButton#vocabularyButton[workflowActive="true"] {{ background: {c['item_selection']}; border-left: 3px solid {c['secondary']}; font-weight: 600; }}
+    QPushButton#workflowStageButton[keyboardFocus="true"], QPushButton#vocabularyButton[keyboardFocus="true"] {{ border-bottom: 2px solid {c['focus']}; }}
     QPushButton#copyStepButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 34px; padding: 7px 14px; font-weight: 600; }}
     QPushButton#copyStepButton:hover {{ color: {c['muted']}; background: transparent; text-decoration: none; }}
     QPushButton#copyStepButton[keyboardFocus="true"] {{ color: {c['focus']}; background: transparent; border: 0; text-decoration: none; }}
@@ -188,6 +189,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QPushButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; border-color: {c['border']}; }}
     QPushButton#primaryButton {{ background: {c['primary']}; color: {c['primary_text']}; border: 0; border-radius: 0; font-weight: 600; padding: 7px 16px; }}
     QPushButton#primaryButton:hover {{ background: {c['primary_hover']}; }}
+    QPushButton#primaryButton[keyboardFocus="true"] {{ border: 2px solid {c['focus']}; }}
     QPushButton#primaryButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; border: 1px solid {c['border']}; }}
     QPushButton#dangerButton {{ background: transparent; color: {c['danger']}; border: 1px solid {c['border']}; }}
     QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{ background: {c['input']}; color: {c['text']}; border: 1px solid {c['border']}; border-radius: 0; padding: 7px 9px; selection-background-color: {c['selection']}; selection-color: {c['selection_text']}; min-height: 28px; }}
