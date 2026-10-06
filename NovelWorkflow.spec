@@ -1,7 +1,17 @@
 from PyInstaller.utils.hooks import collect_submodules, copy_metadata
+from pathlib import Path
+import tomllib
+
+project_root = Path(SPECPATH)
+with (project_root / 'pyproject.toml').open('rb') as project_file:
+    build_version = tomllib.load(project_file)['project']['version']
+version_file = project_root / 'build' / 'app-version.txt'
+version_file.parent.mkdir(parents=True, exist_ok=True)
+version_file.write_text(build_version, encoding='utf-8')
 
 hiddenimports = collect_submodules('novel_workflow')
 datas = [
+    (str(version_file), 'novel_workflow/resources'),
     ('src/novel_workflow/resources/novelworkflow.png', 'novel_workflow/resources'),
     ('src/novel_workflow/resources/palantir_novel.png', 'novel_workflow/resources'),
     *copy_metadata('novelworkflow'),

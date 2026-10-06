@@ -796,7 +796,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if result.get("success") and result.get("version") == __version__:
                 QTimer.singleShot(100, lambda: self.show_submit_toast(f"อัปเดตเป็น v{__version__} สำเร็จ ✓"))
             else:
-                message = result.get("error") or "เวอร์ชันที่เปิดกลับมาไม่ตรงกับรุ่นที่อัปเดต"
+                message = result.get("error") or f"เปิดโปรแกรม v{__version__} แต่คาดว่าจะเป็น v{result.get('version', 'unknown')}"
                 QTimer.singleShot(100, lambda: QMessageBox.warning(self, "อัปเดตไม่สำเร็จ", f"{message}\nLog: {result.get('log', '')}"))
         logo = Path(__file__).resolve().parent / "resources" / "palantir_novel.png"
         if logo.is_file():

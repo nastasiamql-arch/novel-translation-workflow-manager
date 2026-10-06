@@ -42,11 +42,14 @@ _prepare_bundled_qt_dlls()
 def _check_packaged_qt_runtime():
     try:
         from PySide6 import QtCore, QtGui, QtWidgets  # noqa: F401
-        from importlib.metadata import version
         from novel_workflow import __version__
 
-        if __version__ != version("novelworkflow") or __version__ == "0+unknown":
-            raise RuntimeError("Packaged NovelWorkflow version metadata is unavailable")
+        if __version__ == "0+unknown":
+            raise RuntimeError("Packaged NovelWorkflow build version is unavailable")
+        if "--expected-version" in sys.argv:
+            expected = sys.argv[sys.argv.index("--expected-version") + 1]
+            if __version__ != expected:
+                raise RuntimeError(f"Expected v{expected}, running v{__version__}")
     except Exception as exc:
         if sys.stderr is not None:
             sys.stderr.write(f"Packaged Qt runtime check failed: {exc}\n")

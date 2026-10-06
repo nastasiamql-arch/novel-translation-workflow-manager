@@ -99,3 +99,5 @@ python tests/ui_geometry.py
 Build ใช้ Python 3.11+ และ Inno Setup 6 เวอร์ชันอ้างอิง `pyproject.toml` CI รัน unit/behavior tests, desktop smoke และ geometry ที่ DPI 1.0/1.25/1.5/2.0 ก่อน Windows build บน main commit ที่มี `[release]` จะสร้าง tag และ GitHub Release พร้อม installer เมื่อทุกขั้นผ่าน
 
 โลโก้ N Monogram และไอคอนใช้ assets ใน `assets/brand/` และ `assets/palantir_novel.ico`
+
+รุ่น 3.4.2 ฝัง version จาก pyproject.toml มากับ executable และลบเฉพาะ metadata ของ NovelWorkflow รุ่นเก่าที่ค้างใน installation เพื่อป้องกันการแจ้ง version mismatch หลังอัปเดตสำเร็จ Updater ตรวจรุ่นและ runtime ของ executable หลัง Setup จบก่อนรายงานสำเร็จ CI ทดสอบ silent installation ซ้ำใน directory เดิมพร้อม stale metadata และข้อมูลผู้ใช้จำลอง

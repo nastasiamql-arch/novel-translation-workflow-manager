@@ -2,6 +2,14 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.4.2 - 2026-10-07
+
+- Fix successful updates being reported as version mismatches when old application dist-info folders remain after upgrades.
+- Embed the executable's version from pyproject.toml at build time instead of reading ambiguous installed distribution metadata in frozen builds.
+- Remove only stale NovelWorkflow package metadata in the installation directory during upgrade; preserve user data and unrelated files.
+- Verify installed executable runtime and expected version before updater success/relaunch, and display actual/expected versions on mismatch.
+- Add stale-metadata regression tests and an actual silent installer upgrade check in Windows release builds.
+
 ## 3.4.1 - 2026-10-07
 
 - Introduce a white/soft-gray Light theme, coordinated neutral Dark theme, and original scalable line navigation icons.

@@ -94,7 +94,7 @@ $runtimeCheckScript = Join-Path $PSScriptRoot "build\qt_runtime_check.py"
 if ($LASTEXITCODE -ne 0) {
     throw "The packaged Qt runtime could not import PySide6 modules."
 }
-$runtimeProbe = Start-Process -FilePath $appExe -ArgumentList "--check-runtime" -PassThru -Wait -WindowStyle Hidden
+$runtimeProbe = Start-Process -FilePath $appExe -ArgumentList @("--check-runtime", "--expected-version", $version) -PassThru -Wait -WindowStyle Hidden
 if ($runtimeProbe.ExitCode -ne 0) {
     throw "The frozen app could not load its Qt runtime (exit $($runtimeProbe.ExitCode))."
 }

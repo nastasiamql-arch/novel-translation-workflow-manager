@@ -43,6 +43,8 @@ try {
     $exitCode = $setup.ExitCode
     if ($exitCode -ne 0) { throw ('Installer failed with exit code ' + $exitCode + '. See ' + $task.log) }
     if (-not (Test-Path -LiteralPath $task.executable)) { throw 'Installed executable is missing.' }
+    $probe = Start-Process -FilePath $task.executable -ArgumentList @('--check-runtime', '--expected-version', $task.version) -WindowStyle Hidden -PassThru -Wait
+    if ($probe.ExitCode -ne 0) { throw ('Installed executable failed version/runtime verification for v' + $task.version + '. See ' + $task.log) }
     $result = @{success=$true; version=$task.version; log=$task.log; exit_code=$exitCode}
 } catch {
     $result = @{success=$false; version=$task.version; log=$task.log; exit_code=$exitCode; error=$_.Exception.Message}

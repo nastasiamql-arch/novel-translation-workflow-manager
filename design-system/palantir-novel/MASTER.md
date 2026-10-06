@@ -62,3 +62,7 @@ Keep native installation identity B93AE24C-43D9-4D38-A880-93A607EA8D41 and the e
 ## 3.4.1 refinements
 
 Original 24-unit line navigation icons render at device scale with rounded 1.7-unit strokes. Light is the default for new settings; preserve saved appearance. Item selection: #E0E0E0 / #444444; primary action: #303030 with white text / #E6E6E6 with dark text. Hover, selected item, current line and text selection use distinct tokens. Scope local export panel styles to the panel so child button colors remain authoritative. The workspace splitter contains Workflow and Editor only; retain sidebar width and visibility without the cover rail.
+
+## 3.4.2 update identity
+
+Frozen executable version comes from an embedded app-version.txt generated from pyproject.toml, independent of stale dist-info directories. Installer cleans only novelworkflow-*.dist-info under the app root and _internal, before copying current files. The helper probes --check-runtime --expected-version after Setup. CI installs twice on a disposable runner, verifies previous directory reuse, metadata cleanup, executable replacement, stable shortcut and unchanged data. [Inno InstallDelete](https://jrsoftware.org/ishelp/topic_installdeletesection.htm) executes before file installation.

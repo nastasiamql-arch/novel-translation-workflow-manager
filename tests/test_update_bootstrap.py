@@ -30,8 +30,8 @@ def test_stable_installer_identity_and_update_mode():
 
 
 @pytest.mark.skipif(sys.platform!='win32',reason='Windows updater integration')
-@pytest.mark.parametrize('exit_code',[0,3])
-def test_detached_helper_simulated_upgrade_preserves_data_and_path(tmp_path,exit_code):
+@pytest.mark.parametrize('exit_code,probe_exit',[(0,0),(3,0),(0,1)])
+def test_detached_helper_simulated_upgrade_preserves_data_and_path(tmp_path,exit_code,probe_exit):
     import hashlib
     install=tmp_path/'existing installation'; install.mkdir()
     data=tmp_path/'NovelWorkflow'; data.mkdir()
@@ -39,7 +39,7 @@ def test_detached_helper_simulated_upgrade_preserves_data_and_path(tmp_path,exit
     shortcut=install/'Palantir Novel.lnk'; shortcut.write_text('existing',encoding='utf-8')
     executable=install/'Palantir.cmd'; executable.write_text('@echo off\r\nexit /b 0\r\n',encoding='utf-8')
     old=executable.read_bytes()
-    new=tmp_path/'new-app.cmd'; new.write_text('@echo off\r\nrem new version\r\nexit /b 0\r\n',encoding='utf-8')
+    new=tmp_path/'new-app.cmd'; new.write_text(f'@echo off\r\nrem new version\r\nif "%~1"=="--check-runtime" exit /b {probe_exit}\r\nexit /b 0\r\n',encoding='utf-8')
     installer=tmp_path/'simulated-setup.cmd'
     script='@echo off\r\n'
     if exit_code==0: script+=f'copy /y "{new}" "{executable}" >nul\r\n'
@@ -58,7 +58,7 @@ def test_detached_helper_simulated_upgrade_preserves_data_and_path(tmp_path,exit
     assert completed.returncode==0,(completed.stdout,completed.stderr)
     import json
     outcome=json.loads(result.read_text(encoding='utf-8-sig'))
-    assert outcome['success']==(exit_code==0),outcome
+    assert outcome['success']==(exit_code==0 and probe_exit==0),outcome
     assert outcome['exit_code']==exit_code
     assert (data/'profiles.json').read_text(encoding='utf-8')=='{"legacy":"preserved"}'
     assert list(install.glob('*.lnk'))==[shortcut]

@@ -33,6 +33,9 @@ UsePreviousGroup=yes
 Source: "dist\NovelWorkflow\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
+; Only application package metadata, never user documents/settings or all app files.
+Type: filesandordirs; Name: "{app}\_internal\novelworkflow-*.dist-info"
+Type: filesandordirs; Name: "{app}\novelworkflow-*.dist-info"
 ; Remove Qt files from older flat-layout builds before installing the isolated bundle.
 Type: files; Name: "{app}\Qt6*.dll"
 Type: files; Name: "{app}\shiboken6*.dll"
