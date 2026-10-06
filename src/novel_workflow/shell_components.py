@@ -1,7 +1,9 @@
 """Reusable shell components with content-driven geometry."""
 from PySide6.QtCore import Qt, Signal, QSize
-from PySide6.QtWidgets import QWidget, QFrame, QVBoxLayout, QHBoxLayout, QLabel, QToolButton, QSizePolicy, QStyle, QStackedWidget
+from PySide6.QtWidgets import QWidget, QFrame, QVBoxLayout, QHBoxLayout, QLabel, QToolButton, QSizePolicy, QStackedWidget
 from PySide6.QtGui import QFontMetrics
+from .navigation_icons import navigation_icon
+from .theme import theme_colors
 
 
 class ElidingLabel(QLabel):
@@ -53,13 +55,17 @@ class NavigationSidebar(QFrame):
         for key, icon, title in [('library','▦','คลังนิยาย'),('workspace','▤','กำลังทำงาน'),('progress','◷','สถิติ'),('groups','▧','กลุ่ม'),('settings','⚙','ตั้งค่า')]:
             if key == 'settings': layout.addStretch(1)
             button = QToolButton(); button.setCheckable(True); button.setObjectName('navigationItem')
-            icon_ids = {"library": QStyle.SP_DirIcon, "workspace": QStyle.SP_FileIcon, "progress": QStyle.SP_ComputerIcon, "groups": QStyle.SP_DirLinkIcon, "settings": QStyle.SP_FileDialogDetailedView}
-            button.setIcon(self.style().standardIcon(icon_ids[key]))
+            button.setIconSize(QSize(20, 20))
             button.setToolTip(title); button.setAccessibleName(title)
             button.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred)
             button.clicked.connect(lambda checked=False,key=key:self.selected.emit(key))
             self.buttons[key]=button; self.labels[key]=(icon,title); layout.addWidget(button)
+        self.refresh_icons("Light")
         self.set_collapsed(collapsed)
+
+    def refresh_icons(self, appearance):
+        for key, button in self.buttons.items():
+            button.setIcon(navigation_icon(key, theme_colors(appearance)))
 
     def set_collapsed(self, collapsed):
         self.collapsed = collapsed

@@ -12,20 +12,20 @@ macOS-inspired hierarchy and restrained chrome inside native Windows window cont
 
 | Token | Light | Dark |
 | --- | --- | --- |
-| App | #F5F5F5 | #1E1E1E |
-| Editor surface | #FFFFFF | #252526 |
-| Sidebar | #F0F0F0 | #252526 |
-| Main text | #242424 | #E6E6E6 |
+| App | #F3F3F3 | #212121 |
+| Editor surface | #FFFFFF | #242424 |
+| Sidebar | #F9F9F9 | #282828 |
+| Main text | #303030 | #E6E6E6 |
 | Secondary | #555555 | #C2C2C2 |
 | Muted/disabled | #606060 | #A0A0A0 |
 | Accent | #3269A8 | #80B9EF |
 | Keyboard focus | #155CA4 | #A5D2FF |
-| Hover | #EAEAEA | #383838 |
-| Current line | #F0F5FB | #2C3540 |
+| Hover | #F0F0F0 | #343434 |
+| Current line | #F6F6F6 | #2D2D2D |
 | Selection | #BDD8F4 | #285582 |
 | Selection text | #242424 | #F2F2F2 |
 
-Normal text/selection target 4.5:1 contrast and focus 3:1 against adjacent surfaces. Selected navigation/workflow/cover states include an accent edge and background; workflow/navigation also use weight. Hover must not look active. theme.py is the palette source of truth.
+Normal text/selection target 4.5:1 contrast and focus 3:1 against adjacent surfaces. Navigation uses neutral selected background and weight without an accent edge. Workflow uses neutral selected background, weight and a subtle gray edge. Library cards use neutral selection and bold text; blue is reserved for text selection, focus and other semantic accents. Mouse focus rectangles are suppressed; keyboard-only indicators remain. The workspace cover rail is removed; profiles are selected in Library. Hover must not look active. theme.py is the palette source of truth.
 
 ## Typography and geometry
 
@@ -58,3 +58,7 @@ Keep native installation identity B93AE24C-43D9-4D38-A880-93A607EA8D41 and the e
 - [Apple HIG: Menus](https://developer.apple.com/design/human-interface-guidelines/menus): succinct action labels and logical command groups.
 - [Apple HIG: Tab views](https://developer.apple.com/design/human-interface-guidelines/tab-views): related document panes with clear labels and pane-local controls.
 - [Inno Setup command line](https://jrsoftware.org/ishelp/topic_setupcmdline.htm) and [UsePreviousAppDir](https://jrsoftware.org/ishelp/topic_setup_usepreviousappdir.htm): official silent flags, log and existing installation handling.
+
+## 3.4.1 refinements
+
+Original 24-unit line navigation icons render at device scale with rounded 1.7-unit strokes. Light is the default for new settings; preserve saved appearance. Item selection: #E0E0E0 / #444444; primary action: #303030 with white text / #E6E6E6 with dark text. Hover, selected item, current line and text selection use distinct tokens. Scope local export panel styles to the panel so child button colors remain authoritative. The workspace splitter contains Workflow and Editor only; retain sidebar width and visibility without the cover rail.

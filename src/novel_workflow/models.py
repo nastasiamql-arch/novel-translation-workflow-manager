@@ -212,7 +212,7 @@ class NovelGroup:
 
 @dataclass
 class AppSettings:
-    appearance: str = "Dark"
+    appearance: str = "Light"
     appearance_migrated: bool = False
     flat_vscode_theme_migrated: bool = False
     editor_style_migrated: bool = False

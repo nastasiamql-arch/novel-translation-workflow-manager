@@ -413,33 +413,13 @@ class WorkspacePage(QWidget):
         editor_host = QWidget()
         editor_host.setLayout(editor_layout)
 
-        self.novel_cover_rail = QListWidget()
-        self.novel_cover_rail.setObjectName("novelCoverRail")
-        self.novel_cover_rail.setAccessibleName("ปกนิยายที่กำลังแปล")
-        self.novel_cover_rail.setIconSize(QSize(42, 56))
-        self.novel_cover_rail.setMinimumWidth(68)
-        self.novel_cover_rail.setMaximumWidth(68)
-        self.novel_cover_rail.setViewMode(QListWidget.IconMode)
-        self.novel_cover_rail.setFlow(QListWidget.TopToBottom)
-        self.novel_cover_rail.setWrapping(False)
-        self.novel_cover_rail.setMovement(QListWidget.Static)
-        self.novel_cover_rail.setResizeMode(QListWidget.Adjust)
-        self.novel_cover_rail.setGridSize(QSize(58, 68))
-        self.novel_cover_rail.setSpacing(4)
-        self.novel_cover_rail.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.novel_cover_rail.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.novel_cover_rail.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.novel_cover_rail.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.novel_cover_rail.itemClicked.connect(self.owner._open_novel_cover_item)
         self.workspace_splitter = QSplitter(Qt.Horizontal)
         self.workspace_splitter.setChildrenCollapsible(True)
-        self.workspace_splitter.addWidget(self.novel_cover_rail)
         self.workspace_splitter.addWidget(self.sidebar)
         self.workspace_splitter.addWidget(editor_host)
         self.workspace_splitter.setStretchFactor(0, 0)
-        self.workspace_splitter.setStretchFactor(1, 0)
-        self.workspace_splitter.setStretchFactor(2, 1)
-        self.workspace_splitter.setSizes([68, 290, 900])
+        self.workspace_splitter.setStretchFactor(1, 1)
+        self.workspace_splitter.setSizes([290, 900])
         self.workspace_splitter.splitterMoved.connect(self._remember_sidebar_width)
 
         self.goal_panel = QFrame()
@@ -477,8 +457,8 @@ class WorkspacePage(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         sizes = self.workspace_splitter.sizes()
-        if self.width() < 900 and sizes[1] > 220:
-            self.workspace_splitter.setSizes([68, 220, max(210, self.width() - 288)])
+        if self.width() < 900 and sizes[0] > 220:
+            self.workspace_splitter.setSizes([220, max(210, self.width() - 220)])
 
     def bind_history(self, *_args):
         editor = self.editor._current_editor()
@@ -571,18 +551,16 @@ class WorkspacePage(QWidget):
 
     def toggle_sidebar(self):
         sizes = self.workspace_splitter.sizes()
-        rail_width = sizes[0] if len(sizes) > 2 else 68
-        sidebar_width = sizes[1] if len(sizes) > 2 else (sizes[0] if sizes else 0)
+        sidebar_width = sizes[0] if sizes else 0
         if sidebar_width > 0:
             self.owner.settings.sidebar_width = sidebar_width
             self.owner.settings.sidebar_visible = False
             self.workspace_splitter.setSizes([
-                rail_width, 0, max(1, sum(sizes) - rail_width)
+                0, max(1, sum(sizes))
             ])
         else:
             self.owner.settings.sidebar_visible = True
             self.workspace_splitter.setSizes([
-                rail_width,
                 max(220, int(self.owner.settings.sidebar_width or 290)),
                 1000,
             ])
@@ -590,8 +568,8 @@ class WorkspacePage(QWidget):
 
     def _remember_sidebar_width(self, _position, index):
         sizes = self.workspace_splitter.sizes()
-        if index == 2 and len(sizes) > 2 and sizes[1] > 0:
-            self.owner.settings.sidebar_width = sizes[1]
+        if index == 1 and len(sizes) == 2 and sizes[0] > 0:
+            self.owner.settings.sidebar_width = sizes[0]
 
     def selected_path(self):
         index = self.file_tree.currentIndex()
@@ -832,6 +810,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
     def apply_theme(self):
         super().apply_theme()
+        if hasattr(self, "navigation"):
+            self.navigation.refresh_icons(self.settings.appearance)
         for workspace in getattr(self, "workspaces", {}).values():
             workspace.editor.set_appearance(self.settings.appearance)
 
@@ -1479,6 +1459,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         update_action.triggered.connect(self.check_updates)
         self.menuBar().addMenu("โปรแกรม").addAction(update_action)
         self.navigation = NavigationSidebar(self.settings.navigation_collapsed)
+        self.navigation.refresh_icons(self.settings.appearance)
         self.navigation.selected.connect(self.navigate)
         self.navigation.collapsedChanged.connect(self._navigation_collapsed)
 
@@ -1843,43 +1824,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         )
         self.library_empty_label.setVisible(visible == 0)
 
-    def _refresh_novel_cover_rails(self):
-        icons_by_profile = {}
-        for index in range(self.profile_cards.count()):
-            card = self.profile_cards.item(index)
-            icons_by_profile[card.data(Qt.UserRole)] = card.icon()
-
-        translating_profiles = [
-            profile for profile in self.ps_list
-            if _profile_status(profile) == "translating"
-        ]
-        selected_profile_id = self.profile.id if self.profile else None
-        for workspace in self.workspaces.values():
-            rail = workspace.novel_cover_rail
-            rail.blockSignals(True)
-            rail.clear()
-            selected_row = -1
-            for profile in translating_profiles:
-                item = QListWidgetItem(icons_by_profile.get(profile.id, QIcon()), "")
-                item.setData(Qt.UserRole, profile.id)
-                item.setData(Qt.AccessibleTextRole, profile.name)
-                rail.addItem(item)
-                if profile.id == selected_profile_id:
-                    selected_row = rail.count() - 1
-            rail.setCurrentRow(selected_row)
-            rail.blockSignals(False)
-
-    def _open_novel_cover_item(self, item):
-        if item is None:
-            return
-        profile_id = item.data(Qt.UserRole)
-        index = next(
-            (i for i, profile in enumerate(self.ps_list) if profile.id == profile_id),
-            -1,
-        )
-        if index >= 0:
-            self.select_profile(index)
-
     def _open_profile_card(self, item):
         profile_id = item.data(Qt.UserRole)
         index = next((i for i, profile in enumerate(self.ps_list) if profile.id == profile_id), -1)
@@ -1954,10 +1898,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             workspace.step_index = int(self.settings.workspace_step_indices.get(profile.id, 0))
             if self.settings.sidebar_visible:
                 workspace.workspace_splitter.setSizes([
-                    68, max(220, int(self.settings.sidebar_width or 290)), 1000,
+                    max(220, int(self.settings.sidebar_width or 290)), 1000,
                 ])
             else:
-                workspace.workspace_splitter.setSizes([68, 0, 1000])
+                workspace.workspace_splitter.setSizes([0, 1000])
             positions = self.settings.editor_positions.get(profile.id, {})
             for editor_index in range(workspace.editor.tabs.count()):
                 widget = workspace.editor.tabs.widget(editor_index)
@@ -1996,7 +1940,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.settings.last_profile_id = self.profile.id
         workspace = self._workspace(self.profile)
         workspace.update_profile_status(_profile_status(self.profile))
-        self._refresh_novel_cover_rails()
 
         self.steps = workspace.steps
         self.files = workspace.files
@@ -2433,7 +2376,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if active_key:
                 self.settings.editor_active_tab_keys[profile_id] = active_key
             self.settings.workspace_step_indices[profile_id] = workspace.step_index
-            sidebar_size = workspace.workspace_splitter.sizes()[1]
+            sidebar_size = workspace.workspace_splitter.sizes()[0]
             self.settings.sidebar_visible = sidebar_size > 0
             if sidebar_size > 0:
                 self.settings.sidebar_width = sidebar_size

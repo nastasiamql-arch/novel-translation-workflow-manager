@@ -54,6 +54,7 @@ class TxtExportTab(QWidget):
                  font_size=11.0, appearance="Dark", context_path_callback=None,
                  context_saved_callback=None, notification_callback=None, export_service=None):
         super().__init__(parent)
+        self.setObjectName("txtExportPanel")
         self.instances.add(self)
         self.export_service = export_service
         self.settings = settings
@@ -234,7 +235,7 @@ class TxtExportTab(QWidget):
 
     def set_tab_appearance(self, appearance):
         colors = editor_colors(appearance)
-        self.setStyleSheet(f"background:{colors['background']}; color:{colors['foreground']};")
+        self.setStyleSheet(f"QWidget#txtExportPanel {{ background:{colors['background']}; color:{colors['foreground']}; }}")
 
     def _update_counts(self):
         text = self.editor.toPlainText()
@@ -1113,7 +1114,7 @@ class EditorTabs(QWidget):
                 background: {colors['tab_selected']}; color: {colors['foreground']};
                 border-top: 2px solid {colors['accent']}; font-weight: 600;
             }}
-            QTabWidget#editorTabs QTabBar::tab:focus {{
+            QTabWidget#editorTabs QTabBar[keyboardFocus="true"]::tab:selected {{
                 border-bottom: 3px solid {colors['focus']};
             }}
             QFrame#editorFindPanel {{

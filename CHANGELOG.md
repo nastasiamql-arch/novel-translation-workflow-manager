@@ -2,6 +2,14 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.4.1 - 2026-10-07
+
+- Introduce a white/soft-gray Light theme, coordinated neutral Dark theme, and original scalable line navigation icons.
+- Separate neutral item selection from blue text selection and current-line highlighting; use high-contrast monochrome primary actions.
+- Remove mouse-click focus rectangles, retain keyboard-only focus indicators, and fix export panel styles overriding Submit colors and dark menu-bar colors.
+- Remove the redundant workspace cover rail; retain library profile navigation, sessions and remembered workflow sidebar width/visibility.
+- Default new settings to Light while preserving existing theme preferences. Validate contrast, real keyboard/mouse focus, primary action rendering and the four-scale geometry matrix.
+
 ## 3.4.0 - 2026-10-07
 
 - Compose MainShell from shared management actions instead of stacking two MainWindow implementations; introduce named library/workspace/statistics/settings surfaces and reusable navigation, header and responsive editor toolbar.

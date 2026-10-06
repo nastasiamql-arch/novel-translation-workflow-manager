@@ -1,7 +1,15 @@
 """Novel library surface and profile navigation controls."""
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QTabBar, QListWidget)
+    QPushButton, QTabBar, QListWidget, QStyledItemDelegate, QStyle)
+
+
+class LibraryCardDelegate(QStyledItemDelegate):
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        if option.state & QStyle.State_Selected:
+            option.font.setBold(True)
+        option.state &= ~QStyle.State_HasFocus
 
 
 class LibraryPage(QWidget):
@@ -37,6 +45,7 @@ class LibraryPage(QWidget):
         )
         library_layout.addWidget(owner.library_status_tabs)
         owner.profile_cards = QListWidget()
+        owner.profile_cards.setItemDelegate(LibraryCardDelegate(owner.profile_cards))
         owner.profile_cards.setObjectName("novelLibrary")
         owner.profile_cards.setViewMode(QListWidget.IconMode)
         owner.profile_cards.setFlow(QListWidget.LeftToRight)

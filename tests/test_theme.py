@@ -22,6 +22,28 @@ def test_semantic_selection_is_distinct_from_hover_and_current_line():
         assert tokens["selection"] != tokens["surface"]
         assert theme.editor_colors(appearance)["current_line"] != tokens["selection"]
         assert _contrast(tokens["selection_text"], tokens["selection"]) >= 4.5
+        assert len({tokens[key] for key in ('hover', 'item_selection', 'current_line', 'selection')}) == 4
+        assert _contrast(tokens['text'], tokens['item_selection']) >= 4.5
+        assert _contrast(tokens['secondary'], tokens['item_selection']) >= 4.5
+        editor = theme.editor_colors(appearance)
+        assert _contrast(editor['find_text'], editor['find_active']) >= 4.5
+
+
+def test_line_icons_render_at_multiple_device_scales():
+    from PySide6.QtCore import QSize
+    from PySide6.QtGui import QIcon
+    from PySide6.QtWidgets import QApplication
+    from novel_workflow.navigation_icons import LineIconEngine
+    app = QApplication.instance() or QApplication([])
+    for tokens in (_LIGHT, _DARK):
+        for name in ('library', 'workspace', 'progress', 'groups', 'settings'):
+            engine = LineIconEngine(name, tokens['secondary'], tokens['disabled_text'])
+            for scale in (1, 1.25, 1.5, 2):
+                pixmap = engine.scaledPixmap(QSize(20, 20), QIcon.Normal, QIcon.Off, scale)
+                assert pixmap.width() == round(20 * scale)
+                assert pixmap.devicePixelRatio() == scale
+                image = pixmap.toImage()
+                assert any(image.pixelColor(x, y).alpha() for x in range(image.width()) for y in range(image.height()))
 
 
 def test_theme_text_and_status_bar_meet_readable_contrast():
@@ -47,7 +69,7 @@ def test_theme_styles_disabled_controls_and_keyboard_focus_explicitly():
         assert "QFrame#editorHeader QToolButton:disabled" in stylesheet
         assert "QPushButton:disabled" in stylesheet
         assert "QAbstractButton:disabled" in stylesheet
-        assert "QToolButton:focus" in stylesheet
+        assert 'QToolButton[keyboardFocus="true"]' in stylesheet
         assert "font-size: 12pt" in stylesheet
 
 
@@ -59,10 +81,10 @@ def test_copy_step_action_uses_flat_text_style():
             "background: transparent;"
         ) in stylesheet
         assert "QPushButton#copyStepButton:hover {" in stylesheet
-        assert "QPushButton#copyStepButton:focus {" in stylesheet
+        assert 'QPushButton#copyStepButton[keyboardFocus="true"] {' in stylesheet
         assert "QPushButton#copyStepButton:disabled {" in stylesheet
         focus_style = stylesheet.split(
-            "QPushButton#copyStepButton:focus {", 1
+            'QPushButton#copyStepButton[keyboardFocus="true"] {', 1
         )[1].split("}", 1)[0]
         hover_style = stylesheet.split(
             "QPushButton#copyStepButton:hover {", 1
@@ -76,11 +98,7 @@ def test_workflow_active_state_and_cover_selection_do_not_draw_underlines():
     stylesheet = application_stylesheet("Dark")
     assert 'QPushButton#workflowStageButton[workflowActive="true"]' in stylesheet
     assert 'QPushButton#vocabularyButton[workflowActive="true"]' in stylesheet
-    cover_style = stylesheet.split(
-        "QListWidget#novelCoverRail::item:selected {", 1
-    )[1].split("}", 1)[0]
-    assert "border-left: 3px" in cover_style
-    assert "background: transparent" not in cover_style
+    assert "novelCoverRail" not in stylesheet
 
 
 def test_native_palette_keeps_disabled_toolbar_labels_legible():

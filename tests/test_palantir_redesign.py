@@ -197,6 +197,44 @@ def test_context_replace_refreshes_active_undo_buttons(window):
     assert not ws.redo_button.isEnabled()
 
 
+def test_workspace_uses_library_navigation_without_cover_rail(window):
+    ws = window.workspaces[window.profile.id]
+    assert ws.workspace_splitter.count() == 2
+    assert ws.workspace_splitter.widget(0) is ws.sidebar
+    assert not hasattr(ws, 'novel_cover_rail')
+    ws.toggle_sidebar()
+    assert ws.workspace_splitter.sizes()[0] == 0
+    ws.toggle_sidebar()
+    assert ws.workspace_splitter.sizes()[0] > 0
+    window.navigate('library')
+    window._open_profile_card(window.profile_cards.item(0))
+    assert window.main_pages.currentWidget() is window.workspace_stack
+
+
+def test_mouse_focus_is_quiet_and_tab_focus_is_visible(window):
+    button = window.navigation.buttons['library']
+    QTest.mouseClick(button, Qt.LeftButton)
+    assert not button.property('keyboardFocus')
+    QTest.keyClick(button, Qt.Key_Tab)
+    focused = QApplication.focusWidget()
+    assert focused is not None and focused.property('keyboardFocus')
+    QTest.mouseClick(window.navigation.buttons['workspace'], Qt.LeftButton)
+    assert not window.navigation.buttons['workspace'].property('keyboardFocus')
+
+
+@pytest.mark.parametrize('appearance', ['Light', 'Dark'])
+def test_export_primary_action_renders_theme_contrast(window, appearance):
+    from novel_workflow.theme import theme_colors
+    window.settings.appearance = appearance
+    window.apply_theme()
+    ws = window.workspaces[window.profile.id]
+    ws.editor.tabs.setCurrentWidget(ws.editor.export_tab)
+    QApplication.processEvents()
+    button = ws.editor.export_tab.submit_button
+    image = button.grab().toImage()
+    assert image.pixelColor(8, image.height() // 2).name().upper() == theme_colors(appearance)['primary']
+
+
 def test_legacy_ranges_and_unknown_fields_preserved(tmp_path):
     import json
     from dataclasses import asdict

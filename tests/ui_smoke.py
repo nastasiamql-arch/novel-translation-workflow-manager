@@ -209,7 +209,7 @@ def main() -> int:
                 assert workspace.vocabulary_button.text() == "หาศัพท์"
                 assert not hasattr(workspace, "vocabulary_polish_button")
                 assert not hasattr(workspace, "vocabulary_panel")
-                assert workspace.workspace_splitter.count() == 3
+                assert workspace.workspace_splitter.count() == 2
                 assert window.profile.workflow.steps[0].name == "แปล"
                 assert window.profile.vocabulary_step.files[0].id == legacy_vocabulary_file.id
                 saved_profile = repo.list_profiles()[0]

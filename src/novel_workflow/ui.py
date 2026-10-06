@@ -47,6 +47,8 @@ class ManagementActionsMixin:
         app=QApplication.instance()
         if app:
             capture_system_appearance(app)
+            from .focus_style import install_focus_behavior
+            install_focus_behavior(app)
             app.setStyleSheet(application_stylesheet(self.settings.appearance))
             # Qt's stylesheet engine can repopulate disabled roles with its
             # generic pale gray; restore our contrast-checked palette after it.
