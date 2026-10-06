@@ -44,41 +44,27 @@ class NovelHeader(QFrame):
 
 class NavigationSidebar(QFrame):
     selected = Signal(str)
-    collapsedChanged = Signal(bool)
     def __init__(self, collapsed=False):
         super().__init__(); self.setObjectName('navigationSidebar')
         self.buttons = {}; self.labels = {}
-        self.setMinimumWidth(56); self.setMaximumWidth(280)
+        # Legacy width/collapse preferences remain stored, but navigation is icon-only.
+        self.collapsed = True
+        self.setMinimumWidth(60); self.setMaximumWidth(60)
         layout = QVBoxLayout(self); layout.setContentsMargins(6,8,6,8)
-        self.toggle = QToolButton(); self.toggle.setText('≡'); self.toggle.setToolTip('ย่อ/ขยาย navigation')
-        self.toggle.clicked.connect(lambda: self.set_collapsed(not self.collapsed)); layout.addWidget(self.toggle)
         for key, icon, title in [('library','▦','คลังนิยาย'),('workspace','▤','กำลังทำงาน'),('progress','◷','สถิติ'),('groups','▧','กลุ่ม'),('settings','⚙','ตั้งค่า')]:
             if key == 'settings': layout.addStretch(1)
             button = QToolButton(); button.setCheckable(True); button.setObjectName('navigationItem')
             button.setIconSize(QSize(20, 20))
+            button.setToolButtonStyle(Qt.ToolButtonIconOnly)
             button.setToolTip(title); button.setAccessibleName(title)
             button.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred)
             button.clicked.connect(lambda checked=False,key=key:self.selected.emit(key))
             self.buttons[key]=button; self.labels[key]=(icon,title); layout.addWidget(button)
         self.refresh_icons("Light")
-        self.set_collapsed(collapsed)
 
     def refresh_icons(self, appearance):
         for key, button in self.buttons.items():
             button.setIcon(navigation_icon(key, theme_colors(appearance)))
-
-    def set_collapsed(self, collapsed):
-        self.collapsed = collapsed
-        self.setMaximumWidth(60 if collapsed else 280)
-        for key, button in self.buttons.items():
-            icon,title = self.labels[key]; button.setText(title)
-            button.setToolButtonStyle(Qt.ToolButtonIconOnly if collapsed else Qt.ToolButtonTextBesideIcon)
-        self.collapsedChanged.emit(collapsed)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        for button in self.buttons.values():
-            button.setToolButtonStyle(Qt.ToolButtonIconOnly if self.collapsed or self.width() < 130 else Qt.ToolButtonTextBesideIcon)
 
     def select(self, key):
         for name,button in self.buttons.items():

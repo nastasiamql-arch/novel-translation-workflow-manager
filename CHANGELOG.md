@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.4.3 - 2026-10-07
+
+- Keep main navigation permanently icon-only; remove the expand/collapse button while preserving named tooltips, keyboard access and legacy settings data.
+- Replace native patterned scrollbar pages with solid tracks and clearly contrasting handles in Light/Dark, including hover and pressed states.
+- Verify legacy expanded navigation, rendered scrollbar colors, mouse dragging and the four-scale UI geometry matrix.
+
 ## 3.4.2 - 2026-10-07
 
 - Fix successful updates being reported as version mismatches when old application dist-info folders remain after upgrades.

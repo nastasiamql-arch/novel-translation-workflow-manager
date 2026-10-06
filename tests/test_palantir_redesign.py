@@ -306,3 +306,28 @@ def test_recovery_can_restore_oldest_retained_copy(tmp_path):
     p.write_text('wrong',encoding='utf-8')
     restore_backup(p,oldest)
     assert p.read_text(encoding='utf-8')=='Chapter 1'
+
+@pytest.mark.parametrize('legacy_collapsed', [False, True])
+def test_navigation_is_always_icon_only(legacy_collapsed):
+    from novel_workflow.shell_components import NavigationSidebar
+    from PySide6.QtWidgets import QToolButton
+    app = QApplication.instance() or QApplication([])
+    sidebar = NavigationSidebar(legacy_collapsed)
+    sidebar.resize(240, 600)
+    sidebar.show()
+    app.processEvents()
+    assert sidebar.width() == 60
+    assert sidebar.collapsed
+    assert len(sidebar.findChildren(QToolButton)) == 5
+    for key, button in sidebar.buttons.items():
+        assert button.toolButtonStyle() == Qt.ToolButtonIconOnly
+        assert button.toolTip() and button.accessibleName()
+    sidebar.select('groups')
+    assert sidebar.buttons['groups'].isChecked()
+    sidebar.close()
+
+
+def test_shell_ignores_legacy_expanded_navigation_width(window):
+    assert window.navigation.width() == 60
+    assert all(button.toolButtonStyle() == Qt.ToolButtonIconOnly
+               for button in window.navigation.buttons.values())

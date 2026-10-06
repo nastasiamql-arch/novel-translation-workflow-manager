@@ -10,6 +10,7 @@ _SYSTEM_APPEARANCE_DARK: bool | None = None
 # Quiet neutral surfaces share an understated blue accent. Selection, focus,
 # current line and hover have independent roles across every appearance.
 _LIGHT = {
+    "scroll_track": "#F3F3F3", "scroll_thumb": "#808080", "scroll_thumb_hover": "#626262",
     "app": "#F3F3F3", "surface": "#FFFFFF", "sidebar": "#F9F9F9",
     "surface2": "#ECECEC", "item_selection": "#E0E0E0", "hover": "#F0F0F0", "current_line": "#F6F6F6", "elevated": "#FFFFFF",
     "border": "#E5E5E5", "text": "#303030", "secondary": "#555555",
@@ -21,6 +22,7 @@ _LIGHT = {
     "status": "#E8E8E8", "status_text": "#242424",
 }
 _DARK = {
+    "scroll_track": "#212121", "scroll_thumb": "#858585", "scroll_thumb_hover": "#A0A0A0",
     "app": "#212121", "surface": "#242424", "sidebar": "#282828",
     "surface2": "#303030", "item_selection": "#444444", "hover": "#343434", "current_line": "#2D2D2D", "elevated": "#2B2B2B",
     "border": "#3F3F3F", "text": "#E6E6E6", "secondary": "#C2C2C2",
@@ -232,8 +234,14 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QDialogButtonBox QPushButton {{ min-width: 84px; }}
     QSplitter::handle {{ background: {c['border']}; width: 1px; height: 1px; }}
     QScrollArea, QAbstractScrollArea {{ background: transparent; border: 0; }}
-    QScrollBar:vertical, QScrollBar:horizontal {{ background: {c['app']}; border: 0; margin: 0; width: 14px; height: 14px; }}
-    QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{ background: {c['border']}; border: 3px solid {c['app']}; border-radius: 0; min-height: 36px; min-width: 36px; }}
-    QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {{ background: {c['muted']}; }}
-    QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+    QScrollBar:vertical {{ background: {c['scroll_track']}; border: 0; margin: 0; width: 16px; }}
+    QScrollBar:horizontal {{ background: {c['scroll_track']}; border: 0; margin: 0; height: 16px; }}
+    QScrollBar::handle:vertical {{ background: {c['scroll_thumb']}; border: 3px solid {c['scroll_track']}; border-radius: 7px; min-height: 36px; }}
+    QScrollBar::handle:horizontal {{ background: {c['scroll_thumb']}; border: 3px solid {c['scroll_track']}; border-radius: 7px; min-width: 36px; }}
+    QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover,
+    QScrollBar::handle:vertical:pressed, QScrollBar::handle:horizontal:pressed {{ background: {c['scroll_thumb_hover']}; }}
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
+    QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: {c['scroll_track']}; }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; background: transparent; border: 0; }}
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; background: transparent; border: 0; }}
     """

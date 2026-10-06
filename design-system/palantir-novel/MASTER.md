@@ -66,3 +66,9 @@ Original 24-unit line navigation icons render at device scale with rounded 1.7-u
 ## 3.4.2 update identity
 
 Frozen executable version comes from an embedded app-version.txt generated from pyproject.toml, independent of stale dist-info directories. Installer cleans only novelworkflow-*.dist-info under the app root and _internal, before copying current files. The helper probes --check-runtime --expected-version after Setup. CI installs twice on a disposable runner, verifies previous directory reuse, metadata cleanup, executable replacement, stable shortcut and unchanged data. [Inno InstallDelete](https://jrsoftware.org/ishelp/topic_installdeletesection.htm) executes before file installation.
+
+## 3.4.3 compact navigation and scrollbars
+
+Main navigation is a permanent 60 logical-pixel icon rail. There is no expand/collapse control; each item retains its Thai tooltip, accessible name, keyboard focus and selected background. Legacy navigation width/collapse settings remain stored for compatibility but do not change the icon rail.
+
+Scrollbar tracks and add/sub-page areas use a solid neutral surface rather than native patterned rendering. Handles have at least 3:1 contrast against their track in both appearances, a 16-pixel hit area and 36-pixel minimum length. Hover/pressed handles become more prominent. Vertical and horizontal orientation metrics are separate.

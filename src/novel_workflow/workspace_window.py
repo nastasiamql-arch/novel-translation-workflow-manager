@@ -1461,7 +1461,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.navigation = NavigationSidebar(self.settings.navigation_collapsed)
         self.navigation.refresh_icons(self.settings.appearance)
         self.navigation.selected.connect(self.navigate)
-        self.navigation.collapsedChanged.connect(self._navigation_collapsed)
 
         root = QWidget()
         root.setObjectName("appShell")
@@ -1503,8 +1502,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.shell_splitter.addWidget(self.navigation); self.shell_splitter.addWidget(self.main_pages)
         self.shell_splitter.setStretchFactor(1, 1)
         self.shell_splitter.setChildrenCollapsible(False)
-        self.shell_splitter.setSizes([60 if self.settings.navigation_collapsed else self.settings.navigation_width, 1200])
-        self.shell_splitter.splitterMoved.connect(self._navigation_resized)
+        self.shell_splitter.setSizes([60, 1200])
         root_layout.addWidget(self.shell_splitter, 1)
         self.main_pages.currentChanged.connect(self._sync_navigation)
 
@@ -1597,16 +1595,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if page is self.utility_page:
             key = {"progress":"progress", "groups":"groups", "settings":"settings"}.get(self._active_utility_page, "workspace")
         self.navigation.select(key)
-
-    def _navigation_collapsed(self, collapsed):
-        self.settings.navigation_collapsed = collapsed
-        self.shell_splitter.setSizes([60 if collapsed else self.settings.navigation_width, self.width()])
-        self.repo.save_settings(self.settings)
-
-    def _navigation_resized(self, *_args):
-        if not self.navigation.collapsed:
-            self.settings.navigation_width = self.shell_splitter.sizes()[0]
-            self.repo.save_settings(self.settings)
 
     def check_updates(self, checked=False, manual=None):
         manual = True if manual is None else manual

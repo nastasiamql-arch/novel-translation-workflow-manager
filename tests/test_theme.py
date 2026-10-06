@@ -118,3 +118,42 @@ def test_system_appearance_does_not_follow_the_last_app_theme(monkeypatch):
     assert theme.theme_colors("System") is _LIGHT
     monkeypatch.setattr(theme, "_SYSTEM_APPEARANCE_DARK", True)
     assert theme.theme_colors("System") is _DARK
+
+
+def test_scrollbars_have_visible_handles_and_unpatterned_tracks():
+    for appearance, tokens in (("Dark", _DARK), ("Light", _LIGHT)):
+        assert _contrast(tokens["scroll_thumb"], tokens["scroll_track"]) >= 3
+        assert _contrast(tokens["scroll_thumb_hover"], tokens["scroll_track"]) >= 3
+        stylesheet = application_stylesheet(appearance)
+        for direction in ("vertical", "horizontal"):
+            assert f"QScrollBar::add-page:{direction}" in stylesheet
+            assert f"QScrollBar::sub-page:{direction}" in stylesheet
+        assert f"background: {tokens['scroll_thumb']}" in stylesheet
+
+
+def test_scrollbar_track_is_solid_and_thumb_remains_operable():
+    from PySide6.QtCore import Qt, QPoint
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QScrollBar
+    app = QApplication.instance() or QApplication([])
+    for appearance, tokens in (("Dark", _DARK), ("Light", _LIGHT)):
+        bar = QScrollBar(Qt.Vertical)
+        bar.setStyleSheet(application_stylesheet(appearance))
+        bar.setRange(0, 100)
+        bar.setPageStep(10)
+        bar.resize(16, 300)
+        bar.show()
+        app.processEvents()
+        image = bar.grab().toImage()
+        # The central handle and empty track are real rendered colors, without
+        # the native Windows patterned add/sub-page background.
+        assert image.pixelColor(8, 15).name().upper() in {
+            tokens['scroll_thumb'], tokens['scroll_thumb_hover']
+        }
+        assert all(image.pixelColor(8, y).name().upper() == tokens['scroll_track']
+                   for y in range(150, 200))
+        QTest.mousePress(bar, Qt.LeftButton, pos=QPoint(8, 15))
+        QTest.mouseMove(bar, QPoint(8, 150))
+        QTest.mouseRelease(bar, Qt.LeftButton, pos=QPoint(8, 150))
+        assert bar.value() > 0
+        bar.close()
