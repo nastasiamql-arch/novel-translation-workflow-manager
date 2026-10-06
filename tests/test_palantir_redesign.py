@@ -40,7 +40,10 @@ from novel_workflow.workspace_editor import CodeEditor
 from novel_workflow.export_service import ExportService, record_export, daily_export_count, verified_goal_text
 
 @pytest.fixture
-def window(tmp_path):
+def window(tmp_path, monkeypatch):
+    def unexpected_warning(_parent, title, message, *_args):
+        raise AssertionError(f'{title}: {message}')
+    monkeypatch.setattr(QMessageBox, 'warning', unexpected_warning)
     app = QApplication.instance() or QApplication([])
     app.setQuitOnLastWindowClosed(False)
     repo = ProjectRepository(tmp_path/'data')
