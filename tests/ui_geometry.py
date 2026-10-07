@@ -92,6 +92,7 @@ def main():
                     win.grab().save(f"build/ui-{theme}-{width}.png")
         for key in ("library", "progress", "groups", "settings", "workspace"):
             win.navigate(key); win.resize(900,600); app.processEvents()
+            assert not win.brand_toolbar.isVisible()
             assert win.width()==900 and win.height()==600,(key,win.size())
             if key == "progress":
                 statistics = win.utility_stack.currentWidget()

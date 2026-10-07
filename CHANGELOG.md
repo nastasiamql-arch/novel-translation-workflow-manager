@@ -2,6 +2,11 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.5.2 - 2026-10-07
+
+- Keep the duplicate custom Palantir title toolbar hidden on every page. Preserve the native Windows titlebar and the Program menu.
+- Add navigation geometry coverage to ensure switching pages never restores the title strip.
+
 ## 3.5.1 - 2026-10-07
 
 - Remove the duplicate brand toolbar while Workspace is active, reclaiming the top strip without hiding navigation or the update menu.

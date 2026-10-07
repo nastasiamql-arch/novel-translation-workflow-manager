@@ -1439,6 +1439,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         bar = self.addToolBar("Main")
         self.brand_toolbar = bar
         bar.setObjectName("mainToolbar")
+        bar.hide()
         bar.setMovable(False)
         bar.setIconSize(QSize(20, 20))
 
@@ -1591,8 +1592,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if page is self.utility_page:
             key = {"progress":"progress", "groups":"groups", "settings":"settings"}.get(self._active_utility_page, "workspace")
         self.navigation.select(key)
-        # NovelHeader already identifies the workspace; avoid a duplicate top strip.
-        self.brand_toolbar.setVisible(page is not self.workspace_stack)
+        # Keep the native window titlebar and menu, without a custom title strip.
+        self.brand_toolbar.hide()
 
     def check_updates(self, checked=False, manual=None):
         manual = True if manual is None else manual

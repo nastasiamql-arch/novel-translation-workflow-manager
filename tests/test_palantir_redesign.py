@@ -615,7 +615,7 @@ def test_workspace_fills_content_edges_without_brand_toolbar(window):
     assert export.editor.geometry().right() == export.width()-1
     assert export.submit_button.mapTo(export,export.submit_button.rect().topRight()).x() < export.width()-1
     window.navigate('library'); QApplication.processEvents()
-    assert toolbar.isVisible()
+    assert not toolbar.isVisible()
     window.navigate('workspace'); QApplication.processEvents()
     assert not toolbar.isVisible()
     assert window.menuBar().isVisible()

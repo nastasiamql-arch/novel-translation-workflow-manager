@@ -94,3 +94,7 @@ Dragging keeps native pointer-following previews. Empty tile gaps resolve to the
 ## 3.5.1 workspace edges
 
 Workspace omits the duplicate global brand toolbar while retaining the native menu, titlebar and icon navigation. TXT Export has zero outer margins so the editor spans its content pane. Basic controls and footer actions each retain internal padding. Light/Dark geometry checks cover both supported window sizes at 1.0, 1.25, 1.5 and 2.0 scale.
+
+## 3.5.2 native titlebar
+
+The redundant Palantir brand toolbar stays hidden on every page. The native Windows titlebar and Program menu remain visible. Page navigation must not restore the toolbar.
