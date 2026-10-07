@@ -2,6 +2,10 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.5.4 - 2026-10-07
+
+- Suppress floating hover tooltips throughout Palantir, including the drag hint on novel lists.
+
 ## 3.5.3 - 2026-10-07
 
 - Relaunch Palantir in the normal visible window state after in-app updates. The detached helper itself remains hidden.

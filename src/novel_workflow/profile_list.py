@@ -26,7 +26,6 @@ class ReorderableProfileList(QListWidget):
         self.setDragDropMode(QAbstractItemView.InternalMove)
         self.setDefaultDropAction(Qt.MoveAction)
         self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.setToolTip("กดแล้วลากนิยายเพื่อจัดลำดับ")
         self._press_position = None
         self._dragging = False
         self._drag_profile_id = None

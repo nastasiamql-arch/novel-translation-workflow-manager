@@ -619,3 +619,22 @@ def test_workspace_fills_content_edges_without_brand_toolbar(window):
     window.navigate('workspace'); QApplication.processEvents()
     assert not toolbar.isVisible()
     assert window.menuBar().isVisible()
+
+
+def test_profile_reorder_lists_have_no_hover_instruction():
+    from novel_workflow.profile_list import ReorderableProfileList
+    app=QApplication.instance() or QApplication([])
+    listing=ReorderableProfileList()
+    assert listing.toolTip() == ''
+
+
+def test_application_suppresses_all_floating_tooltips(window):
+    from PySide6.QtCore import QEvent, QPoint
+    from PySide6.QtGui import QHelpEvent
+    from PySide6.QtWidgets import QToolTip
+    target=window.navigation.buttons['library']
+    target.setToolTip('temporary tooltip')
+    point=target.rect().center()
+    event=QHelpEvent(QEvent.ToolTip,point,target.mapToGlobal(point))
+    assert QApplication.sendEvent(target,event)
+    assert not QToolTip.isVisible()

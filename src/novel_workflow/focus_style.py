@@ -1,6 +1,6 @@
 """Quiet pointer interaction with explicit keyboard-only focus indicators."""
 from PySide6.QtCore import QObject, QEvent, Qt
-from PySide6.QtWidgets import QApplication, QWidget, QProxyStyle, QStyle
+from PySide6.QtWidgets import QApplication, QWidget, QProxyStyle, QStyle, QToolTip
 
 
 class QuietFocusStyle(QProxyStyle):
@@ -21,6 +21,9 @@ class FocusInputFilter(QObject):
 
     def eventFilter(self, watched, event):
         kind = event.type()
+        if kind == QEvent.ToolTip:
+            QToolTip.hideText()
+            return True
         if kind == QEvent.MouseButtonPress:
             self.mark(QApplication.focusWidget(), False)
             self.mark(watched, False)
