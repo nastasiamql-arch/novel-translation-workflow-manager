@@ -2,6 +2,7 @@
 from datetime import datetime
 from copy import deepcopy
 from .translation_progress import local_day
+from .text_normalization import remove_empty_lines
 
 
 def record_export(profile, filename, prefix, sequence, timestamp=None):
@@ -64,6 +65,7 @@ class ExportService:
         return profile
 
     def save_draft(self, text):
+        text = remove_empty_lines(text)
         profile = self.profile()
         if profile.txt_export_draft != text:
             profile.txt_export_draft = text

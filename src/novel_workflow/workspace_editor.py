@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from .theme import editor_colors
 from .models import AppSettings
 from .recovery import commit_staged
+from .text_normalization import remove_empty_lines, cleans_file_text
 
 
 TEXT_EXTENSIONS = {
@@ -213,7 +214,7 @@ class TxtExportTab(QWidget):
         self.set_tab_appearance(appearance)
         self.refresh_verified()
         if self.export_service:
-            self.editor.setPlainText(self.export_service.profile().txt_export_draft)
+            self.editor.setPlainText(remove_empty_lines(self.export_service.profile().txt_export_draft))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -322,7 +323,7 @@ class TxtExportTab(QWidget):
             self.directory.setText(folder)
 
     def copy_text(self):
-        QApplication.clipboard().setText(self.editor.toPlainText())
+        QApplication.clipboard().setText(remove_empty_lines(self.editor.toPlainText()))
         self.status_callback("คัดลอกแล้ว")
 
     def copy_and_export(self):
@@ -358,7 +359,7 @@ class TxtExportTab(QWidget):
                 if not context_path.is_file():
                     raise OSError("ไม่พบไฟล์ Context")
             target = folder / f"{prefix}{self.current.value()}.txt"
-            text = self.editor.toPlainText()
+            text = remove_empty_lines(self.editor.toPlainText())
             destinations = [target]
             if context_path is not None:
                 destinations.append(context_path)
@@ -415,6 +416,7 @@ class CodeEditor(QPlainTextEdit):
 
     def __init__(self, parent=None, font_size=11.0, appearance="Dark"):
         super().__init__(parent)
+        self.clean_empty_lines = True
         self.appearance = appearance
         self.colors = editor_colors(appearance)
         self.setObjectName("codeEditor")
@@ -452,6 +454,18 @@ class CodeEditor(QPlainTextEdit):
         self.setTabStopDistance(metrics.horizontalAdvance(" ") * 4)
         self.update_line_number_area_width()
         self.highlight_current_line()
+
+    def insertFromMimeData(self, source):
+        if self.clean_empty_lines and source.hasText():
+            self.insertPlainText(remove_empty_lines(source.text()))
+        else:
+            super().insertFromMimeData(source)
+
+    def createMimeDataFromSelection(self):
+        data = super().createMimeDataFromSelection()
+        if self.clean_empty_lines and data.hasText():
+            data.setText(remove_empty_lines(data.text()))
+        return data
 
     def set_font_size(self, size):
         font = self.font()
@@ -821,6 +835,10 @@ class EditorTabs(QWidget):
             return None
 
         editor = CodeEditor(font_size=self._font_size, appearance=self.appearance)
+        editor.clean_empty_lines = cleans_file_text(path)
+        original_text = text
+        if editor.clean_empty_lines:
+            text = remove_empty_lines(text)
         editor.setProperty("documentPath", str(path))
         editor.setProperty("documentDirty", False)
         editor.setProperty("saveState", "บันทึกแล้ว")
@@ -855,6 +873,8 @@ class EditorTabs(QWidget):
         self.tabs.setCurrentIndex(index)
         editor.setFocus()
         self._update_status(index)
+        if text != original_text:
+            self._set_dirty(editor, True, "ลบบรรทัดว่างแล้ว · ยังไม่ได้บันทึก")
         return editor
 
     def save_editor(self, editor, quiet=False, autosave=False) -> bool:
@@ -866,8 +886,11 @@ class EditorTabs(QWidget):
             timer.stop()
 
         staged_path = None
+        text = editor.toPlainText()
+        if editor.clean_empty_lines:
+            text = remove_empty_lines(text)
         try:
-            staged_path = _stage_text_file(path, editor.toPlainText())
+            staged_path = _stage_text_file(path, text)
             context = self.context_path_callback()
             if context and Path(context).expanduser().resolve() == path:
                 commit_staged([(path, staged_path)])
@@ -887,6 +910,19 @@ class EditorTabs(QWidget):
         finally:
             _cleanup_staged_text_file(staged_path)
 
+        # Do not interrupt typing with an autosave cleanup. Explicit saves
+        # update the editor in one undoable operation after the write succeeds.
+        if not autosave and text != editor.toPlainText():
+            cursor = editor.textCursor()
+            position = cursor.position()
+            cursor.beginEditBlock()
+            cursor.select(QTextCursor.Document)
+            cursor.insertText(text)
+            cursor.endEditBlock()
+            cursor.setPosition(min(position, len(text)))
+            editor.setTextCursor(cursor)
+            if timer is not None:
+                timer.stop()
         self._set_dirty(
             editor,
             False,
