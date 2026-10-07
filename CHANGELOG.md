@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.5.1 - 2026-10-07
+
+- Remove the duplicate brand toolbar while Workspace is active, reclaiming the top strip without hiding navigation or the update menu.
+- Make the TXT Export writing surface span the content width; keep comfortable padding only around controls and Submit.
+- Verify edge geometry in Light/Dark at both window sizes and all four DPI scales.
+
 ## 3.5.0 - 2026-10-07
 
 - Add Ctrl/Shift/Ctrl+A multiple selection throughout file lists and explorer; batch attachment removal/order changes, working-file open/removal, launch-target removal and file-manager open/attach/delete.

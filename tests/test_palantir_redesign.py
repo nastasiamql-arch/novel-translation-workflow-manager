@@ -600,3 +600,22 @@ def test_file_lists_and_launch_targets_allow_multiple_selection(window):
         assert listing.selectionMode()==QAbstractItemView.ExtendedSelection
     window.settings_launch_targets.selectAll();window.remove_settings_launch_target()
     assert window.profile.launch_targets==[]
+
+
+def test_workspace_fills_content_edges_without_brand_toolbar(window):
+    from PySide6.QtWidgets import QToolBar
+    window.navigate('workspace'); QApplication.processEvents()
+    toolbar=window.findChild(QToolBar,'mainToolbar')
+    assert not toolbar.isVisible()
+    workspace=window.workspaces[window.profile.id]
+    assert workspace.mapTo(window.centralWidget(),workspace.rect().topLeft()).y() == 0
+    export=workspace.editor.export_tab
+    workspace.editor.tabs.setCurrentWidget(export); QApplication.processEvents()
+    assert export.editor.geometry().left() == 0
+    assert export.editor.geometry().right() == export.width()-1
+    assert export.submit_button.mapTo(export,export.submit_button.rect().topRight()).x() < export.width()-1
+    window.navigate('library'); QApplication.processEvents()
+    assert toolbar.isVisible()
+    window.navigate('workspace'); QApplication.processEvents()
+    assert not toolbar.isVisible()
+    assert window.menuBar().isVisible()

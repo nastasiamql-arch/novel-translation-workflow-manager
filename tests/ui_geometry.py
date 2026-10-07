@@ -61,6 +61,11 @@ def main():
                 assert win.width()==width and win.height()==height,(win.size(),width,height)
                 ws.editor.tabs.setCurrentWidget(ws.editor.export_tab); app.processEvents()
                 assert_layout(ws.editor.export_tab)
+                assert not win.brand_toolbar.isVisible()
+                assert ws.mapTo(win.centralWidget(), ws.rect().topLeft()).y() == 0
+                export = ws.editor.export_tab
+                assert export.editor.geometry().left() == 0
+                assert export.editor.geometry().right() == export.width()-1
                 assert ws.editor.export_tab.editor.viewport().height() >= 80,(theme,width,ws.editor.export_tab.editor.viewport().size(),ws.editor.export_tab.size(),ws.novel_header.size())
                 ws.editor.export_tab.advanced_button.setChecked(True); app.processEvents()
                 assert_layout(ws.editor.export_tab)

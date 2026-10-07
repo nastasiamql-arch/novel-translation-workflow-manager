@@ -90,3 +90,7 @@ Settings AttachmentList derives its height from styled row hints, font metrics a
 File views use ExtendedSelection (Ctrl-click, Shift-click, Ctrl+A). Batch attachment moves preserve relative order and keep selection. Working-file and file-manager open operations snapshot the selection before navigation; metadata removal only detaches links. File-manager physical deletion confirms the batch, cleans links only for successfully removed files, and reports failures. Single-file rename stays explicit. Context and cover pickers remain singular because each profile owns one path.
 
 Dragging keeps native pointer-following previews. Empty tile gaps resolve to the nearest visible slot, with a neutral insertion marker. A 16ms edge-scroll timer moves at up to 12 logical pixels per tick near a 40-pixel edge zone. Marker/timer/state reset on leave/cancel/drop. Progress polling is deferred during a drag. The interaction pattern follows pointer ownership and nearest-slot drop resolution described in [UI Toolkit Series: Drag-and-Drop Manipulator](https://www.youtube.com/watch?v=HvsCvq0L6I4), adapted to Qt.
+
+## 3.5.1 workspace edges
+
+Workspace omits the duplicate global brand toolbar while retaining the native menu, titlebar and icon navigation. TXT Export has zero outer margins so the editor spans its content pane. Basic controls and footer actions each retain internal padding. Light/Dark geometry checks cover both supported window sizes at 1.0, 1.25, 1.5 and 2.0 scale.
