@@ -2,6 +2,11 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.5.3 - 2026-10-07
+
+- Relaunch Palantir in the normal visible window state after in-app updates. The detached helper itself remains hidden.
+- Add a regression check so the updated application cannot be relaunched with its window hidden.
+
 ## 3.5.2 - 2026-10-07
 
 - Keep the duplicate custom Palantir title toolbar hidden on every page. Preserve the native Windows titlebar and the Program menu.

@@ -53,7 +53,7 @@ $tempResult = $resultPath + '.part'
 $result | ConvertTo-Json | Set-Content -LiteralPath $tempResult -Encoding UTF8
 Move-Item -LiteralPath $tempResult -Destination $resultPath -Force
 try {
-    if ($canRestart) { Start-Process -FilePath $task.executable -WindowStyle Hidden }
+    if ($canRestart) { Start-Process -FilePath $task.executable }
     else { throw $result.error }
 } catch {
     Add-Type -AssemblyName System.Windows.Forms

@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 import pytest
 from novel_workflow.storage import write_json
@@ -29,6 +30,12 @@ def test_stable_installer_identity_and_update_mode():
     assert '/SUPPRESSMSGBOXES' not in args
 
 
+def test_helper_relaunches_palantir_as_a_visible_window():
+    relaunch = HELPER.split("try {\n    if ($canRestart)", 1)[1].split("\n} catch {", 1)[0]
+    assert "Start-Process -FilePath $task.executable" in relaunch
+    assert "-WindowStyle Hidden" not in relaunch
+
+
 @pytest.mark.skipif(sys.platform!='win32',reason='Windows updater integration')
 @pytest.mark.parametrize('exit_code,probe_exit',[(0,0),(3,0),(0,1)])
 def test_detached_helper_simulated_upgrade_preserves_data_and_path(tmp_path,exit_code,probe_exit):
@@ -37,9 +44,10 @@ def test_detached_helper_simulated_upgrade_preserves_data_and_path(tmp_path,exit
     data=tmp_path/'NovelWorkflow'; data.mkdir()
     (data/'profiles.json').write_text('{"legacy":"preserved"}',encoding='utf-8')
     shortcut=install/'Palantir Novel.lnk'; shortcut.write_text('existing',encoding='utf-8')
-    executable=install/'Palantir.cmd'; executable.write_text('@echo off\r\nexit /b 0\r\n',encoding='utf-8')
+    relaunch_marker=tmp_path/'relaunch.txt'
+    executable=install/'Palantir.cmd'; executable.write_text(f'@echo off\r\necho launched>"{relaunch_marker}"\r\nexit /b 0\r\n',encoding='utf-8')
     old=executable.read_bytes()
-    new=tmp_path/'new-app.cmd'; new.write_text(f'@echo off\r\nrem new version\r\nif "%~1"=="--check-runtime" exit /b {probe_exit}\r\nexit /b 0\r\n',encoding='utf-8')
+    new=tmp_path/'new-app.cmd'; new.write_text(f'@echo off\r\nrem new version\r\nif "%~1"=="--check-runtime" exit /b {probe_exit}\r\necho launched>"{relaunch_marker}"\r\nexit /b 0\r\n',encoding='utf-8')
     installer=tmp_path/'simulated-setup.cmd'
     script='@echo off\r\n'
     if exit_code==0: script+=f'copy /y "{new}" "{executable}" >nul\r\n'
@@ -60,6 +68,9 @@ def test_detached_helper_simulated_upgrade_preserves_data_and_path(tmp_path,exit
     outcome=json.loads(result.read_text(encoding='utf-8-sig'))
     assert outcome['success']==(exit_code==0 and probe_exit==0),outcome
     assert outcome['exit_code']==exit_code
+    deadline=time.monotonic()+5
+    while not relaunch_marker.exists() and time.monotonic()<deadline: time.sleep(.05)
+    assert relaunch_marker.is_file(), 'Helper did not relaunch the updated application.'
     assert (data/'profiles.json').read_text(encoding='utf-8')=='{"legacy":"preserved"}'
     assert list(install.glob('*.lnk'))==[shortcut]
     assert executable.read_bytes()==(new.read_bytes() if exit_code==0 else old)

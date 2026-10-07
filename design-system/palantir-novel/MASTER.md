@@ -98,3 +98,7 @@ Workspace omits the duplicate global brand toolbar while retaining the native me
 ## 3.5.2 native titlebar
 
 The redundant Palantir brand toolbar stays hidden on every page. The native Windows titlebar and Program menu remain visible. Page navigation must not restore the toolbar.
+
+## 3.5.3 visible updater restart
+
+The detached PowerShell helper runs hidden. After installation and version probing, it relaunches the application without a hidden-window startup style so Qt shows the main window normally.
