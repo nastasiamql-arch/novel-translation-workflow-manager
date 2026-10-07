@@ -27,12 +27,26 @@ TXT_EXPORT_TAB = "TXT Export"
 
 
 def _stage_text_file(destination: Path, text: str) -> Path:
-    """Write beside the destination so the completed file can be atomically replaced."""
+    """Stage beside the destination, inside a hidden directory, for atomic replacement."""
     staged_path = None
+    staging_dir = None
     try:
+        staging_dir = Path(tempfile.mkdtemp(
+            dir=destination.parent, prefix=".palantir-staging-"
+        ))
+        # Windows Explorer does not treat a leading dot as hidden. Hide the
+        # directory itself so interrupted writes never clutter the user's folder.
+        if os.name == "nt":
+            try:
+                import ctypes
+                attributes = ctypes.windll.kernel32.GetFileAttributesW(str(staging_dir))
+                if attributes != -1:
+                    ctypes.windll.kernel32.SetFileAttributesW(str(staging_dir), attributes | 0x2)
+            except (AttributeError, OSError):
+                pass
         with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", newline="", dir=destination.parent,
-            prefix=f".{destination.name}.", suffix=".part", delete=False,
+            mode="w", encoding="utf-8", newline="", dir=staging_dir,
+            prefix=f"{destination.name}.", suffix=".part", delete=False,
         ) as staged:
             staged_path = Path(staged.name)
             staged.write(text)
@@ -40,9 +54,23 @@ def _stage_text_file(destination: Path, text: str) -> Path:
             os.fsync(staged.fileno())
         return staged_path
     except OSError:
-        if staged_path is not None:
-            staged_path.unlink(missing_ok=True)
+        _cleanup_staged_text_file(staged_path, staging_dir)
         raise
+
+
+def _cleanup_staged_text_file(staged_path: Path | None, staging_dir: Path | None = None):
+    """Remove a completed staging file and its now-empty private directory."""
+    if staged_path is not None:
+        try:
+            staged_path.unlink(missing_ok=True)
+        except OSError:
+            return
+        staging_dir = staging_dir or staged_path.parent
+    if staging_dir is not None:
+        try:
+            staging_dir.rmdir()
+        except OSError:
+            pass
 
 
 class TxtExportTab(QWidget):
@@ -347,10 +375,7 @@ class TxtExportTab(QWidget):
             return False
         finally:
             for _destination, staged in staged_files:
-                try:
-                    staged.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                _cleanup_staged_text_file(staged)
         completed = self.current.value()
         self.current.setValue(self.start.value() if completed >= self.end.value() else completed + 1)
         self._save_settings()
@@ -860,11 +885,7 @@ class EditorTabs(QWidget):
                 QMessageBox.warning(self, "บันทึกไฟล์ไม่ได้", str(exc))
             return False
         finally:
-            if staged_path is not None:
-                try:
-                    staged_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
+            _cleanup_staged_text_file(staged_path)
 
         self._set_dirty(
             editor,

@@ -1434,6 +1434,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def build(self):
         self._settings_open = False
         self.workspaces = {}
+        self._session_save_timer = QTimer(self)
+        self._session_save_timer.setSingleShot(True)
+        self._session_save_timer.setInterval(250)
+        self._session_save_timer.timeout.connect(self._persist_workspace_session)
         self.resize(1440, 860)
 
         bar = self.addToolBar("Main")
@@ -1882,6 +1886,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 self.settings.editor_tab_order.get(profile.id),
                 self.settings.editor_active_tab_keys.get(profile.id),
             )
+            workspace.editor.tabs.currentChanged.connect(self._schedule_workspace_session_save)
+            workspace.editor.tabs.tabBar().tabMoved.connect(
+                lambda _from, _to: self._schedule_workspace_session_save()
+            )
+            workspace.editor.tabs.tabCloseRequested.connect(
+                lambda _index: self._schedule_workspace_session_save()
+            )
             workspace.step_index = int(self.settings.workspace_step_indices.get(profile.id, 0))
             if self.settings.sidebar_visible:
                 workspace.workspace_splitter.setSizes([
@@ -1959,6 +1970,23 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._update_progress_page(workspace)
         self.statusBar().showMessage(f"กำลังทำงาน: {self.profile.name}", 2500)
         self._update_editor_status()
+        self._schedule_workspace_session_save()
+
+    def _schedule_workspace_session_save(self, *_args):
+        timer = getattr(self, "_session_save_timer", None)
+        if timer is not None:
+            timer.start()
+
+    def _persist_workspace_session(self):
+        """Persist tab/session changes promptly so a later crash loses little state."""
+        if not hasattr(self, "workspaces"):
+            return
+        try:
+            self._capture_sessions()
+            self.repo.save_settings(self.settings)
+        except (OSError, ValueError) as exc:
+            if hasattr(self, "statusBar"):
+                self.statusBar().showMessage(f"บันทึกสถานะหน้าทำงานไม่ได้: {exc}", 6000)
 
     def refresh_steps(self):
         if getattr(self, "_settings_open", False):
@@ -2441,6 +2469,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.goal_status.setToolTip(f"{self.profile.name}: ยังไม่ได้ตั้งเป้าหมาย")
 
     def closeEvent(self, event):
+        timer = getattr(self, "_session_save_timer", None)
+        if timer is not None:
+            timer.stop()
         workers = [self._update_check_worker, self._update_download_worker]
         for worker in workers:
             if worker and worker.isRunning():

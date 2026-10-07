@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.5.5 - 2026-10-08
+
+- Save the active profile, open editor tabs, tab order and selected document shortly after workspace changes so they survive an unexpected close.
+- Keep atomic-save staging files inside a private hidden folder beside the destination, preventing `.part` files from cluttering Desktop and working folders while preserving same-volume replacement.
+- Recover the supplied orphan `.SEG.txt._semw29v.part` to `SEG.txt`, verify matching SHA-256, then remove the redundant staging copy.
+
 ## 3.5.4 - 2026-10-07
 
 - Suppress floating hover tooltips throughout Palantir, including the drag hint on novel lists.

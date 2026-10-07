@@ -29,6 +29,19 @@ def test_export_tab_stays_last(tmp_path):
     assert tabs.tabs.indexOf(tabs.export_tab) == tabs.tabs.count()-1
     tabs.tabs.tabBar().moveTab(tabs.tabs.count()-1, 0)
     assert tabs.tabs.indexOf(tabs.export_tab) == tabs.tabs.count()-1
+
+def test_text_staging_is_private_and_cleaned_after_replace(tmp_path):
+    import os
+    from novel_workflow.workspace_editor import _stage_text_file, _cleanup_staged_text_file
+    target = tmp_path / "SEG.txt"
+    staged = _stage_text_file(target, "novel text")
+    assert staged.parent.name.startswith(".palantir-staging-")
+    assert staged.suffix == ".part"
+    assert list(tmp_path.glob("*.part")) == []
+    os.replace(staged, target)
+    _cleanup_staged_text_file(staged)
+    assert target.read_text(encoding="utf-8") == "novel text"
+    assert not staged.parent.exists()
 from datetime import date
 from pathlib import Path
 from PySide6.QtCore import Qt
@@ -182,6 +195,29 @@ def test_tab_shortcuts_and_undo_buttons_follow_active_editor(window,tmp_path):
     assert editor.document().isUndoAvailable()
     QTest.keyClick(editor,Qt.Key_H,Qt.ControlModifier)
     assert tabs.find_panel.isVisible()
+
+
+def test_open_tabs_and_active_tab_are_saved_before_app_closes(window, tmp_path):
+    paths = [tmp_path / "one.txt", tmp_path / "สอง.txt"]
+    for path in paths:
+        path.write_text("content", encoding="utf-8")
+    tabs = window.workspaces[window.profile.id].editor
+    first_editor = tabs.open_file(paths[0])
+    tabs.open_file(paths[1])
+    tabs.tabs.setCurrentWidget(first_editor)
+    QTest.qWait(350)
+
+    persisted = ProjectRepository(window.repo.root).load_settings()
+    assert persisted.last_profile_id == window.profile.id
+    assert persisted.editor_tabs[window.profile.id] == [str(path.resolve()) for path in paths]
+    assert persisted.editor_active_tab_keys[window.profile.id] == str(paths[0].resolve())
+
+    restarted = MainWindow(ProjectRepository(window.repo.root))
+    assert restarted.profile.id == window.profile.id
+    restored = restarted.workspaces[window.profile.id].editor
+    assert restored.open_paths() == [str(path.resolve()) for path in paths]
+    assert restored._path(restored.tabs.currentWidget()) == paths[0].resolve()
+    restarted.close()
 
 
 def test_context_replace_refreshes_active_undo_buttons(window):
