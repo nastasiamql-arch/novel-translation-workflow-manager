@@ -47,6 +47,22 @@ def test_paste_removes_empty_lines_and_can_undo(tmp_path):
     assert export.editor.toPlainText() == "existing\n\n"
 
 
+def test_copy_to_rich_text_app_cannot_restore_empty_lines(tmp_path):
+    app()
+    from PySide6.QtGui import QTextDocument
+    export = panel(tmp_path)
+    export.editor.setPlainText("A\n\nB")
+    export.editor.selectAll()
+    export.editor.copy()
+    data = QApplication.clipboard().mimeData()
+    if data.hasHtml():
+        document = QTextDocument()
+        document.setHtml(data.html())
+        assert document.toPlainText() == "A\nB"
+    assert not data.hasFormat("application/vnd.oasis.opendocument.text")
+    assert data.text() == "A\nB"
+
+
 @pytest.mark.parametrize("suffix", [".txt", ".tsv"])
 def test_text_file_open_save_and_copy_preserve_tabs(tmp_path, suffix):
     app()

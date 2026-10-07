@@ -6,6 +6,7 @@ All notable changes to Palantir: Novel are documented here.
 
 - Remove empty and whitespace-only lines from novel paste, clipboard assembly, text saves, TXT exports, Context updates, and export drafts across profiles.
 - Preserve spaces and tabs within every nonempty line, including empty vocabulary columns in CN/TH/SEX/NOTE TSV rows.
+- Copy compact novel selections as plain text so rich-text applications cannot restore gaps from an alternate clipboard format.
 - Clean existing plain text/TSV and novel Markdown in the editor without rewriting files merely on open; keep prompt/style and structured file formatting intact.
 - Preserve undo for paste and explicit save cleanup, and leave temporary editor newlines/cursor positions intact during autosave.
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from weakref import WeakSet
 from bisect import bisect_left
 
-from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QMimeData, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QPainter, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
@@ -464,7 +464,11 @@ class CodeEditor(QPlainTextEdit):
     def createMimeDataFromSelection(self):
         data = super().createMimeDataFromSelection()
         if self.clean_empty_lines and data.hasText():
-            data.setText(remove_empty_lines(data.text()))
+            # Rich-text/ODF payloads still contain the original blank paragraphs
+            # and external apps may prefer them over the cleaned plain text.
+            clean_data = QMimeData()
+            clean_data.setText(remove_empty_lines(data.text()))
+            return clean_data
         return data
 
     def set_font_size(self, size):
