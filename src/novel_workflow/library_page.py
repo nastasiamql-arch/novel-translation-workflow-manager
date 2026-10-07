@@ -4,12 +4,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineE
     QPushButton, QTabBar, QListWidget, QStyledItemDelegate, QStyle)
 
 
-class LibraryCardDelegate(QStyledItemDelegate):
-    def initStyleOption(self, option, index):
-        super().initStyleOption(option, index)
-        if option.state & QStyle.State_Selected:
-            option.font.setBold(True)
-        option.state &= ~QStyle.State_HasFocus
+from .profile_list import ReorderableProfileList, ProfileItemDelegate as LibraryCardDelegate
 
 
 class LibraryPage(QWidget):
@@ -44,7 +39,8 @@ class LibraryPage(QWidget):
             lambda _index: owner.filter_profiles(owner.library_search.text())
         )
         library_layout.addWidget(owner.library_status_tabs)
-        owner.profile_cards = QListWidget()
+        owner.profile_cards = ReorderableProfileList()
+        owner.profile_cards.orderChanged.connect(owner._persist_profile_order)
         owner.profile_cards.setItemDelegate(LibraryCardDelegate(owner.profile_cards))
         owner.profile_cards.setObjectName("novelLibrary")
         owner.profile_cards.setViewMode(QListWidget.IconMode)
@@ -52,12 +48,15 @@ class LibraryPage(QWidget):
         owner.profile_cards.setWrapping(True)
         owner.profile_cards.setResizeMode(QListWidget.Adjust)
         owner.profile_cards.setMovement(QListWidget.Static)
+        owner.profile_cards.setDragEnabled(True)
+        owner.profile_cards.setAcceptDrops(True)
         owner.profile_cards.setSpacing(18)
         owner.profile_cards.setIconSize(QSize(148, 188))
         owner.profile_cards.setGridSize(QSize(238, 360))
         owner.profile_cards.setWordWrap(False)
         owner.profile_cards.setTextElideMode(Qt.ElideRight)
-        owner.profile_cards.itemClicked.connect(owner._open_profile_card)
+        owner.profile_cards.selectionCommitted.connect(
+            lambda row: owner._open_profile_card(owner.profile_cards.item(row)) if row >= 0 else None)
         library_layout.addWidget(owner.profile_cards, 1)
         owner.library_empty_label = QLabel()
         owner.library_empty_label.setObjectName("mutedLabel")

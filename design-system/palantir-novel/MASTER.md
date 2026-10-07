@@ -78,3 +78,9 @@ Scrollbar tracks and add/sub-page areas use a solid neutral surface rather than 
 Settings novel rows start a native Move drag when pointer movement reaches QApplication.startDragDistance(), with a snapshot anchored to the press position. Loading details happens on click release or keyboard navigation, not pointer press. Accepted drops persist the order and update the row-to-profile mapping. Focus colors are neutral in both themes; item delegates suppress native text focus frames. Text selection remains blue.
 
 Context parsing caches only chapter results (up to 128 entries) keyed by absolute path, mtime/ctime nanoseconds, size and file identity. Polling/watcher refresh still checks file metadata and reparses changes, including atomic replacement and rollback.
+
+## 3.4.5 cover reordering and settings geometry
+
+Library tiles and Settings rows share ReorderableProfileList. A native Move drag uses the cover as preview, updates the actual model order on drop, and relayouts the grid. List targets use row half; tile targets use horizontal half. The active profile object is replaced with its reordered persisted counterpart so a later save cannot revert its order.
+
+Settings AttachmentList derives its height from styled row hints, font metrics and spacing. It shows two to eight whole rows and leaves a 12-pixel gap before action grids. The surrounding Settings page handles scrolling; lists longer than eight rows retain their own scrollbars. DPI smoke inspects nested layouts and six Thai/CJK rows in both appearances and window sizes.

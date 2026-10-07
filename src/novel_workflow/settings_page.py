@@ -1,9 +1,42 @@
 """Settings UI construction, reusing the shell's existing management actions."""
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEvent, QTimer
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFrame, QLabel,
     QGridLayout, QPushButton, QScrollArea, QListWidget, QAbstractItemView, QSpinBox,
     QLineEdit, QSizePolicy)
 from .shell_components import ElidingLabel
+
+
+class AttachmentList(QListWidget):
+    """Show up to eight whole rows; let the surrounding page scroll."""
+    def __init__(self):
+        super().__init__()
+        self.setWordWrap(False)
+        self.setTextElideMode(Qt.ElideRight)
+        self._height_timer = QTimer(self)
+        self._height_timer.setSingleShot(True)
+        self._height_timer.timeout.connect(self._fit_rows)
+        for signal in (self.model().rowsInserted, self.model().rowsRemoved,
+                       self.model().modelReset, self.model().dataChanged):
+            signal.connect(self._schedule_fit)
+        self._schedule_fit()
+
+    def _schedule_fit(self, *_args):
+        self._height_timer.start(0)
+
+    def _fit_rows(self):
+        self.ensurePolished()
+        rows = min(8, max(2, self.count()))
+        row_height = max([self.fontMetrics().height() + 12] +
+                         [self.sizeHintForRow(i) for i in range(self.count())])
+        height = rows * (row_height + 2 * self.spacing()) + 2 * self.frameWidth() + 8
+        self.setMinimumHeight(height)
+        self.setMaximumHeight(height)
+        self.updateGeometry()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() in (QEvent.FontChange, QEvent.StyleChange) and hasattr(self, '_height_timer'):
+            self._schedule_fit()
 
 
 class SettingsPage(QWidget):
@@ -26,13 +59,13 @@ class SettingsPage(QWidget):
         owner.profiles.setCursor(Qt.ArrowCursor)
         owner.profiles.setAccessibleName("รายการนิยาย")
         owner.profiles.selectionCommitted.connect(owner.select_profile)
-        owner.steps = QListWidget()
+        owner.steps = AttachmentList()
         owner.steps.setSpacing(1)
         owner.steps.setCursor(Qt.PointingHandCursor)
         owner.steps.setAccessibleName("ขั้นตอนงาน")
         owner.steps.setSelectionMode(QAbstractItemView.SingleSelection)
         owner.steps.currentRowChanged.connect(owner.select_step)
-        owner.files = QListWidget()
+        owner.files = AttachmentList()
         owner.files.setSpacing(1)
         owner.files.setCursor(Qt.PointingHandCursor)
         owner.files.setAccessibleName("ไฟล์ของขั้นตอน")
@@ -132,13 +165,11 @@ class SettingsPage(QWidget):
             return run
         workflow_frame = QFrame()
         workflow_frame.setObjectName("settingsCard")
-        workflow_frame.setMinimumHeight(470)
         workflow_layout = QVBoxLayout(workflow_frame)
         workflow_layout.addWidget(QLabel("ขั้นตอนและไฟล์แนบ"))
         workflow_columns = QHBoxLayout()
         steps_column = QVBoxLayout()
         steps_column.addWidget(QLabel("เลือกขั้นตอน"))
-        owner.steps.setMinimumHeight(250)
         owner.steps.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         steps_column.addWidget(owner.steps, 1)
         step_actions = QGridLayout()
@@ -154,7 +185,9 @@ class SettingsPage(QWidget):
             button = QPushButton(label)
             button.clicked.connect(callback)
             step_actions.addWidget(button, index // 2, index % 2)
+        steps_column.addSpacing(12)
         steps_column.addLayout(step_actions)
+        steps_column.addStretch(1)
         workflow_columns.addLayout(steps_column, 1)
 
         files_column = QVBoxLayout()
@@ -164,7 +197,6 @@ class SettingsPage(QWidget):
         owner.settings_step_hint.setObjectName("mutedLabel")
         files_header.addWidget(owner.settings_step_hint)
         files_column.addLayout(files_header)
-        owner.files.setMinimumHeight(250)
         owner.files.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         files_column.addWidget(owner.files, 1)
         file_actions = QGridLayout()
@@ -177,7 +209,9 @@ class SettingsPage(QWidget):
             button = QPushButton(label)
             button.clicked.connect(callback)
             file_actions.addWidget(button, index // 2, index % 2)
+        files_column.addSpacing(12)
         files_column.addLayout(file_actions)
+        files_column.addStretch(1)
         workflow_columns.addLayout(files_column, 2)
         workflow_layout.addLayout(workflow_columns)
         detail.addWidget(workflow_frame, 1)

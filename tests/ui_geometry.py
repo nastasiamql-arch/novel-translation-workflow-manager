@@ -8,9 +8,9 @@ os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication,QAbstractButton,QLineEdit,QSpinBox,QLabel
+from PySide6.QtWidgets import QApplication,QAbstractButton,QLineEdit,QSpinBox,QLabel,QWidget
 from novel_workflow.storage import ProjectRepository
-from novel_workflow.models import NovelProfile
+from novel_workflow.models import NovelProfile, StepFile
 from novel_workflow.workspace_window import MainWindow
 from novel_workflow.main import _configure_font
 
@@ -48,6 +48,7 @@ def main():
         settings=repo.load_settings(); settings.last_update_check_date=date.today().isoformat(); repo.save_settings(settings)
         context=root/'Context.md'; context.write_text('บทที่ 123\n中文 日本語 English',encoding='utf-8')
         p=NovelProfile(name='ชื่อเรื่องยาว ภาษาไทย 中文 日本語 English '*8,context_path=str(context))
+        p.workflow.steps[0].files = [StepFile(label="ไฟล์แนบภาษาไทย 中文 日本語 " + str(i), path=f"file{i}.txt") for i in range(6)]
         repo.save_profile(p)
         win=MainWindow(repo); win.show()
         ws=win.workspaces[p.id]
@@ -95,6 +96,15 @@ def main():
             if key in ("progress","groups","settings"):
                 assert_layout(win.utility_page)
                 assert_layout(win.utility_stack.currentWidget())
+            if key == "settings":
+                for appearance in ("Light", "Dark"):
+                    win.settings.appearance=appearance; win.apply_theme()
+                    for dimensions in ((900,600),(1440,860)):
+                        win.resize(*dimensions); app.processEvents(); QTest.qWait(30)
+                        assert win.files.visualItemRect(win.files.item(5)).bottom() < win.files.viewport().height()
+                        for child in win.utility_stack.currentWidget().findChildren(QWidget):
+                            if child.isVisible() and child.layout(): assert_layout(child)
+
             if os.environ.get("PALANTIR_UI_CAPTURE"):
                 Path("build").mkdir(exist_ok=True)
                 win.grab().save(f"build/ui-{key}.png")

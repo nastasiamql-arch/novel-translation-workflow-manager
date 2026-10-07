@@ -384,7 +384,8 @@ def test_desktop_drag_starts_on_movement_with_preview(monkeypatch):
         def setPixmap(self, pixmap): assert not pixmap.isNull()
         def setHotSpot(self, point): pass
         def exec(self, *args): started.append(True); return Qt.IgnoreAction
-    monkeypatch.setattr(module, 'QDrag', Drag)
+    import novel_workflow.profile_list as drag_module
+    monkeypatch.setattr(drag_module, 'QDrag', Drag)
     point = listing.visualItemRect(listing.item(0)).center()
     QTest.mousePress(listing.viewport(), Qt.LeftButton, pos=point)
     moved = point + QPoint(QApplication.startDragDistance() + 2, 0)
@@ -419,3 +420,68 @@ def test_all_focus_tokens_are_neutral_and_profile_delegate_removes_frame():
     listing.itemDelegate().initStyleOption(option, listing.model().index(0, 0))
     assert not option.state & QStyle.State_HasFocus
     assert option.font.bold()
+
+
+def test_library_covers_support_drag_reordering(window):
+    assert window.profile_cards.dragEnabled()
+    assert window.profile_cards.acceptDrops()
+    assert hasattr(window.profile_cards, 'orderChanged')
+
+
+def test_settings_shows_six_complete_attachment_rows(window):
+    from novel_workflow.models import StepFile
+    step = window.profile.workflow.steps[0]
+    step.files = [StepFile(label=f'ไฟล์แนบภาษาไทย 中文 {i}', path=f'file{i}.txt') for i in range(6)]
+    window.repo.save_profile(window.profile)
+    window.settings_dialog()
+    QApplication.processEvents()
+    listing = window.files
+    listing.setStyleSheet("QListWidget { font-size: 24pt; }")
+    QApplication.processEvents()
+    assert listing.count() == 6
+    assert listing.visualItemRect(listing.item(5)).bottom() < listing.viewport().height()
+
+
+def test_drop_reorders_at_target_and_emits_only_final_order():
+    from PySide6.QtCore import QPointF, QMimeData
+    from PySide6.QtGui import QDropEvent
+    from novel_workflow.workspace_window import ReorderableProfileList
+    app = QApplication.instance() or QApplication([])
+    listing = ReorderableProfileList(); listing.resize(300,300)
+    for name in ('a','b','c'):
+        listing.addItem(name); listing.item(listing.count()-1).setData(Qt.UserRole,name)
+    listing.show(); app.processEvents()
+    listing.setCurrentRow(0)
+    listing._drag_profile_id = 'a'
+    data = listing.mimeData([listing.item(0)])
+    point = listing.visualItemRect(listing.item(2)).bottomLeft()
+    event = QDropEvent(QPointF(point), Qt.MoveAction, data, Qt.LeftButton, Qt.NoModifier)
+    orders = []; listing.orderChanged.connect(orders.append)
+    listing.dropEvent(event)
+    assert [listing.item(i).data(Qt.UserRole) for i in range(3)] == ['b','c','a']
+    assert orders == [['b','c','a']]
+    assert event.isAccepted()
+    listing.close()
+
+
+def test_library_drop_changes_persistent_order_and_preserves_active_profile(window):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QDropEvent
+    for name in ('two','three'):
+        window.repo.save_profile(NovelProfile(name=name))
+    window.refresh_profiles()
+    window.show_library(); QApplication.processEvents()
+    active = window.profile.id
+    cards = window.profile_cards
+    first = cards.item(0).data(Qt.UserRole)
+    cards.setCurrentRow(0); cards._drag_profile_id = first
+    point = cards.visualItemRect(cards.item(2)).topRight()
+    event = QDropEvent(QPointF(point), Qt.MoveAction,
+                       cards.mimeData([cards.item(0)]), Qt.LeftButton, Qt.NoModifier)
+    cards.dropEvent(event)
+    assert event.isAccepted()
+    assert cards.item(2).data(Qt.UserRole) == first
+    assert [p.id for p in window.repo.list_profiles()] == [cards.item(i).data(Qt.UserRole) for i in range(3)]
+    assert window.profile.id == active
+    window.repo.save_profile(window.profile)
+    assert window.repo.list_profiles()[2].id == first

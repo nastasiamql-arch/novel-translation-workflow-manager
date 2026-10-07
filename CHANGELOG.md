@@ -2,6 +2,13 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.4.5 - 2026-10-07
+
+- Enable desktop dragging on Library covers as well as Settings novels, with a cover preview and explicit model reordering on drop.
+- Keep persistent order, active profile and later saves consistent after reordering; canceled drags leave order unchanged.
+- Size Settings workflow/attachment lists from actual row/font metrics, show up to eight complete rows, and separate action grids from list content.
+- Expand the four-scale Light/Dark geometry checks into nested Settings layouts with six Thai/CJK attachment rows.
+
 ## 3.4.4 - 2026-10-07
 
 - Start novel reordering in Settings on the standard movement threshold, without a hold delay; show the dragged row beside the pointer using native Move drag/drop.
