@@ -2,6 +2,13 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.5.0 - 2026-10-07
+
+- Add Ctrl/Shift/Ctrl+A multiple selection throughout file lists and explorer; batch attachment removal/order changes, working-file open/removal, launch-target removal and file-manager open/attach/delete.
+- Preserve selected relative order and selection after moving attachment groups. File renaming requires one selected item; physical deletion retains confirmation and reports failures.
+- Add nearest-slot cover drops, neutral insertion markers and gradual edge scrolling; canceled drags keep existing order. Defer progress disk refresh until the drag completes.
+- Support selecting multiple application paths when preparing launch targets.
+
 ## 3.4.5 - 2026-10-07
 
 - Enable desktop dragging on Library covers as well as Settings novels, with a cover preview and explicit model reordering on drop.

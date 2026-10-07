@@ -84,3 +84,9 @@ Context parsing caches only chapter results (up to 128 entries) keyed by absolut
 Library tiles and Settings rows share ReorderableProfileList. A native Move drag uses the cover as preview, updates the actual model order on drop, and relayouts the grid. List targets use row half; tile targets use horizontal half. The active profile object is replaced with its reordered persisted counterpart so a later save cannot revert its order.
 
 Settings AttachmentList derives its height from styled row hints, font metrics and spacing. It shows two to eight whole rows and leaves a 12-pixel gap before action grids. The surrounding Settings page handles scrolling; lists longer than eight rows retain their own scrollbars. DPI smoke inspects nested layouts and six Thai/CJK rows in both appearances and window sizes.
+
+## 3.5.0 multiple files and continuous dragging
+
+File views use ExtendedSelection (Ctrl-click, Shift-click, Ctrl+A). Batch attachment moves preserve relative order and keep selection. Working-file and file-manager open operations snapshot the selection before navigation; metadata removal only detaches links. File-manager physical deletion confirms the batch, cleans links only for successfully removed files, and reports failures. Single-file rename stays explicit. Context and cover pickers remain singular because each profile owns one path.
+
+Dragging keeps native pointer-following previews. Empty tile gaps resolve to the nearest visible slot, with a neutral insertion marker. A 16ms edge-scroll timer moves at up to 12 logical pixels per tick near a 40-pixel edge zone. Marker/timer/state reset on leave/cancel/drop. Progress polling is deferred during a drag. The interaction pattern follows pointer ownership and nearest-slot drop resolution described in [UI Toolkit Series: Drag-and-Drop Manipulator](https://www.youtube.com/watch?v=HvsCvq0L6I4), adapted to Qt.

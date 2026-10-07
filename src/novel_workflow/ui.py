@@ -1,6 +1,6 @@
 from pathlib import Path
 from dataclasses import asdict as asdict_target
-from PySide6.QtCore import Qt, QUrl, QSize, QTimer, QMimeData
+from PySide6.QtCore import Qt, QUrl, QSize, QTimer, QMimeData, QItemSelectionModel
 from PySide6.QtGui import QAction, QKeySequence, QIcon, QPixmap
 from PySide6.QtWidgets import *
 from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow, WorkflowTemplate, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
@@ -563,11 +563,26 @@ class ManagementActionsMixin:
         ref,ok=QInputDialog.getItem(self,"Dynamic chapter","Reference:",["CURRENT_SOURCE_CHAPTER","CURRENT_TRANSLATED_CHAPTER","CURRENT_REVIEWED_CHAPTER"],0,False)
         if ok:self.step().files.append(StepFile(label=ref.replace("CURRENT_","").replace("_"," ").title(),reference_type="dynamic",dynamic_reference=ref,file_type="chapter",order=len(self.step().files)));self.save();self.refresh_files()
     def move_file(self,d):
-        f=self.file()
-        if f:
-            i=next(n for n,x in enumerate(self.step().files) if x.id==f.id)
-            j=WorkflowService.move(self.step().files,i,d);self.save();self.refresh_files();self.files.setCurrentRow(j)
+        step=self.step()
+        selected={row.data(Qt.UserRole) for row in self.files.selectedItems() if not row.isHidden()}
+        if not step or not selected:return
+        files=sorted(step.files,key=lambda item:item.order)
+        indices=range(1,len(files)) if d<0 else range(len(files)-2,-1,-1)
+        for i in indices:
+            neighbor=i-1 if d<0 else i+1
+            if files[i].id in selected and files[neighbor].id not in selected:
+                files[i],files[neighbor]=files[neighbor],files[i]
+        for i,item in enumerate(files):item.order=i
+        step.files=files
+        self.save();self.refresh_files()
+        current=None
+        for i in range(self.files.count()):
+            row=self.files.item(i);row.setSelected(row.data(Qt.UserRole) in selected)
+            if current is None and row.isSelected():current=row
+        if current:self.files.setCurrentItem(current,QItemSelectionModel.NoUpdate)
     def rename_file_label(self):
+        if len(self.files.selectedItems()) != 1:
+            self.statusBar().showMessage("เลือกไฟล์เดียวเพื่อเปลี่ยนชื่อแสดง",3500);return
         f=self.file()
         if f:
             name,ok=QInputDialog.getText(self,"Rename Display Label","Label:",text=f.label)
@@ -650,8 +665,12 @@ class ManagementActionsMixin:
             button=QPushButton(label);button.clicked.connect(fn);actions.addWidget(button)
         search.textChanged.connect(refresh);refresh();dialog.exec()
     def remove_file(self):
-        f=self.file()
-        if f:self.step().files.remove(f);self.save();self.refresh_files()
+        step=self.step()
+        selected={row.data(Qt.UserRole) for row in self.files.selectedItems() if not row.isHidden()}
+        if step and selected:
+            step.files=[item for item in step.files if item.id not in selected]
+            for i,item in enumerate(step.files):item.order=i
+            self.save();self.refresh_files()
     def toggle_file(self,row):
         f=next((x for x in self.step().files if x.id==row.data(Qt.UserRole)),None) if self.step() else None
         if f:f.enabled=row.checkState()==Qt.Checked;self.save()

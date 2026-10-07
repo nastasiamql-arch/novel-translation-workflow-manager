@@ -195,6 +195,7 @@ class WorkspacePage(QWidget):
         self.file_model.setFilter(QDir.AllEntries | QDir.NoDotAndDotDot)
 
         self.file_tree = QTreeView()
+        self.file_tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.file_tree.setObjectName("fileTree")
         self.file_tree.setModel(self.file_model)
         self.file_tree.setHeaderHidden(True)
@@ -231,6 +232,7 @@ class WorkspacePage(QWidget):
             lambda checked=False: self.owner.copy_named_stage(self.profile_id, "vocabulary")
         )
         self.files = QListWidget()
+        self.files.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.files.setSpacing(1)
         self.files.setAccessibleName("ไฟล์ของขั้นตอนปัจจุบัน")
         self.files.itemDoubleClicked.connect(
@@ -994,8 +996,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 str(self.profile_browse_directory()), "ทุกไฟล์ (*)",
             )
         elif kind == "application":
-            selected, _ = QFileDialog.getOpenFileName(self, "เลือกโปรแกรม", str(Path.home()), "โปรแกรม (*.exe);;ทุกไฟล์ (*)")
-            targets = [selected]
+            targets, _ = QFileDialog.getOpenFileNames(self, "เลือกโปรแกรม (เลือกได้หลายรายการ)", str(Path.home()), "โปรแกรม (*.exe);;ทุกไฟล์ (*)")
         else:
             target, accepted = QInputDialog.getText(self, "เพิ่มเว็บไซต์", "URL (http/https):")
             if not accepted:
@@ -1019,11 +1020,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.refresh_settings_launch_targets()
 
     def remove_settings_launch_target(self):
-        row = self.settings_launch_targets.currentItem()
-        if not row or not self.profile:
+        ids = {row.data(Qt.UserRole) for row in self.settings_launch_targets.selectedItems()}
+        if not ids or not self.profile:
             return
-        target_id = row.data(Qt.UserRole)
-        self.profile.launch_targets = [item for item in self.profile.launch_targets if item.id != target_id]
+        self.profile.launch_targets = [item for item in self.profile.launch_targets if item.id not in ids]
         for index, item in enumerate(self.profile.launch_targets):
             item.order = index
         self.save()
@@ -1068,10 +1068,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         return next((item for item in self.profile.working_files if item.id == row.data(Qt.UserRole)), None)
 
     def open_selected_working_file(self, *_args):
-        item = self._selected_working_file()
-        if not item or not self.profile:
-            return
-        self.open_working_file(item.id)
+        ids = [row.data(Qt.UserRole) for row in self.working_files.selectedItems()]
+        for item_id in ids:
+            self.open_working_file(item_id)
 
     def open_working_file(self, item_id):
         item = next((value for value in self.profile.working_files if value.id == item_id), None) if self.profile else None
@@ -1092,10 +1091,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.return_from_utility_page()
 
     def remove_working_file(self):
-        item = self._selected_working_file()
-        if not item or not self.profile:
+        ids = {row.data(Qt.UserRole) for row in self.working_files.selectedItems()}
+        if not ids or not self.profile:
             return
-        self.profile.working_files = [value for value in self.profile.working_files if value.id != item.id]
+        self.profile.working_files = [value for value in self.profile.working_files if value.id not in ids]
         for index, value in enumerate(self.profile.working_files):
             value.order = index
         self.save()
@@ -1214,6 +1213,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         search.setPlaceholderText("ค้นหาชื่อไฟล์หรือโฟลเดอร์")
         layout.addWidget(search)
         listing = QListWidget()
+        listing.setObjectName("fileManagerList")
+        listing.setSelectionMode(QAbstractItemView.ExtendedSelection)
         layout.addWidget(listing, 1)
 
         def refresh(query=""):
@@ -1229,12 +1230,16 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             row = listing.currentItem()
             return self.repo.resolve_project_path(profile.id, row.text()) if row else None
 
+        def selected_paths():
+            return [self.repo.resolve_project_path(profile.id,row.text()) for row in listing.selectedItems()]
+
         def open_selected():
-            path = selected_path()
             workspace = self.workspaces.get(profile.id)
-            if path and workspace and workspace.editor.supports(path):
-                workspace.editor.open_file(path)
-                self.return_from_utility_page()
+            opened = False
+            for path in selected_paths():
+                if workspace and workspace.editor.supports(path):
+                    opened = workspace.editor.open_file(path) or opened
+            if opened:self.return_from_utility_page()
 
         actions = QHBoxLayout()
         create = QPushButton("＋ ไฟล์ใหม่")
@@ -1302,17 +1307,15 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
         attach = QPushButton("เพิ่มในขั้นตอน")
         def attach_file():
-            path = selected_path()
             step = self.step()
-            if not path or not step:
-                return
-            relative = path.relative_to(root).as_posix()
-            if any(file.path == relative for file in step.files):
-                self.statusBar().showMessage("ไฟล์นี้อยู่ในขั้นตอนแล้ว", 2500)
-                return
-            step.files.append(StepFile(label=path.stem, path=relative, file_type=path.parent.name, order=len(step.files)))
-            self.save()
-            self.refresh_files()
+            if not step:return
+            existing={file.path for file in step.files}
+            for path in selected_paths():
+                relative=path.relative_to(root).as_posix()
+                if relative not in existing:
+                    step.files.append(StepFile(label=path.stem,path=relative,file_type=path.parent.name,order=len(step.files)))
+                    existing.add(relative)
+            self.save();self.refresh_files()
         attach.clicked.connect(attach_file)
         actions.addWidget(attach)
 
@@ -1339,21 +1342,27 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.save()
             refresh(search.text())
         rename.clicked.connect(rename_file)
+        listing.itemSelectionChanged.connect(lambda: rename.setEnabled(len(listing.selectedItems()) == 1))
+        rename.setEnabled(False)
         actions.addWidget(rename)
 
         delete = QPushButton("ลบไฟล์")
         def delete_file():
-            path = selected_path()
-            if not path:
-                return
-            if QMessageBox.question(self, "ลบไฟล์", f"ลบ {path.name} ถาวรใช่ไหม?") != QMessageBox.Yes:
-                return
-            path.unlink()
-            for step in profile.workflow.steps:
-                step.files = [file for file in step.files if file.reference_type == "external_file" or not file.path or self.repo.resolve_project_path(profile.id, file.path) != path]
-            self.save()
-            self.refresh_files()
-            refresh(search.text())
+            paths=selected_paths()
+            if not paths:return
+            names="\n".join(path.name for path in paths[:10])
+            if QMessageBox.question(self,"ลบไฟล์",f"ลบ {len(paths)} ไฟล์ถาวรใช่ไหม?\n{names}") != QMessageBox.Yes:return
+            removed=set();errors=[]
+            for path in paths:
+                try:path.unlink();removed.add(path)
+                except OSError as exc:errors.append(f"{path.name}: {exc}")
+            steps=list(profile.workflow.steps)
+            if profile.vocabulary_step:steps.append(profile.vocabulary_step)
+            for step in steps:
+                step.files=[file for file in step.files if file.reference_type == "external_file" or not file.path or self.repo.resolve_project_path(profile.id,file.path) not in removed]
+            profile.working_files=[file for file in profile.working_files if file.reference_type == "external_file" or not file.path or self.repo.resolve_project_path(profile.id,file.path) not in removed]
+            self.save();self.refresh_files();refresh(search.text())
+            if errors:QMessageBox.warning(self,"ลบบางไฟล์ไม่ได้","\n".join(errors))
         delete.clicked.connect(delete_file)
         actions.addWidget(delete)
         layout.addLayout(actions)
@@ -1391,6 +1400,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
     def refresh_translation_progress(self):
         """Reload Context-backed progress from disk, including external edits."""
+        if any(getattr(listing,"_dragging",False) for listing in (self.profile_cards,self.profiles)):
+            self.context_refresh_timer.start(250)
+            return self.ps_list
         profiles = self.repo.list_profiles()
         for profile in profiles:
             if sync_profile_context(profile):
@@ -1498,6 +1510,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.novel = QLabel()
         self.steps = QListWidget()
         self.files = QListWidget()
+        self.files.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.goal_label = QLabel()
         self.goal_bar = QProgressBar()
         self.latest_chapter_label = QLabel()

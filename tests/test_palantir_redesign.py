@@ -485,3 +485,118 @@ def test_library_drop_changes_persistent_order_and_preserves_active_profile(wind
     assert window.profile.id == active
     window.repo.save_profile(window.profile)
     assert window.repo.list_profiles()[2].id == first
+
+
+def test_attachment_multiselect_shortcuts_and_batch_remove(window):
+    from novel_workflow.models import StepFile
+    step=window.profile.workflow.steps[0]
+    step.files=[StepFile(label=f'file {i}',path=f'{i}.txt',order=i) for i in range(5)]
+    window.repo.save_profile(window.profile);window.settings_dialog();QApplication.processEvents()
+    listing=window.files
+    QTest.mouseClick(listing.viewport(),Qt.LeftButton,pos=listing.visualItemRect(listing.item(0)).center())
+    QTest.mouseClick(listing.viewport(),Qt.LeftButton,Qt.ControlModifier,pos=listing.visualItemRect(listing.item(2)).center())
+    assert len(listing.selectedItems()) == 2
+    window.remove_file()
+    assert [f.label for f in window.step().files] == ['file 1','file 3','file 4']
+    listing.setFocus();QTest.keyClick(listing,Qt.Key_A,Qt.ControlModifier)
+    assert len(listing.selectedItems()) == 3
+
+
+def test_batch_move_preserves_selected_relative_order(window):
+    from novel_workflow.models import StepFile
+    step=window.profile.workflow.steps[0]
+    step.files=[StepFile(label=str(i),path=f'{i}.txt',order=i) for i in range(5)]
+    window.repo.save_profile(window.profile);window.settings_dialog();QApplication.processEvents()
+    for i in (1,2): window.files.item(i).setSelected(True)
+    window.move_file(-1)
+    assert [f.label for f in window.step().files] == ['1','2','0','3','4']
+    assert len(window.files.selectedItems()) == 2
+    assert window.file().label == '1'
+
+
+def test_cover_gap_resolves_to_nearest_slot(window):
+    from PySide6.QtCore import QPoint
+    for name in ('two','three'): window.repo.save_profile(NovelProfile(name=name))
+    window.refresh_profiles();window.show_library();QApplication.processEvents()
+    cards=window.profile_cards
+    first=cards.visualItemRect(cards.item(0)); second=cards.visualItemRect(cards.item(1))
+    gap=QPoint(first.right()+1,first.center().y())
+    assert cards._drop_row(gap) in (0,1)
+
+
+def test_working_files_batch_open_and_remove(window,monkeypatch):
+    from novel_workflow.models import StepFile
+    window.profile.working_files=[StepFile(label=str(i),path=f'{i}.txt',order=i) for i in range(3)]
+    window.repo.save_profile(window.profile);window.settings_dialog();QApplication.processEvents()
+    listing=window.working_files;listing.item(0).setSelected(True);listing.item(2).setSelected(True)
+    opened=[];monkeypatch.setattr(window,'open_working_file',opened.append)
+    window.open_selected_working_file()
+    assert set(opened)=={listing.item(0).data(Qt.UserRole),listing.item(2).data(Qt.UserRole)}
+    window.remove_working_file()
+    assert [file.label for file in window.profile.working_files] == ['1']
+
+
+def test_shift_selects_attachment_range(window):
+    from novel_workflow.models import StepFile
+    window.profile.workflow.steps[0].files=[StepFile(label=str(i),path=str(i),order=i) for i in range(5)]
+    window.repo.save_profile(window.profile);window.settings_dialog();QApplication.processEvents()
+    listing=window.files
+    QTest.mouseClick(listing.viewport(),Qt.LeftButton,pos=listing.visualItemRect(listing.item(1)).center())
+    QTest.mouseClick(listing.viewport(),Qt.LeftButton,Qt.ShiftModifier,pos=listing.visualItemRect(listing.item(4)).center())
+    assert len(listing.selectedItems()) == 4
+
+
+def test_drag_edge_scroll_and_cancel_clears_marker():
+    from PySide6.QtCore import QPoint
+    from novel_workflow.profile_list import ReorderableProfileList
+    app=QApplication.instance() or QApplication([])
+    listing=ReorderableProfileList();listing.resize(300,180);listing.addItems([str(i) for i in range(30)])
+    listing.show();app.processEvents()
+    listing._show_drag_target(QPoint(50,listing.viewport().height()-1))
+    assert listing._marker is not None
+    listing._scroll_drag_edge()
+    assert listing.verticalScrollBar().value()>0
+    listing._clear_drag_target()
+    assert listing._marker is None and not listing._edge_scroll.isActive()
+    assert [listing.item(i).text() for i in range(30)] == [str(i) for i in range(30)]
+    listing.close()
+
+
+def test_progress_refresh_defers_io_during_drag(window,monkeypatch):
+    def forbidden():raise AssertionError('Disk scan while dragging')
+    original=window.repo.list_profiles
+    window.profile_cards._dragging=True
+    monkeypatch.setattr(window.repo,'list_profiles',forbidden)
+    assert window.refresh_translation_progress() is window.ps_list
+    window.profile_cards._dragging=False
+    window.context_refresh_timer.stop()
+    monkeypatch.setattr(window.repo,'list_profiles',original)
+
+
+def test_file_manager_batch_attach_and_delete_cancel(window,monkeypatch):
+    from PySide6.QtWidgets import QListWidget,QPushButton
+    root=window.repo.profile_dir(window.profile.id)
+    for name in ('one.txt','two.txt'):(root/name).write_text(name,encoding='utf-8')
+    window.file_manager();QApplication.processEvents()
+    page=window.utility_stack.currentWidget();listing=page.findChild(QListWidget,'fileManagerList')
+    for i in range(listing.count()):
+        if listing.item(i).text() in ('one.txt','two.txt'):listing.item(i).setSelected(True)
+    next(b for b in page.findChildren(QPushButton) if b.text()=='เพิ่มในขั้นตอน').click()
+    assert {'one.txt','two.txt'} <= {file.path for file in window.step().files}
+    monkeypatch.setattr(QMessageBox,'question',lambda *args:QMessageBox.No)
+    next(b for b in page.findChildren(QPushButton) if b.text()=='ลบไฟล์').click()
+    assert (root/'one.txt').exists() and (root/'two.txt').exists()
+
+
+def test_file_lists_and_launch_targets_allow_multiple_selection(window):
+    from PySide6.QtWidgets import QAbstractItemView
+    from novel_workflow.models import LaunchTarget
+    workspace=window.workspaces[window.profile.id]
+    assert workspace.files.selectionMode()==QAbstractItemView.ExtendedSelection
+    assert workspace.file_tree.selectionMode()==QAbstractItemView.ExtendedSelection
+    window.profile.launch_targets=[LaunchTarget(label=str(i),kind='file',target=f'{i}.txt',order=i) for i in range(3)]
+    window.repo.save_profile(window.profile);window.settings_dialog();QApplication.processEvents()
+    for listing in (window.files,window.working_files,window.settings_launch_targets):
+        assert listing.selectionMode()==QAbstractItemView.ExtendedSelection
+    window.settings_launch_targets.selectAll();window.remove_settings_launch_target()
+    assert window.profile.launch_targets==[]
