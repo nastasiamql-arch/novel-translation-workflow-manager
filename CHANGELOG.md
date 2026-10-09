@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.6.3 - 2026-10-09
+
+- Combine each novel's profile, workflow, workflow files, working tabs and TXT Export preferences on one page.
+- Open the selected novel's settings by default and keep that page active when switching novels in the settings sidebar.
+- Retain General and Program Updates as separate settings pages.
+
 ## 3.6.2 - 2026-10-09
 
 - Add per-novel Working Tabs ordering and an option to open those files automatically in the saved order.

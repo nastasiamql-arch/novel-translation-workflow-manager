@@ -148,7 +148,7 @@ def test_settings_categories_keep_management_actions_accessible(tmp_path):
     window.settings_dialog()
     page = window._settings_page_state['page']
     categories = page.findChild(QListWidget, 'preferencesCategory')
-    assert categories.count() == 7
+    assert categories.count() == 3
     page.select_category('General')
     checkbox = page.findChild(QCheckBox, 'copyFilesAsZip')
     checkbox.setChecked(True)

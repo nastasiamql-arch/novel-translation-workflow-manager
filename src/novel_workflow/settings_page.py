@@ -58,7 +58,10 @@ class SettingsPage(QWidget):
         owner.profiles.setSpacing(1)
         owner.profiles.setCursor(Qt.ArrowCursor)
         owner.profiles.setAccessibleName("รายการนิยาย")
-        owner.profiles.selectionCommitted.connect(owner.select_profile)
+        def select_profile_from_sidebar(index):
+            owner.select_profile(index)
+            page.select_category("Novel")
+        owner.profiles.selectionCommitted.connect(select_profile_from_sidebar)
         owner.steps = AttachmentList()
         owner.steps.setSpacing(1)
         owner.steps.setCursor(Qt.PointingHandCursor)
@@ -96,7 +99,7 @@ class SettingsPage(QWidget):
         categories = AttachmentList()
         categories.setObjectName("preferencesCategory")
         categories.setAccessibleName("หมวดการตั้งค่า")
-        categories.addItems(["General", "Novel", "Workflow", "Workflow Files", "Working Tabs", "TXT Export", "Program Updates"])
+        categories.addItems(["General", "Novel", "Program Updates"])
         categories.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         sidebar_layout.addWidget(categories)
         owner.profiles.setMinimumHeight(170)
@@ -334,6 +337,7 @@ class SettingsPage(QWidget):
         export_layout.addWidget(QLabel("TXT Export · ตั้งค่าแยกตามนิยาย"))
         export_layout.addWidget(QLabel("Prefix, เลขไฟล์, ช่วงเลข, ปลายทาง, Draft และประวัติ จำแยกตามเรื่อง"))
         open_export = QPushButton("เปิด TXT Export ของเรื่องนี้")
+        open_export.setObjectName("openNovelTxtExport")
         def show_export():
             profile_id = owner.profile.id if owner.profile else None
             owner.navigate("workspace")
@@ -352,33 +356,40 @@ class SettingsPage(QWidget):
         update.clicked.connect(lambda: owner.check_updates(manual=True))
         updates_layout.addWidget(update)
         detail.addWidget(updates)
+        novel_settings = [
+            info_frame, story_frame, launcher_frame, workflow_frame,
+            work_frame, export_preferences, downloader,
+        ]
         sections = {
             "General": [general],
-            "Novel": [info_frame, story_frame, launcher_frame, downloader],
-            "Workflow": [workflow_frame],
-            "Workflow Files": [workflow_frame],
-            "Working Tabs": [work_frame],
-            "TXT Export": [export_preferences],
+            "Novel": novel_settings,
             "Program Updates": [updates],
         }
         def select_category(name):
+            # Keep old entry points working while presenting all story settings together.
+            if name in ("Workflow", "Workflow Files", "Working Tabs", "TXT Export"):
+                name = "Novel"
             shown = sections[name]
             for widget in {w for group in sections.values() for w in group}:
                 widget.setVisible(widget in shown)
             profile_panel.setVisible(name not in ("General", "Program Updates"))
             owner.settings_profile_heading.setVisible(name not in ("General", "Program Updates"))
-            files_panel.setVisible(name == "Workflow Files")
-            step_actions_panel.setVisible(name == "Workflow")
-            workflow_heading.setText("Workflow Files · ไฟล์แนบ" if name == "Workflow Files" else "Workflow · จัดการขั้นตอน")
+            files_panel.setVisible(name == "Novel")
+            step_actions_panel.setVisible(name == "Novel")
+            workflow_heading.setText("Workflow · ขั้นตอนและไฟล์แนบ")
         def select_named_category(name):
+            if name in ("Workflow", "Workflow Files", "Working Tabs", "TXT Export"):
+                name = "Novel"
             for index in range(categories.count()):
                 if categories.item(index).text() == name:
                     categories.setCurrentRow(index)
                     return
         page.select_category = select_named_category
         categories.currentTextChanged.connect(select_category)
-        categories.setCurrentRow(0)
-        select_category("General")
+        initial_category = "Novel" if owner.profile else "General"
+        initial_index = next(i for i in range(categories.count()) if categories.item(i).text() == initial_category)
+        categories.setCurrentRow(initial_index)
+        select_category(initial_category)
         detail.addStretch(1)
         scroll.setWidget(detail_page)
         root.addWidget(scroll, 4)
