@@ -951,9 +951,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.settings_launch_targets.clear()
         for target in sorted(self.profile.launch_targets, key=lambda item: item.order):
             row = QListWidgetItem(f"{target.label or target.target}  ·  {target.kind}")
+            row.setToolTip(target.target)
             row.setData(Qt.UserRole, target.id)
             row.setFlags(row.flags() | Qt.ItemIsUserCheckable)
             row.setCheckState(Qt.Checked if target.enabled else Qt.Unchecked)
+            row.setSizeHint(QSize(0, 56))
             self.settings_launch_targets.addItem(row)
         self.settings_launch_targets.blockSignals(False)
 

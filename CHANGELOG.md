@@ -2,6 +2,11 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.6.4 - 2026-10-09
+
+- Give the novel list more room and wrap long titles instead of truncating them with an ellipsis.
+- Enlarge the per-novel launch target list and show complete target paths in tooltips.
+
 ## 3.6.3 - 2026-10-09
 
 - Combine each novel's profile, workflow, workflow files, working tabs and TXT Export preferences on one page.
