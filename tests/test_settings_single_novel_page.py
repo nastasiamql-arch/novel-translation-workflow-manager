@@ -38,16 +38,19 @@ def test_novel_settings_are_one_page_and_profile_selection_stays_in_it(tmp_path)
     assert categories.currentItem().text() == 'Novel'
     assert window.profiles.wordWrap()
     assert window.profiles.textElideMode() == Qt.ElideNone
-    assert window.profiles.iconSize().width() >= 64
+    assert window.profiles.iconSize().width() == 52
+    assert window.profiles.viewport().height() >= 360
     first_row = next(i for i, profile in enumerate(window.ps_list) if profile.id == first.id)
     assert window.profiles.item(first_row).text() == first.name
-    assert window.profiles.item(first_row).sizeHint().height() >= 100
+    assert window.profiles.item(first_row).sizeHint().height() >= 76
+    assert window.profiles.viewport().height() // window.profiles.item(first_row).sizeHint().height() >= 4
     window.profiles.selectionCommitted.emit(first_row)
     app().processEvents()
     assert window.settings_launch_targets.wordWrap()
     assert window.settings_launch_targets.textElideMode() == Qt.ElideNone
     target_row = window.settings_launch_targets.item(0)
-    assert target_row.sizeHint().height() >= 56
+    assert target_row.sizeHint().height() >= 44
+    assert window.settings_launch_targets.viewport().height() >= 250
     assert target_row.toolTip() == first.launch_targets[0].target
 
     assert window.steps.isVisible()

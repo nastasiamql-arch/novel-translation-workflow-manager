@@ -178,17 +178,14 @@ class ManagementActionsMixin:
             if changed:self.repo.save_profile(profile)
         self.profiles.blockSignals(True)
         self.profiles.clear()
-        self.profiles.setIconSize(QSize(64,84))
-        profile_font = self.profiles.font()
-        profile_font.setPointSize(max(12, profile_font.pointSize()))
-        self.profiles.setFont(profile_font)
+        self.profiles.setIconSize(QSize(52,68))
         self.profiles.setWordWrap(True)
         self.profiles.setTextElideMode(Qt.ElideNone)
         placeholder=Path(__file__).resolve().parent/"resources"/"novelworkflow.png"
         for profile in self.ps_list:
             item=QListWidgetItem(profile.name)
             item.setToolTip(profile.name)
-            item.setSizeHint(QSize(0,102))
+            item.setSizeHint(QSize(0,76))
             cover=placeholder
             if profile.cover_image_path:
                 try:
@@ -197,7 +194,7 @@ class ManagementActionsMixin:
                 except ValueError:
                     pass
             if cover.is_file():item.setIcon(QIcon(str(cover)))
-            item.setSizeHint(QSize(0,102))
+            item.setSizeHint(QSize(0,76))
             self.profiles.addItem(item)
         if not self.ps_list:
             empty=QListWidgetItem("ยังไม่มีนิยาย\nเพิ่มนิยายได้ที่ ตั้งค่า → นิยาย")

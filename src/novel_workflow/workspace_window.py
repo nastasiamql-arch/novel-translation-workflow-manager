@@ -955,7 +955,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             row.setData(Qt.UserRole, target.id)
             row.setFlags(row.flags() | Qt.ItemIsUserCheckable)
             row.setCheckState(Qt.Checked if target.enabled else Qt.Unchecked)
-            row.setSizeHint(QSize(0, 56))
+            row.setSizeHint(QSize(0, 44))
             self.settings_launch_targets.addItem(row)
         self.settings_launch_targets.blockSignals(False)
 

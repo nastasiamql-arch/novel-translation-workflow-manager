@@ -420,6 +420,7 @@ class CodeEditor(QPlainTextEdit):
     def __init__(self, parent=None, font_size=11.0, appearance="Dark"):
         super().__init__(parent)
         self.clean_empty_lines = False
+        self.compact_pasted_empty_lines = False
         self.appearance = appearance
         self.colors = editor_colors(appearance)
         self.setObjectName("codeEditor")
@@ -459,7 +460,7 @@ class CodeEditor(QPlainTextEdit):
         self.highlight_current_line()
 
     def insertFromMimeData(self, source):
-        if self.clean_empty_lines and source.hasText():
+        if self.compact_pasted_empty_lines and source.hasText():
             self.insertPlainText(remove_empty_lines(source.text()))
         else:
             super().insertFromMimeData(source)
@@ -853,6 +854,7 @@ class EditorTabs(QWidget):
 
         editor = CodeEditor(font_size=self._font_size, appearance=self.appearance)
         editor.clean_empty_lines = False
+        editor.compact_pasted_empty_lines = cleans_file_text(path)
         original_text = text
         editor.disk_digest = hashlib.sha256(original_bytes).digest()
         editor.disk_bom = original_bytes.startswith(b"\xef\xbb\xbf")

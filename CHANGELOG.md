@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.6.5 - 2026-10-09
+
+- Let the novel list use the settings sidebar's full available height so more stories are visible at once.
+- Keep story rows compact and increase the launch-target list viewport to reduce repeated scrolling.
+- Compact blank clipboard lines when pasting into novel text files, while preserving untouched files and structured documents.
+
 ## 3.6.4 - 2026-10-09
 
 - Give the novel list more room and wrap long titles instead of truncating them with an ellipsis.

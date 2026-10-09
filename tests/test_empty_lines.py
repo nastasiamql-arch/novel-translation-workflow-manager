@@ -47,6 +47,26 @@ def test_paste_preserves_empty_lines_and_can_undo(tmp_path):
     assert export.editor.toPlainText() == "existing\n\n"
 
 
+def test_workspace_paste_compacts_blank_clipboard_lines_without_rewriting_open_file(tmp_path):
+    app()
+    path = tmp_path / "translated" / "chapter_1.txt"
+    path.parent.mkdir()
+    path.write_text("existing\n", encoding="utf-8")
+    tabs = EditorTabs()
+    editor = tabs.open_file(path)
+    assert editor is not None
+    assert editor.toPlainText() == "existing\n"
+    editor.moveCursor(editor.textCursor().MoveOperation.End)
+    QApplication.clipboard().setText(RAW)
+    editor.paste()
+    assert editor.toPlainText() == "existing\n" + CLEAN
+    assert path.read_text(encoding="utf-8") == "existing\n"
+    assert tabs.save_editor(editor)
+    assert path.read_text(encoding="utf-8") == "existing\n" + CLEAN
+    editor.undo()
+    assert editor.toPlainText() == "existing\n"
+
+
 def test_copy_to_rich_text_app_preserves_empty_lines(tmp_path):
     app()
     from PySide6.QtGui import QTextDocument
