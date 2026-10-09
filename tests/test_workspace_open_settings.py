@@ -85,7 +85,7 @@ def test_working_files_can_be_reordered_per_novel_from_preferences(tmp_path):
     window.close()
 
 
-def test_novel_tabs_can_close_without_deleting_profiles_and_restore_neighbor(tmp_path):
+def test_active_novel_can_close_without_deleting_profiles_or_reopening_previous(tmp_path):
     app()
     repo, first, _ = setup_profile(tmp_path)
     second = NovelProfile(name='DRAGON')
@@ -93,23 +93,19 @@ def test_novel_tabs_can_close_without_deleting_profiles_and_restore_neighbor(tmp
     window = MainWindow(repo)
     select_novel(window, first)
     select_novel(window, second)
-    first_bar = window.workspaces[first.id].novel_tabs
-    second_bar = window.workspaces[second.id].novel_tabs
-    assert first_bar.tabsClosable()
-    close_index = next(i for i in range(second_bar.count()) if second_bar.tabData(i) == second.id)
-    second_bar.tabCloseRequested.emit(close_index)
+    assert set(window.workspaces) == {second.id}
+    window.workspaces[second.id].novel_header.close_button.click()
     assert second.id not in window._open_workspace_ids
-    assert all(bar.tabData(i) != second.id for ws in window.workspaces.values()
-               for bar in [ws.novel_tabs] for i in range(bar.count()))
+    assert window.workspaces == {}
     assert second.id in window.settings.closed_workspace_profile_ids
-    assert window.profile.id == first.id
+    assert window.profile is None
     assert any(profile.id == second.id for profile in repo.list_profiles())
     window.close()
 
     restored = MainWindow(ProjectRepository(tmp_path))
     assert second.id not in restored._open_workspace_ids
-    assert all(restored.workspaces[first.id].novel_tabs.tabData(i) != second.id
-               for i in range(restored.workspaces[first.id].novel_tabs.count()))
+    assert restored.workspaces == {}
+    assert restored.main_pages.currentWidget() is restored.library_page
     assert any(profile.id == second.id for profile in restored.ps_list)
     restored.close()
 

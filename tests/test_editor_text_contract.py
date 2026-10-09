@@ -65,6 +65,29 @@ def test_novel_open_paste_save_copy_reopen_without_open_autosave(tmp_path, folde
     editor.autosave_timer.stop()
 
 
+@pytest.mark.parametrize('relative', ['FDR.txt', 'FDRContext.md', 'FDRGlossary.txt', 'notes/OTHER.MD', 'prompts/Prompt.md', 'style/custom.txt'])
+def test_every_open_txt_md_normalizes_regardless_of_name_or_folder(tmp_path, relative):
+    path = tmp_path / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(RAW, encoding='utf-8')
+    unopened = tmp_path / 'not-opened.txt'
+    unopened.write_text(RAW, encoding='utf-8')
+    tabs = EditorTabs(); editor = tabs.open_file(path)
+    assert editor.toPlainText() == CLEAN
+    assert path.read_text(encoding='utf-8') == RAW
+    assert not editor.autosave_timer.isActive()
+    editor.selectAll()
+    data = QMimeData(); data.setText(RAW)
+    editor.insertFromMimeData(data)
+    assert editor.toPlainText() == CLEAN
+    editor.selectAll(); editor.copy()
+    assert QApplication.clipboard().text() == CLEAN
+    assert tabs.save_editor(editor, autosave=True)
+    assert path.read_text(encoding='utf-8') == CLEAN
+    assert unopened.read_text(encoding='utf-8') == RAW
+    assert EditorTabs().open_file(path).toPlainText() == CLEAN
+
+
 def test_autosave_normalizes_visible_text_preserving_undo_bom_cr(tmp_path):
     app()
     path = tmp_path / 'chapter_1.txt'
@@ -86,21 +109,23 @@ def test_tsv_exact_plain_html_roundtrip_empty_columns(tmp_path, name):
     text = VOCAB + '\n\n李秀\tซิ่ว\t\t\n\t\t\t'
     path = tmp_path / name; path.write_text(text, encoding='utf-8')
     tabs = EditorTabs(); editor = tabs.open_file(path)
-    assert editor.toPlainText() == text
+    expected = remove_empty_lines(text) if name.endswith('.txt') else text
+    assert editor.toPlainText() == expected
     mime = QMimeData(); mime.setText(text); mime.setHtml('<table><tr><td>wrong</td></tr></table>')
     editor.selectAll(); editor.insertFromMimeData(mime)
     editor.selectAll(); editor.copy()
-    assert QApplication.clipboard().text() == text
+    assert QApplication.clipboard().text() == expected
     assert tabs.save_editor(editor, autosave=True)
-    assert path.read_text(encoding='utf-8') == text
-    assert EditorTabs().open_file(path).toPlainText() == text
+    assert path.read_text(encoding='utf-8') == expected
+    assert EditorTabs().open_file(path).toPlainText() == expected
+    assert expected.count('\t') == text.count('\t')
     editor.autosave_timer.stop()
 
 
-def test_context_only_novel_section_changes(tmp_path):
+def test_open_context_compacts_all_zero_character_lines(tmp_path):
     app()
     raw = '# Settings\n\nkeep\n\n# Novel Text\n\nA\n\nB\n\n# Glossary\n\n' + VOCAB
-    expected = '# Settings\n\nkeep\n\n# Novel Text\nA\nB\n# Glossary\n\n' + VOCAB
+    expected = '# Settings\nkeep\n# Novel Text\nA\nB\n# Glossary\n' + VOCAB
     path = tmp_path / 'Context.md'; path.write_text(raw, encoding='utf-8')
     tabs = EditorTabs(); editor = tabs.open_file(path)
     assert editor.toPlainText() == expected
@@ -132,17 +157,17 @@ def test_paste_leading_separator_never_joins_neighboring_lines(tmp_path):
     export.editor.undo(); assert export.editor.toPlainText() == 'previous'
 
 
-def test_context_protects_fenced_data_and_structured_paste(tmp_path):
+def test_open_context_compacts_fence_and_paste_without_changing_characters(tmp_path):
     app()
     raw = '# Novel Text\n\nA\n\n```json\n{\n\n}\n```\n\nB\n\n# Settings\n\nold'
-    expected = '# Novel Text\nA\n```json\n{\n\n}\n```\nB\n# Settings\n\nold'
+    expected = '# Novel Text\nA\n```json\n{\n}\n```\nB\n# Settings\nold'
     path = tmp_path / 'Context.md'; path.write_text(raw, encoding='utf-8')
     tabs = EditorTabs(); editor = tabs.open_file(path)
     assert editor.toPlainText() == expected
     editor.moveCursor(editor.textCursor().MoveOperation.End)
     data = QMimeData(); data.setText('\n\nnew\n\nvalue')
     editor.insertFromMimeData(data)
-    assert editor.toPlainText() == expected + '\n\nnew\n\nvalue'
+    assert editor.toPlainText() == expected + '\nnew\nvalue'
     editor.autosave_timer.stop()
 
 
@@ -159,16 +184,17 @@ def test_card_selection_preserves_font_weight_and_size():
     assert selected.font == regular.font
 
 
-def test_context_copy_partial_fence_keeps_blank_data(tmp_path):
+def test_open_context_copy_partial_fence_compacts_blank_lines(tmp_path):
     app()
     raw = '# Novel Text\nA\n```json\n{\n\n}\n```\nB\n# Settings\n\nvalue'
     path = tmp_path / 'Context.md'; path.write_text(raw, encoding='utf-8')
     tabs = EditorTabs(); editor = tabs.open_file(path)
     cursor = editor.textCursor()
-    start = raw.index('{'); end = raw.index('}') + 1
+    visible = editor.toPlainText()
+    start = visible.index('{'); end = visible.index('}') + 1
     cursor.setPosition(start); cursor.setPosition(end, cursor.MoveMode.KeepAnchor)
     editor.setTextCursor(cursor); editor.copy()
-    assert QApplication.clipboard().text() == '{\n\n}'
+    assert QApplication.clipboard().text() == '{\n}'
 
 
 def test_normalization_conflict_and_failed_save_keep_recovery(tmp_path, monkeypatch):

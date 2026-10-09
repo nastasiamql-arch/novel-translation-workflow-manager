@@ -102,7 +102,7 @@ def test_text_file_open_save_and_copy_preserve_tabs(tmp_path, suffix):
     assert tabs.dirty_count() == 0
 
 
-@pytest.mark.parametrize("name", ["Prompt.md", "config.json", "table.csv"])
+@pytest.mark.parametrize("name", ["config.json", "table.csv"])
 def test_structured_files_keep_formatting(tmp_path, name):
     app()
     raw = "heading\n\n  content\t\t\n"

@@ -7,7 +7,7 @@ from novel_workflow.updater import check_for_update, download_update
 
 def main():
     version, destination = sys.argv[1:]
-    update = check_for_update('3.6.7', timeout=30)
+    update = check_for_update('3.6.8', timeout=30)
     assert update and update.version == version
     published = download_update(update, Path(destination), timeout=60)
     built = Path('dist') / f'NovelWorkflow-Setup-{version}.exe'

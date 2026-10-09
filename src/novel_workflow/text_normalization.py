@@ -20,6 +20,16 @@ def normalize_novel_text(text: str) -> str:
 remove_empty_lines = normalize_novel_text
 
 
+def cleans_editor_text(path: Path) -> bool:
+    """The user's Editor rule depends only on the opened file's extension."""
+    return Path(path).suffix.casefold() in {'.txt', '.md', '.markdown'}
+
+
+def normalize_editor_text(path: Path, text: str) -> str:
+    """Compact an opened text document; never scan or rewrite unopened files."""
+    return normalize_novel_text(text) if cleans_editor_text(path) else text
+
+
 def is_vocabulary(path: Path, text: str = '') -> bool:
     names = {part.casefold() for part in path.parts}
     if path.suffix.lower() == '.tsv' or names & {'glossary', 'characters', 'vocabulary'}:

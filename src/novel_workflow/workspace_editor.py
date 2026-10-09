@@ -20,9 +20,9 @@ from .theme import editor_colors
 from .models import AppSettings
 from .recovery import commit_staged
 from .storage import data_root, write_json
-from .text_normalization import (normalize_novel_text, normalize_file_text,
-    cleans_file_text, is_vocabulary, vocabulary_warnings, detect_newline,
-    context_is_novel_at, deleted_ranges, LINE_SEPARATOR)
+from .text_normalization import (normalize_novel_text, normalize_editor_text,
+    cleans_editor_text, is_vocabulary, vocabulary_warnings, detect_newline,
+    deleted_ranges, LINE_SEPARATOR)
 
 
 TEXT_EXTENSIONS = {
@@ -489,19 +489,14 @@ class CodeEditor(QPlainTextEdit):
 
     def normalized_text(self, text):
         path = self.property('documentPath')
-        if getattr(self, 'vocabulary_mode', False):
-            return text
-        if path and Path(path).stem.casefold() == 'context' and not re.search(r'(?m)^#{1,6}[ \t]', text):
-            if not context_is_novel_at(self.toPlainText(), self.textCursor().selectionStart()):
-                return text
-        return normalize_file_text(Path(path), text) if path else normalize_novel_text(text)
+        return normalize_editor_text(Path(path), text) if path else normalize_novel_text(text)
 
     def normalize_visible_text(self):
         if not self.clean_empty_lines:
             return
         old = self.toPlainText()
         path = self.property('documentPath')
-        new = normalize_file_text(Path(path), old) if path else normalize_novel_text(old)
+        new = normalize_editor_text(Path(path), old) if path else normalize_novel_text(old)
         if new == old:
             return
         original_cursor = self.textCursor()
@@ -529,23 +524,7 @@ class CodeEditor(QPlainTextEdit):
             # Rich-text/ODF payloads still contain the original blank paragraphs
             # and external apps may prefer them over the cleaned plain text.
             clean_data = QMimeData()
-            path = self.property('documentPath')
-            if path and Path(path).stem.casefold() == 'context':
-                old = self.toPlainText()
-                normalized = normalize_file_text(Path(path), old)
-                # Derive selected text from the whole Context's section modes,
-                # including selections that span fenced/structured content.
-                cursor = self.textCursor()
-                start = len(old.encode('utf-16-le')[:cursor.selectionStart() * 2].decode('utf-16-le'))
-                end = len(old.encode('utf-16-le')[:cursor.selectionEnd() * 2].decode('utf-16-le'))
-                text = old[start:end]
-                for a, b in reversed(list(deleted_ranges(old, normalized))):
-                    left, right = max(a, start) - start, min(b, end) - start
-                    if left < right:
-                        text = text[:left] + text[right:]
-                clean_data.setText(text)
-            else:
-                clean_data.setText(self.normalized_text(data.text()))
+            clean_data.setText(self.normalized_text(data.text()))
             return clean_data
         return data
 
@@ -923,10 +902,10 @@ class EditorTabs(QWidget):
 
         editor = CodeEditor(font_size=self._font_size, appearance=self.appearance)
         editor.vocabulary_mode = is_vocabulary(path, text)
-        editor.clean_empty_lines = cleans_file_text(path) and not editor.vocabulary_mode
-        editor.compact_pasted_empty_lines = cleans_file_text(path)
+        editor.clean_empty_lines = cleans_editor_text(path)
+        editor.compact_pasted_empty_lines = cleans_editor_text(path)
         original_text = text
-        text = normalize_file_text(path, text)
+        text = normalize_editor_text(path, text)
         editor.disk_digest = hashlib.sha256(original_bytes).digest()
         editor.disk_bom = original_bytes.startswith(b"\xef\xbb\xbf")
         editor.disk_newline = detect_newline(original_text)
@@ -1006,7 +985,7 @@ class EditorTabs(QWidget):
         saved = json.loads(self._recovery_path(path).read_text(encoding='utf-8'))
         if saved.get('path') != str(path):
             raise ValueError('Recovery belongs to another file')
-        editor.setPlainText(normalize_file_text(path, saved['text']))
+        editor.setPlainText(normalize_editor_text(path, saved['text']))
 
     def save_editor(self, editor, quiet=False, autosave=False) -> bool:
         path = self._path(editor)
@@ -1095,9 +1074,10 @@ class EditorTabs(QWidget):
                 timer.stop()
             editor.blockSignals(True)
             raw = path.read_bytes()
-            normalized = normalize_file_text(path, text)
+            normalized = normalize_editor_text(path, text)
             editor.vocabulary_mode = is_vocabulary(path, text)
-            editor.clean_empty_lines = cleans_file_text(path) and not editor.vocabulary_mode
+            editor.clean_empty_lines = cleans_editor_text(path)
+            editor.compact_pasted_empty_lines = cleans_editor_text(path)
             editor.setPlainText(normalized)
             editor.disk_digest = hashlib.sha256(raw).digest()
             editor.disk_bom = raw.startswith(b'\xef\xbb\xbf')

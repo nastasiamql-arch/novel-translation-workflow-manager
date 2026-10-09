@@ -404,7 +404,11 @@ def main() -> int:
                 window._open_profile_card(window.profile_cards.item(0))
                 app.processEvents()
                 assert window.profile.id == profile.id
-                assert window.workspaces[profile.id] is workspace
+                assert set(window.workspaces) == {profile.id}
+                workspace = window.workspaces[profile.id]
+                export_tab = workspace.editor.export_tab
+                assert workspace.novel_header.cover.isVisible()
+                assert not workspace.novel_header.cover.pixmap().isNull()
 
                 window.groups_dialog()
                 assert window.main_pages.currentWidget() is window.utility_page

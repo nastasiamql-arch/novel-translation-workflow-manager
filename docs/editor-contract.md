@@ -9,11 +9,19 @@ requirements, including for future AI-assisted changes.
   to decide which lines to remove or to alter retained content.
 - Never join two content lines, reorder lines, modify characters, or add spaces
   or tabs. Preserve supplied paste boundary separators beside existing text.
-- `normalize_novel_text()` is the single novel rule. Source, translated,
+- User instruction, 2026-10-09 / v3.6.9: every TXT/MD/Markdown opened in an
+  Editor uses `normalize_editor_text()` regardless of name or folder, including
+  FDR.txt, FDRContext.md and FDRGlossary.txt. Apply on Open/Reload, Paste, Copy,
+  Save/AutoSave and Recovery Restore. This explicit instruction supersedes the
+  earlier Editor exemptions for Context sections, prompts/styles and vocabulary
+  TXT blank lines. All characters, TSV tabs and empty columns remain protected.
+  Files not opened in an Editor must not be scanned or rewritten by this rule.
+- `normalize_novel_text()` is the single line rule. Source, translated,
   reviewed, polished, identifiable chapter TXT/Markdown, TXT Export, drafts,
   workflow Assembly and Preview use it through the data-type dispatcher.
-- Prompt, Style, JSON, CSV, configuration and unidentified structured files
-  retain their formatting. Structured Context normalizes only explicitly named
+- Outside the Editor, Prompt, Style, JSON, CSV, configuration and unidentified
+  structured files retain their formatting. Workflow assembly still uses the
+  data-type dispatcher; structured Context normalizes only explicitly named
   novel sections (`Novel Text`, `Source`, `Translation`, `Reviewed`, `Polished`,
   `เนื้อหานิยาย`, `ต้นฉบับ`, `คำแปล`, `เกลาสำนวน`). Fenced data and other
   sections retain meaningful spacing.
@@ -33,6 +41,13 @@ requirements, including for future AI-assisted changes.
   separator; the pure novel normalizer keeps retained individual separators.
 - Preserve strict UTF-8 reads, SHA-256 conflict checks before/after staging,
   recovery snapshots, export rollback and Verified/Context accounting.
+- Only one novel workspace may remain open. Save and capture per-novel file
+  tabs/cursor/draft/workflow state before disposing the previous workspace;
+  preserve every library profile. Failed saves block switching. Old sessions
+  restore only the last active novel; file tabs within that novel remain multiple.
+- Display the active profile's cover at 44 x 58 logical pixels beside its title
+  and progress, with a placeholder for missing/invalid covers. Do not change
+  text normalization, line height or font weight as part of cover display.
 - Run the full regression suite and native Windows clipboard tests before
   release. Build/test upgrading from the previous installer, verify the published
   download through the application updater's origin, size and SHA-256 checks,

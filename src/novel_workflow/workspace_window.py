@@ -390,8 +390,10 @@ class WorkspacePage(QWidget):
         editor_layout = QVBoxLayout()
         editor_layout.setContentsMargins(0, 0, 0, 0)
         editor_layout.setSpacing(3)
-        self.novel_header = NovelHeader()
+        self.novel_header = NovelHeader(owner.repo)
         self.novel_header.refresh(profile)
+        self.novel_header.close_button.clicked.connect(
+            lambda: self.owner._close_novel_tab(self.profile_id))
         editor_layout.addWidget(self.novel_header)
         editor_layout.addWidget(self.editor_header)
         editor_layout.addWidget(self.editor, 1)
@@ -434,19 +436,6 @@ class WorkspacePage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-        self.novel_tabs = QTabBar()
-        self.novel_tabs.setObjectName('novelTabBar')
-        self.novel_tabs.setAccessibleName('นิยายที่เปิดทำงาน')
-        self.novel_tabs.setExpanding(False)
-        self.novel_tabs.setUsesScrollButtons(True)
-        self.novel_tabs.setElideMode(Qt.ElideRight)
-        self.novel_tabs.setTabsClosable(True)
-        self.novel_tabs.currentChanged.connect(
-            lambda index: self.owner._switch_novel_tab(self.novel_tabs.tabData(index)))
-        self.novel_tabs.tabCloseRequested.connect(
-            lambda index, bar=self.novel_tabs:
-                self.owner._close_novel_tab(bar.tabData(index)))
-        layout.addWidget(self.novel_tabs)
         layout.addWidget(self.content_stack, 1)
 
         self.configure(profile)
@@ -1463,7 +1452,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def build(self):
         self._settings_open = False
         self.workspaces = {}
-        self._open_workspace_ids = list(self.settings.workspace_open_profile_ids)
+        # Old multi-novel sessions retain per-novel file state, not open tabs.
+        self._open_workspace_ids = []
         self._session_save_timer = QTimer(self)
         self._session_save_timer.setSingleShot(True)
         self._session_save_timer.setInterval(250)
@@ -1902,8 +1892,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         was_closed = profile.id in closed_ids
         if was_closed:
             self.settings.closed_workspace_profile_ids = [pid for pid in closed_ids if pid != profile.id]
-        if profile.id not in self._open_workspace_ids:
-            self._open_workspace_ids.append(profile.id)
+        self._open_workspace_ids = [profile.id]
         workspace = self.workspaces.get(profile.id)
         if workspace is None:
             workspace = WorkspacePage(self, profile)
@@ -1959,7 +1948,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             workspace.configure(profile)
             if was_closed and profile.open_working_tabs_on_open:
                 self._open_profile_working_tabs(profile, workspace)
-        self._refresh_novel_tabs()
         return workspace
 
     def _open_profile_working_tabs(self, profile, workspace):
@@ -1975,33 +1963,15 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 continue
         workspace.editor.prioritize_paths(preferred)
 
-    def _refresh_novel_tabs(self):
-        profiles = {profile.id: profile for profile in getattr(self, 'ps_list', [])}
-        self._open_workspace_ids = [pid for pid in self._open_workspace_ids if pid in profiles]
-        for workspace in self.workspaces.values():
-            bar = workspace.novel_tabs
-            bar.blockSignals(True)
-            while bar.count():
-                bar.removeTab(0)
-            for pid in self._open_workspace_ids:
-                index = bar.addTab(profiles[pid].name)
-                bar.setTabData(index, pid)
-                bar.setTabToolTip(index, profiles[pid].name)
-                close_button = bar.tabButton(index, QTabBar.RightSide)
-                if close_button:
-                    close_button.setToolTip(f"ปิดแท็บนิยาย {profiles[pid].name}")
-                    close_button.setAccessibleName(f"ปิดแท็บนิยาย {profiles[pid].name}")
-                if pid == workspace.profile_id:
-                    bar.setCurrentIndex(index)
-            bar.blockSignals(False)
-
-    def _switch_novel_tab(self, profile_id):
-        if not profile_id or not self.profile or profile_id == self.profile.id:
-            return
-        index = next((i for i, profile in enumerate(self.ps_list) if profile.id == profile_id), -1)
-        if index >= 0:
-            self.select_profile(index)
-        self._refresh_novel_tabs()  # Restore selection if saving blocked the switch.
+    def _discard_workspace(self, profile_id):
+        """Dispose an already saved workspace without deleting its profile/session."""
+        workspace = self.workspaces.pop(profile_id, None)
+        if workspace is not None:
+            for timer in workspace.findChildren(QTimer):
+                timer.stop()
+            self.workspace_stack.removeWidget(workspace)
+            workspace.hide()
+            workspace.deleteLater()
 
     def _close_novel_tab(self, profile_id):
         if not profile_id or profile_id not in self._open_workspace_ids:
@@ -2010,23 +1980,17 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if workspace and not workspace.editor.save_all(include_normalization=False):
             self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังปิดแท็บนิยายไม่ได้", 5000)
             return
-        old_index = self._open_workspace_ids.index(profile_id)
-        self._open_workspace_ids.remove(profile_id)
+        self._capture_sessions()
+        self._open_workspace_ids = []
         if profile_id not in self.settings.closed_workspace_profile_ids:
             self.settings.closed_workspace_profile_ids.append(profile_id)
         if self.profile and self.profile.id == profile_id:
-            if self._open_workspace_ids:
-                neighbor = self._open_workspace_ids[min(old_index, len(self._open_workspace_ids) - 1)]
-                index = next((i for i, item in enumerate(self.ps_list) if item.id == neighbor), -1)
-                if index >= 0:
-                    self.select_profile(index)
-            else:
-                self.profile = None
-                self.si = -1
-                self.settings.last_profile_id = None
-                self.workspace_stack.setCurrentWidget(self.empty_page)
-                self.main_pages.setCurrentWidget(self.library_page)
-        self._refresh_novel_tabs()
+            self.profile = None
+            self.si = -1
+            self.settings.last_profile_id = None
+            self.workspace_stack.setCurrentWidget(self.empty_page)
+            self.main_pages.setCurrentWidget(self.library_page)
+        self._discard_workspace(profile_id)
         self._persist_workspace_session()
 
     def select_profile(self, index):
@@ -2044,12 +2008,20 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if index < 0 or index >= len(getattr(self, "ps_list", [])):
             return
 
-        old_profile = getattr(self, "profile", None)
-        if old_profile and old_profile.id != self.ps_list[index].id:
-            previous = self.workspaces.get(old_profile.id)
-            if previous and not previous.editor.save_all(include_normalization=False):
+        target = self.ps_list[index]
+        for profile_id, previous in list(self.workspaces.items()):
+            if profile_id == target.id:
+                continue
+            if not previous.editor.save_all(include_normalization=False):
                 self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนนิยายไม่ได้", 5000)
                 return
+            self._capture_sessions()
+            try:
+                self.repo.save_settings(self.settings)
+            except (OSError, ValueError) as exc:
+                self.statusBar().showMessage(f"บันทึกสถานะไม่สำเร็จ จึงยังเปลี่ยนนิยายไม่ได้: {exc}", 6000)
+                return
+            self._discard_workspace(profile_id)
         self.profile = self.ps_list[index]
         self.settings.last_profile_id = self.profile.id
         workspace = self._workspace(self.profile)

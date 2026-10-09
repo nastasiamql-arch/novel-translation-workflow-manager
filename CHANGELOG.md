@@ -2,6 +2,22 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.6.9 - 2026-10-09
+
+- Compact only zero-character lines in every TXT/Markdown opened in the
+  Editor, including external per-novel names such as FDR.txt, FDRContext.md
+  and FDRGlossary.txt. Apply consistently on open/reload, paste, copy,
+  save/autosave and recovery restore; preserve spaces, NBSP and every TSV tab.
+  Opening alone does not rewrite disk; unopened files are not processed.
+- Work on one novel at a time. Switching saves and closes the previous
+  workspace, preserving each novel's file tabs, cursor, draft and workflow
+  session; block switching if saving fails. Keep all novels in the library
+  and restore only the last active novel from older multi-novel sessions.
+- Show a small cover beside the active novel's title and progress, with a
+  fallback for missing covers. Keep multiple file tabs within the current novel.
+- Add regressions for arbitrary file names, unopened-file protection, single
+  workspace sessions and cover display; test published upgrade from v3.6.8.
+
 ## 3.6.8 - 2026-10-09
 
 - Restore consistent novel cleanup on paste, open/reload, copy, save/autosave,

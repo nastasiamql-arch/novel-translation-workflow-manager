@@ -1,7 +1,8 @@
 """Reusable shell components with content-driven geometry."""
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtWidgets import QWidget, QFrame, QVBoxLayout, QHBoxLayout, QLabel, QToolButton, QSizePolicy, QStackedWidget
-from PySide6.QtGui import QFontMetrics
+from PySide6.QtGui import QFontMetrics, QPixmap
+from pathlib import Path
 from .navigation_icons import navigation_icon
 from .theme import theme_colors
 
@@ -20,20 +21,48 @@ class ElidingLabel(QLabel):
 
 
 class NovelHeader(QFrame):
-    def __init__(self):
+    def __init__(self, repo=None):
         super().__init__()
+        self.repo = repo
         self.setObjectName('novelHeader')
-        layout = QVBoxLayout(self); layout.setContentsMargins(12,8,12,8); layout.setSpacing(3)
+        layout = QHBoxLayout(self); layout.setContentsMargins(12,8,12,8); layout.setSpacing(10)
+        self.cover = QLabel(); self.cover.setObjectName('activeNovelCover')
+        self.cover.setFixedSize(44, 58); self.cover.setAlignment(Qt.AlignCenter)
+        self.cover.setAccessibleName('ปกนิยายที่กำลังทำงาน')
+        layout.addWidget(self.cover)
+        text = QVBoxLayout(); text.setSpacing(3)
         self.title = ElidingLabel(); self.title.setObjectName('sectionHeading')
         self.title.setMinimumWidth(0); self.title.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Preferred)
         self.progress = QLabel(); self.progress.setWordWrap(True)
         self.progress.setToolTip('อ่านจาก Context; verified นับเมื่อส่งออกสำเร็จ')
-        layout.addWidget(self.title); layout.addWidget(self.progress)
+        text.addWidget(self.title); text.addWidget(self.progress)
+        layout.addLayout(text, 1)
+        self.close_button = QToolButton(); self.close_button.setText('×')
+        self.close_button.setAccessibleName('ปิดเรื่องที่กำลังทำงาน')
+        self.close_button.setToolTip('ปิดเรื่องนี้และกลับคลังนิยาย')
+        layout.addWidget(self.close_button, 0, Qt.AlignTop)
 
     def refresh(self, profile, chapter=None):
         from .translation_progress import daily_chapter_count, goal_progress
         from .export_service import daily_export_count, verified_goal_text
         self.title.setText(profile.name)
+        self.cover.setToolTip(profile.name)
+        self.cover.setProperty('coverPath', '')
+        image = QPixmap()
+        if self.repo and profile.cover_image_path:
+            try:
+                path = self.repo.resolve_project_path(profile.id, profile.cover_image_path)
+                image = QPixmap(str(path)) if path.is_file() else QPixmap()
+                if not image.isNull():
+                    self.cover.setProperty('coverPath', str(path.resolve()))
+            except (OSError, ValueError):
+                pass
+        if image.isNull():
+            image = QPixmap(str(Path(__file__).parent / 'resources' / 'novelworkflow.png'))
+        if image.isNull():
+            self.cover.setText('▤')
+        else:
+            self.cover.setPixmap(image.scaled(self.cover.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
         chapter = chapter if chapter is not None else profile.chapter_state.current_chapter
         translated = f'แปลถึงบท {chapter}' if profile.context_path else 'ยังไม่ได้เลือก Context'
         goal = goal_progress(profile)

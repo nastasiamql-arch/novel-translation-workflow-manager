@@ -112,7 +112,7 @@ def test_vocabulary_session_is_restored_without_translation_accounting(tmp_path)
     restored.close()
 
 
-def test_novel_tabs_switch_same_named_files_and_restore_independent_sessions(tmp_path):
+def test_single_novel_switch_same_named_files_and_restore_independent_sessions(tmp_path):
     app()
     from novel_workflow.workspace_window import MainWindow
     repo, p, assembler = setup_profile(tmp_path)
@@ -126,15 +126,15 @@ def test_novel_tabs_switch_same_named_files_and_restore_independent_sessions(tmp
         path.write_text(value, encoding='utf-8')
         window.select_profile(next(i for i, item in enumerate(window.ps_list) if item.id == profile.id))
         window.workspaces[profile.id].editor.open_file(path)
-    bar = window.workspaces[q.id].novel_tabs
-    bar.setCurrentIndex(next(i for i in range(bar.count()) if bar.tabData(i) == p.id))
+    assert set(window.workspaces) == {q.id}
+    window.select_profile(next(i for i, profile in enumerate(window.ps_list) if profile.id == p.id))
     assert window.profile.id == p.id
     assert window.workspaces[p.id].editor._current_editor().toPlainText() == 'A ไทย 中文'
     window.close()
     restored = MainWindow(ProjectRepository(tmp_path))
-    bar = restored.workspaces[p.id].novel_tabs
-    assert {bar.tabData(i) for i in range(bar.count())} == {p.id, q.id}
-    bar.setCurrentIndex(next(i for i in range(bar.count()) if bar.tabData(i) == q.id))
+    assert set(restored.workspaces) == {p.id}
+    restored.select_profile(next(i for i, profile in enumerate(restored.ps_list) if profile.id == q.id))
+    assert set(restored.workspaces) == {q.id}
     assert restored.workspaces[q.id].editor._current_editor().toPlainText() == 'B 日本 English'
     restored.close()
 
@@ -235,12 +235,14 @@ def test_autosave_bom_crlf_unicode_undo_and_external_conflict(tmp_path):
     path.write_bytes(raw)
     tabs = EditorTabs()
     editor = tabs.open_file(path)
+    clean = '\ufeffไทย\r\n中文 日本 English'.encode('utf-8')
+    assert path.read_bytes() == raw  # Open never rewrites the original.
     assert tabs.save_editor(editor, quiet=True)
-    assert path.read_bytes() == raw
+    assert path.read_bytes() == clean
     editor.moveCursor(editor.textCursor().MoveOperation.End)
     editor.insertPlainText('added')
     QTest.qWait(1100)
-    assert path.read_bytes() == raw + b'added'
+    assert path.read_bytes() == clean + b'added'
     assert editor.document().isUndoAvailable()
     path.write_text('external', encoding='utf-8')
     editor.insertPlainText('local')
