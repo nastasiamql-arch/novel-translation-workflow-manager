@@ -9,7 +9,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("NOVELWORKFLOW_DISABLE_WEBENGINE", "1")
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer, Qt, QCoreApplication, QEvent
 from PySide6.QtGui import QColor, QPalette, QTextCursor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QPushButton, QToolBar, QLabel
@@ -569,6 +569,13 @@ def main() -> int:
         event_result = app.exec()
         print(f"Qt event loop exit status: {event_result}")
         result = 0 if smoke_passed else (event_result or 1)
+        # Release QFileSystemModel/watchers before deleting the temporary tree.
+        # Single-novel switching also schedules retired workspaces for deletion.
+        assert window.close(), 'Smoke window did not close safely'
+        window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
+        print(f"UI smoke teardown complete; result: {result}")
 
     sys.stdout.flush()
     sys.stderr.flush()
