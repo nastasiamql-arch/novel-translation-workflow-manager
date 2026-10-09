@@ -2,7 +2,7 @@
 from PySide6.QtCore import Qt, QEvent, QTimer
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFrame, QLabel,
     QGridLayout, QPushButton, QScrollArea, QListWidget, QAbstractItemView, QSpinBox,
-    QLineEdit, QSizePolicy, QComboBox, QCheckBox)
+    QLineEdit, QSizePolicy, QComboBox, QCheckBox, QLayout)
 from .shell_components import ElidingLabel
 
 
@@ -87,7 +87,29 @@ class SettingsPage(QWidget):
             profile_actions.addWidget(button, index // 2, index % 2)
         profile_layout.addLayout(profile_actions)
         profile_panel.setMinimumWidth(230)
-        root.addWidget(profile_panel, 1)
+        sidebar = QFrame()
+        sidebar.setObjectName("preferencesSidebar")
+        sidebar.setFixedWidth(230)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar_layout.setSizeConstraint(QLayout.SetMinimumSize)
+        categories = AttachmentList()
+        categories.setObjectName("preferencesCategory")
+        categories.setAccessibleName("หมวดการตั้งค่า")
+        categories.addItems(["General", "Novel", "Workflow", "Workflow Files", "Working Tabs", "TXT Export", "Program Updates"])
+        categories.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        sidebar_layout.addWidget(categories)
+        owner.profiles.setMinimumHeight(170)
+        owner.profiles.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        profile_panel.setMinimumWidth(0)
+        sidebar_layout.addWidget(profile_panel, 1)
+        sidebar_layout.addStretch(1)
+        sidebar_scroll = QScrollArea()
+        sidebar_scroll.setWidgetResizable(True)
+        sidebar_scroll.setFixedWidth(250)
+        sidebar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        sidebar_scroll.setWidget(sidebar)
+        root.addWidget(sidebar_scroll)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -97,12 +119,6 @@ class SettingsPage(QWidget):
         owner.settings_profile_heading = ElidingLabel("เลือกนิยายเพื่อจัดการการตั้งค่า")
         owner.settings_profile_heading.setObjectName("sectionHeading")
         detail.addWidget(owner.settings_profile_heading)
-        categories = QComboBox()
-        categories.setObjectName("preferencesCategory")
-        categories.setAccessibleName("หมวดการตั้งค่า")
-        categories.addItems(["General", "Novel", "Workflow", "Workflow Files", "Working Tabs", "TXT Export", "Program Updates"])
-        detail.addWidget(categories)
-
         info_frame = QFrame()
         info_frame.setObjectName("settingsCard")
         info_layout = QHBoxLayout(info_frame)
@@ -119,15 +135,15 @@ class SettingsPage(QWidget):
         info_layout.addWidget(save_goal)
         detail.addWidget(info_frame)
 
-        story_actions = QHBoxLayout()
-        for label, callback in (
+        story_actions = QGridLayout()
+        for index, (label, callback) in enumerate((
             ("เปลี่ยนชื่อ", owner.rename_profile), ("ตั้งรูปปก", owner.set_cover),
             ("เอารูปปกออก", owner.remove_cover), ("เลือก Context", owner.set_context_file),
             ("ลบนิยาย", owner.delete_profile),
-        ):
+        )):
             button = QPushButton(label)
             button.clicked.connect(callback)
-            story_actions.addWidget(button)
+            story_actions.addWidget(button, index // 2, index % 2)
         story_frame = QWidget()
         story_frame.setLayout(story_actions)
         detail.addWidget(story_frame)
@@ -175,13 +191,18 @@ class SettingsPage(QWidget):
         workflow_frame = QFrame()
         workflow_frame.setObjectName("settingsCard")
         workflow_layout = QVBoxLayout(workflow_frame)
-        workflow_layout.addWidget(QLabel("ขั้นตอนและไฟล์แนบ"))
+        workflow_heading = QLabel("Workflow · จัดการขั้นตอน")
+        workflow_layout.addWidget(workflow_heading)
         workflow_columns = QHBoxLayout()
-        steps_column = QVBoxLayout()
+        steps_panel = QWidget()
+        steps_column = QVBoxLayout(steps_panel)
+        steps_column.setContentsMargins(0, 0, 0, 0)
         steps_column.addWidget(QLabel("เลือกขั้นตอน"))
         owner.steps.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         steps_column.addWidget(owner.steps, 1)
-        step_actions = QGridLayout()
+        step_actions_panel = QWidget()
+        step_actions = QGridLayout(step_actions_panel)
+        step_actions.setContentsMargins(0, 0, 0, 0)
         for index, (label, callback) in enumerate((
             ("เพิ่มขั้นตอน", owner.add_step),
             ("เปลี่ยนชื่อ", workflow_step_action(owner.rename_step)),
@@ -195,11 +216,13 @@ class SettingsPage(QWidget):
             button.clicked.connect(callback)
             step_actions.addWidget(button, index // 2, index % 2)
         steps_column.addSpacing(12)
-        steps_column.addLayout(step_actions)
+        steps_column.addWidget(step_actions_panel)
         steps_column.addStretch(1)
-        workflow_columns.addLayout(steps_column, 1)
+        workflow_columns.addWidget(steps_panel, 1)
 
-        files_column = QVBoxLayout()
+        files_panel = QWidget()
+        files_column = QVBoxLayout(files_panel)
+        files_column.setContentsMargins(0, 0, 0, 0)
         files_header = QHBoxLayout()
         files_header.addWidget(QLabel("ไฟล์แนบของขั้นตอนที่เลือก"), 1)
         owner.settings_step_hint = QLabel("เลือกขั้นตอนเพื่อจัดการไฟล์")
@@ -221,7 +244,7 @@ class SettingsPage(QWidget):
         files_column.addSpacing(12)
         files_column.addLayout(file_actions)
         files_column.addStretch(1)
-        workflow_columns.addLayout(files_column, 2)
+        workflow_columns.addWidget(files_panel, 2)
         workflow_layout.addLayout(workflow_columns)
         detail.addWidget(workflow_frame, 1)
 
@@ -255,29 +278,46 @@ class SettingsPage(QWidget):
         downloader.clicked.connect(owner.open_downloader)
         detail.addWidget(downloader, alignment=Qt.AlignRight)
 
-        program_settings = QPushButton("ตั้งค่าโปรแกรม")
-        program_settings.clicked.connect(owner.program_settings_dialog)
-        detail.addWidget(program_settings, alignment=Qt.AlignRight)
         general = QFrame()
         general.setObjectName("settingsCard")
         general_layout = QVBoxLayout(general)
         general_layout.addWidget(QLabel("General · รูปลักษณ์และการคัดลอก"))
         appearance = QComboBox()
         appearance.addItems(["Light", "Dark", "System"])
+        appearance.setObjectName("preferencesAppearance")
         appearance.setCurrentText(owner.settings.appearance)
         general_layout.addWidget(appearance)
         zip_mode = QCheckBox("คัดลอกไฟล์เป็น ZIP")
         zip_mode.setObjectName("copyFilesAsZip")
         zip_mode.setChecked(owner.settings.copy_files_as_zip)
         general_layout.addWidget(zip_mode)
-        general_layout.addWidget(QLabel("ZIP เก็บในแคชของโปรแกรม เพื่อให้วางไฟล์ได้หลังปิดโปรแกรม"))
+        general_layout.addWidget(QLabel("ตัวคั่นเนื้อหา · ใช้ {FILE_NAME} แทนชื่อไฟล์"))
+        separator = QLineEdit(owner.settings.separator)
+        separator.setObjectName("assemblySeparator")
+        general_layout.addWidget(separator)
+        checks = [(zip_mode, "copy_files_as_zip")]
+        for label, attr in (("แสดงชื่อไฟล์ในเนื้อหาที่ประกอบ", "show_filename_heading"),
+                            ("ยืนยันก่อนลบไฟล์", "confirm_before_deleting"),
+                            ("เปิดนิยายล่าสุดเมื่อเริ่มโปรแกรม", "open_last_profile")):
+            check = QCheckBox(label)
+            check.setObjectName(attr)
+            check.setChecked(getattr(owner.settings, attr))
+            general_layout.addWidget(check)
+            checks.append((check, attr))
         def save_general(*_args):
+            theme_changed = owner.settings.appearance != appearance.currentText()
             owner.settings.appearance = appearance.currentText()
-            owner.settings.copy_files_as_zip = zip_mode.isChecked()
+            owner.settings.separator = separator.text()
+            for check, attr in checks:
+                setattr(owner.settings, attr, check.isChecked())
             owner.repo.save_settings(owner.settings)
-            owner.apply_theme()
+            if theme_changed:
+                owner.apply_theme()
+            owner.statusBar().showMessage("บันทึกการตั้งค่าแล้ว", 2000)
         appearance.currentTextChanged.connect(save_general)
-        zip_mode.toggled.connect(save_general)
+        separator.editingFinished.connect(save_general)
+        for check, _attr in checks:
+            check.toggled.connect(save_general)
         detail.addWidget(general)
 
         export_preferences = QFrame()
@@ -305,7 +345,7 @@ class SettingsPage(QWidget):
         updates_layout.addWidget(update)
         detail.addWidget(updates)
         sections = {
-            "General": [general, program_settings],
+            "General": [general],
             "Novel": [info_frame, story_frame, launcher_frame, downloader],
             "Workflow": [workflow_frame],
             "Workflow Files": [workflow_frame],
@@ -317,9 +357,21 @@ class SettingsPage(QWidget):
             shown = sections[name]
             for widget in {w for group in sections.values() for w in group}:
                 widget.setVisible(widget in shown)
+            profile_panel.setVisible(name not in ("General", "Program Updates"))
+            owner.settings_profile_heading.setVisible(name not in ("General", "Program Updates"))
+            files_panel.setVisible(name == "Workflow Files")
+            step_actions_panel.setVisible(name == "Workflow")
+            workflow_heading.setText("Workflow Files · ไฟล์แนบ" if name == "Workflow Files" else "Workflow · จัดการขั้นตอน")
+        def select_named_category(name):
+            for index in range(categories.count()):
+                if categories.item(index).text() == name:
+                    categories.setCurrentRow(index)
+                    return
+        page.select_category = select_named_category
         categories.currentTextChanged.connect(select_category)
-        categories.setCurrentText("Workflow")
-        select_category(categories.currentText())
+        categories.setCurrentRow(0)
+        select_category("General")
+        detail.addStretch(1)
         scroll.setWidget(detail_page)
         root.addWidget(scroll, 4)
 

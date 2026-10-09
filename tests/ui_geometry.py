@@ -107,9 +107,14 @@ def main():
                     win.settings.appearance=appearance; win.apply_theme()
                     for dimensions in ((900,600),(1440,860)):
                         win.resize(*dimensions); app.processEvents(); QTest.qWait(30)
-                        assert win.files.visualItemRect(win.files.item(5)).bottom() < win.files.viewport().height()
-                        for child in win.utility_stack.currentWidget().findChildren(QWidget):
-                            if child.isVisible() and child.layout(): assert_layout(child)
+                        page = win.utility_stack.currentWidget()
+                        for category in ("General", "Novel", "Workflow", "Workflow Files", "Working Tabs", "TXT Export", "Program Updates"):
+                            page.select_category(category)
+                            app.processEvents(); QTest.qWait(30)
+                            if category == "Workflow Files":
+                                assert win.files.visualItemRect(win.files.item(5)).bottom() < win.files.viewport().height()
+                            for child in page.findChildren(QWidget):
+                                if child.isVisible() and child.layout(): assert_layout(child)
 
             if os.environ.get("PALANTIR_UI_CAPTURE"):
                 Path("build").mkdir(exist_ok=True)

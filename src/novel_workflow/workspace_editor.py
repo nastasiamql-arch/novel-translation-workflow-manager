@@ -1245,7 +1245,7 @@ class EditorTabs(QWidget):
             QTabWidget#editorTabs QTabBar::tab {{
                 background: {colors['tab']}; color: {colors['gutter_text']};
                 border: 0; border-right: 1px solid {colors['border']};
-                border-radius: 0;
+                border-top-left-radius: 8px; border-top-right-radius: 8px;
                 padding: 10px 15px; min-width: 92px; min-height: 32px;
             }}
             QTabWidget#editorTabs QTabBar::tab:disabled {{

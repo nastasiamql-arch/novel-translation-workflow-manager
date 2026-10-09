@@ -272,7 +272,8 @@ def test_export_primary_action_renders_theme_contrast(window, appearance):
     button.setFocus(Qt.TabFocusReason)
     QApplication.processEvents()
     image = button.grab().toImage()
-    assert image.pixelColor(4, image.height() - 1).name().upper() == theme_colors(appearance)['focus']
+    # Probe the straight bottom edge, away from antialiased rounded corners.
+    assert image.pixelColor(image.width() // 2, image.height() - 1).name().upper() == theme_colors(appearance)['focus']
 
 
 def test_legacy_ranges_and_unknown_fields_preserved(tmp_path):
@@ -470,6 +471,7 @@ def test_settings_shows_six_complete_attachment_rows(window):
     step.files = [StepFile(label=f'ไฟล์แนบภาษาไทย 中文 {i}', path=f'file{i}.txt') for i in range(6)]
     window.repo.save_profile(window.profile)
     window.settings_dialog()
+    window._settings_page_state["page"].select_category("Workflow Files")
     QApplication.processEvents()
     listing = window.files
     listing.setStyleSheet("QListWidget { font-size: 24pt; }")
@@ -527,7 +529,7 @@ def test_attachment_multiselect_shortcuts_and_batch_remove(window):
     from novel_workflow.models import StepFile
     step=window.profile.workflow.steps[0]
     step.files=[StepFile(label=f'file {i}',path=f'{i}.txt',order=i) for i in range(5)]
-    window.repo.save_profile(window.profile);window.settings_dialog();QApplication.processEvents()
+    window.repo.save_profile(window.profile);window.settings_dialog();window._settings_page_state["page"].select_category("Workflow Files");QApplication.processEvents()
     listing=window.files
     QTest.mouseClick(listing.viewport(),Qt.LeftButton,pos=listing.visualItemRect(listing.item(0)).center())
     QTest.mouseClick(listing.viewport(),Qt.LeftButton,Qt.ControlModifier,pos=listing.visualItemRect(listing.item(2)).center())
@@ -542,7 +544,7 @@ def test_batch_move_preserves_selected_relative_order(window):
     from novel_workflow.models import StepFile
     step=window.profile.workflow.steps[0]
     step.files=[StepFile(label=str(i),path=f'{i}.txt',order=i) for i in range(5)]
-    window.repo.save_profile(window.profile);window.settings_dialog();QApplication.processEvents()
+    window.repo.save_profile(window.profile);window.settings_dialog();window._settings_page_state["page"].select_category("Workflow Files");QApplication.processEvents()
     for i in (1,2): window.files.item(i).setSelected(True)
     window.move_file(-1)
     assert [f.label for f in window.step().files] == ['1','2','0','3','4']
@@ -563,7 +565,7 @@ def test_cover_gap_resolves_to_nearest_slot(window):
 def test_working_files_batch_open_and_remove(window,monkeypatch):
     from novel_workflow.models import StepFile
     window.profile.working_files=[StepFile(label=str(i),path=f'{i}.txt',order=i) for i in range(3)]
-    window.repo.save_profile(window.profile);window.settings_dialog();QApplication.processEvents()
+    window.repo.save_profile(window.profile);window.settings_dialog();window._settings_page_state["page"].select_category("Workflow Files");QApplication.processEvents()
     listing=window.working_files;listing.item(0).setSelected(True);listing.item(2).setSelected(True)
     opened=[];monkeypatch.setattr(window,'open_working_file',opened.append)
     window.open_selected_working_file()
@@ -575,7 +577,7 @@ def test_working_files_batch_open_and_remove(window,monkeypatch):
 def test_shift_selects_attachment_range(window):
     from novel_workflow.models import StepFile
     window.profile.workflow.steps[0].files=[StepFile(label=str(i),path=str(i),order=i) for i in range(5)]
-    window.repo.save_profile(window.profile);window.settings_dialog();QApplication.processEvents()
+    window.repo.save_profile(window.profile);window.settings_dialog();window._settings_page_state["page"].select_category("Workflow Files");QApplication.processEvents()
     listing=window.files
     QTest.mouseClick(listing.viewport(),Qt.LeftButton,pos=listing.visualItemRect(listing.item(1)).center())
     QTest.mouseClick(listing.viewport(),Qt.LeftButton,Qt.ShiftModifier,pos=listing.visualItemRect(listing.item(4)).center())
@@ -631,7 +633,7 @@ def test_file_lists_and_launch_targets_allow_multiple_selection(window):
     assert workspace.files.selectionMode()==QAbstractItemView.ExtendedSelection
     assert workspace.file_tree.selectionMode()==QAbstractItemView.ExtendedSelection
     window.profile.launch_targets=[LaunchTarget(label=str(i),kind='file',target=f'{i}.txt',order=i) for i in range(3)]
-    window.repo.save_profile(window.profile);window.settings_dialog();QApplication.processEvents()
+    window.repo.save_profile(window.profile);window.settings_dialog();window._settings_page_state["page"].select_category("Workflow Files");QApplication.processEvents()
     for listing in (window.files,window.working_files,window.settings_launch_targets):
         assert listing.selectionMode()==QAbstractItemView.ExtendedSelection
     window.settings_launch_targets.selectAll();window.remove_settings_launch_target()

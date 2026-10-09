@@ -141,21 +141,21 @@ def test_novel_tabs_switch_same_named_files_and_restore_independent_sessions(tmp
 
 def test_settings_categories_keep_management_actions_accessible(tmp_path):
     app()
-    from PySide6.QtWidgets import QComboBox, QCheckBox
+    from PySide6.QtWidgets import QListWidget, QCheckBox
     from novel_workflow.workspace_window import MainWindow
     repo, p, assembler = setup_profile(tmp_path)
     window = MainWindow(repo)
     window.settings_dialog()
     page = window._settings_page_state['page']
-    categories = page.findChild(QComboBox, 'preferencesCategory')
+    categories = page.findChild(QListWidget, 'preferencesCategory')
     assert categories.count() == 7
-    categories.setCurrentText('General')
+    page.select_category('General')
     checkbox = page.findChild(QCheckBox, 'copyFilesAsZip')
     checkbox.setChecked(True)
     assert repo.load_settings().copy_files_as_zip
-    categories.setCurrentText('Working Tabs')
+    page.select_category('Working Tabs')
     assert not window.working_files.isHidden()
-    categories.setCurrentText('Workflow Files')
+    page.select_category('Workflow Files')
     assert not window.files.isHidden()
     window.return_from_utility_page()
     window.close()

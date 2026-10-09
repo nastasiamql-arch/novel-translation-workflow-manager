@@ -2,6 +2,15 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.6.1 - 2026-10-09
+
+- Replace the Settings category dropdown with a preferences sidebar and open General by default.
+- Consolidate all program preferences into General; retain separator, filename headings, deletion confirmation, last-novel startup, theme and ZIP settings without a duplicate dialog.
+- Separate workflow step actions from attachment management while preserving vocabulary and profile selection.
+- Round inputs, primary buttons, editor tabs and navigation controls consistently in Light and Dark; use integrated SpinBox arrows, scalable dropdown arrows and visible checkbox ticks.
+- Scroll the preferences sidebar safely on small windows; test all seven categories in both themes at 100/125/150/200% DPI.
+- Verify installation upgrades from the published 3.6.0 installer and preserve existing user data and appearance preferences.
+
 ## 3.6.0 - 2026-10-09
 
 - White Minimal light palette, blue selections, rounded preference cards and seven settings categories.

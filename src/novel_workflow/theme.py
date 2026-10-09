@@ -120,6 +120,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     arrow_theme = 'dark' if _use_dark(appearance) else 'light'
     up_arrow = (resources / f'spin-up-{arrow_theme}.svg').as_posix()
     down_arrow = (resources / f'spin-down-{arrow_theme}.svg').as_posix()
+    check_mark = (resources / f'check-{arrow_theme}.svg').as_posix()
     return f"""
     QWidget {{ color: {c['text']}; font-family: "Segoe UI", "Leelawadee UI", "Tahoma", sans-serif; font-size: 12pt; }}
     QFrame#navigationSidebar, QFrame#novelHeader {{ background: {c['sidebar']}; }}
@@ -191,34 +192,45 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QListWidget::item:selected, QTreeWidget::item:selected, QTreeView::item:selected {{ background: {c['item_selection']}; color: {c['selection_text']}; }}
     QListWidget::item:focus, QTreeWidget::item:focus, QTreeView::item:focus, QTableView::item:focus {{ outline: 0; border: 0; }}
     QHeaderView::section {{ color: {c['secondary']}; background: {c['sidebar']}; border: 0; border-bottom: 1px solid {c['border']}; padding: 7px; }}
-    QPushButton {{ min-height: 34px; background: {c['surface2']}; color: {c['text']}; border: 1px solid {c['control_border']}; border-radius: 6px; padding: 6px 12px; }}
+    QPushButton {{ min-height: 34px; background: {c['surface2']}; color: {c['text']}; border: 1px solid {c['control_border']}; border-radius: 8px; padding: 6px 12px; }}
     QPushButton:hover {{ background: {c['hover']}; }}
     QPushButton:pressed {{ background: {c['item_selection']}; }}
     QPushButton[keyboardFocus="true"] {{ border: 2px solid {c['focus']}; }}
     QPushButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; border-color: {c['border']}; }}
-    QPushButton#primaryButton {{ background: {c['primary']}; color: {c['primary_text']}; border: 0; border-radius: 0; font-weight: 600; padding: 7px 16px; }}
+    QPushButton#primaryButton {{ background: {c['primary']}; color: {c['primary_text']}; border: 0; border-radius: 8px; font-weight: 600; padding: 7px 16px; }}
     QPushButton#primaryButton:hover {{ background: {c['primary_hover']}; }}
     QPushButton#primaryButton[keyboardFocus="true"] {{ border: 2px solid {c['focus']}; }}
     QPushButton#primaryButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; border: 1px solid {c['border']}; }}
     QPushButton#dangerButton {{ background: transparent; color: {c['danger']}; border: 1px solid {c['border']}; }}
-    QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{ background: {c['input']}; color: {c['text']}; border: 1px solid {c['control_border']}; border-radius: 0; padding: 7px 9px; selection-background-color: {c['selection']}; selection-color: {c['selection_text']}; min-height: 28px; }}
+    QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{ background: {c['input']}; color: {c['text']}; border: 1px solid {c['control_border']}; border-radius: 8px; padding: 7px 9px; selection-background-color: {c['selection']}; selection-color: {c['selection_text']}; min-height: 28px; }}
     QLineEdit:disabled, QTextEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; }}
     QPlainTextEdit {{ background: {c['surface']}; color: {c['text']}; border: 0; selection-background-color: {c['selection']}; selection-color: {c['selection_text']}; }}
     QLineEdit:hover, QTextEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover, QComboBox:hover {{ border-color: {c['muted']}; }}
     QLineEdit[keyboardFocus="true"], QTextEdit[keyboardFocus="true"], QSpinBox[keyboardFocus="true"], QDoubleSpinBox[keyboardFocus="true"], QComboBox[keyboardFocus="true"] {{ border: 2px solid {c['focus']}; }}
     QLineEdit::placeholder {{ color: {c['muted']}; }}
-    QSpinBox, QDoubleSpinBox {{ padding-right: 30px; }}
-    QSpinBox::up-button, QDoubleSpinBox::up-button {{ subcontrol-origin: border; subcontrol-position: top right; width: 26px; height: 20px; border-left: 1px solid {c['border']}; background: {c['surface2']}; }}
-    QSpinBox::down-button, QDoubleSpinBox::down-button {{ subcontrol-origin: border; subcontrol-position: bottom right; width: 26px; height: 20px; border-left: 1px solid {c['border']}; background: {c['surface2']}; }}
+    QSpinBox, QDoubleSpinBox {{ padding-right: 34px; min-height: 30px; }}
+    QSpinBox::up-button, QDoubleSpinBox::up-button {{ subcontrol-origin: border; subcontrol-position: top right; width: 28px; height: 22px; margin: 1px; border: 0; background: transparent; }}
+    QSpinBox::down-button, QDoubleSpinBox::down-button {{ subcontrol-origin: border; subcontrol-position: bottom right; width: 28px; height: 22px; margin: 1px; border: 0; background: transparent; }}
     QSpinBox::up-button:hover, QSpinBox::down-button:hover {{ background: {c['item_selection']}; }}
     QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url("{up_arrow}"); width: 12px; height: 10px; }}
     QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url("{down_arrow}"); width: 12px; height: 10px; }}
+    QSpinBox::up-button, QDoubleSpinBox::up-button {{ border-top-right-radius: 7px; }}
+    QSpinBox::down-button, QDoubleSpinBox::down-button {{ border-bottom-right-radius: 7px; }}
+    QSpinBox::up-button:pressed, QSpinBox::down-button:pressed,
+    QDoubleSpinBox::up-button:pressed, QDoubleSpinBox::down-button:pressed {{ background: {c['selection']}; }}
+    QListWidget#preferencesCategory {{ background: transparent; border: 0; }}
+    QListWidget#preferencesCategory::item {{ border-radius: 8px; padding: 8px 12px; min-height: 24px; margin: 2px 0; }}
+    QListWidget#preferencesCategory::item:selected {{ background: {c['item_selection']}; color: {c['selection_text']}; font-weight: 600; }}
+    QToolButton#navigationItem {{ border-radius: 10px; }}
     QComboBox::drop-down {{ border: 0; width: 26px; }}
+    QComboBox::down-arrow {{ image: url("{down_arrow}"); width: 12px; height: 10px; }}
     QComboBox QAbstractItemView {{ background: {c['surface']}; color: {c['text']}; border: 1px solid {c['border']}; selection-background-color: {c['selection']}; selection-color: {c['selection_text']}; outline: none; }}
     QCheckBox, QRadioButton {{ color: {c['text']}; spacing: 8px; min-height: 28px; }}
     QCheckBox:disabled, QRadioButton:disabled {{ color: {c['disabled_text']}; }}
-    QCheckBox::indicator, QRadioButton::indicator {{ width: 17px; height: 17px; border: 1px solid {c['muted']}; border-radius: 0; background: {c['input']}; }}
+    QCheckBox::indicator, QRadioButton::indicator {{ width: 17px; height: 17px; border: 1px solid {c['muted']}; border-radius: 4px; background: {c['input']}; }}
     QCheckBox::indicator:checked, QRadioButton::indicator:checked {{ background: {c['accent']}; border-color: {c['accent']}; }}
+    QCheckBox::indicator:checked {{ image: url("{check_mark}"); }}
+    QCheckBox[keyboardFocus="true"]::indicator, QRadioButton[keyboardFocus="true"]::indicator {{ border: 2px solid {c['focus']}; }}
     QRadioButton::indicator, QRadioButton::indicator:checked {{ border-radius: 9px; }}
     QTabWidget::pane {{ background: {c['surface']}; border: 0; border-top: 1px solid {c['border']}; }}
     QTabBar::tab {{ color: {c['secondary']}; background: {c['surface2']}; padding: 8px 14px; margin: 0; border: 0; border-right: 1px solid {c['border']}; min-height: 32px; }}

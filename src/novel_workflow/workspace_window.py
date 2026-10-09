@@ -885,39 +885,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         return SettingsPage.build(self, ReorderableProfileList)
 
     def program_settings_dialog(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle("ตั้งค่าโปรแกรม")
-        dialog.resize(520, 420)
-        layout = QVBoxLayout(dialog)
-        appearance = QComboBox()
-        appearance.addItems(["System", "Light", "Dark"])
-        appearance.setCurrentText(self.settings.appearance)
-        layout.addWidget(QLabel("รูปลักษณ์ของโปรแกรม"))
-        layout.addWidget(appearance)
-        separator = QLineEdit(self.settings.separator)
-        layout.addWidget(QLabel("ตัวคั่นเนื้อหา (ใช้ {FILE_NAME})"))
-        layout.addWidget(separator)
-        checks = []
-        for label, attr in (("คัดลอกไฟล์เป็น ZIP", "copy_files_as_zip"),
-                            ("แสดงชื่อไฟล์", "show_filename_heading"),
-                            ("ยืนยันก่อนลบ", "confirm_before_deleting"),
-                            ("เปิดนิยายล่าสุดเมื่อเริ่มโปรแกรม", "open_last_profile")):
-            check = QCheckBox(label)
-            check.setChecked(getattr(self.settings, attr))
-            layout.addWidget(check)
-            checks.append((check, attr))
-        layout.addStretch(1)
-        save = QPushButton("บันทึก")
-        save.clicked.connect(dialog.accept)
-        layout.addWidget(save, alignment=Qt.AlignRight)
-        if dialog.exec() == QDialog.Accepted:
-            self.settings.appearance = appearance.currentText()
-            self.settings.separator = separator.text()
-            for check, attr in checks:
-                setattr(self.settings, attr, check.isChecked())
-            self.repo.save_settings(self.settings)
-            self.apply_theme()
-            self.statusBar().showMessage("บันทึกการตั้งค่าโปรแกรมแล้ว", 3000)
+        """Compatibility entry point into the single preferences page."""
+        self.settings_dialog()
+        self._settings_page_state["page"].select_category("General")
 
     def save_settings_goal_target(self):
         if not self.profile:
@@ -1125,6 +1095,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         """Select the vocabulary step in the combined novel settings page."""
         if not self._settings_page_state:
             self.settings_dialog()
+        self._settings_page_state["page"].select_category("Workflow Files")
         vocabulary_row = len(self.profile.workflow.steps) if self.profile else -1
         if vocabulary_row >= 0:
             self.steps.setCurrentRow(vocabulary_row)
@@ -1176,6 +1147,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def launcher_dialog(self):
         """Compatibility action that now leads to the one-page novel settings."""
         self.settings_dialog()
+        self._settings_page_state["page"].select_category("Novel")
         if self.profile:
             self.statusBar().showMessage(
                 "ตั้งค่าโฟลเดอร์และไฟล์ที่เปิดพร้อมเรื่องได้ในหน้านี้", 3500
