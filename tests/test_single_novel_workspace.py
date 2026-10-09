@@ -105,3 +105,28 @@ def test_active_header_uses_small_current_cover_and_missing_cover_fallback(tmp_p
     header = window.workspaces[second.id].novel_header
     assert header.title.toolTip() == second.name
     assert not header.cover.property('coverPath')
+
+
+def test_launch_from_settings_also_replaces_the_previous_workspace(tmp_path):
+    repo, first, _ = setup_profile(tmp_path)
+    second = NovelProfile(name='Second')
+    repo.save_profile(second)
+    second.main_folder = str(repo.profile_dir(second.id)); repo.save_profile(second)
+    window = MainWindow(repo); select(window, first)
+    window.settings_dialog(); select(window, second)
+    window.launch_profile()
+    assert set(window.workspaces) == {second.id}
+    window.return_from_utility_page()
+    assert window.profile.id == second.id
+
+
+def test_failed_settings_switch_restores_active_profile_binding(tmp_path, monkeypatch):
+    repo, first, _ = setup_profile(tmp_path)
+    second = NovelProfile(name='Second'); repo.save_profile(second)
+    window = MainWindow(repo); select(window, first)
+    original = window.workspaces[first.id]
+    window.settings_dialog(); select(window, second)
+    monkeypatch.setattr(original.editor, 'save_all', lambda **kwargs: False)
+    window.return_from_utility_page()
+    assert set(window.workspaces) == {first.id}
+    assert window.profile.id == first.id

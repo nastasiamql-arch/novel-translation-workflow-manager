@@ -842,6 +842,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             workspace = self.workspaces.get(self.profile.id)
             if workspace is None:
                 workspace = self._workspace(self.profile)
+            if workspace is None:
+                return
             self.workspace_stack.setCurrentWidget(workspace)
             self.main_pages.setCurrentWidget(self.workspace_stack)
         else:
@@ -1888,6 +1890,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.main_pages.setCurrentWidget(self.library_page)
 
     def _workspace(self, profile):
+        if not self._prepare_workspace_switch(profile.id):
+            return None
         closed_ids = list(self.settings.closed_workspace_profile_ids)
         was_closed = profile.id in closed_ids
         if was_closed:
@@ -1973,6 +1977,26 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             workspace.hide()
             workspace.deleteLater()
 
+    def _prepare_workspace_switch(self, target_id):
+        """Guard every workspace entry point, including launches from Settings."""
+        previous = [(pid, workspace) for pid, workspace in self.workspaces.items()
+                    if pid != target_id]
+        if not previous:
+            return True
+        for _pid, workspace in previous:
+            if not workspace.editor.save_all(include_normalization=False):
+                self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนนิยายไม่ได้", 5000)
+                return False
+        self._capture_sessions()
+        try:
+            self.repo.save_settings(self.settings)
+        except (OSError, ValueError) as exc:
+            self.statusBar().showMessage(f"บันทึกสถานะไม่สำเร็จ จึงยังเปลี่ยนนิยายไม่ได้: {exc}", 6000)
+            return False
+        for pid, _workspace in previous:
+            self._discard_workspace(pid)
+        return True
+
     def _close_novel_tab(self, profile_id):
         if not profile_id or profile_id not in self._open_workspace_ids:
             return
@@ -2009,19 +2033,15 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             return
 
         target = self.ps_list[index]
-        for profile_id, previous in list(self.workspaces.items()):
-            if profile_id == target.id:
-                continue
-            if not previous.editor.save_all(include_normalization=False):
-                self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนนิยายไม่ได้", 5000)
-                return
-            self._capture_sessions()
-            try:
-                self.repo.save_settings(self.settings)
-            except (OSError, ValueError) as exc:
-                self.statusBar().showMessage(f"บันทึกสถานะไม่สำเร็จ จึงยังเปลี่ยนนิยายไม่ได้: {exc}", 6000)
-                return
-            self._discard_workspace(profile_id)
+        if not self._prepare_workspace_switch(target.id):
+            # Settings may have selected another profile while the old editor
+            # remained open. Restore that editor's binding when switching fails.
+            active_id = getattr(self.workspace_stack.currentWidget(), 'profile_id', None)
+            active = next((p for p in self.ps_list if p.id == active_id), None)
+            if active is not None:
+                self.profile = active
+                self.settings.last_profile_id = active.id
+            return
         self.profile = self.ps_list[index]
         self.settings.last_profile_id = self.profile.id
         workspace = self._workspace(self.profile)
@@ -2397,6 +2417,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             return
 
         workspace = self._workspace(self.profile)
+        if workspace is None:
+            return
         succeeded = 0
         failures = []
 
