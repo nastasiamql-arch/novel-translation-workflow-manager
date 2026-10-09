@@ -1709,7 +1709,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 return
             try:
                 for workspace in self.workspaces.values():
-                    if not workspace.editor.save_all():
+                    if not workspace.editor.save_all(include_normalization=False):
                         raise OSError("บันทึกไฟล์ใน Editor ไม่สำเร็จ")
                 self.save()
                 self.repo.save_settings(self.settings)
@@ -1892,7 +1892,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._utility_return_page = None
         if self.profile:
             workspace = self.workspaces.get(self.profile.id)
-            if workspace and not workspace.editor.save_all():
+            if workspace and not workspace.editor.save_all(include_normalization=False):
                 self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนหน้าไม่ได้", 5000)
                 return
         self.main_pages.setCurrentWidget(self.library_page)
@@ -2007,7 +2007,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if not profile_id or profile_id not in self._open_workspace_ids:
             return
         workspace = self.workspaces.get(profile_id)
-        if workspace and not workspace.editor.save_all():
+        if workspace and not workspace.editor.save_all(include_normalization=False):
             self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังปิดแท็บนิยายไม่ได้", 5000)
             return
         old_index = self._open_workspace_ids.index(profile_id)
@@ -2047,7 +2047,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         old_profile = getattr(self, "profile", None)
         if old_profile and old_profile.id != self.ps_list[index].id:
             previous = self.workspaces.get(old_profile.id)
-            if previous and not previous.editor.save_all():
+            if previous and not previous.editor.save_all(include_normalization=False):
                 self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนนิยายไม่ได้", 5000)
                 return
         self.profile = self.ps_list[index]
@@ -2187,7 +2187,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             return
         workspace = self.workspaces.get(profile_id)
         if workspace:
-            if not workspace.editor.save_all():
+            if not workspace.editor.save_all(include_normalization=False):
                 self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนขั้นตอนไม่ได้", 5000)
                 workspace.steps.blockSignals(True)
                 workspace.steps.setCurrentRow(workspace.step_index)
@@ -2285,7 +2285,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         workspace = self.workspaces.get(profile_id)
         if not workspace or not self.profile or self.profile.id != profile_id:
             return
-        if not workspace.editor.save_all():
+        if not workspace.editor.save_all(include_normalization=False):
             workspace.vocabulary_button.setWorkflowActive(not enabled)
             workspace.vocabulary_button.update()
             self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนขั้นตอนไม่ได้", 5000)
@@ -2363,7 +2363,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
     def copy_step(self, advance=True, selected_steps=None):
         workspace = self.workspaces.get(self.profile.id) if self.profile else None
-        if workspace and not workspace.editor.save_all():
+        if workspace and not workspace.editor.save_all(include_normalization=False):
             self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงคัดลอกไฟล์ไม่ได้", 5000)
             return
         super().copy_step(advance=advance, selected_steps=selected_steps)
@@ -2638,7 +2638,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 event.ignore()
                 return
         for workspace in self.workspaces.values():
-            if not workspace.editor.save_all():
+            if not workspace.editor.save_all(include_normalization=False):
                 event.ignore()
                 return
 

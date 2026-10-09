@@ -10,6 +10,7 @@ from novel_workflow.models import NovelProfile, WorkflowStep, StepFile
 from novel_workflow.services import AssemblyService
 from novel_workflow.storage import ProjectRepository
 from novel_workflow.workflow_archive import create_workflow_archive
+from novel_workflow.workspace_editor import EditorTabs
 
 
 def main():
@@ -22,6 +23,10 @@ def main():
     user32.GetClipboardData.restype = wintypes.HANDLE
     shell32.DragQueryFileW.argtypes = [wintypes.HANDLE, wintypes.UINT, wintypes.LPWSTR, wintypes.UINT]
     shell32.DragQueryFileW.restype = wintypes.UINT
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel32.GlobalLock.argtypes = [wintypes.HANDLE]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalUnlock.argtypes = [wintypes.HANDLE]
     with tempfile.TemporaryDirectory() as directory:
         repo = ProjectRepository(Path(directory))
         profile = NovelProfile()
@@ -48,6 +53,33 @@ def main():
                 user32.CloseClipboard()
         with zipfile.ZipFile(archive) as content:
             assert content.read(content.namelist()[0]) == source.read_bytes()
+        vocabulary = '康斯坦丁\tคอนสแตนติน\tชาย\tชื่อเรียกคอนสแตนติน ฟอน นอยรัทในวงประชุมผู้นำนาซี'
+        vocabulary += '\n李秀\tซิ่ว\t\t\n\t\t\t'
+        glossary = Path(directory) / 'glossary.txt'
+        glossary.write_text('', encoding='utf-8')
+        tabs = EditorTabs(); editor = tabs.open_file(glossary)
+        data = QMimeData(); data.setText(vocabulary)
+        data.setHtml('<p>HTML fallback must not replace TSV plain text</p>')
+        app.clipboard().setMimeData(data); app.processEvents()
+        assert app.clipboard().text() == vocabulary  # Evidence at clipboard input.
+        editor.paste(); editor.selectAll(); editor.copy(); app.processEvents()
+        assert user32.OpenClipboard(None)
+        try:
+            handle = user32.GetClipboardData(13)  # CF_UNICODETEXT read by other apps.
+            pointer = kernel32.GlobalLock(handle)
+            assert pointer
+            try:
+                native_text = ctypes.wstring_at(pointer).replace('\r\n', '\n')
+                assert native_text == vocabulary
+                assert native_text.split('\n')[0].count('\t') == 3
+            finally:
+                kernel32.GlobalUnlock(handle)
+        finally:
+            user32.CloseClipboard()
+        assert tabs.save_editor(editor)
+        assert EditorTabs().open_file(glossary).toPlainText() == vocabulary
+        assert glossary.read_text(encoding='utf-8') == vocabulary
+        print('Windows CF_UNICODETEXT PASS: plain/HTML paste, TSV tabs, empty columns, copy/save/reopen.')
         app.clipboard().clear()
     print('Windows CF_HDROP PASS: ordinary files, ZIP and Unicode paths are Explorer-compatible.')
 

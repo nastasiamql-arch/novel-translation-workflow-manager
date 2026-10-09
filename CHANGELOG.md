@@ -2,6 +2,22 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.6.8 - 2026-10-09
+
+- Restore consistent novel cleanup on paste, open/reload, copy, save/autosave,
+  draft restore, workflow preview and TXT Export: remove only zero-character
+  lines, retaining whitespace, NBSP, tabs and every content character.
+- Preserve vocabulary TSV columns and empty fields; prefer clipboard plain
+  text over HTML and report incomplete rows without repairing user data.
+- Normalize visible text before saving using undoable separator deletions;
+  keep BOM/line endings, recovery and external conflict detection. Opening or
+  closing an untouched normalized view never automatically overwrites disk.
+- Protect structured Context and fenced data; indicate selected novel cards
+  with a border without changing font size or weight.
+- Add regression/native Windows TSV clipboard checks and verify the actual
+  published updater download and installer upgrade from v3.6.7, including
+  profiles, novel files, Context, settings, draft and recovery data.
+
 ## 3.6.7 - 2026-10-09
 
 - Restore v3.5.6 line-break handling for blank lines pasted into novel text files, limited to CR/LF separators.

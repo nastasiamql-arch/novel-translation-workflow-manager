@@ -7,8 +7,6 @@ from PySide6.QtWidgets import QListWidget, QApplication, QAbstractItemView, QSty
 class ProfileItemDelegate(QStyledItemDelegate):
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
-        if option.state & QStyle.State_Selected:
-            option.font.setBold(True)
         option.state &= ~QStyle.State_HasFocus
 
 

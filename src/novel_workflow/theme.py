@@ -162,7 +162,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QListWidget#novelLibrary {{ background: {c['sidebar']}; border: 0; padding: 5px 0; }}
     QListWidget#novelLibrary::item {{ background: transparent; border: 0; padding: 9px 10px; min-height: 44px; }}
     QListWidget#novelLibrary::item:hover {{ background: {c['hover']}; }}
-    QListWidget#novelLibrary::item:selected {{ background: {c['item_selection']}; border: 0; color: {c['selection_text']}; }}
+    QListWidget#novelLibrary::item:selected {{ background: {c['item_selection']}; border: 2px solid {c['secondary']}; color: {c['selection_text']}; }}
     QLabel#emptyStateIcon {{ color: {c['accent']}; font-size: 25pt; }}
     QLineEdit#librarySearch {{ background: {c['input']}; border: 1px solid {c['control_border']}; border-radius: 0; padding: 7px 10px; min-height: 30px; }}
     QTabBar#libraryStatusTabs {{ background: transparent; border: 0; }}

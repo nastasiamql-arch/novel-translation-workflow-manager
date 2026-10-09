@@ -88,3 +88,14 @@ jobs:
           generate_release_notes: true
           files: |
             dist/NovelWorkflow-Setup-${{ steps.version.outputs.version }}.exe
+      - name: Verify published in-app update and in-place upgrade
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $publishedInstaller = Join-Path $env:RUNNER_TEMP "Published-Setup-${{ steps.version.outputs.version }}.exe"
+          .\.venv\Scripts\python.exe tests/published_update.py "${{ steps.version.outputs.version }}" $publishedInstaller
+          if ($LASTEXITCODE -ne 0) { throw "Published updater verification failed" }
+          .\tests\installer_upgrade.ps1 -Version "${{ steps.version.outputs.version }}" -InstallerPath $publishedInstaller

@@ -1,11 +1,11 @@
-param([Parameter(Mandatory=$true)][string]$Version)
+param([Parameter(Mandatory=$true)][string]$Version, [string]$InstallerPath)
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) {
     throw 'Run this installation test only on a disposable GitHub Actions runner.'
 }
 $taskRoot = Join-Path $env:RUNNER_TEMP ('palantir-upgrade-' + [guid]::NewGuid().ToString('N'))
 $installDir = Join-Path $taskRoot 'existing installation'
-$installer = (Resolve-Path -LiteralPath "dist/NovelWorkflow-Setup-$Version.exe").Path
+$installer = if ($InstallerPath) { (Resolve-Path -LiteralPath $InstallerPath).Path } else { (Resolve-Path -LiteralPath "dist/NovelWorkflow-Setup-$Version.exe").Path }
 New-Item -ItemType Directory -Path $taskRoot -Force | Out-Null
 
 function Install-TestBuild([bool]$First, [string]$SetupPath) {
@@ -15,7 +15,7 @@ function Install-TestBuild([bool]$First, [string]$SetupPath) {
     if ($process.ExitCode -ne 0) { throw "Setup failed: $($process.ExitCode)" }
 }
 
-$previousVersion = '3.6.6'
+$previousVersion = '3.6.7'
 $previousName = "NovelWorkflow-Setup-$previousVersion.exe"
 gh release download "v$previousVersion" --repo nastasiamql-arch/novel-translation-workflow-manager --pattern $previousName --dir $taskRoot
 if ($LASTEXITCODE -ne 0) { throw 'Could not download previous published installer.' }
@@ -61,7 +61,15 @@ $settingsPath = Join-Path $dataDir 'settings.json'
 @{appearance='Light'; last_profile_id=$profileId; editor_tabs=@{$profileId=@($contextPath)};
     editor_active_tab_keys=@{$profileId=$contextPath}; workspace_step_indices=@{$profileId=1}
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $settingsPath -Encoding UTF8
-$preservedFiles = @($profilePath, $settingsPath, $contextPath)
+$novelDir = Join-Path $profileDir 'source'
+New-Item -ItemType Directory -Path $novelDir -Force | Out-Null
+$novelPath = Join-Path $novelDir 'chapter_1.txt'
+Set-Content -LiteralPath $novelPath -Value "ไทย`n`n中文" -Encoding UTF8
+$recoveryDir = Join-Path $dataDir 'recovery/editor'
+New-Item -ItemType Directory -Path $recoveryDir -Force | Out-Null
+$recoveryPath = Join-Path $recoveryDir "$profileId.json"
+Set-Content -LiteralPath $recoveryPath -Value '{"text":"unsaved ไทย 中文"}' -Encoding UTF8
+$preservedFiles = @($profilePath, $settingsPath, $contextPath, $novelPath, $recoveryPath)
 $preservedHashes = @{}
 foreach ($path in $preservedFiles) { $preservedHashes[$path] = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
 $unrelated = Join-Path $installDir 'user-note.txt'

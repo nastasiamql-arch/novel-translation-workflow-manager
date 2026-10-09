@@ -65,6 +65,7 @@ class ExportService:
         return profile
 
     def save_draft(self, text):
+        text = remove_empty_lines(text)
         profile = self.profile()
         if profile.txt_export_draft != text:
             profile.txt_export_draft = text

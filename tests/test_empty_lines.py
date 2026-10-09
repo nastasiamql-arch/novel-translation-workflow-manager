@@ -15,23 +15,23 @@ from test_txt_export import app, panel
 VOCAB = "秀儿\tซิ่วเอ๋อร์\tหญิง\tรูปเรียกสนิทของ '李秀'"
 PARTIAL = "李秀\tซิ่ว\t\t"
 RAW = "\nบทที่ 1\n\n \t\n" + VOCAB + "\n\u00a0\n" + PARTIAL + "\n\n[จบตอน]\n"
-CLEAN = "บทที่ 1\n" + VOCAB + "\n" + PARTIAL + "\n[จบตอน]"
+CLEAN = "บทที่ 1\n \t\n" + VOCAB + "\n\u00a0\n" + PARTIAL + "\n[จบตอน]"
 
 
-def test_export_and_context_preserve_blank_lines_and_vocabulary(tmp_path):
+def test_export_and_context_remove_only_empty_lines(tmp_path):
     app()
     context = tmp_path / "Context.md"
     context.write_text("old", encoding="utf-8")
     export = panel(tmp_path, context_path_callback=lambda: context)
     export.editor.setPlainText(RAW)
     export.copy_text()
-    assert QApplication.clipboard().text() == RAW
+    assert QApplication.clipboard().text() == CLEAN
     assert export.export(update_context=True)
-    assert (tmp_path / "segverified1.txt").read_text(encoding="utf-8") == RAW
-    assert context.read_text(encoding="utf-8") == RAW
+    assert (tmp_path / "segverified1.txt").read_text(encoding="utf-8") == CLEAN
+    assert context.read_text(encoding="utf-8") == CLEAN
 
 
-def test_paste_preserves_empty_lines_and_can_undo(tmp_path):
+def test_paste_removes_only_empty_lines_and_can_undo(tmp_path):
     app()
     export = panel(tmp_path)
     export.editor.setPlainText("existing\n")
@@ -40,7 +40,7 @@ def test_paste_preserves_empty_lines_and_can_undo(tmp_path):
     export.editor.setTextCursor(cursor)
     QApplication.clipboard().setText(RAW)
     export.editor.paste()
-    assert export.editor.toPlainText() == "existing\n" + RAW
+    assert export.editor.toPlainText() == "existing\n" + CLEAN
     export.editor.undo()
     assert export.editor.toPlainText() == "existing\n"
     QTest.keyClick(export.editor, Qt.Key_Return)
@@ -55,7 +55,7 @@ def test_workspace_paste_compacts_blank_clipboard_lines_without_rewriting_open_f
     tabs = EditorTabs()
     editor = tabs.open_file(path)
     assert editor is not None
-    assert editor.toPlainText() == "existing\n"
+    assert editor.toPlainText() == "existing"
     editor.moveCursor(editor.textCursor().MoveOperation.End)
     QApplication.clipboard().setText(RAW)
     editor.paste()
@@ -64,10 +64,10 @@ def test_workspace_paste_compacts_blank_clipboard_lines_without_rewriting_open_f
     assert tabs.save_editor(editor)
     assert path.read_text(encoding="utf-8") == "existing\n" + CLEAN
     editor.undo()
-    assert editor.toPlainText() == "existing\n"
+    assert editor.toPlainText() == "existing"
 
 
-def test_copy_to_rich_text_app_preserves_empty_lines(tmp_path):
+def test_copy_to_rich_text_app_removes_only_empty_lines(tmp_path):
     app()
     from PySide6.QtGui import QTextDocument
     export = panel(tmp_path)
@@ -78,8 +78,8 @@ def test_copy_to_rich_text_app_preserves_empty_lines(tmp_path):
     if data.hasHtml():
         document = QTextDocument()
         document.setHtml(data.html())
-        assert document.toPlainText() == "A\n\nB"
-    assert data.text() == "A\n\nB"
+        assert document.toPlainText() == "A\nB"
+    assert data.text() == "A\nB"
 
 
 @pytest.mark.parametrize("suffix", [".txt", ".tsv"])
@@ -89,15 +89,16 @@ def test_text_file_open_save_and_copy_preserve_tabs(tmp_path, suffix):
     path.write_text(RAW, encoding="utf-8")
     tabs = EditorTabs()
     editor = tabs.open_file(path)
-    assert editor.toPlainText() == RAW
+    expected = CLEAN if suffix == '.txt' else RAW
+    assert editor.toPlainText() == expected
     assert path.read_text(encoding="utf-8") == RAW  # Opening alone never rewrites disk.
     editor.setPlainText(RAW)
     editor.selectAll()
     editor.copy()
-    assert QApplication.clipboard().text() == RAW
+    assert QApplication.clipboard().text() == expected
     assert tabs.save_editor(editor)
-    assert path.read_text(encoding="utf-8") == RAW
-    assert editor.toPlainText() == RAW
+    assert path.read_text(encoding="utf-8") == expected
+    assert editor.toPlainText() == expected
     assert tabs.dirty_count() == 0
 
 
@@ -118,14 +119,14 @@ def test_structured_files_keep_formatting(tmp_path, name):
     assert editor.toPlainText() == raw
 
 
-def test_chapter_markdown_is_preserved(tmp_path):
+def test_chapter_markdown_is_normalized(tmp_path):
     app()
     path = tmp_path / "translated" / "chapter_1.md"
     path.parent.mkdir()
     path.write_text(RAW, encoding="utf-8")
     tabs = EditorTabs()
     editor = tabs.open_file(path)
-    assert editor.toPlainText() == RAW
+    assert editor.toPlainText() == CLEAN
 
 
 def test_assembly_removes_blank_lines_between_files_without_changing_sources(tmp_path):
@@ -140,7 +141,7 @@ def test_assembly_removes_blank_lines_between_files_without_changing_sources(tmp
     assert path.read_text(encoding="utf-8") == RAW
 
 
-def test_assembly_skips_whitespace_only_files_and_keeps_headings(tmp_path):
+def test_assembly_keeps_whitespace_lines_and_vocabulary_structure(tmp_path):
     repo = ProjectRepository(tmp_path)
     profile = NovelProfile()
     repo.save_profile(profile)
@@ -149,26 +150,26 @@ def test_assembly_skips_whitespace_only_files_and_keeps_headings(tmp_path):
     (root / "source" / "vocab.txt").write_text("\n" + VOCAB + "\n\n" + PARTIAL, encoding="utf-8")
     step = WorkflowStep(files=[StepFile(path="source/empty.txt", label="empty"),
                               StepFile(path="source/vocab.txt", label="vocab", order=1)])
-    assert AssemblyService(repo).assemble(profile, step, "[{FILE_NAME}]", True) == "[vocab]\n" + VOCAB + "\n" + PARTIAL
+    assert AssemblyService(repo).assemble(profile, step, "[{FILE_NAME}]", True) == "[empty]\n \n\t\n[vocab]\n\n" + VOCAB + "\n\n" + PARTIAL
 
 
-def test_export_draft_preserves_blank_lines(tmp_path):
+def test_export_draft_normalizes_only_empty_lines(tmp_path):
     repo = ProjectRepository(tmp_path)
     profile = NovelProfile()
     repo.save_profile(profile)
     service = ExportService(repo, profile.id)
     service.save_draft(RAW)
-    assert service.profile().txt_export_draft == RAW
+    assert service.profile().txt_export_draft == CLEAN
 
 
-def test_restored_export_draft_preserves_empty_lines(tmp_path):
+def test_restored_export_draft_normalizes_only_empty_lines(tmp_path):
     app()
     repo = ProjectRepository(tmp_path)
     profile = NovelProfile(txt_export_draft=RAW)
     repo.save_profile(profile)
     from novel_workflow.workspace_editor import TxtExportTab
     export = TxtExportTab(profile.txt_export_settings, export_service=ExportService(repo, profile.id))
-    assert export.editor.toPlainText() == RAW
+    assert export.editor.toPlainText() == CLEAN
 
 
 def test_autosave_preserves_disk_and_typing(tmp_path):
@@ -182,17 +183,17 @@ def test_autosave_preserves_disk_and_typing(tmp_path):
     cursor.movePosition(cursor.MoveOperation.End)
     editor.setTextCursor(cursor)
     assert tabs.save_editor(editor, autosave=True)
-    assert path.read_text(encoding="utf-8") == "A\n\nB\n"
-    assert editor.toPlainText() == "A\n\nB\n"
-    assert editor.textCursor().position() == 5
+    assert path.read_text(encoding="utf-8") == "A\nB"
+    assert editor.toPlainText() == "A\nB"
+    assert editor.textCursor().position() == 3
 
 
 @pytest.mark.parametrize("raw, expected", [
-    ("  A  \r\n\t\r\nB\t\t", "  A  \nB\t\t"),
-    ("A\u2029\u2029B", "A\u2029\u2029B"),
-    ("A\u2028\u2028B", "A\u2028\u2028B"),
-    ("A\u0085\u0085B", "A\u0085\u0085B"),
-    ("\n \n\t\n\u00a0\n", ""),
+    ("  A  \r\n\t\r\nB\t\t", "  A  \r\n\t\r\nB\t\t"),
+    ("A\u2029\u2029B", "A\u2029B"),
+    ("A\u2028\u2028B", "A\u2028B"),
+    ("A\u0085\u0085B", "A\u0085B"),
+    ("\n \n\t\n\u00a0\n", " \n\t\n\u00a0"),
     ("A\vB\n\nC", "A\vB\nC"),
 ])
 def test_normalization_preserves_nonempty_line_characters(raw, expected):

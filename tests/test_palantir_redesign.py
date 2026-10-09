@@ -467,7 +467,9 @@ def test_all_focus_tokens_are_neutral_and_profile_delegate_removes_frame():
     option.state = QStyle.State_HasFocus | QStyle.State_Selected
     listing.itemDelegate().initStyleOption(option, listing.model().index(0, 0))
     assert not option.state & QStyle.State_HasFocus
-    assert option.font.bold()
+    unselected = QStyleOptionViewItem()
+    listing.itemDelegate().initStyleOption(unselected, listing.model().index(0, 0))
+    assert option.font == unselected.font
 
 
 def test_library_covers_support_drag_reordering(window):

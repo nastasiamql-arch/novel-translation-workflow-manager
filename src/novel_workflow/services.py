@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 from .models import NovelProfile, Workflow, WorkflowStep, StepFile, uid
 from .storage import ProjectRepository
-from .text_normalization import remove_empty_lines
+from .text_normalization import normalize_file_text
 
 DYNAMIC=("CURRENT_SOURCE_CHAPTER","CURRENT_TRANSLATED_CHAPTER","CURRENT_REVIEWED_CHAPTER")
 class ProfileService:
@@ -89,5 +89,6 @@ class AssemblyService:
                 path=self.repo.resolve_project_path(p.id,item.path);label=item.label or path.name
             if not path.is_file():raise FileNotFoundError(path)
             content=path.read_text(encoding="utf-8-sig")
-            if content.strip():parts.append((separator.format(FILE_NAME=label)+"\n"+content) if show_heading else content)
-        return remove_empty_lines("\n".join(parts))
+            content = normalize_file_text(path, content)
+            if content != '':parts.append((separator.format(FILE_NAME=label)+"\n"+content) if show_heading else content)
+        return "\n".join(parts)

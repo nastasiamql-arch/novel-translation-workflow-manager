@@ -12,12 +12,23 @@ from .progress_dialog import TranslationDashboardDialog
 from .theme import application_stylesheet, capture_system_appearance, qt_palette
 
 class Editor(QDialog):
-    def __init__(self,parent,title,text=""):
+    def __init__(self,parent,title,text="",path=None):
         super().__init__(parent);self.setWindowTitle(title);self.resize(760,560);lay=QVBoxLayout(self)
-        self.edit=QTextEdit();self.edit.setPlainText(text);lay.addWidget(self.edit)
+        from .workspace_editor import CodeEditor
+        from .text_normalization import cleans_file_text, normalize_file_text, is_vocabulary
+        self.edit=CodeEditor()
+        if path:
+            self.edit.setProperty('documentPath', str(path))
+            self.edit.vocabulary_mode = is_vocabulary(Path(path), text)
+            self.edit.clean_empty_lines = cleans_file_text(Path(path)) and not self.edit.vocabulary_mode
+            self.edit.compact_pasted_empty_lines = self.edit.clean_empty_lines
+            text = normalize_file_text(Path(path), text)
+        self.edit.setPlainText(text);lay.addWidget(self.edit)
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);lay.addWidget(buttons)
         self.edit.addAction(QAction(self.edit,shortcut=QKeySequence.Save,triggered=self.accept))
-    def text(self):return self.edit.toPlainText()
+    def text(self):
+        self.edit.normalize_visible_text()
+        return self.edit.toPlainText()
 
 class ManagementActionsMixin:
     """Shared profile management actions; shell owns layout and navigation."""
@@ -608,13 +619,13 @@ class ManagementActionsMixin:
             if Path(rel).suffix.lower() not in (".txt",".md",".json"):QMessageBox.warning(dialog,"Unsupported","Use .txt, .md, or .json.");return
             path=self.repo.resolve_project_path(self.profile.id,rel)
             if path.exists():QMessageBox.warning(dialog,"Exists","File already exists.");return
-            editor=Editor(dialog,"New text file")
+            editor=Editor(dialog,"New text file",path=path)
             if editor.exec()==QDialog.Accepted:path.parent.mkdir(parents=True,exist_ok=True);path.write_text(editor.text(),encoding="utf-8");refresh()
         def edit():
             path=selected()
             if not path:return
             if path.suffix.lower() not in (".txt",".md",".json"):QMessageBox.warning(dialog,"Unsupported","Only text, Markdown, and JSON can be edited.");return
-            editor=Editor(dialog,"Edit "+path.name,path.read_text(encoding="utf-8"))
+            editor=Editor(dialog,"Edit "+path.name,path.read_text(encoding="utf-8"),path=path)
             if editor.exec()==QDialog.Accepted:path.write_text(editor.text(),encoding="utf-8");refresh()
         def rename():
             path=selected()
@@ -680,13 +691,14 @@ class ManagementActionsMixin:
         f=self.file()
         if not f:return
         if f.reference_type=="dynamic":return
-        path=Path(f.path).expanduser().resolve() if f.reference_type=="external_file" else self.repo.resolve_project_path(self.profile.id,f.path);dlg=Editor(self,"Edit "+f.label,path.read_text(encoding="utf-8") if path.exists() else "")
+        path=Path(f.path).expanduser().resolve() if f.reference_type=="external_file" else self.repo.resolve_project_path(self.profile.id,f.path);dlg=Editor(self,"Edit "+f.label,path.read_text(encoding="utf-8") if path.exists() else "",path=path)
         if dlg.exec()==QDialog.Accepted:path.write_text(dlg.text(),encoding="utf-8");self.save()
     def preview(self):
         if not self.step():return
         try:text=self.assembler.assemble(self.profile,self.step(),self.settings.separator,self.settings.show_filename_heading)
         except Exception as e:QMessageBox.warning(self,"Preview unavailable",str(e));return
-        dlg=QDialog(self);dlg.setWindowTitle("Preview: "+self.step().name);dlg.resize(850,650);l=QVBoxLayout(dlg);view=QTextEdit();view.setReadOnly(True);view.setPlainText(text);l.addWidget(view);l.addWidget(QLabel(f"{len(text):,} characters"))
+        from .workspace_editor import CodeEditor
+        dlg=QDialog(self);dlg.setWindowTitle("Preview: "+self.step().name);dlg.resize(850,650);l=QVBoxLayout(dlg);view=CodeEditor();view.setReadOnly(True);view.setPlainText(text);l.addWidget(view);l.addWidget(QLabel(f"{len(text):,} characters"))
         buttons=QDialogButtonBox(QDialogButtonBox.Close);copy=buttons.addButton("Copy Contents",QDialogButtonBox.ActionRole);copy.clicked.connect(lambda:self.copy_text(text));buttons.rejected.connect(dlg.reject);l.addWidget(buttons);dlg.exec()
     def copy_text(self,text):QApplication.clipboard().setText(text);self.statusBar().showMessage("Copied to clipboard",2500)
     def copy_step(self, advance=True, selected_steps=None):

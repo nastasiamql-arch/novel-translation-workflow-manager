@@ -4,6 +4,7 @@ import os
 import hashlib
 import json
 import tempfile
+import re
 from pathlib import Path
 from weakref import WeakSet
 from bisect import bisect_left
@@ -19,7 +20,9 @@ from .theme import editor_colors
 from .models import AppSettings
 from .recovery import commit_staged
 from .storage import data_root, write_json
-from .text_normalization import remove_empty_lines, cleans_file_text
+from .text_normalization import (normalize_novel_text, normalize_file_text,
+    cleans_file_text, is_vocabulary, vocabulary_warnings, detect_newline,
+    context_is_novel_at, deleted_ranges, LINE_SEPARATOR)
 
 
 TEXT_EXTENSIONS = {
@@ -96,6 +99,8 @@ class TxtExportTab(QWidget):
         self.context_saved_callback = context_saved_callback or (lambda _path, _text: None)
         self.notification_callback = notification_callback or (lambda _message: None)
         self.editor = CodeEditor(font_size=font_size, appearance=appearance, parent=self)
+        self.editor.clean_empty_lines = True
+        self.editor.compact_pasted_empty_lines = True
         self.filename = QLineEdit(str(settings.txt_export_filename or "segverified"))
         self.filename.setObjectName("txtExportFilename")
         self.directory = QLineEdit(str(settings.txt_export_directory or ""))
@@ -217,7 +222,7 @@ class TxtExportTab(QWidget):
         self.set_tab_appearance(appearance)
         self.refresh_verified()
         if self.export_service:
-            self.editor.setPlainText(self.export_service.profile().txt_export_draft)
+            self.editor.setPlainText(normalize_novel_text(self.export_service.profile().txt_export_draft))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -326,6 +331,7 @@ class TxtExportTab(QWidget):
             self.directory.setText(folder)
 
     def copy_text(self):
+        self.editor.normalize_visible_text()
         QApplication.clipboard().setText(self.editor.toPlainText())
         self.status_callback("คัดลอกแล้ว")
 
@@ -362,6 +368,7 @@ class TxtExportTab(QWidget):
                 if not context_path.is_file():
                     raise OSError("ไม่พบไฟล์ Context")
             target = folder / f"{prefix}{self.current.value()}.txt"
+            self.editor.normalize_visible_text()
             text = self.editor.toPlainText()
             destinations = [target]
             if context_path is not None:
@@ -460,10 +467,55 @@ class CodeEditor(QPlainTextEdit):
         self.highlight_current_line()
 
     def insertFromMimeData(self, source):
-        if self.compact_pasted_empty_lines and source.hasText():
-            self.insertPlainText(remove_empty_lines(source.text()))
+        if source.hasText():
+            text = source.text()
+            if self.compact_pasted_empty_lines:
+                text = self.normalized_text(text)
+            cursor = self.textCursor()
+            if self.compact_pasted_empty_lines and text and text != source.text():
+                # Preserve supplied boundary separators next to existing text.
+                before = QTextCursor(self.document()); before.setPosition(cursor.selectionStart())
+                after = QTextCursor(self.document()); after.setPosition(cursor.selectionEnd())
+                if LINE_SEPARATOR.match(source.text()) and before.positionInBlock() > 0:
+                    text = '\n' + text
+                if source.text()[-1:] in '\n\r\u2028\u2029\u0085' and after.positionInBlock() < after.block().length() - 1:
+                    text += '\n'
+            cursor.beginEditBlock()
+            cursor.insertText(text)
+            cursor.endEditBlock()
+            self.setTextCursor(cursor)
         else:
             super().insertFromMimeData(source)
+
+    def normalized_text(self, text):
+        path = self.property('documentPath')
+        if getattr(self, 'vocabulary_mode', False):
+            return text
+        if path and Path(path).stem.casefold() == 'context' and not re.search(r'(?m)^#{1,6}[ \t]', text):
+            if not context_is_novel_at(self.toPlainText(), self.textCursor().selectionStart()):
+                return text
+        return normalize_file_text(Path(path), text) if path else normalize_novel_text(text)
+
+    def normalize_visible_text(self):
+        if not self.clean_empty_lines:
+            return
+        old = self.toPlainText()
+        path = self.property('documentPath')
+        new = normalize_file_text(Path(path), old) if path else normalize_novel_text(old)
+        if new == old:
+            return
+        original_cursor = self.textCursor()
+        cursor = QTextCursor(self.document())
+        cursor.beginEditBlock()
+        offsets = [0]
+        for character in old:
+            offsets.append(offsets[-1] + (2 if ord(character) > 0xffff else 1))
+        for start, end in reversed(list(deleted_ranges(old, new))):
+            cursor.setPosition(offsets[start])
+            cursor.setPosition(offsets[end], QTextCursor.KeepAnchor)
+            cursor.removeSelectedText()
+        cursor.endEditBlock()
+        self.setTextCursor(original_cursor)
 
     def toPlainText(self):
         # Qt's toPlainText silently maps NBSP to ordinary spaces. Raw text
@@ -477,7 +529,23 @@ class CodeEditor(QPlainTextEdit):
             # Rich-text/ODF payloads still contain the original blank paragraphs
             # and external apps may prefer them over the cleaned plain text.
             clean_data = QMimeData()
-            clean_data.setText(remove_empty_lines(data.text()))
+            path = self.property('documentPath')
+            if path and Path(path).stem.casefold() == 'context':
+                old = self.toPlainText()
+                normalized = normalize_file_text(Path(path), old)
+                # Derive selected text from the whole Context's section modes,
+                # including selections that span fenced/structured content.
+                cursor = self.textCursor()
+                start = len(old.encode('utf-16-le')[:cursor.selectionStart() * 2].decode('utf-16-le'))
+                end = len(old.encode('utf-16-le')[:cursor.selectionEnd() * 2].decode('utf-16-le'))
+                text = old[start:end]
+                for a, b in reversed(list(deleted_ranges(old, normalized))):
+                    left, right = max(a, start) - start, min(b, end) - start
+                    if left < right:
+                        text = text[:left] + text[right:]
+                clean_data.setText(text)
+            else:
+                clean_data.setText(self.normalized_text(data.text()))
             return clean_data
         return data
 
@@ -793,6 +861,7 @@ class EditorTabs(QWidget):
         self._update_status(self.tabs.currentIndex())
 
     def _on_text_changed(self, editor):
+        editor.setProperty('normalizationPending', False)
         self._set_dirty(editor, True, "กำลังรอบันทึกอัตโนมัติ…")
         timer = getattr(editor, "autosave_timer", None)
         if timer is not None:
@@ -813,7 +882,7 @@ class EditorTabs(QWidget):
             self._find_update_timer.start()
 
     def _autosave_editor(self, editor):
-        if self._dirty(editor):
+        if self._dirty(editor) and not editor.property('normalizationPending'):
             self.save_editor(editor, quiet=True, autosave=True)
 
     def open_file(self, path: str | Path):
@@ -833,14 +902,14 @@ class EditorTabs(QWidget):
             editor = self.tabs.widget(index)
             if self._path(editor) == path:
                 current = self._current_editor()
-                if current is not None and current is not editor and self._dirty(current):
+                if current is not None and current is not editor and self._dirty(current) and not current.property('normalizationPending'):
                     if not self.save_editor(current, quiet=True):
                         return None
                 self.tabs.setCurrentIndex(index)
                 return editor
 
         current = self._current_editor()
-        if current is not None and self._dirty(current):
+        if current is not None and self._dirty(current) and not current.property('normalizationPending'):
             if not self.save_editor(current, quiet=True):
                 QMessageBox.warning(self, "บันทึกไฟล์ไม่ได้", "บันทึกไฟล์ปัจจุบันไม่สำเร็จ จึงยังเปิดไฟล์ใหม่ไม่ได้")
                 return None
@@ -853,12 +922,14 @@ class EditorTabs(QWidget):
             return None
 
         editor = CodeEditor(font_size=self._font_size, appearance=self.appearance)
-        editor.clean_empty_lines = False
+        editor.vocabulary_mode = is_vocabulary(path, text)
+        editor.clean_empty_lines = cleans_file_text(path) and not editor.vocabulary_mode
         editor.compact_pasted_empty_lines = cleans_file_text(path)
         original_text = text
+        text = normalize_file_text(path, text)
         editor.disk_digest = hashlib.sha256(original_bytes).digest()
         editor.disk_bom = original_bytes.startswith(b"\xef\xbb\xbf")
-        editor.disk_newline = "\r\n" if b"\r\n" in original_bytes and b"\n" not in original_bytes.replace(b"\r\n", b"") else "\n"
+        editor.disk_newline = detect_newline(original_text)
         editor.setProperty("documentPath", str(path))
         editor.setProperty("documentDirty", False)
         editor.setProperty("saveState", "บันทึกแล้ว")
@@ -894,6 +965,7 @@ class EditorTabs(QWidget):
         editor.setFocus()
         self._update_status(index)
         if text != original_text:
+            editor.setProperty('normalizationPending', True)
             self._set_dirty(editor, True, "ลบบรรทัดว่างแล้ว · ยังไม่ได้บันทึก")
         return editor
 
@@ -915,10 +987,7 @@ class EditorTabs(QWidget):
         action = menu.exec(self.tabs.tabBar().mapToGlobal(position))
         try:
             if action == recover_action:
-                saved = json.loads(self._recovery_path(path).read_text(encoding='utf-8'))
-                if saved.get('path') != str(path):
-                    raise ValueError('Recovery belongs to another file')
-                editor.setPlainText(saved['text'])
+                self.restore_recovery(editor)
             elif action == reload_action:
                 if self._dirty(editor):
                     if QMessageBox.question(self, 'อ่านไฟล์ใหม่',
@@ -928,14 +997,24 @@ class EditorTabs(QWidget):
                 raw = path.read_bytes()
                 self.apply_external_update(path, raw.decode('utf-8-sig'))
                 editor.disk_bom = raw.startswith(b'\xef\xbb\xbf')
-                editor.disk_newline = '\r\n' if b'\r\n' in raw else '\n'
+                editor.disk_newline = detect_newline(raw.decode('utf-8-sig'))
         except (OSError, UnicodeError, ValueError, KeyError) as exc:
             QMessageBox.warning(self, 'อ่านหรือกู้คืนไฟล์ไม่ได้', str(exc))
+
+    def restore_recovery(self, editor):
+        path = self._path(editor)
+        saved = json.loads(self._recovery_path(path).read_text(encoding='utf-8'))
+        if saved.get('path') != str(path):
+            raise ValueError('Recovery belongs to another file')
+        editor.setPlainText(normalize_file_text(path, saved['text']))
 
     def save_editor(self, editor, quiet=False, autosave=False) -> bool:
         path = self._path(editor)
         if path is None:
             return True
+        if autosave and editor.property('normalizationPending'):
+            return True
+        editor.normalize_visible_text()
         timer = getattr(editor, "autosave_timer", None)
         if timer is not None:
             timer.stop()
@@ -984,19 +1063,9 @@ class EditorTabs(QWidget):
         finally:
             _cleanup_staged_text_file(staged_path)
 
-        # Do not interrupt typing with an autosave cleanup. Explicit saves
-        # update the editor in one undoable operation after the write succeeds.
-        if not autosave and text != editor.toPlainText():
-            cursor = editor.textCursor()
-            position = cursor.position()
-            cursor.beginEditBlock()
-            cursor.select(QTextCursor.Document)
-            cursor.insertText(text)
-            cursor.endEditBlock()
-            cursor.setPosition(min(position, len(text)))
-            editor.setTextCursor(cursor)
-            if timer is not None:
-                timer.stop()
+        if timer is not None:
+            timer.stop()
+        editor.setProperty('normalizationPending', False)
         self._set_dirty(
             editor,
             False,
@@ -1025,12 +1094,20 @@ class EditorTabs(QWidget):
             if timer is not None:
                 timer.stop()
             editor.blockSignals(True)
-            editor.setPlainText(text)
-            editor.disk_digest = hashlib.sha256(path.read_bytes()).digest()
+            raw = path.read_bytes()
+            normalized = normalize_file_text(path, text)
+            editor.vocabulary_mode = is_vocabulary(path, text)
+            editor.clean_empty_lines = cleans_file_text(path) and not editor.vocabulary_mode
+            editor.setPlainText(normalized)
+            editor.disk_digest = hashlib.sha256(raw).digest()
+            editor.disk_bom = raw.startswith(b'\xef\xbb\xbf')
+            editor.disk_newline = detect_newline(raw.decode('utf-8-sig'))
             editor.blockSignals(False)
             editor._cached_character_count = len(text)
             editor._cached_word_count = len(text.split())
-            self._set_dirty(editor, False, "บันทึกแล้ว")
+            editor.setProperty('normalizationPending', normalized != text)
+            self._set_dirty(editor, normalized != text,
+                            "ลบบรรทัดว่างแล้ว · ยังไม่ได้บันทึก" if normalized != text else "บันทึกแล้ว")
             self.documentSaved.emit(str(path))
             return True
         self.documentSaved.emit(str(path))
@@ -1047,6 +1124,7 @@ class EditorTabs(QWidget):
 
     def save_current(self) -> bool:
         if isinstance(self.tabs.currentWidget(), TxtExportTab):
+            self.export_tab.editor.normalize_visible_text()
             if self.export_tab.export_service:
                 try: self.export_tab.export_service.save_draft(self.export_tab.editor.toPlainText())
                 except OSError as exc:
@@ -1056,7 +1134,8 @@ class EditorTabs(QWidget):
         editor = self._current_editor()
         return self.save_editor(editor) if editor else True
 
-    def save_all(self) -> bool:
+    def save_all(self, include_normalization=True) -> bool:
+        self.export_tab.editor.normalize_visible_text()
         if self.export_tab.export_service:
             try: self.export_tab.export_service.save_draft(self.export_tab.editor.toPlainText())
             except OSError as exc:
@@ -1064,6 +1143,8 @@ class EditorTabs(QWidget):
                 return False
         for index in range(self.tabs.count()):
             editor = self.tabs.widget(index)
+            if not include_normalization and editor.property('normalizationPending'):
+                continue
             if self._dirty(editor) and not self.save_editor(editor):
                 return False
         return True
@@ -1077,7 +1158,7 @@ class EditorTabs(QWidget):
             return
         if editor is self.export_tab:
             return
-        if self._dirty(editor) and not self.save_editor(editor):
+        if self._dirty(editor) and not editor.property('normalizationPending') and not self.save_editor(editor):
             return
         self.tabs.removeTab(index)
         editor.deleteLater()
@@ -1210,6 +1291,10 @@ class EditorTabs(QWidget):
         cursor = editor.textCursor()
         suffix = path.suffix.lower().lstrip(".").upper() if path else "TEXT"
         state = str(editor.property("saveState") or "")
+        if path and getattr(editor, 'vocabulary_mode', False):
+            warnings = vocabulary_warnings(editor.toPlainText())
+            if warnings:
+                state += f" · TSV: {len(warnings)} บรรทัดมีคอลัมน์ไม่ครบ 4"
         self.status.setText(
             f"Ln {cursor.blockNumber()+1}, Col {cursor.positionInBlock()+1}   "
             f"UTF-8   {suffix}   •   {state}"
@@ -1431,7 +1516,7 @@ class EditorTabs(QWidget):
     def _handle_tab_change(self, index):
         editor = self.tabs.widget(index) if index >= 0 else None
         previous = self._active_editor
-        if previous is not None and previous is not editor and self._dirty(previous):
+        if previous is not None and previous is not editor and self._dirty(previous) and not previous.property('normalizationPending'):
             if not self.save_editor(previous, quiet=True):
                 old_index = self.tabs.indexOf(previous)
                 self.tabs.blockSignals(True)
