@@ -8,7 +8,9 @@ version = "3.6.0"
 description = "Windows novel translation workflow manager"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["PySide6>=6.6", "httpx>=0.27,<1", "selectolax>=0.3.21,<1"]
+# Qt 6.12.0 reproducibly crashes on Windows process exit after the UI smoke
+# passes (Python 3.12, access violation); keep the validated 6.11 runtime.
+dependencies = ["PySide6>=6.6,<6.12", "httpx>=0.27,<1", "selectolax>=0.3.21,<1"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pyinstaller>=6"]

@@ -11,6 +11,7 @@ All notable changes to Palantir: Novel are documented here.
 - Add horizontal novel tabs, lazy independent workspace switching, persisted open novels and vocabulary mode.
 - Cancel delayed automatic update checks when closing the application.
 - Keep recovery ordering deterministic when Windows clock ticks repeat.
+- Bound PySide6 below 6.12 after reproducing a Windows process-exit access violation with 6.12.0; Python 3.12 with 6.11.2 passes the same smoke test.
 - Restore the repository's profile-based TomatoMTL downloader with resume, manifest, safe partial writes and independent source metadata. Live catalog works; Chinese raw download remains unverified because the tested source page did not expose verifiable raw text.
 - Prefer final Context progress sections; ignore earlier chapter examples and following sections. Resolve downloaded zero-padded filenames in CURRENT_SOURCE_CHAPTER.
 - Native Windows CF_HDROP validation and actual published v3.5.6-to-new-version silent installer upgrade coverage.
