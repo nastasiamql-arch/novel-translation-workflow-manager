@@ -2,6 +2,20 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.6.0 - 2026-10-09
+
+- White Minimal light palette, blue selections, rounded preference cards and seven settings categories.
+- Optional lossless ZIP copy on the existing COPY STEP action; multiple steps through a context menu, disabled attachments, Unicode, binary and folder support.
+- Preserve editor/export whitespace, tabs and NBSP; retain UTF-8 BOM and uniform CRLF; detect external file conflicts and persist recoverable unsaved text.
+- Visible scalable SpinBox arrows and separate, tested up/down hit areas without wrapping.
+- Add horizontal novel tabs, lazy independent workspace switching, persisted open novels and vocabulary mode.
+- Cancel delayed automatic update checks when closing the application.
+- Keep recovery ordering deterministic when Windows clock ticks repeat.
+- Restore the repository's profile-based TomatoMTL downloader with resume, manifest, safe partial writes and independent source metadata. Live catalog works; Chinese raw download remains unverified because the tested source page did not expose verifiable raw text.
+- Prefer final Context progress sections; ignore earlier chapter examples and following sections. Resolve downloaded zero-padded filenames in CURRENT_SOURCE_CHAPTER.
+- Native Windows CF_HDROP validation and actual published v3.5.6-to-new-version silent installer upgrade coverage.
+- Preserve existing sessions, verified goal overflow, export rollback, workflow click-copy and updater SHA-256 checks.
+
 ## 3.5.6 - 2026-10-08
 
 - Remove empty and whitespace-only lines from novel paste, clipboard assembly, text saves, TXT exports, Context updates, and export drafts across profiles.

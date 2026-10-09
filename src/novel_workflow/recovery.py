@@ -33,7 +33,12 @@ def backup_file(path):
     # A digest keeps very long document names within Windows path limits.
     import hashlib
     key = hashlib.sha256(path.name.encode('utf-8')).hexdigest()[:16]
-    backup = directory / f'{key}-{time.time_ns()}-{uuid.uuid4().hex[:8]}.bak'
+    # Windows may return the same wall-clock tick for consecutive saves. Keep
+    # chronological names monotonic so pruning never discards a newer backup.
+    previous = [int(item.name.split('-')[1]) for item in directory.glob(f'{key}-*.bak')
+                if item.name.split('-')[1].isdigit()]
+    stamp = max(time.time_ns(), max(previous, default=0) + 1)
+    backup = directory / f'{key}-{stamp:020d}-{uuid.uuid4().hex[:8]}.bak'
     try:
         with path.open('rb') as source, backup.open('xb') as output:
             shutil.copyfileobj(source, output)

@@ -14,6 +14,7 @@ datas = [
     (str(version_file), 'novel_workflow/resources'),
     ('src/novel_workflow/resources/novelworkflow.png', 'novel_workflow/resources'),
     ('src/novel_workflow/resources/palantir_novel.png', 'novel_workflow/resources'),
+    *[(str(path), 'novel_workflow/resources') for path in (project_root / 'src/novel_workflow/resources').glob('spin-*.svg')],
     *copy_metadata('novelworkflow'),
 ]
 

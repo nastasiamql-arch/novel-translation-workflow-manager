@@ -47,7 +47,7 @@ class Workflow:
     def from_dict(cls,d): return cls([WorkflowStep.from_dict(x) for x in d.get("steps",[])])
 
 _LEGACY_BASIC_STEP_NAMES = ("หาศัพท์","แปล","ตรวจคำแปล","เกลาสำนวน")
-PROFILE_SCHEMA_VERSION = 7
+PROFILE_SCHEMA_VERSION = 8
 
 def migrate_profile_schema(profile: "NovelProfile") -> bool:
     """Advance old profile documents after additive, non-destructive upgrades."""
@@ -120,6 +120,25 @@ class TxtExportSettings:
         return cls(**values)
 
 @dataclass
+class NovelSourceBinding:
+    source_id: str
+    book_url: str
+    remote_book_id: str
+    content_mode: str = "raw_zh"
+    last_known_chapter_count: int = 0
+    last_downloaded_chapter: int = 0
+    last_checked_at: str | None = None
+    last_downloaded_at: str | None = None
+    skip_existing: bool = True
+    @classmethod
+    def from_dict(cls, value):
+        if not isinstance(value, dict): return None
+        fields = cls.__dataclass_fields__
+        data = {key: item for key, item in value.items() if key in fields}
+        if not all(data.get(key) for key in ("source_id", "book_url", "remote_book_id")): return None
+        return cls(**data)
+
+@dataclass
 class LaunchTarget:
     id: str = field(default_factory=uid)
     label: str = ""
@@ -135,6 +154,7 @@ class LaunchTarget:
 class NovelProfile:
     id: str = field(default_factory=uid)
     name: str = "Novel"
+    source_binding: NovelSourceBinding | None = None
     workflow: Workflow = field(default_factory=Workflow.defaults)
     vocabulary_step: WorkflowStep | None = field(default_factory=lambda: WorkflowStep(name="หาศัพท์"))
     chapter_state: ChapterState = field(default_factory=ChapterState)
@@ -164,6 +184,7 @@ class NovelProfile:
         return cls(
             id=d.get("id",uid()),
             name=d.get("name","Novel"),
+            source_binding=NovelSourceBinding.from_dict(d.get("source_binding")),
             order=int(d.get("order",0)),
             schema_version=int(d.get("schema_version",1)),
             workflow=Workflow.from_dict(d.get("workflow",{})),
@@ -212,6 +233,7 @@ class NovelGroup:
 
 @dataclass
 class AppSettings:
+    copy_files_as_zip: bool = False
     appearance: str = "Light"
     appearance_migrated: bool = False
     flat_vscode_theme_migrated: bool = False
@@ -226,6 +248,8 @@ class AppSettings:
     editor_tab_order: dict[str, list[str]] = field(default_factory=dict)
     editor_active_tab_keys: dict[str, str] = field(default_factory=dict)
     workspace_step_indices: dict[str, int] = field(default_factory=dict)
+    workspace_vocabulary_modes: dict[str, bool] = field(default_factory=dict)
+    workspace_open_profile_ids: list[str] = field(default_factory=list)
     editor_positions: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
     navigation_width: int = 180
     navigation_collapsed: bool = False

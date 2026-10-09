@@ -31,8 +31,8 @@ def test_context_chapter_headings_support_thai_chinese_and_english():
     assert latest_context_chapter("Chapter 157 to 159") == 159
 
 
-def test_context_uses_highest_valid_heading():
-    assert latest_context_chapter("Chapter 999\ntext\nChapter 120") == 999
+def test_context_uses_final_valid_heading():
+    assert latest_context_chapter("Chapter 999\ntext\nChapter 120") == 120
     assert latest_context_chapter("บทที่ 120-125") == 125
     assert latest_context_chapter("ไม่มีหัวข้อบท") is None
 

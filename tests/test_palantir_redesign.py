@@ -6,8 +6,8 @@ from novel_workflow.models import NovelProfile
 from novel_workflow.translation_progress import latest_context_chapter
 from novel_workflow.workspace_editor import EditorTabs
 
-@pytest.mark.parametrize('text,expected', [('บทที่ 159\nบทที่ 12',159), ('第123-125章\n第90章',125), ('Chapter 123-125\nChapter 10',125), ('บทที่ 125-123',None), ('body 999',None), ('## Chapter 123',123)])
-def test_context_max_valid_heading(text, expected):
+@pytest.mark.parametrize('text,expected', [('บทที่ 159\nบทที่ 12',12), ('第123-125章\n第90章',90), ('Chapter 123-125\nChapter 10',10), ('บทที่ 125-123',None), ('body 999',None), ('## Chapter 123',123)])
+def test_context_final_valid_heading(text, expected):
     assert latest_context_chapter(text) == expected
 
 def test_verified_cycles_preserve_history():

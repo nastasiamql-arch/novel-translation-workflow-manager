@@ -334,6 +334,10 @@ class WorkspacePage(QWidget):
         self.context_button.setToolTip("เลือกไฟล์ Context ที่ติดตามความคืบหน้า")
         self.context_button.clicked.connect(self._choose_context)
         self.context_button.hide()
+        web_source = QToolButton()
+        web_source.setText("ต้นฉบับเว็บ")
+        web_source.clicked.connect(self.owner.open_downloader)
+        header_layout.addWidget(web_source)
         find_button = QToolButton()
         find_button.setText("ค้นหา")
         find_button.setAccessibleName("ค้นหาในไฟล์ปัจจุบัน")
@@ -430,6 +434,15 @@ class WorkspacePage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
+        self.novel_tabs = QTabBar()
+        self.novel_tabs.setObjectName('novelTabBar')
+        self.novel_tabs.setAccessibleName('นิยายที่เปิดทำงาน')
+        self.novel_tabs.setExpanding(False)
+        self.novel_tabs.setUsesScrollButtons(True)
+        self.novel_tabs.setElideMode(Qt.ElideRight)
+        self.novel_tabs.currentChanged.connect(
+            lambda index: self.owner._switch_novel_tab(self.novel_tabs.tabData(index)))
+        layout.addWidget(self.novel_tabs)
         layout.addWidget(self.content_stack, 1)
 
         self.configure(profile)
@@ -844,6 +857,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def groups_dialog(self):
         self._show_utility_page("groups", "กลุ่มนิยาย", lambda: NovelGroupsPage(self))
 
+    def open_downloader(self):
+        if not self.profile:
+            return
+        from .downloader_ui.panel import DownloaderPage
+        key = f"downloader:{self.profile.id}"
+        self._show_utility_page(key, "ต้นฉบับเว็บ", lambda: DownloaderPage(self))
+
     def translation_dashboard(self):
         profiles = self.refresh_translation_progress()
 
@@ -878,7 +898,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         layout.addWidget(QLabel("ตัวคั่นเนื้อหา (ใช้ {FILE_NAME})"))
         layout.addWidget(separator)
         checks = []
-        for label, attr in (("แสดงชื่อไฟล์", "show_filename_heading"),
+        for label, attr in (("คัดลอกไฟล์เป็น ZIP", "copy_files_as_zip"),
+                            ("แสดงชื่อไฟล์", "show_filename_heading"),
                             ("ยืนยันก่อนลบ", "confirm_before_deleting"),
                             ("เปิดนิยายล่าสุดเมื่อเริ่มโปรแกรม", "open_last_profile")):
             check = QCheckBox(label)
@@ -1434,6 +1455,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def build(self):
         self._settings_open = False
         self.workspaces = {}
+        self._open_workspace_ids = list(self.settings.workspace_open_profile_ids)
         self._session_save_timer = QTimer(self)
         self._session_save_timer.setSingleShot(True)
         self._session_save_timer.setInterval(250)
@@ -1577,8 +1599,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._update_check_worker = None
         self._update_download_worker = None
         self._update_progress = None
+        self._automatic_update_timer = QTimer(self)
+        self._automatic_update_timer.setSingleShot(True)
+        self._automatic_update_timer.timeout.connect(lambda: self.check_updates(manual=False))
         if self.settings.last_update_check_date != date.today().isoformat():
-            QTimer.singleShot(2500, lambda: self.check_updates(manual=False))
+            self._automatic_update_timer.start(2500)
 
     def navigate(self, key):
         if key == "library": self.show_library()
@@ -1865,6 +1890,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.main_pages.setCurrentWidget(self.library_page)
 
     def _workspace(self, profile):
+        if profile.id not in self._open_workspace_ids:
+            self._open_workspace_ids.append(profile.id)
         workspace = self.workspaces.get(profile.id)
         if workspace is None:
             workspace = WorkspacePage(self, profile)
@@ -1894,6 +1921,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 lambda _index: self._schedule_workspace_session_save()
             )
             workspace.step_index = int(self.settings.workspace_step_indices.get(profile.id, 0))
+            workspace.vocabulary_mode = bool(self.settings.workspace_vocabulary_modes.get(profile.id, False))
             if self.settings.sidebar_visible:
                 workspace.workspace_splitter.setSizes([
                     max(220, int(self.settings.sidebar_width or 290)), 1000,
@@ -1915,7 +1943,32 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 editor.verticalScrollBar().setValue(int(position.get("scroll", 0)))
         else:
             workspace.configure(profile)
+        self._refresh_novel_tabs()
         return workspace
+
+    def _refresh_novel_tabs(self):
+        profiles = {profile.id: profile for profile in getattr(self, 'ps_list', [])}
+        self._open_workspace_ids = [pid for pid in self._open_workspace_ids if pid in profiles]
+        for workspace in self.workspaces.values():
+            bar = workspace.novel_tabs
+            bar.blockSignals(True)
+            while bar.count():
+                bar.removeTab(0)
+            for pid in self._open_workspace_ids:
+                index = bar.addTab(profiles[pid].name)
+                bar.setTabData(index, pid)
+                bar.setTabToolTip(index, profiles[pid].name)
+                if pid == workspace.profile_id:
+                    bar.setCurrentIndex(index)
+            bar.blockSignals(False)
+
+    def _switch_novel_tab(self, profile_id):
+        if not profile_id or not self.profile or profile_id == self.profile.id:
+            return
+        index = next((i for i, profile in enumerate(self.ps_list) if profile.id == profile_id), -1)
+        if index >= 0:
+            self.select_profile(index)
+        self._refresh_novel_tabs()  # Restore selection if saving blocked the switch.
 
     def select_profile(self, index):
         if getattr(self, "_settings_open", False):
@@ -2036,6 +2089,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                         lambda checked=False, row=index, pid=self.profile.id:
                             self.copy_named_stage(pid, row)
                     )
+                    button.setContextMenuPolicy(Qt.CustomContextMenu)
+                    button.customContextMenuRequested.connect(
+                        lambda pos, b=button: self._workflow_copy_menu(b, pos))
                     self.steps.setItemWidget(item, button)
                     workspace.stage_buttons.append(button)
 
@@ -2094,6 +2150,31 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             button.setWorkflowActive(active)
         workspace.vocabulary_button.setWorkflowActive(workspace.vocabulary_mode)
 
+    def _workflow_copy_menu(self, button, position):
+        if not self.profile or not self.settings.copy_files_as_zip:
+            return
+        menu = QMenu(button)
+        choose = menu.addAction("เลือกหลายขั้นตอนแล้วคัดลอกเป็น ZIP…")
+        if menu.exec(button.mapToGlobal(position)) != choose:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("เลือกขั้นตอนสำหรับ ZIP")
+        layout = QVBoxLayout(dialog)
+        choices = []
+        steps = ([self.profile.vocabulary_step] if self.profile.vocabulary_step else []) + self.profile.workflow.steps
+        for step in steps:
+            check = QCheckBox(step.name)
+            check.setChecked(step is self.step())
+            layout.addWidget(check)
+            choices.append((check, step))
+        copy = QPushButton("COPY STEP")
+        copy.clicked.connect(dialog.accept)
+        layout.addWidget(copy)
+        if dialog.exec() == QDialog.Accepted:
+            selected = [step for check, step in choices if check.isChecked()]
+            if selected:
+                self.copy_step(advance=False, selected_steps=selected)
+
     def copy_named_stage(self, profile_id, stage):
         """Select a named stage and copy only its files without advancing."""
         if not self.profile or self.profile.id != profile_id:
@@ -2119,6 +2200,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._sync_stage_buttons(workspace)
         self.refresh_files()
         self.copy_step(advance=False)
+        self._schedule_workspace_session_save()
 
     def step(self):
         """Return the currently active vocabulary or translation step."""
@@ -2146,6 +2228,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนขั้นตอนไม่ได้", 5000)
             return
         workspace.vocabulary_mode = enabled
+        self._schedule_workspace_session_save()
         self.si = workspace.step_index
         self.refresh_files()
         self._sync_stage_buttons(workspace)
@@ -2215,9 +2298,12 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             workspace.breadcrumb.setText(f"{profile.name}  ›  {step.name}  ›  {path.name}")
 
 
-    def copy_step(self, advance=True):
+    def copy_step(self, advance=True, selected_steps=None):
         workspace = self.workspaces.get(self.profile.id) if self.profile else None
-        super().copy_step(advance=advance)
+        if workspace and not workspace.editor.save_all():
+            self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงคัดลอกไฟล์ไม่ได้", 5000)
+            return
+        super().copy_step(advance=advance, selected_steps=selected_steps)
         if advance and self.profile and workspace and not workspace.vocabulary_mode and self.si >= 0:
             workspace.step_index = self.si
         if workspace:
@@ -2371,6 +2457,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._update_editor_status()
 
     def _capture_sessions(self):
+        self.settings.workspace_open_profile_ids = list(self._open_workspace_ids)
         for profile_id, workspace in self.workspaces.items():
             self.settings.editor_tabs[profile_id] = (
                 workspace.editor.open_paths()
@@ -2387,6 +2474,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if active_key:
                 self.settings.editor_active_tab_keys[profile_id] = active_key
             self.settings.workspace_step_indices[profile_id] = workspace.step_index
+            self.settings.workspace_vocabulary_modes[profile_id] = workspace.vocabulary_mode
             sidebar_size = workspace.workspace_splitter.sizes()[0]
             self.settings.sidebar_visible = sidebar_size > 0
             if sidebar_size > 0:
@@ -2469,10 +2557,14 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.goal_status.setToolTip(f"{self.profile.name}: ยังไม่ได้ตั้งเป้าหมาย")
 
     def closeEvent(self, event):
+        self._automatic_update_timer.stop()
         timer = getattr(self, "_session_save_timer", None)
         if timer is not None:
             timer.stop()
         workers = [self._update_check_worker, self._update_download_worker]
+        workers.extend(getattr(page, "worker", None)
+                       for key, page in self._utility_pages.items()
+                       if key.startswith("downloader:"))
         for worker in workers:
             if worker and worker.isRunning():
                 worker.requestInterruption()

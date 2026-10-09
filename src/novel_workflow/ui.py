@@ -687,12 +687,23 @@ class ManagementActionsMixin:
         dlg=QDialog(self);dlg.setWindowTitle("Preview: "+self.step().name);dlg.resize(850,650);l=QVBoxLayout(dlg);view=QTextEdit();view.setReadOnly(True);view.setPlainText(text);l.addWidget(view);l.addWidget(QLabel(f"{len(text):,} characters"))
         buttons=QDialogButtonBox(QDialogButtonBox.Close);copy=buttons.addButton("Copy Contents",QDialogButtonBox.ActionRole);copy.clicked.connect(lambda:self.copy_text(text));buttons.rejected.connect(dlg.reject);l.addWidget(buttons);dlg.exec()
     def copy_text(self,text):QApplication.clipboard().setText(text);self.statusBar().showMessage("Copied to clipboard",2500)
-    def copy_step(self, advance=True):
+    def copy_step(self, advance=True, selected_steps=None):
         step=self.step()
         if not step:return
         try:
             paths=[]
-            for item in sorted(step.files,key=lambda x:x.order):
+            items = sorted(step.files,key=lambda x:x.order)
+            if self.settings.copy_files_as_zip:
+                from .workflow_archive import create_workflow_archive
+                allowed = {s.id for s in self.profile.workflow.steps}
+                if self.profile.vocabulary_step:
+                    allowed.add(self.profile.vocabulary_step.id)
+                selected = selected_steps or [step]
+                if any(s.id not in allowed for s in selected):
+                    raise ValueError("Steps do not belong to the active novel")
+                paths = [create_workflow_archive(self.repo, self.assembler, self.profile, selected)]
+                items = []
+            for item in items:
                 if not item.enabled:continue
                 if item.reference_type=="dynamic":
                     path=self.assembler.resolve(self.profile,item.dynamic_reference)

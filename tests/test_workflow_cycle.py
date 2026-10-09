@@ -89,9 +89,9 @@ def test_schema_three_profile_migrates_to_six_and_keeps_removed_data(tmp_path):
     loaded = repo.list_profiles()[0]
     persisted = json.loads(profile_path.read_text(encoding="utf-8"))
 
-    assert loaded.schema_version == 7
+    assert loaded.schema_version == 8
     assert loaded.vocabulary_step.files[0].id == "file-id"
-    assert persisted["schema_version"] == 7
+    assert persisted["schema_version"] == 8
     assert persisted["removed_vocabulary_data"]["vocabulary_polish_step"]["files"][0]["path"] == "polish.txt"
     assert persisted["removed_vocabulary_data"]["vocabulary_settings"]["model"] == "legacy"
 

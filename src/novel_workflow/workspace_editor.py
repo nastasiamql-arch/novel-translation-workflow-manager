@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 import tempfile
 from pathlib import Path
 from weakref import WeakSet
@@ -16,6 +18,7 @@ from PySide6.QtWidgets import (
 from .theme import editor_colors
 from .models import AppSettings
 from .recovery import commit_staged
+from .storage import data_root, write_json
 from .text_normalization import remove_empty_lines, cleans_file_text
 
 
@@ -214,7 +217,7 @@ class TxtExportTab(QWidget):
         self.set_tab_appearance(appearance)
         self.refresh_verified()
         if self.export_service:
-            self.editor.setPlainText(remove_empty_lines(self.export_service.profile().txt_export_draft))
+            self.editor.setPlainText(self.export_service.profile().txt_export_draft)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -323,7 +326,7 @@ class TxtExportTab(QWidget):
             self.directory.setText(folder)
 
     def copy_text(self):
-        QApplication.clipboard().setText(remove_empty_lines(self.editor.toPlainText()))
+        QApplication.clipboard().setText(self.editor.toPlainText())
         self.status_callback("คัดลอกแล้ว")
 
     def copy_and_export(self):
@@ -359,7 +362,7 @@ class TxtExportTab(QWidget):
                 if not context_path.is_file():
                     raise OSError("ไม่พบไฟล์ Context")
             target = folder / f"{prefix}{self.current.value()}.txt"
-            text = remove_empty_lines(self.editor.toPlainText())
+            text = self.editor.toPlainText()
             destinations = [target]
             if context_path is not None:
                 destinations.append(context_path)
@@ -416,7 +419,7 @@ class CodeEditor(QPlainTextEdit):
 
     def __init__(self, parent=None, font_size=11.0, appearance="Dark"):
         super().__init__(parent)
-        self.clean_empty_lines = True
+        self.clean_empty_lines = False
         self.appearance = appearance
         self.colors = editor_colors(appearance)
         self.setObjectName("codeEditor")
@@ -461,8 +464,14 @@ class CodeEditor(QPlainTextEdit):
         else:
             super().insertFromMimeData(source)
 
+    def toPlainText(self):
+        # Qt's toPlainText silently maps NBSP to ordinary spaces. Raw text
+        # preserves those characters; only Qt paragraph separators are decoded.
+        return self.document().toRawText().replace('\u2029', '\n').replace('\u2028', '\n')
+
     def createMimeDataFromSelection(self):
-        data = super().createMimeDataFromSelection()
+        data = QMimeData()
+        data.setText(self.textCursor().selectedText().replace('\u2029', '\n').replace('\u2028', '\n'))
         if self.clean_empty_lines and data.hasText():
             # Rich-text/ODF payloads still contain the original blank paragraphs
             # and external apps may prefer them over the cleaned plain text.
@@ -636,6 +645,9 @@ class EditorTabs(QWidget):
         settings = settings or AppSettings()
         self.tabs = QTabWidget()
         self.tabs.setObjectName("editorTabs")
+        self.tabs.tabBar().setObjectName("editorFileTabBar")
+        self.tabs.tabBar().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tabs.tabBar().customContextMenuRequested.connect(self._file_tab_menu)
         self.tabs.setDocumentMode(True)
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
@@ -833,16 +845,18 @@ class EditorTabs(QWidget):
                 return None
 
         try:
-            text = path.read_text(encoding="utf-8-sig", errors="replace")
-        except OSError as exc:
+            original_bytes = path.read_bytes()
+            text = original_bytes.decode("utf-8-sig")
+        except (OSError, UnicodeError) as exc:
             QMessageBox.warning(self, "อ่านไฟล์ไม่ได้", str(exc))
             return None
 
         editor = CodeEditor(font_size=self._font_size, appearance=self.appearance)
-        editor.clean_empty_lines = cleans_file_text(path)
+        editor.clean_empty_lines = False
         original_text = text
-        if editor.clean_empty_lines:
-            text = remove_empty_lines(text)
+        editor.disk_digest = hashlib.sha256(original_bytes).digest()
+        editor.disk_bom = original_bytes.startswith(b"\xef\xbb\xbf")
+        editor.disk_newline = "\r\n" if b"\r\n" in original_bytes and b"\n" not in original_bytes.replace(b"\r\n", b"") else "\n"
         editor.setProperty("documentPath", str(path))
         editor.setProperty("documentDirty", False)
         editor.setProperty("saveState", "บันทึกแล้ว")
@@ -881,6 +895,41 @@ class EditorTabs(QWidget):
             self._set_dirty(editor, True, "ลบบรรทัดว่างแล้ว · ยังไม่ได้บันทึก")
         return editor
 
+    def _recovery_path(self, path):
+        root = (self.export_tab.export_service.repo.root
+                if self.export_tab.export_service else path.parent / '.palantir-recovery') / 'recovery' / 'editor'
+        return root / (hashlib.sha256(str(path).encode('utf-8')).hexdigest() + '.json')
+
+    def _file_tab_menu(self, position):
+        index = self.tabs.tabBar().tabAt(position)
+        editor = self.tabs.widget(index) if index >= 0 else None
+        path = self._path(editor) if editor else None
+        if path is None:
+            return
+        menu = QMenu(self)
+        reload_action = menu.addAction('อ่านไฟล์จาก Disk ใหม่…')
+        recover_action = menu.addAction('กู้คืนข้อความที่ยังไม่บันทึก')
+        recover_action.setEnabled(self._recovery_path(path).is_file())
+        action = menu.exec(self.tabs.tabBar().mapToGlobal(position))
+        try:
+            if action == recover_action:
+                saved = json.loads(self._recovery_path(path).read_text(encoding='utf-8'))
+                if saved.get('path') != str(path):
+                    raise ValueError('Recovery belongs to another file')
+                editor.setPlainText(saved['text'])
+            elif action == reload_action:
+                if self._dirty(editor):
+                    if QMessageBox.question(self, 'อ่านไฟล์ใหม่',
+                            'สำรองข้อความที่ยังไม่บันทึกไว้ใน Recovery แล้วอ่านไฟล์จาก Disk ใหม่?') != QMessageBox.Yes:
+                        return
+                    write_json(self._recovery_path(path), {'path': str(path), 'text': editor.toPlainText()})
+                raw = path.read_bytes()
+                self.apply_external_update(path, raw.decode('utf-8-sig'))
+                editor.disk_bom = raw.startswith(b'\xef\xbb\xbf')
+                editor.disk_newline = '\r\n' if b'\r\n' in raw else '\n'
+        except (OSError, UnicodeError, ValueError, KeyError) as exc:
+            QMessageBox.warning(self, 'อ่านหรือกู้คืนไฟล์ไม่ได้', str(exc))
+
     def save_editor(self, editor, quiet=False, autosave=False) -> bool:
         path = self._path(editor)
         if path is None:
@@ -891,10 +940,29 @@ class EditorTabs(QWidget):
 
         staged_path = None
         text = editor.toPlainText()
-        if editor.clean_empty_lines:
-            text = remove_empty_lines(text)
+        recovery_path = self._recovery_path(path)
         try:
-            staged_path = _stage_text_file(path, text)
+            if self._dirty(editor):
+                # Persist unsaved work separately before any potentially failing
+                # write, including conflicts. A failure never destroys this copy.
+                write_json(recovery_path, {'path': str(path), 'text': text})
+            if hashlib.sha256(path.read_bytes()).digest() != editor.disk_digest:
+                editor.setProperty("saveState", "ไฟล์ถูกแก้ไขจากภายนอก")
+                self._update_status(self.tabs.indexOf(editor))
+                if not quiet:
+                    QMessageBox.warning(self, "ไฟล์ถูกแก้ไขจากภายนอก",
+                                        "ยังไม่ได้เขียนทับไฟล์ กรุณาสำรองข้อความที่แก้ไขและเปิดไฟล์ใหม่เพื่อตรวจความต่าง")
+                return False
+            if not self._dirty(editor):
+                return True  # Preserve the original byte layout of untouched files.
+            editor.setProperty('saveState', 'กำลังบันทึก…')
+            self._update_status(self.tabs.indexOf(editor))
+            disk_text = text.replace("\n", editor.disk_newline)
+            if editor.disk_bom:
+                disk_text = "\ufeff" + disk_text
+            staged_path = _stage_text_file(path, disk_text)
+            if hashlib.sha256(path.read_bytes()).digest() != editor.disk_digest:
+                raise OSError("ไฟล์ถูกแก้ไขจากภายนอกระหว่างบันทึก")
             context = self.context_path_callback()
             if context and Path(context).expanduser().resolve() == path:
                 commit_staged([(path, staged_path)])
@@ -932,6 +1000,11 @@ class EditorTabs(QWidget):
             False,
             "บันทึกอัตโนมัติแล้ว" if autosave else "บันทึกแล้ว",
         )
+        editor.disk_digest = hashlib.sha256(disk_text.encode("utf-8")).digest()
+        try:
+            recovery_path.unlink(missing_ok=True)
+        except OSError:
+            pass  # A stale recovery file is preferable to reporting a false save failure.
         self.documentSaved.emit(str(path))
         return True
 
@@ -951,6 +1024,7 @@ class EditorTabs(QWidget):
                 timer.stop()
             editor.blockSignals(True)
             editor.setPlainText(text)
+            editor.disk_digest = hashlib.sha256(path.read_bytes()).digest()
             editor.blockSignals(False)
             editor._cached_character_count = len(text)
             editor._cached_word_count = len(text.split())

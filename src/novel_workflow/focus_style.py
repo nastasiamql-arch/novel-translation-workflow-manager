@@ -21,7 +21,7 @@ class FocusInputFilter(QObject):
 
     def eventFilter(self, watched, event):
         kind = event.type()
-        if kind == QEvent.ToolTip:
+        if kind == QEvent.ToolTip and watched.objectName() not in ('editorFileTabBar', 'novelTabBar'):
             QToolTip.hideText()
             return True
         if kind == QEvent.MouseButtonPress:

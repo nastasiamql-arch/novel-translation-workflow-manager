@@ -2,7 +2,7 @@
 from PySide6.QtCore import Qt, QEvent, QTimer
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFrame, QLabel,
     QGridLayout, QPushButton, QScrollArea, QListWidget, QAbstractItemView, QSpinBox,
-    QLineEdit, QSizePolicy)
+    QLineEdit, QSizePolicy, QComboBox, QCheckBox)
 from .shell_components import ElidingLabel
 
 
@@ -97,6 +97,11 @@ class SettingsPage(QWidget):
         owner.settings_profile_heading = ElidingLabel("เลือกนิยายเพื่อจัดการการตั้งค่า")
         owner.settings_profile_heading.setObjectName("sectionHeading")
         detail.addWidget(owner.settings_profile_heading)
+        categories = QComboBox()
+        categories.setObjectName("preferencesCategory")
+        categories.setAccessibleName("หมวดการตั้งค่า")
+        categories.addItems(["General", "Novel", "Workflow", "Workflow Files", "Working Tabs", "TXT Export", "Program Updates"])
+        detail.addWidget(categories)
 
         info_frame = QFrame()
         info_frame.setObjectName("settingsCard")
@@ -123,7 +128,9 @@ class SettingsPage(QWidget):
             button = QPushButton(label)
             button.clicked.connect(callback)
             story_actions.addWidget(button)
-        detail.addLayout(story_actions)
+        story_frame = QWidget()
+        story_frame.setLayout(story_actions)
+        detail.addWidget(story_frame)
 
         launcher_frame = QFrame()
         launcher_frame.setObjectName("settingsCard")
@@ -221,8 +228,9 @@ class SettingsPage(QWidget):
         work_frame = QFrame()
         work_frame.setObjectName("settingsCard")
         work_layout = QVBoxLayout(work_frame)
+        work_layout.setContentsMargins(16, 16, 16, 16)
         work_header = QHBoxLayout()
-        work_header.addWidget(QLabel("ไฟล์สำหรับเปิดทำงาน"), 1)
+        work_header.addWidget(QLabel("Working Tabs · ไฟล์สำหรับเปิดทำงาน"), 1)
         owner.working_files_hint = QLabel("เลือกไฟล์ที่ต้องการเปิดเป็นแท็บ โดยไม่ผูกกับขั้นตอน")
         owner.working_files_hint.setObjectName("mutedLabel")
         work_header.addWidget(owner.working_files_hint)
@@ -243,9 +251,75 @@ class SettingsPage(QWidget):
         work_layout.addLayout(work_actions)
         detail.addWidget(work_frame)
 
+        downloader = QPushButton("ต้นฉบับเว็บ · TomatoMTL")
+        downloader.clicked.connect(owner.open_downloader)
+        detail.addWidget(downloader, alignment=Qt.AlignRight)
+
         program_settings = QPushButton("ตั้งค่าโปรแกรม")
         program_settings.clicked.connect(owner.program_settings_dialog)
         detail.addWidget(program_settings, alignment=Qt.AlignRight)
+        general = QFrame()
+        general.setObjectName("settingsCard")
+        general_layout = QVBoxLayout(general)
+        general_layout.addWidget(QLabel("General · รูปลักษณ์และการคัดลอก"))
+        appearance = QComboBox()
+        appearance.addItems(["Light", "Dark", "System"])
+        appearance.setCurrentText(owner.settings.appearance)
+        general_layout.addWidget(appearance)
+        zip_mode = QCheckBox("คัดลอกไฟล์เป็น ZIP")
+        zip_mode.setObjectName("copyFilesAsZip")
+        zip_mode.setChecked(owner.settings.copy_files_as_zip)
+        general_layout.addWidget(zip_mode)
+        general_layout.addWidget(QLabel("ZIP เก็บในแคชของโปรแกรม เพื่อให้วางไฟล์ได้หลังปิดโปรแกรม"))
+        def save_general(*_args):
+            owner.settings.appearance = appearance.currentText()
+            owner.settings.copy_files_as_zip = zip_mode.isChecked()
+            owner.repo.save_settings(owner.settings)
+            owner.apply_theme()
+        appearance.currentTextChanged.connect(save_general)
+        zip_mode.toggled.connect(save_general)
+        detail.addWidget(general)
+
+        export_preferences = QFrame()
+        export_preferences.setObjectName("settingsCard")
+        export_layout = QVBoxLayout(export_preferences)
+        export_layout.addWidget(QLabel("TXT Export · ตั้งค่าแยกตามนิยาย"))
+        export_layout.addWidget(QLabel("Prefix, เลขไฟล์, ช่วงเลข, ปลายทาง, Draft และประวัติ จำแยกตามเรื่อง"))
+        open_export = QPushButton("เปิด TXT Export ของเรื่องนี้")
+        def show_export():
+            profile_id = owner.profile.id if owner.profile else None
+            owner.navigate("workspace")
+            workspace = owner.workspaces.get(profile_id)
+            if workspace:
+                workspace.editor.tabs.setCurrentWidget(workspace.editor.export_tab)
+        open_export.clicked.connect(show_export)
+        export_layout.addWidget(open_export)
+        detail.addWidget(export_preferences)
+
+        updates = QFrame()
+        updates.setObjectName("settingsCard")
+        updates_layout = QVBoxLayout(updates)
+        updates_layout.addWidget(QLabel("Program Updates · GitHub Releases"))
+        update = QPushButton("ตรวจสอบอัปเดตโปรแกรม")
+        update.clicked.connect(lambda: owner.check_updates(manual=True))
+        updates_layout.addWidget(update)
+        detail.addWidget(updates)
+        sections = {
+            "General": [general, program_settings],
+            "Novel": [info_frame, story_frame, launcher_frame, downloader],
+            "Workflow": [workflow_frame],
+            "Workflow Files": [workflow_frame],
+            "Working Tabs": [work_frame],
+            "TXT Export": [export_preferences],
+            "Program Updates": [updates],
+        }
+        def select_category(name):
+            shown = sections[name]
+            for widget in {w for group in sections.values() for w in group}:
+                widget.setVisible(widget in shown)
+        categories.currentTextChanged.connect(select_category)
+        categories.setCurrentText("Workflow")
+        select_category(categories.currentText())
         scroll.setWidget(detail_page)
         root.addWidget(scroll, 4)
 

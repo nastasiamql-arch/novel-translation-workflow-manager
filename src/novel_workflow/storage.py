@@ -1,4 +1,6 @@
 import json, os, re, tempfile
+from threading import RLock
+from functools import wraps
 from pathlib import Path
 from dataclasses import asdict
 from .models import AppSettings, NovelGroup, NovelProfile, Workflow, WorkflowTemplate, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step, migrate_profile_schema
@@ -31,9 +33,18 @@ def write_json(path,value):
         os.replace(name,path)
     finally: Path(name).unlink(missing_ok=True)
 
+def profile_guard(function):
+    @wraps(function)
+    def guarded(self, *args, **kwargs):
+        with self.profile_lock:
+            return function(self, *args, **kwargs)
+    return guarded
+
+
 class ProjectRepository:
     CATEGORIES=("prompts","glossary","characters","style","source","translated","reviewed","notes","reference","custom")
     def __init__(self,root=None):
+        self.profile_lock = RLock()
         self.root=Path(root) if root else data_root(); self.profiles_dir=self.root/"profiles"
         self.settings_path=self.root/"settings.json"; self.templates_path=self.root/"templates.json";self.groups_path=self.root/"groups.json"
         self.profiles_dir.mkdir(parents=True,exist_ok=True)
@@ -90,7 +101,8 @@ class ProjectRepository:
                 profile.order=order
                 self.save_profile(profile)
         return destination
-    def save_profile(self,p):
+    @profile_guard
+    def save_profile(self,p, *, update_source_binding=False):
         folder=self.profile_dir(p.id); folder.mkdir(parents=True,exist_ok=True)
         for c in self.CATEGORIES: (folder/c).mkdir(exist_ok=True)
         path=folder/"profile.json"
@@ -98,6 +110,10 @@ class ProjectRepository:
         # Preserve fields written by newer schema versions or extensions that this
         # version does not understand; known model fields remain authoritative.
         existing=read_json(path,{})
+        # Downloader metadata has an independent owner. Saving a workspace
+        # snapshot must not overwrite a binding updated by a background job.
+        if isinstance(existing, dict) and 'source_binding' in existing and not update_source_binding:
+            serialized['source_binding'] = existing['source_binding']
         if isinstance(existing,dict):
             known=NovelProfile.__dataclass_fields__
             serialized={**{key:value for key,value in existing.items() if key not in known},**serialized}

@@ -68,7 +68,7 @@ class AssemblyService:
         if not folder.exists(): raise FileNotFoundError(f"No {cat} folder exists for chapter {n}")
         supported={".txt",".md",".json"}
         matches=[f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in supported
-                 and re.search(rf"(?<!\d){n}(?!\d)",f.stem)]
+                 and re.search(rf"(?<!\d)0*{n}(?!\d)",f.stem)]
         exact=[f for f in matches if f.stem.casefold()==f"chapter_{n}".casefold()]
         matches=exact or matches
         if len(matches)==1:return matches[0]

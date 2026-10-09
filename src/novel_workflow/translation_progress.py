@@ -30,6 +30,13 @@ def local_day(timestamp: float | None = None) -> str:
 
 
 def latest_context_chapter(text: str) -> int | None:
+    sections = list(re.finditer(
+        r"(?im)^[ \t]*(?:#{1,6}[ \t]+)?(?:chapter[ \t]+progress|translation[ \t]+progress|ความคืบหน้า(?:การแปล)?|ความคืบหน้าบท|进度|章節進度|章节进度)[ \t]*[:：]?[ \t]*", text))
+    if sections:
+        text = text[sections[-1].end():]
+        next_section = re.search(r'(?im)^#{1,6}[ \t]+(?!บทที่\s*\d|Chapter\s+\d|第\s*\d)', text)
+        if next_section:
+            text = text[:next_section.start()]
     chapters = []
     for match in _CHAPTER_LINE.finditer(text):
         groups = match.groups()
@@ -45,7 +52,7 @@ def latest_context_chapter(text: str) -> int | None:
             start, end = int(chapter), int(end_of_range or chapter)
             if 0 < start <= end <= 2_147_483_647:
                 chapters.append(end)
-    return max(chapters) if chapters else None
+    return chapters[-1] if chapters else None
 
 
 @lru_cache(maxsize=128)
