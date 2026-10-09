@@ -2,6 +2,11 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.6.7 - 2026-10-09
+
+- Restore v3.5.6 line-break handling for blank lines pasted into novel text files, limited to CR/LF separators.
+- Slightly reduce library cover and card sizes and scale down UI typography.
+
 ## 3.6.5 - 2026-10-09
 
 - Let the novel list use the settings sidebar's full available height so more stories are visible at once.

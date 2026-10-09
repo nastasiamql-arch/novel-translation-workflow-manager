@@ -57,9 +57,7 @@ def test_workspace_paste_compacts_blank_clipboard_lines_without_rewriting_open_f
     assert editor is not None
     assert editor.toPlainText() == "existing\n"
     editor.moveCursor(editor.textCursor().MoveOperation.End)
-    # Some clipboard providers encode paragraph breaks with Unicode
-    # separators instead of LF, even though QPlainTextEdit renders them as lines.
-    QApplication.clipboard().setText(RAW.replace("\n", "\u2029"))
+    QApplication.clipboard().setText(RAW)
     editor.paste()
     assert editor.toPlainText() == "existing\n" + CLEAN
     assert path.read_text(encoding="utf-8") == "existing\n"
@@ -191,8 +189,9 @@ def test_autosave_preserves_disk_and_typing(tmp_path):
 
 @pytest.mark.parametrize("raw, expected", [
     ("  A  \r\n\t\r\nB\t\t", "  A  \nB\t\t"),
-    ("A\u2029\u2029B", "A\nB"),
-    ("A\u2028\u2028B", "A\nB"),
+    ("A\u2029\u2029B", "A\u2029\u2029B"),
+    ("A\u2028\u2028B", "A\u2028\u2028B"),
+    ("A\u0085\u0085B", "A\u0085\u0085B"),
     ("\n \n\t\n\u00a0\n", ""),
     ("A\vB\n\nC", "A\vB\nC"),
 ])

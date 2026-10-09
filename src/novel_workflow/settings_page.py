@@ -172,7 +172,7 @@ class SettingsPage(QWidget):
         owner.settings_launch_targets.setWordWrap(True)
         owner.settings_launch_targets.setTextElideMode(Qt.ElideNone)
         target_font = owner.settings_launch_targets.font()
-        target_font.setPointSize(max(12, target_font.pointSize()))
+        target_font.setPointSize(max(11, target_font.pointSize()))
         owner.settings_launch_targets.setFont(target_font)
         owner.settings_launch_targets.setMinimumHeight(260)
         owner.settings_launch_targets.itemChanged.connect(owner.save_settings_launch_target_state)

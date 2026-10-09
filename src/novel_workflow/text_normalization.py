@@ -5,9 +5,7 @@ from pathlib import Path
 def remove_empty_lines(text: str) -> str:
     # Split newline sequences only: vertical tabs and other characters within
     # a nonempty line are content, not paragraph separators.
-    text = (text.replace("\r\n", "\n").replace("\r", "\n")
-            .replace("\u2028", "\n").replace("\u2029", "\n")
-            .replace("\u0085", "\n"))
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     return "\n".join(line for line in text.split("\n") if line.strip())
 
 

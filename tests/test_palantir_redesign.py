@@ -30,6 +30,17 @@ def test_export_tab_stays_last(tmp_path):
     tabs.tabs.tabBar().moveTab(tabs.tabs.count()-1, 0)
     assert tabs.tabs.indexOf(tabs.export_tab) == tabs.tabs.count()-1
 
+
+def test_library_covers_and_card_spacing_are_slightly_smaller(window):
+    from PySide6.QtCore import QSize
+    assert window.profile_cards.iconSize() == QSize(136, 172)
+    assert window.profile_cards.gridSize() == QSize(224, 344)
+
+
+def test_settings_launch_target_text_uses_smaller_ui_size(window):
+    window.settings_dialog()
+    assert window.settings_launch_targets.font().pointSize() == 11
+
 def test_text_staging_is_private_and_cleaned_after_replace(tmp_path):
     import os
     from novel_workflow.workspace_editor import _stage_text_file, _cleanup_staged_text_file

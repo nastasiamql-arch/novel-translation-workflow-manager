@@ -51,8 +51,8 @@ class LibraryPage(QWidget):
         owner.profile_cards.setDragEnabled(True)
         owner.profile_cards.setAcceptDrops(True)
         owner.profile_cards.setSpacing(18)
-        owner.profile_cards.setIconSize(QSize(148, 188))
-        owner.profile_cards.setGridSize(QSize(238, 360))
+        owner.profile_cards.setIconSize(QSize(136, 172))
+        owner.profile_cards.setGridSize(QSize(224, 344))
         owner.profile_cards.setWordWrap(False)
         owner.profile_cards.setTextElideMode(Qt.ElideRight)
         owner.profile_cards.selectionCommitted.connect(

@@ -122,7 +122,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     down_arrow = (resources / f'spin-down-{arrow_theme}.svg').as_posix()
     check_mark = (resources / f'check-{arrow_theme}.svg').as_posix()
     return f"""
-    QWidget {{ color: {c['text']}; font-family: "Segoe UI", "Leelawadee UI", "Tahoma", sans-serif; font-size: 12pt; }}
+    QWidget {{ color: {c['text']}; font-family: "Segoe UI", "Leelawadee UI", "Tahoma", sans-serif; font-size: 11pt; }}
     QFrame#navigationSidebar, QFrame#novelHeader {{ background: {c['sidebar']}; }}
     QToolButton#navigationItem {{ border: 0; border-left: 3px solid transparent; border-radius: 6px; padding: 8px 6px; text-align: left; }}
     QToolButton#navigationItem:checked {{ background: {c['item_selection']}; border-left: 3px solid transparent; font-weight: 600; }}
@@ -130,17 +130,17 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QWidget:disabled {{ color: {c['disabled_text']}; }}
     QLabel:disabled, QAbstractButton:disabled, QTabBar::tab:disabled {{ color: {c['disabled_text']}; }}
     QMainWindow, QDialog, QWidget#appShell, QWidget#novelLibraryPage {{ background: {c['app']}; }}
-    QLabel#pageTitle {{ color: {c['text']}; font-size: 18pt; font-weight: 600; }}
+    QLabel#pageTitle {{ color: {c['text']}; font-size: 16pt; font-weight: 600; }}
     QToolBar#mainToolbar {{ background: {c['sidebar']}; border: 0; border-bottom: 1px solid {c['border']}; spacing: 6px; padding: 3px 10px; margin: 0; min-height: 44px; }}
     QToolBar#mainToolbar QToolButton {{ color: {c['text']}; min-height: 36px; padding: 6px 12px; border: 0; border-radius: 0; }}
     QToolBar#mainToolbar QToolButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; }}
     QToolBar#mainToolbar QToolButton[keyboardFocus="true"] {{ border-bottom: 3px solid {c['focus']}; }}
     QToolBar#mainToolbar QToolButton:hover, QToolButton:hover {{ background: transparent; }}
-    QLabel#brandTitle {{ color: {c['text']}; font-size: 13pt; font-weight: 600; padding: 0 8px; }}
+    QLabel#brandTitle {{ color: {c['text']}; font-size: 12pt; font-weight: 600; padding: 0 8px; }}
     QLabel#toolbarStory {{ color: {c['muted']}; padding-left: 12px; border-left: 1px solid {c['border']}; }}
-    QLabel#sectionHeading {{ color: {c['secondary']}; font-size: 12pt; font-weight: 600; padding: 4px 0 7px; }}
+    QLabel#sectionHeading {{ color: {c['secondary']}; font-size: 11pt; font-weight: 600; padding: 4px 0 7px; }}
     QLabel#mutedLabel, QLabel[class="muted"], QLabel#librarySubtitle, QLabel#emptyStateDescription {{ color: {c['muted']}; }}
-    QLabel#metricValue {{ color: {c['text']}; font-size: 20pt; font-weight: 600; }}
+    QLabel#metricValue {{ color: {c['text']}; font-size: 18pt; font-weight: 600; }}
     QLabel#metricLabel, QLabel#bodyLabel {{ color: {c['secondary']}; }}
     QFrame#storyStrip, QFrame#modeStrip, QFrame#bottomBar, QFrame#goalPanel,
     QFrame#metricCard, QFrame#progressRow, QFrame#editorPanel,
@@ -163,7 +163,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QListWidget#novelLibrary::item {{ background: transparent; border: 0; padding: 9px 10px; min-height: 44px; }}
     QListWidget#novelLibrary::item:hover {{ background: {c['hover']}; }}
     QListWidget#novelLibrary::item:selected {{ background: {c['item_selection']}; border: 0; color: {c['selection_text']}; }}
-    QLabel#emptyStateIcon {{ color: {c['accent']}; font-size: 28pt; }}
+    QLabel#emptyStateIcon {{ color: {c['accent']}; font-size: 25pt; }}
     QLineEdit#librarySearch {{ background: {c['input']}; border: 1px solid {c['control_border']}; border-radius: 0; padding: 7px 10px; min-height: 30px; }}
     QTabBar#libraryStatusTabs {{ background: transparent; border: 0; }}
     QTabBar#libraryStatusTabs::tab {{ color: {c['secondary']}; background: transparent; border: 0; border-bottom: 2px solid transparent; min-height: 38px; padding: 6px 14px; margin: 0; }}
@@ -182,7 +182,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QPushButton#copyStepButton:hover {{ color: {c['muted']}; background: transparent; text-decoration: none; }}
     QPushButton#copyStepButton[keyboardFocus="true"] {{ color: {c['focus']}; background: transparent; border: 0; text-decoration: none; }}
     QPushButton#copyStepButton:disabled {{ color: {c['disabled_text']}; background: transparent; }}
-    QLabel#editorStatusBar, QLabel#progressStatusBar, QLabel#goalStatusBar, QLabel#contextStatusBar {{ color: {c['status_text']}; background: transparent; border: 0; padding: 3px 9px; min-height: 24px; font-size: 10pt; }}
+    QLabel#editorStatusBar, QLabel#progressStatusBar, QLabel#goalStatusBar, QLabel#contextStatusBar {{ color: {c['status_text']}; background: transparent; border: 0; padding: 3px 9px; min-height: 24px; font-size: 9pt; }}
     QProgressBar#goalProgressStatusBar {{ background: {c['surface2']}; border: 0; border-radius: 0; min-height: 8px; max-height: 8px; }}
     QProgressBar#goalProgressStatusBar::chunk {{ background: {c['accent']}; border-radius: 0; }}
     QTreeView#fileTree {{ border: 0; padding: 2px; background: {c['surface']}; }}
@@ -243,9 +243,9 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QGroupBox::title {{ subcontrol-origin: margin; left: 0; padding: 0 6px 0 0; color: {c['secondary']}; }}
     QProgressBar {{ background: {c['surface2']}; color: {c['text']}; border: 0; border-radius: 0; text-align: center; min-height: 20px; }}
     QProgressBar::chunk {{ background: {c['accent']}; border-radius: 0; }}
-    QProgressDialog QLabel, QMessageBox QLabel {{ color: {c['text']}; font-size: 12pt; }}
+    QProgressDialog QLabel, QMessageBox QLabel {{ color: {c['text']}; font-size: 11pt; }}
     QProgressDialog QPushButton {{ min-width: 92px; min-height: 36px; }}
-    QProgressDialog QProgressBar {{ min-height: 24px; font-size: 11pt; font-weight: 600; }}
+    QProgressDialog QProgressBar {{ min-height: 24px; font-size: 10pt; font-weight: 600; }}
     QStatusBar {{ background: {c['status']}; color: {c['status_text']}; border: 0; min-height: 30px; padding: 0; }}
     QStatusBar::item {{ border: 0; }}
     QMenu {{ background: {c['sidebar']}; color: {c['text']}; border: 1px solid {c['border']}; padding: 4px; }}

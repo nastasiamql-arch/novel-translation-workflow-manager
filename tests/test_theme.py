@@ -70,7 +70,11 @@ def test_theme_styles_disabled_controls_and_keyboard_focus_explicitly():
         assert "QPushButton:disabled" in stylesheet
         assert "QAbstractButton:disabled" in stylesheet
         assert 'QToolButton[keyboardFocus="true"]' in stylesheet
-        assert "font-size: 12pt" in stylesheet
+        assert "font-size: 11pt" in stylesheet
+        assert "font-size: 16pt" in stylesheet
+        assert "font-size: 18pt" in stylesheet
+        assert "font-size: 25pt" in stylesheet
+        assert "font-size: 9pt" in stylesheet
 
 
 def test_button_hover_keeps_base_surface_and_press_is_subtle():
