@@ -262,13 +262,21 @@ class SettingsPage(QWidget):
         owner.working_files.setSelectionMode(QAbstractItemView.ExtendedSelection)
         owner.working_files.itemDoubleClicked.connect(owner.open_selected_working_file)
         work_layout.addWidget(owner.working_files)
+        owner.auto_open_working_tabs = QCheckBox("เปิดไฟล์ทำงานเป็นแท็บเมื่อเปิดนิยายนี้")
+        owner.auto_open_working_tabs.setObjectName("autoOpenWorkingTabs")
+        owner.auto_open_working_tabs.setChecked(bool(owner.profile and owner.profile.open_working_tabs_on_open))
+        owner.auto_open_working_tabs.toggled.connect(owner.save_working_tabs_open_setting)
+        work_layout.addWidget(owner.auto_open_working_tabs)
         work_actions = QHBoxLayout()
-        for label, callback in (
-            ("＋ เลือกหลายไฟล์", owner.add_working_files),
-            ("เปิดไฟล์ที่เลือก", owner.open_selected_working_file),
-            ("เอาออกจากรายการ", owner.remove_working_file),
+        for label, callback, name in (
+            ("＋ เลือกหลายไฟล์", owner.add_working_files, "addWorkingFiles"),
+            ("เปิดไฟล์ที่เลือก", owner.open_selected_working_file, "openWorkingFiles"),
+            ("↑", lambda: owner.move_working_file(-1), "moveWorkingFileUp"),
+            ("↓", lambda: owner.move_working_file(1), "moveWorkingFileDown"),
+            ("เอาออกจากรายการ", owner.remove_working_file, "removeWorkingFiles"),
         ):
             button = QPushButton(label)
+            button.setObjectName(name)
             button.clicked.connect(callback)
             work_actions.addWidget(button)
         work_layout.addLayout(work_actions)

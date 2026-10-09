@@ -440,8 +440,12 @@ class WorkspacePage(QWidget):
         self.novel_tabs.setExpanding(False)
         self.novel_tabs.setUsesScrollButtons(True)
         self.novel_tabs.setElideMode(Qt.ElideRight)
+        self.novel_tabs.setTabsClosable(True)
         self.novel_tabs.currentChanged.connect(
             lambda index: self.owner._switch_novel_tab(self.novel_tabs.tabData(index)))
+        self.novel_tabs.tabCloseRequested.connect(
+            lambda index, bar=self.novel_tabs:
+                self.owner._close_novel_tab(bar.tabData(index)))
         layout.addWidget(self.novel_tabs)
         layout.addWidget(self.content_stack, 1)
 
@@ -879,7 +883,14 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._show_utility_page("settings", "ตั้งค่าและจัดการ", lambda: self._settings_page_state["page"])
 
     def delete_profile(self):
+        profile_id = self.profile.id if self.profile else None
         super().delete_profile()
+        if profile_id and not any(item.id == profile_id for item in self.repo.list_profiles()):
+            self.settings.closed_workspace_profile_ids = [
+                pid for pid in self.settings.closed_workspace_profile_ids if pid != profile_id
+            ]
+            self._open_workspace_ids = [pid for pid in self._open_workspace_ids if pid != profile_id]
+            self._persist_workspace_session()
 
     def _build_settings_page(self):
         return SettingsPage.build(self, ReorderableProfileList)
@@ -1080,6 +1091,29 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if workspace.editor.open_file(path):
             workspace.breadcrumb.setText(f"{self.profile.name}  ›  ไฟล์ทำงาน  ›  {path.name}")
             self.return_from_utility_page()
+
+    def save_working_tabs_open_setting(self, enabled):
+        if not self.profile:
+            return
+        self.profile.open_working_tabs_on_open = bool(enabled)
+        self.repo.save_profile(self.profile)
+        self.statusBar().showMessage("บันทึกการตั้งค่าการเปิดไฟล์ของนิยายแล้ว", 2500)
+
+    def move_working_file(self, direction):
+        if not self.profile or not hasattr(self, "working_files"):
+            return
+        row = self.working_files.currentRow()
+        files = sorted(self.profile.working_files, key=lambda item: item.order)
+        target = row + int(direction)
+        if row < 0 or target < 0 or target >= len(files):
+            return
+        files[row], files[target] = files[target], files[row]
+        for index, item in enumerate(files):
+            item.order = index
+        self.profile.working_files = files
+        self.save()
+        self.refresh_working_files()
+        self.working_files.setCurrentRow(target)
 
     def remove_working_file(self):
         ids = {row.data(Qt.UserRole) for row in self.working_files.selectedItems()}
@@ -1780,7 +1814,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         )
         index = next(
             (i for i, profile in enumerate(self.ps_list) if profile.id == target_id),
-            0 if self.ps_list else -1,
+            0 if self.ps_list and not self.settings.closed_workspace_profile_ids else -1,
         )
         if index >= 0:
             self.select_profile(index)
@@ -1862,6 +1896,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.main_pages.setCurrentWidget(self.library_page)
 
     def _workspace(self, profile):
+        closed_ids = list(self.settings.closed_workspace_profile_ids)
+        was_closed = profile.id in closed_ids
+        if was_closed:
+            self.settings.closed_workspace_profile_ids = [pid for pid in closed_ids if pid != profile.id]
         if profile.id not in self._open_workspace_ids:
             self._open_workspace_ids.append(profile.id)
         workspace = self.workspaces.get(profile.id)
@@ -1885,6 +1923,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 self.settings.editor_tab_order.get(profile.id),
                 self.settings.editor_active_tab_keys.get(profile.id),
             )
+            if profile.open_working_tabs_on_open:
+                self._open_profile_working_tabs(profile, workspace)
             workspace.editor.tabs.currentChanged.connect(self._schedule_workspace_session_save)
             workspace.editor.tabs.tabBar().tabMoved.connect(
                 lambda _from, _to: self._schedule_workspace_session_save()
@@ -1915,8 +1955,23 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 editor.verticalScrollBar().setValue(int(position.get("scroll", 0)))
         else:
             workspace.configure(profile)
+            if was_closed and profile.open_working_tabs_on_open:
+                self._open_profile_working_tabs(profile, workspace)
         self._refresh_novel_tabs()
         return workspace
+
+    def _open_profile_working_tabs(self, profile, workspace):
+        preferred = []
+        for item in sorted(profile.working_files, key=lambda value: value.order):
+            try:
+                path = (Path(item.path).expanduser().resolve()
+                        if item.reference_type == "external_file"
+                        else self.repo.resolve_project_path(profile.id, item.path))
+                if path.is_file() and workspace.editor.open_file(path):
+                    preferred.append(str(path.resolve()))
+            except (OSError, ValueError, TypeError):
+                continue
+        workspace.editor.prioritize_paths(preferred)
 
     def _refresh_novel_tabs(self):
         profiles = {profile.id: profile for profile in getattr(self, 'ps_list', [])}
@@ -1930,6 +1985,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 index = bar.addTab(profiles[pid].name)
                 bar.setTabData(index, pid)
                 bar.setTabToolTip(index, profiles[pid].name)
+                close_button = bar.tabButton(index, QTabBar.RightSide)
+                if close_button:
+                    close_button.setToolTip(f"ปิดแท็บนิยาย {profiles[pid].name}")
+                    close_button.setAccessibleName(f"ปิดแท็บนิยาย {profiles[pid].name}")
                 if pid == workspace.profile_id:
                     bar.setCurrentIndex(index)
             bar.blockSignals(False)
@@ -1942,6 +2001,32 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.select_profile(index)
         self._refresh_novel_tabs()  # Restore selection if saving blocked the switch.
 
+    def _close_novel_tab(self, profile_id):
+        if not profile_id or profile_id not in self._open_workspace_ids:
+            return
+        workspace = self.workspaces.get(profile_id)
+        if workspace and not workspace.editor.save_all():
+            self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังปิดแท็บนิยายไม่ได้", 5000)
+            return
+        old_index = self._open_workspace_ids.index(profile_id)
+        self._open_workspace_ids.remove(profile_id)
+        if profile_id not in self.settings.closed_workspace_profile_ids:
+            self.settings.closed_workspace_profile_ids.append(profile_id)
+        if self.profile and self.profile.id == profile_id:
+            if self._open_workspace_ids:
+                neighbor = self._open_workspace_ids[min(old_index, len(self._open_workspace_ids) - 1)]
+                index = next((i for i, item in enumerate(self.ps_list) if item.id == neighbor), -1)
+                if index >= 0:
+                    self.select_profile(index)
+            else:
+                self.profile = None
+                self.si = -1
+                self.settings.last_profile_id = None
+                self.workspace_stack.setCurrentWidget(self.empty_page)
+                self.main_pages.setCurrentWidget(self.library_page)
+        self._refresh_novel_tabs()
+        self._persist_workspace_session()
+
     def select_profile(self, index):
         if getattr(self, "_settings_open", False):
             result = super().select_profile(index)
@@ -1949,6 +2034,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 self.settings_profile_heading.setText(f"ตั้งค่านิยาย · {self.profile.name}")
                 self.refresh_working_files()
                 self.refresh_settings_launch_targets()
+                if hasattr(self, "auto_open_working_tabs"):
+                    self.auto_open_working_tabs.blockSignals(True)
+                    self.auto_open_working_tabs.setChecked(self.profile.open_working_tabs_on_open)
+                    self.auto_open_working_tabs.blockSignals(False)
             return result
         if index < 0 or index >= len(getattr(self, "ps_list", [])):
             return

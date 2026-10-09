@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.6.2 - 2026-10-09
+
+- Add per-novel Working Tabs ordering and an option to open those files automatically in the saved order.
+- Add close controls to open novel tabs; save editor changes, keep the novel and its files, and remember closed tabs across restarts.
+- Keep TXT Export pinned at the end while applying a novel's preferred working-file order.
+
 ## 3.6.1 - 2026-10-09
 
 - Replace the Settings category dropdown with a preferences sidebar and open General by default.

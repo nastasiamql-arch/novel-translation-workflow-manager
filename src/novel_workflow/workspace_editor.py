@@ -1119,6 +1119,24 @@ class EditorTabs(QWidget):
             if (key := self._tab_key(index)) is not None
         ]
 
+    def prioritize_paths(self, paths: list[str]) -> None:
+        """Put preferred file tabs first while retaining other tabs and pinning export last."""
+        keys = self.tab_order()
+        ordered = [str(Path(path).resolve()) for path in paths]
+        ordered = [key for key in ordered if key in keys]
+        ordered.extend(key for key in keys if key not in ordered and key != "txt-export")
+        if "txt-export" in keys:
+            ordered.append("txt-export")
+        active = self.active_tab_key()
+        bar = self.tabs.tabBar()
+        for target_index, key in enumerate(ordered):
+            current = self.tab_order()
+            source_index = current.index(key)
+            if source_index != target_index:
+                bar.moveTab(source_index, target_index)
+        if active in ordered:
+            self.tabs.setCurrentIndex(ordered.index(active))
+
     def active_tab_key(self) -> str | None:
         return self._tab_key(self.tabs.currentIndex())
 

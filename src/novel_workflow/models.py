@@ -168,6 +168,7 @@ class NovelProfile:
     translation_daily_activity: dict[str, list[int]] = field(default_factory=dict)
     cover_image_path: str | None = None
     working_files: list[StepFile] = field(default_factory=list)
+    open_working_tabs_on_open: bool = False
     order: int = 0
     last_browse_directory: str | None = None
     schema_version: int = PROFILE_SCHEMA_VERSION
@@ -205,6 +206,7 @@ class NovelProfile:
             translation_daily_activity=_daily_activity_from_dict(d.get("translation_daily_activity", {})),
             cover_image_path=d.get("cover_image_path"),
             working_files=[StepFile.from_dict(item) for item in d.get("working_files", [])],
+            open_working_tabs_on_open=bool(d.get("open_working_tabs_on_open", False)),
             txt_export_draft=str(d.get("txt_export_draft", "")),
             verified_goal_target=d.get("verified_goal_target"),
             verified_goal_count=max(0, int(d.get("verified_goal_count", 0))),
@@ -250,6 +252,7 @@ class AppSettings:
     workspace_step_indices: dict[str, int] = field(default_factory=dict)
     workspace_vocabulary_modes: dict[str, bool] = field(default_factory=dict)
     workspace_open_profile_ids: list[str] = field(default_factory=list)
+    closed_workspace_profile_ids: list[str] = field(default_factory=list)
     editor_positions: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
     navigation_width: int = 180
     navigation_collapsed: bool = False
