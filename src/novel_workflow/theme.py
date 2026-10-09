@@ -135,7 +135,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QToolBar#mainToolbar QToolButton {{ color: {c['text']}; min-height: 36px; padding: 6px 12px; border: 0; border-radius: 0; }}
     QToolBar#mainToolbar QToolButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; }}
     QToolBar#mainToolbar QToolButton[keyboardFocus="true"] {{ border-bottom: 3px solid {c['focus']}; }}
-    QToolBar#mainToolbar QToolButton:hover, QToolButton:hover {{ background: {c['hover']}; }}
+    QToolBar#mainToolbar QToolButton:hover, QToolButton:hover {{ background: transparent; }}
     QLabel#brandTitle {{ color: {c['text']}; font-size: 13pt; font-weight: 600; padding: 0 8px; }}
     QLabel#toolbarStory {{ color: {c['muted']}; padding-left: 12px; border-left: 1px solid {c['border']}; }}
     QLabel#sectionHeading {{ color: {c['secondary']}; font-size: 12pt; font-weight: 600; padding: 4px 0 7px; }}
@@ -151,7 +151,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QFrame#editorHeader, QFrame#utilityHeader {{ border-bottom: 1px solid {c['border']}; }}
     QFrame#editorHeader QToolButton {{ color: {c['text']}; background: transparent; border: 0; min-height: 36px; padding: 6px 10px; }}
     QFrame#editorHeader QToolButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; }}
-    QFrame#editorHeader QToolButton:hover {{ color: {c['text']}; background: {c['hover']}; }}
+    QFrame#editorHeader QToolButton:hover {{ color: {c['text']}; background: transparent; }}
     QFrame#editorHeader QToolButton[keyboardFocus="true"] {{ border-bottom: 3px solid {c['focus']}; }}
     QFrame#editorHeader QLabel#mutedLabel {{ color: {c['secondary']}; }}
     QToolButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-width: 30px; min-height: 30px; padding: 6px 9px; }}
@@ -188,17 +188,18 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QTreeView#fileTree {{ border: 0; padding: 2px; background: {c['surface']}; }}
     QListWidget[keyboardFocus="true"], QTreeWidget[keyboardFocus="true"], QTreeView[keyboardFocus="true"], QTableWidget[keyboardFocus="true"], QTableView[keyboardFocus="true"] {{ outline: 0; border-bottom: 2px solid {c['focus']}; }}
     QListWidget::item, QTreeWidget::item, QTreeView::item {{ color: {c['text']}; min-height: 28px; padding: 4px 7px; margin: 0; border: 0; }}
-    QListWidget::item:hover, QTreeWidget::item:hover, QTreeView::item:hover {{ background: {c['hover']}; }}
+    QListWidget::item:hover, QTreeWidget::item:hover, QTreeView::item:hover {{ background: transparent; }}
     QListWidget::item:selected, QTreeWidget::item:selected, QTreeView::item:selected {{ background: {c['item_selection']}; color: {c['selection_text']}; }}
     QListWidget::item:focus, QTreeWidget::item:focus, QTreeView::item:focus, QTableView::item:focus {{ outline: 0; border: 0; }}
     QHeaderView::section {{ color: {c['secondary']}; background: {c['sidebar']}; border: 0; border-bottom: 1px solid {c['border']}; padding: 7px; }}
     QPushButton {{ min-height: 34px; background: {c['surface2']}; color: {c['text']}; border: 1px solid {c['control_border']}; border-radius: 8px; padding: 6px 12px; }}
-    QPushButton:hover {{ background: {c['hover']}; }}
-    QPushButton:pressed {{ background: {c['item_selection']}; }}
+    QPushButton:hover {{ background: {c['surface2']}; }}
+    QPushButton:pressed {{ background: {c['hover']}; }}
     QPushButton[keyboardFocus="true"] {{ border: 2px solid {c['focus']}; }}
     QPushButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; border-color: {c['border']}; }}
     QPushButton#primaryButton {{ background: {c['primary']}; color: {c['primary_text']}; border: 0; border-radius: 8px; font-weight: 600; padding: 7px 16px; }}
-    QPushButton#primaryButton:hover {{ background: {c['primary_hover']}; }}
+    QPushButton#primaryButton:hover {{ background: {c['primary']}; }}
+    QPushButton#primaryButton:pressed {{ background: {c['primary_hover']}; }}
     QPushButton#primaryButton[keyboardFocus="true"] {{ border: 2px solid {c['focus']}; }}
     QPushButton#primaryButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; border: 1px solid {c['border']}; }}
     QPushButton#dangerButton {{ background: transparent; color: {c['danger']}; border: 1px solid {c['border']}; }}

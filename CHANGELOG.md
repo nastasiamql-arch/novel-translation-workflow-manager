@@ -8,6 +8,10 @@ All notable changes to Palantir: Novel are documented here.
 - Keep story rows compact and increase the launch-target list viewport to reduce repeated scrolling.
 - Compact blank clipboard lines when pasting into novel text files, while preserving untouched files and structured documents.
 
+## 3.6.6 - 2026-10-09
+
+- Recognize Unicode paragraph and line separators in pasted novel text before removing blank lines.
+
 ## 3.6.4 - 2026-10-09
 
 - Give the novel list more room and wrap long titles instead of truncating them with an ellipsis.
