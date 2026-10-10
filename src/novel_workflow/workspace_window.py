@@ -4,7 +4,7 @@ import shutil
 import tempfile
 import hashlib
 import os
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 import subprocess
 
@@ -2489,15 +2489,17 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             candidate = Path(path).expanduser().resolve()
         except (OSError, TypeError, ValueError):
             return None
-        profile = next((item for item in self.repo.list_profiles() if item.id == profile_id), None)
+        profiles = self.repo.list_profiles()
+        profile = next((item for item in profiles if item.id == profile_id), None)
         if profile is None or not profile.context_path:
             return None
         if not candidate.name.casefold().endswith("translator.txt") or candidate.name.casefold() == "translator.txt":
             return None
-        if candidate not in self._profile_file_paths(profile):
+        bindings = [(item, self._profile_file_paths(item)) for item in profiles]
+        profile_paths = next((paths for item, paths in bindings if item.id == profile_id), set())
+        if candidate not in profile_paths:
             return None
-        owners = [item for item in self.repo.list_profiles()
-                  if candidate in self._profile_file_paths(item)]
+        owners = [item for item, paths in bindings if candidate in paths]
         if len(owners) != 1 or owners[0].id != profile_id:
             return None
         try:
@@ -2505,7 +2507,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if not context.is_file():
                 return None
             other_contexts = [
-                item for item in self.repo.list_profiles()
+                item for item in profiles
                 if item.id != profile_id and item.context_path
                 and Path(item.context_path).expanduser().resolve() == context
             ]
@@ -2529,10 +2531,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             QMessageBox.warning(self, "Export ไม่ได้", "ยืนยันไม่ได้ว่า Translator นี้ผูกกับนิยายที่เลือก")
             return False
         try:
-            original_source_bytes = source.read_bytes()
             visible_text = editor.toPlainText()
             original_visible_text = editor.property("documentSavedText")
             if original_visible_text is None:
+                original_source_bytes = source.read_bytes()
                 from .text_normalization import normalize_editor_text
                 original_visible_text = normalize_editor_text(
                     source, original_source_bytes.decode("utf-8-sig")
@@ -2547,13 +2549,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 and not workspace.editor.save_editor(editor, quiet=True, normalize=False)):
             QMessageBox.warning(self, "Export ไม่ได้", "บันทึก Translator ไม่สำเร็จหรือพบการแก้ไขจากภายนอก")
             return False
-        try:
-            if hashlib.sha256(source.read_bytes()).digest() != editor.disk_digest:
-                raise OSError("Translator ถูกแก้ไขจากภายนอก")
-        except OSError as exc:
-            QMessageBox.warning(self, "Export ไม่ได้", str(exc))
-            return False
-
         staged_files = []
         try:
             profile = self._translator_profile_for_path(profile_id, source)
@@ -2567,17 +2562,22 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 raise OSError("ไม่พบไฟล์ Context ที่ผูกกับโปรไฟล์นี้")
             translator_bytes = source.read_bytes()
             source_digest = hashlib.sha256(translator_bytes).digest()
+            if source_digest != editor.disk_digest:
+                raise OSError("Translator ถูกแก้ไขจากภายนอก")
             original_digest = hashlib.sha256(context.read_bytes()).digest()
             chapter_range = translator_chapter_range(translator_bytes)
-            if chapter_range is None:
-                raise ValueError("ไม่พบหัวบทที่ระบุช่วงได้อย่างมั่นใจ จึงยังส่งออกไม่ได้")
             root = (Path(profile.main_folder).expanduser() if profile.main_folder.strip()
                     else self.repo.profile_dir(profile.id))
             if not root.is_dir():
                 root = self.repo.profile_dir(profile.id)
             export_folder = root.resolve() / "Context Exports"
             export_folder.mkdir(parents=True, exist_ok=True)
-            base = f"{source.stem} {chapter_range}"
+            if chapter_range is None:
+                base = f"{source.stem} {datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                chapter_label = "ไม่พบหัวบทที่รองรับ · ใช้ Timestamp"
+            else:
+                base = f"{source.stem} {chapter_range}"
+                chapter_label = f"ช่วงบท: {chapter_range}"
             occupied = {item.name.casefold().rstrip(" .") for item in export_folder.iterdir()}
             target_name = f"{base}.txt"
             suffix = 2
@@ -2608,8 +2608,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         preview = QMessageBox(self)
         preview.setWindowTitle("ยืนยัน Export")
         preview.setIcon(QMessageBox.Information)
-        preview.setText(f"สร้างไฟล์ TXT และแทนที่ Context ทั้งหมด?\n{target}\n\nContext: {context}\nต้นทาง: {source.name}")
-        preview.setDetailedText(editor.toPlainText())
+        preview.setText(
+            f"สร้างไฟล์ TXT และแทนที่ Context ทั้งหมด?\n"
+            f"TXT: {target.name}\n{chapter_label}\n"
+            f"Translator: {source}\nContext: {context}"
+        )
         preview.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         if preview.exec() != QMessageBox.Yes:
             return False
@@ -2643,7 +2646,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             for _destination, staged in staged_files:
                 _cleanup_staged_text_file(staged)
 
-        workspace.editor.apply_external_update(context, editor.toPlainText())
+        workspace.editor.apply_external_update(context, visible_text)
         self.refresh_translation_progress()
         self.statusBar().showMessage(f"Export {target.name} และอัปเดต Context สำเร็จ", 5000)
         QMessageBox.information(self, "Export สำเร็จ", f"สร้าง {target.name} และอัปเดต Context สำเร็จ")

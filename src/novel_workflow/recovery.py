@@ -23,6 +23,13 @@ _CHAPTER_LINE = re.compile(
     r"|chapter\s+(\d+)(?:(?:\s*[-–—~]\s*|\s+to\s+)(\d+))?"
     r")"
 )
+_TRANSLATOR_CHAPTER_LINE = re.compile(
+    r"(?im)^[ \t]*(?:\[[AB]\][ \t]*)?(?:"
+    r"บทที่\s*(\d+)(?:\s*[-–—~至]\s*(\d+))?"
+    r"|第\s*(\d+)(?:\s*[-–—~至]\s*(\d+))?\s*章"
+    r"|chapter\s+(\d+)(?:(?:\s*[-–—~]\s*|\s+to\s+)(\d+))?"
+    r")"
+)
 _PROGRESS_HEADING = re.compile(
     r"(?im)^[ \t]*(?:#{1,6}[ \t]+)?(?:chapter[ \t]+progress|translation[ \t]+progress|"
     r"ความคืบหน้า(?:การแปล)?|ความคืบหน้าบท|进度|章節進度|章节进度)[ \t]*[:：]?[ \t]*"
@@ -74,19 +81,18 @@ def context_chapter_range(data):
 def translator_chapter_range(data):
     """Return the outer chapter span from headings in the complete Translator bytes."""
     text = data.decode("utf-8-sig", errors="replace")
-    intervals = []
-    for match in _CHAPTER_LINE.finditer(text):
+    first = last = None
+    for match in _TRANSLATOR_CHAPTER_LINE.finditer(text):
         groups = match.groups()
         start = next((groups[index] for index in (0, 2, 4) if groups[index]), None)
         end = next((groups[index] for index in (1, 3, 5) if groups[index]), None)
         if start:
-            first, last = int(start), int(end or start)
-            if 0 < first <= last <= 2_147_483_647:
-                intervals.append((first, last))
-    if not intervals:
+            chapter_first, chapter_last = int(start), int(end or start)
+            if 0 < chapter_first <= chapter_last <= 2_147_483_647:
+                first = chapter_first if first is None else min(first, chapter_first)
+                last = chapter_last if last is None else max(last, chapter_last)
+    if first is None:
         return None
-    first = min(item[0] for item in intervals)
-    last = max(item[1] for item in intervals)
     return str(first) if first == last else f"{first}-{last}"
 
 

@@ -2,6 +2,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from novel_workflow.models import NovelProfile, StepFile
@@ -230,7 +231,26 @@ def test_export_duplicate_names_are_case_insensitive_and_never_overwrite(tmp_pat
     window.close()
 
 
-def test_export_requires_a_recognized_chapter_heading(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("translator_text", "expected"),
+    [
+        ("[A]第82章 標題\n[A]ข้อความ 82 อยู่กลางประโยค\n[B]บทที่ 82 ชื่อบท", "82"),
+        ("[A] 第82章 标题\n[B] บทที่ 83 ชื่อบท", "82-83"),
+        ("[A]第82-84章 ชื่อบท\n[B]บทที่ 82-84", "82-84"),
+        ("บทที่ 1\nบทที่ 3", "1-3"),
+        ("Chapter 4\nChapter 10", "4-10"),
+        ("บทที่ 318-325", "318-325"),
+        ("[B]บทที่ 26", "26"),
+        ("ข้อความทั่วไป มีเลข 82 และ 84\n[A]ตัวละครพูดว่า Chapter 9", None),
+    ],
+)
+def test_translator_chapter_range_supports_bilingual_markers(translator_text, expected):
+    from novel_workflow.recovery import translator_chapter_range
+
+    assert translator_chapter_range(translator_text.encode("utf-8")) == expected
+
+
+def test_export_without_chapter_heading_uses_visible_timestamp_name(tmp_path, monkeypatch):
     app()
     repo = ProjectRepository(tmp_path / "data")
     profile = NovelProfile()
@@ -248,10 +268,77 @@ def test_export_requires_a_recognized_chapter_heading(tmp_path, monkeypatch):
     workspace = window._workspace(window.profile)
     workspace.editor.open_file(translator)
     monkeypatch.setattr(QMessageBox, "warning", lambda *_args: QMessageBox.Ok)
+    monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
+    monkeypatch.setattr(
+        QMessageBox, "setDetailedText",
+        lambda *_args: pytest.fail("Export confirmation must not receive novel text"),
+    )
 
-    assert not window.update_context_from_translator(workspace)
-    assert context.read_text(encoding="utf-8") == "old"
-    assert not list((folder / "Context Exports").glob("*.txt"))
+    assert window.update_context_from_translator(workspace)
+    exports = list((folder / "Context Exports").glob("ABCTranslator *.txt"))
+    assert len(exports) == 1
+    assert exports[0].name.startswith("ABCTranslator 20")
+    assert context.read_bytes() == translator.read_bytes() == exports[0].read_bytes()
+    window.close()
+
+
+def test_export_large_translator_reuses_saved_snapshot_and_profile_listing(tmp_path, monkeypatch):
+    app()
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile()
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "FASTTranslator.txt"
+    context = tmp_path / "FASTContext.md"
+    translator.parent.mkdir(parents=True)
+    payload = b"[A]Chapter 82\r\n" + (b"\t[A]Chinese text 82\r\n[B]Thai text 82\r\n" * 24000)
+    translator.write_bytes(payload)
+    context.write_bytes(b"old context")
+    profile.context_path = str(context)
+    profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    repo.save_profile(profile)
+    window = MainWindow(repo)
+    window.refresh_profiles(profile.id)
+    workspace = window._workspace(window.profile)
+    workspace.editor.open_file(translator)
+    monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
+
+    reads = {"source": 0}
+    profile_lists = {"count": 0}
+    snapshot_hashes = {"count": 0}
+    tracking = {"active": True}
+    real_read_bytes = Path.read_bytes
+    real_list_profiles = repo.list_profiles
+    import novel_workflow.workspace_window as workspace_window
+    real_sha256 = workspace_window.hashlib.sha256
+
+    def counted_read_bytes(path):
+        if tracking["active"] and path.resolve() == translator.resolve():
+            reads["source"] += 1
+        return real_read_bytes(path)
+
+    def counted_list_profiles():
+        profile_lists["count"] += 1
+        return real_list_profiles()
+
+    def counted_sha256(data=b"", *args, **kwargs):
+        if tracking["active"] and data == payload:
+            snapshot_hashes["count"] += 1
+        return real_sha256(data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_bytes", counted_read_bytes)
+    monkeypatch.setattr(repo, "list_profiles", counted_list_profiles)
+    monkeypatch.setattr(workspace_window.hashlib, "sha256", counted_sha256)
+
+    assert window.update_context_from_translator(workspace)
+    tracking["active"] = False
+    assert reads["source"] == 2
+    assert snapshot_hashes["count"] == 2
+    assert profile_lists["count"] <= 12
+    assert context.read_bytes() == translator.read_bytes() == next(
+        (folder / "Context Exports").glob("FASTTranslator 82.txt")
+    ).read_bytes()
     window.close()
 
 
