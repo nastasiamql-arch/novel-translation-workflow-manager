@@ -485,25 +485,48 @@ class WorkspacePage(QWidget):
         self.redo_button.setEnabled(bool(editor and editor.document().isRedoAvailable()))
 
     def show_recovery(self):
-        from .recovery import restore_backup
-        from hashlib import sha256
+        from .recovery import list_backups, restore_backup
         editor = self.editor._current_editor()
         path = self.editor._path(editor)
         if path is None:
             path = self._context_path_for_export()
         if path is None: return
-        path = Path(path)
-        key = sha256(path.name.encode("utf-8")).hexdigest()[:16]
-        backups = sorted((path.parent / ".palantir-recovery").glob(f"{key}-*.bak"), reverse=True)
-        if not backups:
+        path = Path(path).expanduser().resolve()
+        context = self._context_path_for_export()
+        profile_for_context = None
+        documents = [(path, None)]
+        if context is not None and Path(context).expanduser().resolve() == path:
+            profile_for_context = self.profile_id
+            documents = [(path, profile_for_context)]
+        if self.owner._translator_profile_for_path(self.profile_id, path):
+            if context is not None:
+                context = Path(context).expanduser().resolve()
+                if context != path:
+                    documents.append((context, self.profile_id))
+        entries = [
+            (document, backup)
+            for document, profile_id in documents
+            for backup in list_backups(document, profile_id=profile_id)
+        ]
+        if not entries:
             QMessageBox.information(self, "History", "ยังไม่มีไฟล์สำรองสำหรับเอกสารนี้")
             return
-        selected, ok = QInputDialog.getItem(self, "กู้ไฟล์", str(path), [item.name for item in backups], 0, False)
+        labels = [f"{backup.name} — {document}" for document, backup in entries]
+        selected, ok = QInputDialog.getItem(self, "กู้ไฟล์", str(path), labels, 0, False)
         if ok:
             if QMessageBox.question(self, "กู้ไฟล์", "แทนที่เอกสารด้วยไฟล์สำรองที่เลือก? เอกสารปัจจุบันจะถูกสำรองไว้", QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes: return
             try:
-                restore_backup(path, next(item for item in backups if item.name == selected))
-                self.editor.apply_external_update(path, path.read_text(encoding="utf-8-sig"))
+                destination, backup = next(
+                    (document, backup)
+                    for document, backup in entries
+                    if f"{backup.name} — {document}" == selected
+                )
+                selected_profile = next(
+                    profile_id for document, profile_id in documents
+                    if document == destination
+                )
+                restore_backup(destination, backup, profile_id=selected_profile)
+                self.editor.apply_external_update(destination, destination.read_text(encoding="utf-8-sig"))
                 self.owner.refresh_translation_progress()
             except OSError as exc: QMessageBox.warning(self, "กู้ไฟล์ไม่ได้", str(exc))
 
@@ -2477,6 +2500,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
     def update_context_from_translator(self, workspace):
         """Replace this profile's Context from its bound Translator document."""
+        from .recovery import context_chapter_range
         profile_id = workspace.profile_id
         if not self.profile or self.profile.id != profile_id:
             QMessageBox.warning(self, "อัปเดต Context ไม่ได้", "โปรไฟล์ที่เลือกเปลี่ยนไปแล้ว กรุณาเลือกแท็บใหม่")
@@ -2502,7 +2526,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if not context.is_file():
                 raise OSError("ไม่พบไฟล์ Context ที่ผูกกับโปรไฟล์นี้")
             source_digest = hashlib.sha256(source.read_bytes()).digest()
-            original_digest = hashlib.sha256(context.read_bytes()).digest()
+            original_bytes = context.read_bytes()
+            original_digest = hashlib.sha256(original_bytes).digest()
         except (OSError, ValueError, TypeError) as exc:
             QMessageBox.warning(self, "อัปเดต Context ไม่ได้", str(exc))
             return False
@@ -2539,7 +2564,18 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             staged = _stage_text_file(context, text)
             if hashlib.sha256(context.read_bytes()).digest() != original_digest:
                 raise OSError("Context ถูกแก้ไขจากภายนอกระหว่างการยืนยัน")
-            commit_staged([(context, staged)])
+            backup_metadata = {
+                "profile_id": profile_id,
+                "translator_path": str(source),
+                "chapter_range": context_chapter_range(original_bytes),
+            }
+            commit_staged(
+                [(context, staged)],
+                backup_options={context: {
+                    "display_name": source.stem,
+                    "metadata": backup_metadata,
+                }},
+            )
         except OSError as exc:
             QMessageBox.warning(self, "อัปเดต Context ไม่สำเร็จ", str(exc))
             return False
