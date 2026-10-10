@@ -71,6 +71,25 @@ def context_chapter_range(data):
     return str(first) if first == last else f"{first}-{last}"
 
 
+def translator_chapter_range(data):
+    """Return the outer chapter span from headings in the complete Translator bytes."""
+    text = data.decode("utf-8-sig", errors="replace")
+    intervals = []
+    for match in _CHAPTER_LINE.finditer(text):
+        groups = match.groups()
+        start = next((groups[index] for index in (0, 2, 4) if groups[index]), None)
+        end = next((groups[index] for index in (1, 3, 5) if groups[index]), None)
+        if start:
+            first, last = int(start), int(end or start)
+            if 0 < first <= last <= 2_147_483_647:
+                intervals.append((first, last))
+    if not intervals:
+        return None
+    first = min(item[0] for item in intervals)
+    last = max(item[1] for item in intervals)
+    return str(first) if first == last else f"{first}-{last}"
+
+
 def _utf16_length(value):
     return len(str(value).encode("utf-16-le")) // 2
 
@@ -202,39 +221,76 @@ def backup_file(path, *, display_name=None, metadata=None):
     return backup
 
 
-def commit_staged(staged_files, commit_metadata=None, *, backup_options=None):
+def commit_staged(staged_files, commit_metadata=None, *, backup_options=None,
+                  create_backups=True, no_overwrite=()):
     destinations = [Path(path).resolve() for path, _ in staged_files]
     if len(set(destinations)) != len(destinations):
         raise ValueError('TXT และ Context ต้องเป็นคนละไฟล์')
     backup_options = backup_options or {}
-    backups = {
-        path: backup_file(path, **backup_options.get(path, {}))
-        for path in destinations
-    }
+    backups = {}
+    temporary_recovery = {}
+    if create_backups:
+        backups = {
+            path: backup_file(path, **backup_options.get(path, {}))
+            for path in destinations
+        }
+    else:
+        try:
+            for path in destinations:
+                if path.is_file():
+                    fd, name = tempfile.mkstemp(dir=path.parent, suffix=".transaction-recovery")
+                    temporary_recovery[path] = Path(name)
+                    with os.fdopen(fd, "wb") as output, path.open("rb") as source:
+                        shutil.copyfileobj(source, output)
+                        output.flush()
+                        os.fsync(output.fileno())
+        except Exception:
+            for snapshot in temporary_recovery.values():
+                snapshot.unlink(missing_ok=True)
+            raise
     replaced = []
+    no_overwrite = {Path(item).resolve() for item in no_overwrite}
     try:
         for destination, staged in staged_files:
             destination = Path(destination).resolve()
-            replace_with_retry(staged, destination)
+            if destination in no_overwrite:
+                os.link(staged, destination)
+            else:
+                replace_with_retry(staged, destination)
             replaced.append(destination)
         if commit_metadata: commit_metadata()
     except Exception as original:
         errors = []
         for destination in reversed(replaced):
             try:
-                backup = backups[destination]
-                if backup is None: destination.unlink(missing_ok=True)
+                if not create_backups:
+                    backup = temporary_recovery.get(destination)
+                    if backup is None:
+                        destination.unlink(missing_ok=True)
+                    else:
+                        replace_with_retry(backup, destination)
+                        temporary_recovery.pop(destination, None)
                 else:
-                    fd, name = tempfile.mkstemp(dir=destination.parent, suffix='.restore')
-                    os.close(fd)
-                    try:
-                        shutil.copyfile(backup, name)
-                        replace_with_retry(name, destination)
-                    finally: Path(name).unlink(missing_ok=True)
+                    backup = backups[destination]
+                    if backup is None: destination.unlink(missing_ok=True)
+                    else:
+                        fd, name = tempfile.mkstemp(dir=destination.parent, suffix='.restore')
+                        os.close(fd)
+                        try:
+                            shutil.copyfile(backup, name)
+                            replace_with_retry(name, destination)
+                        finally: Path(name).unlink(missing_ok=True)
             except OSError as error: errors.append(str(error))
+        if not errors:
+            for snapshot in temporary_recovery.values():
+                snapshot.unlink(missing_ok=True)
         if errors:
-            raise OSError(f'{original}; กู้คืนอัตโนมัติไม่สำเร็จ: {errors}. ดู .palantir-recovery') from original
+            locations = ", ".join(str(item) for item in temporary_recovery.values())
+            raise OSError(f'{original}; กู้คืนอัตโนมัติไม่สำเร็จ: {errors}. ไฟล์กู้คืน: {locations}') from original
         raise
+    else:
+        for snapshot in temporary_recovery.values():
+            snapshot.unlink(missing_ok=True)
 
 
 def restore_backup(destination, backup, *, profile_id=None):

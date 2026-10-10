@@ -182,3 +182,60 @@ def test_context_replace_failure_keeps_original_and_recovery_copy(tmp_path, monk
 
     assert context.read_bytes() == b"old bytes"
     assert list_backups(context)[0].read_bytes() == b"old bytes"
+
+
+def test_transaction_without_backup_artifacts_rolls_back_both_files(tmp_path):
+    context = tmp_path / "Context.md"
+    export = tmp_path / "Translator 1.txt"
+    context.write_bytes(b"old context")
+    staged_context = tmp_path / "context.stage"
+    staged_export = tmp_path / "export.stage"
+    staged_context.write_bytes(b"new translator")
+    staged_export.write_bytes(b"new translator")
+
+    with pytest.raises(OSError, match="verification failed"):
+        commit_staged(
+            [(export, staged_export), (context, staged_context)],
+            commit_metadata=lambda: (_ for _ in ()).throw(OSError("verification failed")),
+            create_backups=False,
+            no_overwrite=(export,),
+        )
+
+    assert not export.exists()
+    assert context.read_bytes() == b"old context"
+    assert not list(tmp_path.glob("*.transaction-recovery"))
+    assert not list(tmp_path.glob("*.bak"))
+    assert not list(tmp_path.glob("*.bak.meta"))
+
+
+def test_transaction_rollback_failure_preserves_and_reports_recovery_file(tmp_path, monkeypatch):
+    import novel_workflow.recovery as recovery
+
+    context = tmp_path / "Context.md"
+    export = tmp_path / "Translator 1.txt"
+    context.write_bytes(b"old context")
+    staged_context = tmp_path / "context.stage"
+    staged_export = tmp_path / "export.stage"
+    staged_context.write_bytes(b"new translator")
+    staged_export.write_bytes(b"new translator")
+    real_replace = recovery.replace_with_retry
+
+    def fail_restore(source, destination):
+        if str(source).endswith(".transaction-recovery"):
+            raise OSError("rollback denied")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(recovery, "replace_with_retry", fail_restore)
+    with pytest.raises(OSError, match="rollback denied") as error:
+        commit_staged(
+            [(export, staged_export), (context, staged_context)],
+            commit_metadata=lambda: (_ for _ in ()).throw(OSError("verification failed")),
+            create_backups=False,
+            no_overwrite=(export,),
+        )
+
+    snapshots = list(tmp_path.glob("*.transaction-recovery"))
+    assert len(snapshots) == 1
+    assert snapshots[0].read_bytes() == b"old context"
+    assert str(snapshots[0]) in str(error.value)
+    assert not export.exists()

@@ -2,7 +2,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QMessageBox, QInputDialog
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from novel_workflow.models import NovelProfile, StepFile
 from novel_workflow.storage import ProjectRepository
@@ -56,13 +56,15 @@ def test_bound_translator_updates_only_its_profile_context(tmp_path, monkeypatch
     assert window.profile.verified_goal_count == 0
     assert not window.profile.verified_export_history
     assert window.profile.chapter_state.current_chapter == 77
-    assert list((context.parent / ".palantir-recovery").glob("*.bak"))
+    exports = list((first_dir / "Context Exports").glob("*.txt"))
+    assert [item.name for item in exports] == [f"{tag}Translator 77.txt"]
+    assert exports[0].read_bytes() == context.read_bytes() == translator.read_bytes()
+    assert not list(context.parent.glob(".palantir-recovery/*.bak"))
     window.close()
 
 
-def test_context_update_backup_uses_old_context_range_and_preserves_bytes(tmp_path, monkeypatch):
+def test_export_replaces_context_with_exact_translator_bytes_without_backup(tmp_path, monkeypatch):
     app()
-    from hashlib import sha256
     from novel_workflow.recovery import list_backups
 
     repo = ProjectRepository(tmp_path / "data")
@@ -86,29 +88,12 @@ def test_context_update_backup_uses_old_context_range_and_preserves_bytes(tmp_pa
 
     assert window.update_context_from_translator(workspace)
 
-    backups = list_backups(context)
-    assert len(backups) == 1
-    backup = backups[0]
-    assert backup.name.startswith("SELFLOVETranslator 1-5_")
-    assert sha256(backup.read_bytes()).digest() == sha256(old_bytes).digest()
-    assert context.read_text(encoding="utf-8") == "บทที่ 1-10\nNew Context"
-    shown = {}
-    selected = {"label": None}
-    monkeypatch.setattr(
-        QInputDialog,
-        "getItem",
-        lambda _self, _title, _label, items, *_args: (
-            shown.setdefault("items", items) and (selected["label"] or items[0]), True
-        ),
-    )
-    monkeypatch.setattr(QMessageBox, "question", lambda *_args: QMessageBox.No)
-    workspace.show_recovery()
-    assert any(backup.name in label and str(context) in label for label in shown["items"])
-    selected["label"] = next(label for label in shown["items"] if backup.name in label)
-    monkeypatch.setattr(QMessageBox, "question", lambda *_args: QMessageBox.Yes)
-    workspace.show_recovery()
-    assert context.read_bytes() == old_bytes
-    assert window.profile.chapter_state.current_chapter == 5
+    exports = list((folder / "Context Exports").glob("*.txt"))
+    assert [item.name for item in exports] == ["SELFLOVETranslator 1-10.txt"]
+    assert exports[0].read_bytes() == context.read_bytes() == translator.read_bytes()
+    assert not list_backups(context)
+    assert not list(context.parent.glob(".palantir-recovery/*.bak"))
+    assert not list(context.parent.glob(".palantir-recovery/*.bak.meta"))
     window.close()
 
 
@@ -121,7 +106,7 @@ def test_context_update_backup_uses_actual_translator_name_and_profile_binding(t
     translator = repo.profile_dir(profile.id) / "source" / "作品Translator.txt"
     context = tmp_path / "Context.md"
     translator.parent.mkdir(parents=True)
-    translator.write_text("新しい内容", encoding="utf-8")
+    translator.write_text("第101章\n新しい内容", encoding="utf-8")
     context.write_text("Chapter 101\nold", encoding="utf-8")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
@@ -135,8 +120,7 @@ def test_context_update_backup_uses_actual_translator_name_and_profile_binding(t
 
     assert window.update_context_from_translator(workspace)
 
-    backup = list_backups(context)[0]
-    assert backup.name.startswith("作品Translator 101_")
+    assert (repo.profile_dir(profile.id) / "Context Exports" / "作品Translator 101.txt").read_bytes() == context.read_bytes()
     window.close()
 
 
@@ -165,7 +149,148 @@ def test_translator_button_is_hidden_for_unbound_and_other_tabs(tmp_path):
     assert workspace.update_context_button.isHidden()
     workspace.editor.tabs.setCurrentWidget(workspace.editor.export_tab)
     assert workspace.update_context_button.isHidden()
-    assert all(action.text() != "อัปเดต Context" for action in workspace.more_menu.actions())
+    assert all(action.text() != "Export" for action in workspace.more_menu.actions())
+    assert workspace.update_context_button.text() == "Export"
+    assert workspace.update_context_button.toolTip() == "Export Translator to TXT and update Context"
+    window.close()
+
+
+@pytest.mark.parametrize(
+    ("chapter_text", "filename"),
+    [
+        ("บทที่ 1\nบทที่ 3", "ABCTranslator 1-3.txt"),
+        ("Chapter 4\nChapter 10", "ABCTranslator 4-10.txt"),
+        ("บทที่ 11-12", "ABCTranslator 11-12.txt"),
+        ("บทที่ 13\nบทที่ 25", "ABCTranslator 13-25.txt"),
+        ("第26章", "ABCTranslator 26.txt"),
+    ],
+)
+def test_export_uses_dynamic_chapter_span_and_keeps_exact_bytes(
+    tmp_path, monkeypatch, chapter_text, filename
+):
+    app()
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile()
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "ABCTranslator.txt"
+    context = tmp_path / "ABCContext.md"
+    translator.parent.mkdir(parents=True)
+    payload = ("\ufeff" + chapter_text + "\r\n\t  中文  \r\n[จบตอน]\r\n").encode("utf-8")
+    translator.write_bytes(payload)
+    context.write_bytes(b"old context must not be appended")
+    profile.context_path = str(context)
+    profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    repo.save_profile(profile)
+    window = MainWindow(repo)
+    window.refresh_profiles(profile.id)
+    workspace = window._workspace(window.profile)
+    workspace.editor.open_file(translator)
+    monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
+
+    assert window.update_context_from_translator(workspace)
+    output = folder / "Context Exports" / filename
+    assert translator.read_bytes() == payload
+    assert output.read_bytes() == payload
+    assert context.read_bytes() == payload
+    assert not list(folder.rglob("*.transaction-recovery"))
+    assert not list(folder.rglob("*.bak"))
+    window.close()
+
+
+def test_export_duplicate_names_are_case_insensitive_and_never_overwrite(tmp_path, monkeypatch):
+    app()
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile()
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "WSTTranslator.txt"
+    context = tmp_path / "WSTContext.md"
+    export_folder = folder / "Context Exports"
+    translator.parent.mkdir(parents=True)
+    export_folder.mkdir()
+    translator.write_text("บทที่ 4-10\nnew", encoding="utf-8")
+    context.write_text("old", encoding="utf-8")
+    prior = export_folder / "wsttranslator 4-10.TXT"
+    prior.write_text("keep", encoding="utf-8")
+    profile.context_path = str(context)
+    profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    repo.save_profile(profile)
+    window = MainWindow(repo)
+    window.refresh_profiles(profile.id)
+    workspace = window._workspace(window.profile)
+    workspace.editor.open_file(translator)
+    monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
+
+    assert window.update_context_from_translator(workspace)
+    assert (export_folder / "WSTTranslator 4-10 (2).txt").exists()
+    assert prior.read_text(encoding="utf-8") == "keep"
+    assert window.update_context_from_translator(workspace)
+    assert (export_folder / "WSTTranslator 4-10 (3).txt").exists()
+    window.close()
+
+
+def test_export_requires_a_recognized_chapter_heading(tmp_path, monkeypatch):
+    app()
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile()
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "ABCTranslator.txt"
+    context = tmp_path / "ABCContext.md"
+    translator.parent.mkdir(parents=True)
+    translator.write_text("A sentence containing numbers 1 and 5", encoding="utf-8")
+    context.write_text("old", encoding="utf-8")
+    profile.context_path = str(context)
+    profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    repo.save_profile(profile)
+    window = MainWindow(repo)
+    window.refresh_profiles(profile.id)
+    workspace = window._workspace(window.profile)
+    workspace.editor.open_file(translator)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: QMessageBox.Ok)
+
+    assert not window.update_context_from_translator(workspace)
+    assert context.read_text(encoding="utf-8") == "old"
+    assert not list((folder / "Context Exports").glob("*.txt"))
+    window.close()
+
+
+def test_export_staging_failure_leaves_context_and_export_folder_unchanged(tmp_path, monkeypatch):
+    app()
+    import novel_workflow.workspace_window as workspace_window
+
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile()
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "ABCTranslator.txt"
+    context = tmp_path / "ABCContext.md"
+    translator.parent.mkdir(parents=True)
+    translator.write_text("บทที่ 1\nnew", encoding="utf-8")
+    context.write_text("old", encoding="utf-8")
+    profile.context_path = str(context)
+    profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    repo.save_profile(profile)
+    window = MainWindow(repo)
+    window.refresh_profiles(profile.id)
+    workspace = window._workspace(window.profile)
+    workspace.editor.open_file(translator)
+    monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: QMessageBox.Ok)
+    real_stage = workspace_window._stage_bytes_file
+    count = 0
+
+    def fail_second_stage(destination, data):
+        nonlocal count
+        count += 1
+        if count == 2:
+            raise OSError("simulated staging failure")
+        return real_stage(destination, data)
+
+    monkeypatch.setattr(workspace_window, "_stage_bytes_file", fail_second_stage)
+    assert not window.update_context_from_translator(workspace)
+    assert context.read_text(encoding="utf-8") == "old"
+    assert not list((folder / "Context Exports").glob("*.txt"))
+    assert not list(folder.rglob(".palantir-staging-*"))
     window.close()
 
 
@@ -287,7 +412,7 @@ def test_atomic_context_write_failure_keeps_original_and_recovery(tmp_path, monk
     translator = folder / "source" / "ABCTranslator.txt"
     context = tmp_path / "ABCContext.md"
     translator.parent.mkdir(parents=True)
-    translator.write_text("new context", encoding="utf-8")
+    translator.write_text("บทที่ 1\nnew context", encoding="utf-8")
     context.write_text("old context", encoding="utf-8")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
@@ -303,5 +428,6 @@ def test_atomic_context_write_failure_keeps_original_and_recovery(tmp_path, monk
     assert not window.update_context_from_translator(workspace)
 
     assert context.read_text(encoding="utf-8") == "old context"
-    assert list((context.parent / ".palantir-recovery").glob("*.bak"))
+    assert not list((context.parent / ".palantir-recovery").glob("*.bak"))
+    assert not list((folder / "Context Exports").glob("*.txt"))
     window.close()

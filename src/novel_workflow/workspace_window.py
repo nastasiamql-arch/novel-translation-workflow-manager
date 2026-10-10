@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import tempfile
 import hashlib
+import os
 from datetime import date
 from pathlib import Path
 import subprocess
@@ -43,6 +44,21 @@ PROFILE_STATUSES = (
     ("caught_up", "ชนต้นฉบับแล้ว"),
     ("checking_web", "กำลังเช็กกับเว็บ"),
 )
+
+
+def _stage_bytes_file(destination: Path, data: bytes) -> Path:
+    """Stage exact document bytes beside their destination for atomic replacement."""
+    staging_dir = Path(tempfile.mkdtemp(dir=destination.parent, prefix=".palantir-staging-"))
+    staged = staging_dir / f"{destination.name}.part"
+    try:
+        with staged.open("xb") as output:
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+        return staged
+    except OSError:
+        _cleanup_staged_text_file(staged, staging_dir)
+        raise
 
 
 def _profile_status(profile):
@@ -337,8 +353,9 @@ class WorkspacePage(QWidget):
         self.context_button.clicked.connect(self._choose_context)
         self.context_button.hide()
         self.update_context_button = QToolButton(self.editor_header)
-        self.update_context_button.setText("อัปเดต Context")
-        self.update_context_button.setAccessibleName("อัปเดต Context จาก Translator")
+        self.update_context_button.setText("Export")
+        self.update_context_button.setToolTip("Export Translator to TXT and update Context")
+        self.update_context_button.setAccessibleName("Export Translator to TXT and update Context")
         self.update_context_button.clicked.connect(
             lambda: self.owner.update_context_from_translator(self)
         )
@@ -2499,61 +2516,104 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         return profile
 
     def update_context_from_translator(self, workspace):
-        """Replace this profile's Context from its bound Translator document."""
-        from .recovery import context_chapter_range
+        """Export bound Translator bytes and replace its Context in one transaction."""
+        from .recovery import translator_chapter_range
         profile_id = workspace.profile_id
         if not self.profile or self.profile.id != profile_id:
-            QMessageBox.warning(self, "อัปเดต Context ไม่ได้", "โปรไฟล์ที่เลือกเปลี่ยนไปแล้ว กรุณาเลือกแท็บใหม่")
+            QMessageBox.warning(self, "Export ไม่ได้", "โปรไฟล์ที่เลือกเปลี่ยนไปแล้ว กรุณาเลือกแท็บใหม่")
             return False
         editor = workspace.editor._current_editor()
         source = workspace.editor._path(editor) if editor else None
         profile = self._translator_profile_for_path(profile_id, source) if source else None
         if profile is None:
-            QMessageBox.warning(self, "อัปเดต Context ไม่ได้", "ยืนยันไม่ได้ว่า Translator นี้ผูกกับนิยายที่เลือก")
+            QMessageBox.warning(self, "Export ไม่ได้", "ยืนยันไม่ได้ว่า Translator นี้ผูกกับนิยายที่เลือก")
             return False
-        if not workspace.editor.save_editor(editor, quiet=True):
-            QMessageBox.warning(self, "อัปเดต Context ไม่ได้", "บันทึก Translator ไม่สำเร็จหรือพบการแก้ไขจากภายนอก")
+        try:
+            original_source_bytes = source.read_bytes()
+            visible_text = editor.toPlainText()
+            original_visible_text = editor.property("documentSavedText")
+            if original_visible_text is None:
+                from .text_normalization import normalize_editor_text
+                original_visible_text = normalize_editor_text(
+                    source, original_source_bytes.decode("utf-8-sig")
+                )
+        except (OSError, UnicodeError) as exc:
+            QMessageBox.warning(self, "Export ไม่ได้", str(exc))
             return False
-        text = editor.toPlainText()
+        editor_has_unsaved_changes = bool(
+            workspace.editor._dirty(editor) and visible_text != original_visible_text
+        )
+        if (editor_has_unsaved_changes
+                and not workspace.editor.save_editor(editor, quiet=True, normalize=False)):
+            QMessageBox.warning(self, "Export ไม่ได้", "บันทึก Translator ไม่สำเร็จหรือพบการแก้ไขจากภายนอก")
+            return False
+        try:
+            if hashlib.sha256(source.read_bytes()).digest() != editor.disk_digest:
+                raise OSError("Translator ถูกแก้ไขจากภายนอก")
+        except OSError as exc:
+            QMessageBox.warning(self, "Export ไม่ได้", str(exc))
+            return False
+
+        staged_files = []
         try:
             profile = self._translator_profile_for_path(profile_id, source)
             if profile is None:
                 raise OSError("โปรไฟล์หรือรายการไฟล์ที่ผูกไว้เปลี่ยนไประหว่างบันทึก")
-            context = Path(profile.context_path).expanduser().resolve()
             source = source.expanduser().resolve()
+            context = Path(profile.context_path).expanduser().resolve()
             if source == context:
                 raise OSError("ไฟล์ Translator และ Context เป็นไฟล์เดียวกัน")
             if not context.is_file():
                 raise OSError("ไม่พบไฟล์ Context ที่ผูกกับโปรไฟล์นี้")
-            source_digest = hashlib.sha256(source.read_bytes()).digest()
-            original_bytes = context.read_bytes()
-            original_digest = hashlib.sha256(original_bytes).digest()
+            translator_bytes = source.read_bytes()
+            source_digest = hashlib.sha256(translator_bytes).digest()
+            original_digest = hashlib.sha256(context.read_bytes()).digest()
+            chapter_range = translator_chapter_range(translator_bytes)
+            if chapter_range is None:
+                raise ValueError("ไม่พบหัวบทที่ระบุช่วงได้อย่างมั่นใจ จึงยังส่งออกไม่ได้")
+            root = (Path(profile.main_folder).expanduser() if profile.main_folder.strip()
+                    else self.repo.profile_dir(profile.id))
+            if not root.is_dir():
+                root = self.repo.profile_dir(profile.id)
+            export_folder = root.resolve() / "Context Exports"
+            export_folder.mkdir(parents=True, exist_ok=True)
+            base = f"{source.stem} {chapter_range}"
+            occupied = {item.name.casefold().rstrip(" .") for item in export_folder.iterdir()}
+            target_name = f"{base}.txt"
+            suffix = 2
+            while target_name.casefold().rstrip(" .") in occupied:
+                target_name = f"{base} ({suffix}).txt"
+                suffix += 1
+            target = export_folder / target_name
+            if not os.access(export_folder, os.W_OK):
+                raise OSError("ไม่มีสิทธิ์เขียนในโฟลเดอร์ Context Exports")
         except (OSError, ValueError, TypeError) as exc:
-            QMessageBox.warning(self, "อัปเดต Context ไม่ได้", str(exc))
+            QMessageBox.warning(self, "Export ไม่ได้", str(exc))
             return False
+
         context_editor = next((workspace.editor.tabs.widget(index)
                                for index in range(workspace.editor.tabs.count())
                                if workspace.editor._path(workspace.editor.tabs.widget(index)) == context), None)
         if context_editor is not None:
             try:
                 if workspace.editor._dirty(context_editor):
-                    QMessageBox.warning(self, "อัปเดต Context ไม่ได้", "Context มีการแก้ไขที่ยังไม่ได้บันทึก")
+                    QMessageBox.warning(self, "Export ไม่ได้", "Context มีการแก้ไขที่ยังไม่ได้บันทึก")
                     return False
                 if hashlib.sha256(context.read_bytes()).digest() != context_editor.disk_digest:
-                    QMessageBox.warning(self, "อัปเดต Context ไม่ได้", "Context ถูกแก้ไขจากภายนอก กรุณาเปิดไฟล์ใหม่เพื่อตรวจสอบ")
+                    QMessageBox.warning(self, "Export ไม่ได้", "Context ถูกแก้ไขจากภายนอก กรุณาเปิดไฟล์ใหม่เพื่อตรวจสอบ")
                     return False
             except OSError as exc:
-                QMessageBox.warning(self, "อัปเดต Context ไม่ได้", str(exc))
+                QMessageBox.warning(self, "Export ไม่ได้", str(exc))
                 return False
         preview = QMessageBox(self)
-        preview.setWindowTitle("ยืนยันการอัปเดต Context")
+        preview.setWindowTitle("ยืนยัน Export")
         preview.setIcon(QMessageBox.Information)
-        preview.setText(f"แทนที่ไฟล์ Context ทั้งหมด?\n{context}\n\nเนื้อหาใหม่มาจาก {source.name}")
-        preview.setDetailedText(text)
+        preview.setText(f"สร้างไฟล์ TXT และแทนที่ Context ทั้งหมด?\n{target}\n\nContext: {context}\nต้นทาง: {source.name}")
+        preview.setDetailedText(editor.toPlainText())
         preview.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         if preview.exec() != QMessageBox.Yes:
             return False
-        staged = None
+
         try:
             fresh_profile = self._translator_profile_for_path(profile_id, source)
             if (fresh_profile is None
@@ -2561,30 +2621,32 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 raise OSError("โปรไฟล์หรือไฟล์ที่ผูกไว้เปลี่ยนไประหว่างยืนยัน")
             if hashlib.sha256(source.read_bytes()).digest() != source_digest:
                 raise OSError("Translator ถูกแก้ไขจากภายนอกระหว่างยืนยัน")
-            staged = _stage_text_file(context, text)
+            if target.exists():
+                raise OSError("พบไฟล์ชื่อเดียวกันระหว่างเตรียม Export กรุณาลองอีกครั้ง")
             if hashlib.sha256(context.read_bytes()).digest() != original_digest:
                 raise OSError("Context ถูกแก้ไขจากภายนอกระหว่างการยืนยัน")
-            backup_metadata = {
-                "profile_id": profile_id,
-                "translator_path": str(source),
-                "chapter_range": context_chapter_range(original_bytes),
-            }
+            staged_files.append((target, _stage_bytes_file(target, translator_bytes)))
+            staged_files.append((context, _stage_bytes_file(context, translator_bytes)))
+            def verify_transaction():
+                if target.read_bytes() != translator_bytes or context.read_bytes() != translator_bytes:
+                    raise OSError("ตรวจสอบหลังเขียนพบว่าไฟล์ TXT หรือ Context ไม่ตรงกับ Translator")
             commit_staged(
-                [(context, staged)],
-                backup_options={context: {
-                    "display_name": source.stem,
-                    "metadata": backup_metadata,
-                }},
+                staged_files,
+                commit_metadata=verify_transaction,
+                create_backups=False,
+                no_overwrite=(target,),
             )
-        except OSError as exc:
-            QMessageBox.warning(self, "อัปเดต Context ไม่สำเร็จ", str(exc))
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Export ไม่สำเร็จ", str(exc))
             return False
         finally:
-            _cleanup_staged_text_file(staged)
-        workspace.editor.apply_external_update(context, text)
+            for _destination, staged in staged_files:
+                _cleanup_staged_text_file(staged)
+
+        workspace.editor.apply_external_update(context, editor.toPlainText())
         self.refresh_translation_progress()
-        self.statusBar().showMessage("อัปเดต Context สำเร็จ", 5000)
-        QMessageBox.information(self, "อัปเดต Context สำเร็จ", "อัปเดต Context สำเร็จ")
+        self.statusBar().showMessage(f"Export {target.name} และอัปเดต Context สำเร็จ", 5000)
+        QMessageBox.information(self, "Export สำเร็จ", f"สร้าง {target.name} และอัปเดต Context สำเร็จ")
         return True
 
     def launch_profile(self):

@@ -1037,6 +1037,7 @@ class EditorTabs(QWidget):
         editor.blockSignals(False)
         self._format_document(editor)
         editor.document().clearUndoRedoStacks()
+        editor.setProperty("documentSavedText", editor.toPlainText())
         editor._cached_character_count = len(text)
         editor._cached_word_count = len(text.split())
 
@@ -1107,13 +1108,14 @@ class EditorTabs(QWidget):
             raise ValueError('Recovery belongs to another file')
         editor.setPlainText(normalize_editor_text(path, saved['text']))
 
-    def save_editor(self, editor, quiet=False, autosave=False) -> bool:
+    def save_editor(self, editor, quiet=False, autosave=False, *, normalize=True) -> bool:
         path = self._path(editor)
         if path is None:
             return True
         if autosave and editor.property('normalizationPending'):
             return True
-        editor.normalize_visible_text()
+        if normalize:
+            editor.normalize_visible_text()
         timer = getattr(editor, "autosave_timer", None)
         if timer is not None:
             timer.stop()
@@ -1170,6 +1172,7 @@ class EditorTabs(QWidget):
             False,
             "บันทึกอัตโนมัติแล้ว" if autosave else "บันทึกแล้ว",
         )
+        editor.setProperty("documentSavedText", editor.toPlainText())
         editor.disk_digest = hashlib.sha256(disk_text.encode("utf-8")).digest()
         try:
             recovery_path.unlink(missing_ok=True)
@@ -1206,6 +1209,7 @@ class EditorTabs(QWidget):
             editor._cached_character_count = len(text)
             editor._cached_word_count = len(text.split())
             editor.setProperty('normalizationPending', normalized != text)
+            editor.setProperty("documentSavedText", editor.toPlainText())
             self._set_dirty(editor, normalized != text,
                             "ลบบรรทัดว่างแล้ว · ยังไม่ได้บันทึก" if normalized != text else "บันทึกแล้ว")
             self.documentSaved.emit(str(path))
