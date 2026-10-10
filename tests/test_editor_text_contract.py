@@ -8,6 +8,7 @@ from novel_workflow.text_normalization import remove_empty_lines
 from novel_workflow.workspace_editor import EditorTabs
 from test_txt_export import app, panel
 
+
 VOCAB = '康斯坦丁\tคอนสแตนติน\tชาย\tชื่อเรียกคอนสแตนติน ฟอน นอยรัทในวงประชุมผู้นำนาซี'
 RAW = '\nไทย 中文\n\n \n\t\n\u00a0\n  English\t \n\n끝'
 CLEAN = 'ไทย 中文\n \n\t\n\u00a0\n  English\t \n끝'
@@ -143,7 +144,7 @@ def test_export_copy_disk_context_agree(tmp_path):
     assert QApplication.clipboard().text() == CLEAN
     assert export.editor.toPlainText() == CLEAN
     assert export.export(update_context=True)
-    assert context.read_text(encoding='utf-8') == CLEAN
+    assert context.read_text(encoding='utf-8') == 'old'
     assert (tmp_path / 'segverified1.txt').read_text(encoding='utf-8') == CLEAN
 
 

@@ -28,7 +28,7 @@ def test_export_and_context_remove_only_empty_lines(tmp_path):
     assert QApplication.clipboard().text() == CLEAN
     assert export.export(update_context=True)
     assert (tmp_path / "segverified1.txt").read_text(encoding="utf-8") == CLEAN
-    assert context.read_text(encoding="utf-8") == CLEAN
+    assert context.read_text(encoding="utf-8") == "old"
 
 
 def test_paste_removes_only_empty_lines_and_can_undo(tmp_path):

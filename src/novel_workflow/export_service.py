@@ -48,6 +48,13 @@ class ExportService:
         record_export(profile, filename, prefix, sequence)
         self.repo.save_profile(profile)
 
+    def commit_batch(self, exports):
+        """Record a multi-file export as one profile save and one event per file."""
+        profile = self.profile()
+        for filename, chapter in exports:
+            record_export(profile, filename, "", chapter)
+        self.repo.save_profile(profile)
+
     def set_target(self, target):
         profile = self.profile()
         profile.verified_goal_target = target or None

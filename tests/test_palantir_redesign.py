@@ -88,7 +88,7 @@ def test_verified_unlimited_goal(count,text):
     assert daily_export_count(p,'2026-10-07')==count
     assert daily_export_count(p,'2026-10-06')==0
 
-@pytest.mark.parametrize('failure', ['txt','context','context-lock','metadata'])
+@pytest.mark.parametrize('failure', ['txt','metadata'])
 def test_failed_submit_restores_files_and_does_not_count(window,tmp_path,monkeypatch,failure):
     from novel_workflow import recovery
     ws=window.workspaces[window.profile.id]; panel=ws.editor.export_tab
@@ -97,11 +97,7 @@ def test_failed_submit_restores_files_and_does_not_count(window,tmp_path,monkeyp
     panel.editor.setPlainText('บทที่ 125\nnew')
     original=recovery.os.replace
     def replace(source,dest):
-        if Path(dest)==(target if failure=='txt' else context) and str(source).endswith('.part'):
-            if failure == 'context-lock':
-                error = PermissionError('persistent Windows lock')
-                error.winerror = 5
-                raise error
+        if Path(dest)==target and str(source).endswith('.part'):
             raise OSError('simulated locked file')
         return original(source,dest)
     if failure=='metadata':
@@ -116,7 +112,7 @@ def test_failed_submit_restores_files_and_does_not_count(window,tmp_path,monkeyp
     assert panel.current.value()==1
 
 
-def test_submit_retries_transient_windows_context_lock(window, monkeypatch):
+def test_submit_does_not_write_context_even_when_context_is_locked(window, monkeypatch):
     from novel_workflow import recovery
     context = Path(window.profile.context_path).resolve()
     original = recovery.os.replace
@@ -124,20 +120,17 @@ def test_submit_retries_transient_windows_context_lock(window, monkeypatch):
     def replace(source, destination):
         if Path(destination) == context and str(source).endswith('.part'):
             attempts.append(source)
-            if len(attempts) < 3:
-                error = PermissionError('transient scanner lock')
-                error.winerror = 5
-                raise error
+            raise PermissionError('context should not be part of TXT export')
         return original(source, destination)
     monkeypatch.setattr(recovery.os, 'replace', replace)
     panel = window.workspaces[window.profile.id].editor.export_tab
     panel.editor.setPlainText('บทที่ 124')
     assert panel.export(update_context=True)
-    assert len(attempts) == 3
+    assert len(attempts) == 0
     profile = window.repo.list_profiles()[0]
     assert profile.verified_goal_count == 1
     assert len(profile.verified_export_history) == 1
-    assert context.read_text(encoding='utf-8') == 'บทที่ 124'
+    assert context.read_text(encoding='utf-8') == 'บทที่ 123'
 
 
 def test_goal_wrap_manual_reset_and_immediate_header(window,tmp_path):
@@ -149,7 +142,7 @@ def test_goal_wrap_manual_reset_and_immediate_header(window,tmp_path):
     assert p.verified_goal_count==12
     assert panel.current.value()==3
     assert '12/5 ✓' in ws.novel_header.progress.text()
-    assert 'แปลถึงบท 124' in ws.novel_header.progress.text()
+    assert 'แปลถึงบท 123' in ws.novel_header.progress.text()
     panel.goal_reset.click()
     p=window.repo.list_profiles()[0]
     assert p.verified_goal_count==0 and len(p.verified_export_history)==12

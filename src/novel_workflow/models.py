@@ -92,6 +92,7 @@ class TxtExportSettings:
     end: int = 100
     current: int = 1
     advanced_range: bool = False
+    mode: str = "legacy"
     @property
     def txt_export_filename(self): return self.filename
     @txt_export_filename.setter

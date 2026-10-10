@@ -1,5 +1,6 @@
 import os
 from dataclasses import asdict
+from pathlib import Path
 import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -41,7 +42,7 @@ def test_export_increments_then_wraps_end_to_start(tmp_path):
     assert export.current.value() == 1
 
 
-def test_export_overwrites_context_and_increments_only_after_both_writes(tmp_path):
+def test_submit_exports_only_and_preserves_context(tmp_path):
     app()
     context = tmp_path / "Context.md"
     context.write_text("old context", encoding="utf-8")
@@ -52,7 +53,7 @@ def test_export_overwrites_context_and_increments_only_after_both_writes(tmp_pat
     export.submit_button.click()
 
     assert (tmp_path / "segverified1.txt").read_text(encoding="utf-8") == text
-    assert context.read_text(encoding="utf-8") == text
+    assert context.read_text(encoding="utf-8") == "old context"
     assert export.current.value() == 2
 
 
@@ -70,10 +71,10 @@ def test_submit_success_status_shows_exported_file_and_next_wrapped_number(tmp_p
 
     export.submit_button.click()
 
-    assert messages == ["ส่งออก segverified80.txt และอัปเดต Context แล้ว · เลขถัดไป 20"]
+    assert messages == ["ส่งออก segverified80.txt แล้ว"]
 
 
-def test_submit_refreshes_open_context_tab_and_cancels_stale_autosave(tmp_path):
+def test_submit_does_not_refresh_or_write_open_context_tab(tmp_path):
     app()
     context = tmp_path / "Context.md"
     context.write_text("old context", encoding="utf-8")
@@ -87,12 +88,9 @@ def test_submit_refreshes_open_context_tab_and_cancels_stale_autosave(tmp_path):
     export.editor.setPlainText("บทที่ 126\nเนื้อหาใหม่ 卡")
     export.submit_button.click()
 
-    assert context.read_text(encoding="utf-8") == "บทที่ 126\nเนื้อหาใหม่ 卡"
-    assert context_editor.toPlainText() == "บทที่ 126\nเนื้อหาใหม่ 卡"
-    assert tabs.dirty_count() == 0
-    assert not context_editor.autosave_timer.isActive()
-    QTest.qWait(1100)
-    assert context.read_text(encoding="utf-8") == "บทที่ 126\nเนื้อหาใหม่ 卡"
+    assert context.read_text(encoding="utf-8") == "old context"
+    assert context_editor.toPlainText() == "stale unsaved edits"
+    assert tabs.dirty_count() == 1
 
 
 def test_editor_save_keeps_original_file_when_atomic_replace_fails(tmp_path, monkeypatch):
@@ -137,7 +135,7 @@ def test_save_all_persists_open_utf8_files_in_every_appearance(tmp_path, appeara
     assert tabs.dirty_count() == 0
 
 
-def test_submit_notifies_screen_callback_with_success_details(tmp_path):
+def test_submit_does_not_send_context_update_notification(tmp_path):
     app()
     context = tmp_path / "Context.md"
     context.write_text("old", encoding="utf-8")
@@ -148,7 +146,7 @@ def test_submit_notifies_screen_callback_with_success_details(tmp_path):
 
     export.submit_button.click()
 
-    assert notices == ["ส่งออก segverified1.txt และอัปเดต Context แล้ว · เลขถัดไป 2"]
+    assert notices == ["ส่งออก segverified1.txt แล้ว"]
 
 
 def test_export_number_label_explains_next_file_number(tmp_path):
@@ -158,7 +156,7 @@ def test_export_number_label_explains_next_file_number(tmp_path):
     assert export.number_current_label.text() == "เลขถัดไป"
 
 
-def test_context_write_failure_keeps_number_and_export_text(tmp_path, monkeypatch):
+def test_submit_does_not_depend_on_context_path(tmp_path, monkeypatch):
     app()
     quiet_warning(monkeypatch)
     missing_context = tmp_path / "missing" / "Context.md"
@@ -168,15 +166,14 @@ def test_context_write_failure_keeps_number_and_export_text(tmp_path, monkeypatc
 
     export.submit_button.click()
 
-    assert not (tmp_path / "segverified1.txt").exists()
-    assert export.current.value() == 1
+    assert (tmp_path / "segverified1.txt").read_text(encoding="utf-8") == text
+    assert export.current.value() == 2
     assert export.editor.toPlainText() == text
 
 
-def test_context_staging_failure_leaves_existing_files_unchanged(tmp_path, monkeypatch):
+def test_legacy_export_keeps_overwrite_behavior_and_does_not_write_context(tmp_path, monkeypatch):
     app()
     quiet_warning(monkeypatch)
-    import novel_workflow.workspace_editor as workspace_editor
 
     context = tmp_path / "Context.md"
     context.write_text("old context", encoding="utf-8")
@@ -184,19 +181,11 @@ def test_context_staging_failure_leaves_existing_files_unchanged(tmp_path, monke
     target.write_text("old export", encoding="utf-8")
     export = panel(tmp_path, context_path_callback=lambda: context)
     export.editor.setPlainText("new text")
-    stage = workspace_editor._stage_text_file
-
-    def fail_context_stage(destination, text):
-        if destination == context:
-            raise OSError("simulated context write failure")
-        return stage(destination, text)
-
-    monkeypatch.setattr(workspace_editor, "_stage_text_file", fail_context_stage)
     export.submit_button.click()
 
-    assert target.read_text(encoding="utf-8") == "old export"
+    assert target.read_text(encoding="utf-8") == "new text"
     assert context.read_text(encoding="utf-8") == "old context"
-    assert export.current.value() == 1
+    assert export.current.value() == 2
     assert export.editor.toPlainText() == "new text"
     assert not list(tmp_path.glob("*.part"))
 
@@ -364,7 +353,7 @@ def test_submit_is_single_export_and_context_action(tmp_path):
     export.submit_button.click()
 
     assert (tmp_path / "segverified1.txt").read_text(encoding="utf-8") == "new"
-    assert context.read_text(encoding="utf-8") == "new"
+    assert context.read_text(encoding="utf-8") == "old"
     assert export.current.value() == 2
 
 
@@ -406,3 +395,188 @@ def test_editor_font_uses_single_primary_family_and_default_hinting():
     editor = CodeEditor()
     assert len(editor.font().families()) == 1
     assert editor.font().hintingPreference() == editor.font().HintingPreference.PreferDefaultHinting
+
+
+def test_split_export_creates_one_utf8_file_for_each_chapter(tmp_path, monkeypatch):
+    app()
+    export = panel(tmp_path)
+    export.mode.setCurrentIndex(1)
+    export.editor.setPlainText(
+        "บทที่ 410 งั้นก็กลับไปดื่มที่โรงแรม\nเนื้อหา 410\n[จบตอน]\n"
+        "บทที่ 412 วิลล่าหลังนี้ขายไหม?\nเนื้อหา 412\n[จบตอน]"
+    )
+
+    assert export.export()
+
+    assert sorted(path.name for path in tmp_path.glob("*.txt")) == [
+        "บทที่ 410 งั้นก็กลับไปดื่มที่โรงแรม.txt",
+        "บทที่ 412 วิลล่าหลังนี้ขายไหม？.txt",
+    ]
+    assert (tmp_path / "บทที่ 410 งั้นก็กลับไปดื่มที่โรงแรม.txt").read_text(encoding="utf-8") == (
+        "บทที่ 410 งั้นก็กลับไปดื่มที่โรงแรม\nเนื้อหา 410\n[จบตอน]\n"
+    )
+    assert (tmp_path / "บทที่ 412 วิลล่าหลังนี้ขายไหม？.txt").read_text(encoding="utf-8") == (
+        "บทที่ 412 วิลล่าหลังนี้ขายไหม?\nเนื้อหา 412\n[จบตอน]"
+    )
+
+
+def test_submit_exports_without_updating_context(tmp_path):
+    app()
+    context = tmp_path / "Context.md"
+    context.write_text("old context", encoding="utf-8")
+    export = panel(tmp_path, context_path_callback=lambda: context)
+    export.editor.setPlainText("new text")
+
+    export.submit_button.click()
+
+    assert context.read_text(encoding="utf-8") == "old context"
+
+
+def test_split_export_refuses_case_insensitive_existing_filename(tmp_path, monkeypatch):
+    app()
+    quiet_warning(monkeypatch)
+    export = panel(tmp_path)
+    export.mode.setCurrentIndex(1)
+    export.editor.setPlainText("บทที่ 1 Title\nnew")
+    existing = tmp_path / "บทที่ 1 title.TXT"
+    existing.write_text("user data", encoding="utf-8")
+
+    assert not export.export()
+
+    assert existing.read_text(encoding="utf-8") == "user data"
+    assert len(list(tmp_path.glob("*.txt"))) == 1
+
+
+def test_split_export_rolls_back_files_when_second_publish_fails(tmp_path, monkeypatch):
+    app()
+    quiet_warning(monkeypatch)
+    import novel_workflow.workspace_editor as workspace_editor
+    export = panel(tmp_path)
+    export.mode.setCurrentIndex(1)
+    export.editor.setPlainText("บทที่ 1 First\none\nบทที่ 2 Second\ntwo")
+    original = workspace_editor.os.link
+    calls = 0
+
+    def fail_second(source, destination, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("simulated batch failure")
+        return original(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(workspace_editor.os, "link", fail_second)
+
+    assert not export.export()
+
+    assert not list(tmp_path.glob("*.txt"))
+    assert export.current.value() == 1
+    assert not list(tmp_path.glob(".palantir-staging-*"))
+
+
+def test_split_export_does_not_replace_file_created_after_preview(tmp_path, monkeypatch):
+    app()
+    quiet_warning(monkeypatch)
+    import novel_workflow.workspace_editor as workspace_editor
+    export = panel(tmp_path)
+    export.mode.setCurrentIndex(1)
+    export.editor.setPlainText("บทที่ 1 First\none\nบทที่ 2 Second\ntwo")
+    original = workspace_editor.os.link
+    calls = 0
+
+    def create_collision_then_link(source, destination, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            Path(destination).write_text("user file", encoding="utf-8")
+        return original(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(workspace_editor.os, "link", create_collision_then_link)
+
+    assert not export.export()
+
+    assert not (tmp_path / "บทที่ 1 First.txt").exists()
+    assert (tmp_path / "บทที่ 2 Second.txt").read_text(encoding="utf-8") == "user file"
+
+
+def test_split_metadata_failure_rolls_back_batch_without_verified_count(tmp_path, monkeypatch):
+    app()
+    quiet_warning(monkeypatch)
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile()
+    profile.txt_export_settings.directory = str(tmp_path)
+    profile.txt_export_settings.mode = "split"
+    repo.save_profile(profile)
+    from novel_workflow.export_service import ExportService
+    service = ExportService(repo, profile.id)
+    export = TxtExportTab(profile.txt_export_settings, export_service=service)
+    export.editor.setPlainText("บทที่ 1 First\none\nบทที่ 2 Second\ntwo")
+    monkeypatch.setattr(service, "commit_batch", lambda _exports: (_ for _ in ()).throw(OSError("profile save failed")))
+
+    assert not export.export()
+
+    assert not list(tmp_path.glob("*.txt"))
+    saved = repo.list_profiles()[0]
+    assert saved.verified_goal_count == 0
+    assert saved.verified_export_history == []
+    assert saved.txt_export_settings.current == 1
+
+
+def test_split_export_records_one_verified_event_per_file(tmp_path):
+    app()
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile()
+    profile.txt_export_settings.directory = str(tmp_path)
+    profile.txt_export_settings.mode = "split"
+    repo.save_profile(profile)
+    from novel_workflow.export_service import ExportService
+    service = ExportService(repo, profile.id)
+    export = TxtExportTab(profile.txt_export_settings, export_service=service)
+    export.editor.setPlainText("บทที่ 1 First\none\nบทที่ 3 Third\nthree")
+
+    assert export.export()
+
+    latest = repo.list_profiles()[0]
+    assert latest.verified_goal_count == 2
+    assert [item["sequence"] for item in latest.verified_export_history] == [1, 3]
+    assert latest.txt_export_settings.current == 1
+
+
+def test_split_chapter_parser_keeps_whitespace_and_ignores_inline_chapter_text():
+    raw = "บทที่ 1 First\n \t\nมีคำว่า บทที่ 2 อยู่กลางย่อหน้า\n[จบตอน]\nบทที่ 7 Last\n終わり"
+
+    chapters = TxtExportTab.split_chapters(raw)
+
+    assert len(chapters) == 2
+    assert chapters[0][2] == "บทที่ 1 First\n \t\nมีคำว่า บทที่ 2 อยู่กลางย่อหน้า\n[จบตอน]\n"
+    assert chapters[1][2] == "บทที่ 7 Last\n終わり"
+
+
+def test_split_chapter_parser_rejects_duplicate_chapter_number():
+    with pytest.raises(ValueError, match="เลขบทซ้ำ"):
+        TxtExportTab.split_chapters("บทที่ 1 First\none\nบทที่ 1 Again\ntwo")
+
+
+def test_split_submit_preview_lists_files_and_requires_confirmation(tmp_path, monkeypatch):
+    app()
+    export = panel(tmp_path)
+    export.mode.setCurrentIndex(1)
+    export.editor.setPlainText("บทที่ 1 First\none\nบทที่ 3 Third\nthree")
+    prompts = []
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        lambda *_args: prompts.append(_args[2]) or QMessageBox.No,
+    )
+
+    export.submit_button.click()
+
+    assert len(prompts) == 1
+    assert "ตรวจพบบท 2 บท" in prompts[0]
+    assert "บทที่ 1 First.txt" in prompts[0]
+    assert "บทที่ 3 Third.txt" in prompts[0]
+    assert not list(tmp_path.glob("*.txt"))
+
+
+def test_old_profile_export_settings_default_to_legacy_mode():
+    from novel_workflow.models import TxtExportSettings
+
+    assert TxtExportSettings.from_dict({}).mode == "legacy"

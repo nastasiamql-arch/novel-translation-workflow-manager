@@ -548,10 +548,10 @@ def main() -> int:
                 export_tab.editor.setPlainText("บทที่ 161\nContext จาก TXT Export")
                 export_tab.submit_button.click()
                 assert (root / "smoke2.txt").read_text(encoding="utf-8") == "บทที่ 161\nContext จาก TXT Export"
-                assert context.read_text(encoding="utf-8") == "บทที่ 161\nContext จาก TXT Export"
-                assert context_editor.toPlainText() == "บทที่ 161\nContext จาก TXT Export"
-                assert workspace.editor.dirty_count() == 0
-                assert not context_editor.autosave_timer.isActive()
+                assert context.read_text(encoding="utf-8") == "บทที่ 160-161\nExternal Context update"
+                assert context_editor.toPlainText() == "ข้อความเก่าที่รอ Auto Save"
+                assert workspace.editor.dirty_count() == 1
+                context_editor.autosave_timer.stop()
                 assert window.submit_toast.isVisible()
                 assert "smoke2.txt" in window.submit_toast.message.text()
                 assert export_tab.current.value() == 3

@@ -12,7 +12,7 @@ from bisect import bisect_left
 from PySide6.QtCore import QMimeData, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QPainter, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QComboBox,
     QPlainTextEdit, QPushButton, QSpinBox, QTabWidget, QTextEdit, QVBoxLayout, QWidget, QMenu, QToolButton, QGridLayout, QDialog,
 )
 
@@ -80,6 +80,28 @@ def _cleanup_staged_text_file(staged_path: Path | None, staging_dir: Path | None
             pass
 
 
+def _commit_new_staged_files(staged_files, commit_metadata=None):
+    """Publish staged new files atomically without replacing a concurrent file."""
+    created = []
+    try:
+        for destination, staged in staged_files:
+            destination = Path(destination)
+            os.link(staged, destination)
+            created.append(destination)
+        if commit_metadata:
+            commit_metadata()
+    except Exception as original:
+        errors = []
+        for destination in reversed(created):
+            try:
+                destination.unlink(missing_ok=True)
+            except OSError as error:
+                errors.append(str(error))
+        if errors:
+            raise OSError(f"{original}; กู้คืนชุดส่งออกไม่สำเร็จ: {errors}") from original
+        raise
+
+
 class TxtExportTab(QWidget):
     """Application-level text scratchpad with a persistent rotating TXT exporter."""
 
@@ -103,6 +125,11 @@ class TxtExportTab(QWidget):
         self.editor.compact_pasted_empty_lines = True
         self.filename = QLineEdit(str(settings.txt_export_filename or "segverified"))
         self.filename.setObjectName("txtExportFilename")
+        self.mode = QComboBox()
+        self.mode.setObjectName("txtExportMode")
+        self.mode.addItem("ส่งออกเป็นไฟล์เดียว", "legacy")
+        self.mode.addItem("แยกไฟล์ตามบทอัตโนมัติ", "split")
+        self.mode.setCurrentIndex(1 if getattr(settings, "mode", "legacy") == "split" else 0)
         self.directory = QLineEdit(str(settings.txt_export_directory or ""))
         self.directory.setObjectName("txtExportDirectory")
         self.directory.setPlaceholderText("เลือกโฟลเดอร์ปลายทาง")
@@ -134,6 +161,7 @@ class TxtExportTab(QWidget):
         self.basic_row = row
         row.addWidget(QLabel("Prefix"))
         row.addWidget(self.filename, 1)
+        row.addWidget(self.mode)
         self.number_current_label = QLabel("เลขถัดไป"); self.number_current_label.hide()
         self.current.setPrefix("เลข "); self.current.setToolTip("เลขชื่อไฟล์ถัดไป")
         self.current.setAccessibleName("เลขถัดไป")
@@ -190,7 +218,7 @@ class TxtExportTab(QWidget):
         self.copy_export_button = QPushButton("คัดลอก + ส่งออก")
         self.submit_button = QPushButton("Submit")
         self.submit_button.setObjectName("primaryButton")
-        self.submit_button.setToolTip("ส่งออก TXT และเขียนทับ Context ด้วยข้อความเดียวกัน")
+        self.submit_button.setToolTip("ส่งออก TXT")
         self.reset_button = QPushButton("รีเซ็ตเลข")
         actions.addWidget(self.copy_button)
         self.copy_export_button.hide(); self.reset_button.hide()
@@ -209,11 +237,12 @@ class TxtExportTab(QWidget):
         layout.addWidget(footer)
         self.copy_button.clicked.connect(self.copy_text)
         self.copy_export_button.clicked.connect(self.copy_and_export)
-        self.submit_button.clicked.connect(lambda: self.export(update_context=True))
+        self.submit_button.clicked.connect(self._submit_export)
         self.reset_button.clicked.connect(self.reset_number)
         self.editor.textChanged.connect(lambda: self.stats_timer.start())
         for field in (self.filename, self.directory):
             field.textChanged.connect(self._save_settings)
+        self.mode.currentIndexChanged.connect(self._save_settings)
         for field in (self.start, self.end, self.current):
             field.valueChanged.connect(self._numbers_changed)
         self.start.valueChanged.connect(lambda value: self.end.setMinimum(value))
@@ -299,6 +328,7 @@ class TxtExportTab(QWidget):
         self.settings.txt_export_start = self.start.value()
         self.settings.txt_export_end = self.end.value()
         self.settings.txt_export_current = self.current.value()
+        self.settings.mode = self.mode.currentData()
         try:
             self.settings_callback()
         except OSError as exc:
@@ -308,7 +338,7 @@ class TxtExportTab(QWidget):
                 panel._load_shared_settings()
 
     def _load_shared_settings(self):
-        fields = (self.filename, self.directory, self.start, self.end, self.current)
+        fields = (self.filename, self.directory, self.start, self.end, self.current, self.mode)
         old_states = [field.blockSignals(True) for field in fields]
         try:
             self.filename.setText(self.settings.txt_export_filename)
@@ -321,6 +351,7 @@ class TxtExportTab(QWidget):
             self.end.setValue(end)
             self.current.setRange(start, end)
             self.current.setValue(current)
+            self.mode.setCurrentIndex(1 if getattr(self.settings, "mode", "legacy") == "split" else 0)
         finally:
             for field, previous in zip(fields, old_states):
                 field.blockSignals(previous)
@@ -337,7 +368,7 @@ class TxtExportTab(QWidget):
 
     def copy_and_export(self):
         self.copy_text()
-        self.export()
+        self._submit_export()
 
     @staticmethod
     def normalized_filename(value):
@@ -352,29 +383,94 @@ class TxtExportTab(QWidget):
             raise ValueError("ชื่อนี้เป็นชื่อสงวนของ Windows")
         return name
 
+    @staticmethod
+    def split_chapters(text):
+        heading = re.compile(
+            r"^(?:บทที่\s*(\d+)\s*(.*)|第\s*(\d+)\s*章\s*(.*)|Chapter\s+(\d+)\s*(.*))$",
+            re.IGNORECASE | re.MULTILINE,
+        )
+        matches = list(heading.finditer(text))
+        if not matches:
+            raise ValueError("ไม่พบหัวบทที่รองรับ จึงไม่ส่งออก")
+        if text[:matches[0].start()]:
+            raise ValueError("พบข้อความก่อนหัวบทแรก กรุณาตรวจขอบเขตบทก่อนส่งออก")
+        chapters = []
+        seen_numbers = set()
+        seen_names = set()
+        for index, match in enumerate(matches):
+            groups = match.groups()
+            number = next(groups[offset] for offset in (0, 2, 4) if groups[offset] is not None)
+            number_key = int(number)
+            if number_key <= 0:
+                raise ValueError(f"เลขบทไม่ถูกต้อง: {number}")
+            if number_key in seen_numbers:
+                raise ValueError(f"เลขบทซ้ำ: {number}")
+            seen_numbers.add(number_key)
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+            content = text[match.start():end]
+            header = match.group(0)
+            name = header.strip()
+            replacements = {"<":"＜", ">":"＞", ":":"：", '"':"＂", "/":"／", "\\":"＼", "|":"｜", "?":"？", "*":"＊"}
+            safe = "".join(
+                "�" if ord(char) < 32 else replacements.get(char, char)
+                for char in name
+            ).rstrip(" .")
+            if not safe or safe.split(".")[0].upper() in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}:
+                raise ValueError(f"ชื่อไฟล์บทไม่ปลอดภัย: {header}")
+            key = (safe + ".txt").casefold().rstrip(" .")
+            if key in seen_names:
+                raise ValueError(f"ชื่อไฟล์บทซ้ำ: {safe}.txt")
+            seen_names.add(key)
+            chapters.append((number_key, safe + ".txt", content))
+        return chapters
+
+    def _submit_export(self):
+        if self.mode.currentData() != "split":
+            return self.export()
+        try:
+            chapters = self.split_chapters(self.editor.toPlainText())
+            preview = "\n".join(f"{number}: {filename}" for number, filename, _text in chapters)
+            folder = Path(self.directory.text().strip()).expanduser()
+            errors = []
+            if not folder.is_dir():
+                errors.append("ไม่พบโฟลเดอร์ปลายทาง")
+            else:
+                existing = {path.name.casefold().rstrip(" .") for path in folder.iterdir()}
+                collisions = [filename for _number, filename, _text in chapters
+                              if filename.casefold().rstrip(" .") in existing]
+                if collisions:
+                    errors.append("ชื่อไฟล์ซ้ำกับไฟล์ที่มีอยู่: " + ", ".join(collisions))
+            if errors:
+                QMessageBox.warning(
+                    self, "ตรวจสอบไฟล์ก่อนส่งออกไม่ผ่าน",
+                    f"ตรวจพบ {len(chapters)} บท\n\n{preview}\n\nข้อผิดพลาด:\n" + "\n".join(errors),
+                )
+                return False
+            answer = QMessageBox.question(
+                self, "ตรวจสอบไฟล์ก่อนส่งออก",
+                f"ตรวจพบบท {len(chapters)} บท จะสร้างไฟล์ต่อไปนี้หรือไม่?\n\n{preview}",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return False
+            return self.export()
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "ตรวจสอบบทไม่สำเร็จ", str(exc))
+            return False
+
     def export(self, update_context=False):
         staged_files = []
         try:
+            if self.mode.currentData() == "split":
+                return self._export_split()
             prefix = self.normalized_filename(self.filename.text())
             folder = Path(self.directory.text().strip()).expanduser()
             if not folder.is_dir():
                 raise OSError("ไม่พบโฟลเดอร์ปลายทาง")
-            context_path = None
-            if update_context:
-                selected_context = self.context_path_callback()
-                if not selected_context:
-                    raise OSError("ยังไม่ได้เลือกไฟล์ Context สำหรับนิยายนี้")
-                context_path = Path(selected_context).expanduser()
-                if not context_path.is_file():
-                    raise OSError("ไม่พบไฟล์ Context")
             target = folder / f"{prefix}{self.current.value()}.txt"
             self.editor.normalize_visible_text()
             text = self.editor.toPlainText()
-            destinations = [target]
-            if context_path is not None:
-                destinations.append(context_path)
-            for destination in destinations:
-                staged_files.append((destination, _stage_text_file(destination, text)))
+            staged_files.append((target, _stage_text_file(target, text)))
             completed = self.current.value()
             next_number = self.start.value() if completed >= self.end.value() else completed + 1
             metadata = (lambda: self.export_service.commit(
@@ -391,17 +487,41 @@ class TxtExportTab(QWidget):
         self.current.setValue(self.start.value() if completed >= self.end.value() else completed + 1)
         self._save_settings()
         self.refresh_verified()
-        if update_context:
-            self.context_saved_callback(context_path, text)
-            self.status_callback(
-                f"ส่งออก {target.name} และอัปเดต Context แล้ว · เลขถัดไป {self.current.value()}"
-            )
-            self.notification_callback(
-                f"ส่งออก {target.name} และอัปเดต Context แล้ว · เลขถัดไป {self.current.value()}"
-            )
-        else:
-            self.status_callback(f"ส่งออก {target.name} แล้ว")
-            if self.export_service: self.context_saved_callback(None, "")
+        if self.export_service:
+            self.context_saved_callback(None, "")
+        self.status_callback(f"ส่งออก {target.name} แล้ว")
+        self.notification_callback(f"ส่งออก {target.name} แล้ว")
+        return True
+
+    def _export_split(self):
+        staged_files = []
+        try:
+            folder = Path(self.directory.text().strip()).expanduser()
+            if not folder.is_dir():
+                raise OSError("ไม่พบโฟลเดอร์ปลายทาง")
+            chapters = self.split_chapters(self.editor.toPlainText())
+            existing = {path.name.casefold().rstrip(" .") for path in folder.iterdir()}
+            names = [filename for _number, filename, _text in chapters]
+            collisions = [name for name in names if name.casefold().rstrip(" .") in existing]
+            if collisions:
+                raise ValueError("มีไฟล์ชื่อนี้อยู่แล้ว จึงไม่เขียนทับ: " + ", ".join(collisions))
+            for _number, filename, text in chapters:
+                destination = folder / filename
+                staged_files.append((destination, _stage_text_file(destination, text)))
+            exports = [(filename, number) for number, filename, _text in chapters]
+            metadata = (lambda: self.export_service.commit_batch(exports)) if self.export_service else None
+            _commit_new_staged_files(staged_files, metadata)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "ส่งออก TXT ไม่สำเร็จ", str(exc))
+            return False
+        finally:
+            for _destination, staged in staged_files:
+                _cleanup_staged_text_file(staged)
+        self.refresh_verified()
+        if self.export_service:
+            self.context_saved_callback(None, "")
+        self.status_callback(f"ส่งออก {len(chapters)} บท เป็น {len(chapters)} ไฟล์แล้ว")
+        self.notification_callback(f"ส่งออก {len(chapters)} บท เป็น {len(chapters)} ไฟล์แล้ว")
         return True
 
     def reset_number(self):

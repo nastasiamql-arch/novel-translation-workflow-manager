@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import hashlib
 from datetime import date
 from pathlib import Path
 import subprocess
@@ -27,7 +28,8 @@ from .library_page import LibraryPage
 from .profile_list import ReorderableProfileList
 from .settings_page import SettingsPage
 from .export_service import ExportService, daily_export_count, verified_goal_text
-from .workspace_editor import EditorTabs
+from .workspace_editor import EditorTabs, _stage_text_file, _cleanup_staged_text_file
+from .recovery import commit_staged
 from .theme import theme_colors
 from . import __version__
 from .update_bootstrap import launch_update, read_update_result
@@ -334,6 +336,14 @@ class WorkspacePage(QWidget):
         self.context_button.setToolTip("เลือกไฟล์ Context ที่ติดตามความคืบหน้า")
         self.context_button.clicked.connect(self._choose_context)
         self.context_button.hide()
+        self.update_context_button = QToolButton(self.editor_header)
+        self.update_context_button.setText("อัปเดต Context")
+        self.update_context_button.setAccessibleName("อัปเดต Context จาก Translator")
+        self.update_context_button.clicked.connect(
+            lambda: self.owner.update_context_from_translator(self)
+        )
+        self.update_context_button.hide()
+        header_layout.addWidget(self.update_context_button)
         web_source = QToolButton()
         web_source.setText("ต้นฉบับเว็บ")
         web_source.clicked.connect(self.owner.open_downloader)
@@ -381,6 +391,8 @@ class WorkspacePage(QWidget):
         self.redo_button.clicked.connect(lambda: self.editor._current_editor().redo())
         header_layout.insertWidget(1, self.undo_button); header_layout.insertWidget(2, self.redo_button)
         self.editor.tabs.currentChanged.connect(self.bind_history)
+        self.editor.tabs.currentChanged.connect(lambda _index: self.refresh_context_update_button())
+        self.refresh_context_update_button()
         self.bind_history()
         self.more_menu.addAction("ค้นหา · Ctrl+H", self.editor.show_find)
         self.more_menu.addAction("ลดขนาดตัวอักษร", lambda: self.owner.adjust_editor_font_size(-1))
@@ -455,6 +467,17 @@ class WorkspacePage(QWidget):
             editor.redoAvailable.connect(lambda _value: self.refresh_history())
             editor._history_bound = True
         self.refresh_history()
+
+    def refresh_context_update_button(self):
+        editor = self.editor._current_editor()
+        path = self.editor._path(editor) if editor else None
+        allowed = bool(
+            path is not None
+            and self.owner.profile is not None
+            and self.owner.profile.id == self.profile_id
+            and self.owner._translator_profile_for_path(self.profile_id, path)
+        )
+        self.update_context_button.setVisible(allowed)
 
     def refresh_history(self):
         editor = self.editor._current_editor()
@@ -2401,6 +2424,132 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         else:
             workspace.context_button.setText("Context")
             workspace.context_button.setToolTip("ยังไม่ได้เลือกไฟล์ Context · คลิกเพื่อเลือก")
+
+    def _profile_file_paths(self, profile):
+        files = list(profile.working_files)
+        for step in profile.workflow.steps:
+            files.extend(step.files)
+        if profile.vocabulary_step:
+            files.extend(profile.vocabulary_step.files)
+        paths = set()
+        for item in files:
+            if not item.path or item.reference_type == "dynamic":
+                continue
+            try:
+                path = (Path(item.path).expanduser().resolve()
+                        if item.reference_type == "external_file"
+                        else self.repo.resolve_project_path(profile.id, item.path).resolve())
+                paths.add(path)
+            except (OSError, ValueError, TypeError):
+                continue
+        return paths
+
+    def _translator_profile_for_path(self, profile_id, path):
+        try:
+            candidate = Path(path).expanduser().resolve()
+        except (OSError, TypeError, ValueError):
+            return None
+        profile = next((item for item in self.repo.list_profiles() if item.id == profile_id), None)
+        if profile is None or not profile.context_path:
+            return None
+        if not candidate.name.casefold().endswith("translator.txt") or candidate.name.casefold() == "translator.txt":
+            return None
+        if candidate not in self._profile_file_paths(profile):
+            return None
+        owners = [item for item in self.repo.list_profiles()
+                  if candidate in self._profile_file_paths(item)]
+        if len(owners) != 1 or owners[0].id != profile_id:
+            return None
+        try:
+            context = Path(profile.context_path).expanduser().resolve()
+            if not context.is_file():
+                return None
+            other_contexts = [
+                item for item in self.repo.list_profiles()
+                if item.id != profile_id and item.context_path
+                and Path(item.context_path).expanduser().resolve() == context
+            ]
+            if other_contexts:
+                return None
+        except (OSError, TypeError, ValueError):
+            return None
+        return profile
+
+    def update_context_from_translator(self, workspace):
+        """Replace this profile's Context from its bound Translator document."""
+        profile_id = workspace.profile_id
+        if not self.profile or self.profile.id != profile_id:
+            QMessageBox.warning(self, "อัปเดต Context ไม่ได้", "โปรไฟล์ที่เลือกเปลี่ยนไปแล้ว กรุณาเลือกแท็บใหม่")
+            return False
+        editor = workspace.editor._current_editor()
+        source = workspace.editor._path(editor) if editor else None
+        profile = self._translator_profile_for_path(profile_id, source) if source else None
+        if profile is None:
+            QMessageBox.warning(self, "อัปเดต Context ไม่ได้", "ยืนยันไม่ได้ว่า Translator นี้ผูกกับนิยายที่เลือก")
+            return False
+        if not workspace.editor.save_editor(editor, quiet=True):
+            QMessageBox.warning(self, "อัปเดต Context ไม่ได้", "บันทึก Translator ไม่สำเร็จหรือพบการแก้ไขจากภายนอก")
+            return False
+        text = editor.toPlainText()
+        try:
+            profile = self._translator_profile_for_path(profile_id, source)
+            if profile is None:
+                raise OSError("โปรไฟล์หรือรายการไฟล์ที่ผูกไว้เปลี่ยนไประหว่างบันทึก")
+            context = Path(profile.context_path).expanduser().resolve()
+            source = source.expanduser().resolve()
+            if source == context:
+                raise OSError("ไฟล์ Translator และ Context เป็นไฟล์เดียวกัน")
+            if not context.is_file():
+                raise OSError("ไม่พบไฟล์ Context ที่ผูกกับโปรไฟล์นี้")
+            source_digest = hashlib.sha256(source.read_bytes()).digest()
+            original_digest = hashlib.sha256(context.read_bytes()).digest()
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.warning(self, "อัปเดต Context ไม่ได้", str(exc))
+            return False
+        context_editor = next((workspace.editor.tabs.widget(index)
+                               for index in range(workspace.editor.tabs.count())
+                               if workspace.editor._path(workspace.editor.tabs.widget(index)) == context), None)
+        if context_editor is not None:
+            try:
+                if workspace.editor._dirty(context_editor):
+                    QMessageBox.warning(self, "อัปเดต Context ไม่ได้", "Context มีการแก้ไขที่ยังไม่ได้บันทึก")
+                    return False
+                if hashlib.sha256(context.read_bytes()).digest() != context_editor.disk_digest:
+                    QMessageBox.warning(self, "อัปเดต Context ไม่ได้", "Context ถูกแก้ไขจากภายนอก กรุณาเปิดไฟล์ใหม่เพื่อตรวจสอบ")
+                    return False
+            except OSError as exc:
+                QMessageBox.warning(self, "อัปเดต Context ไม่ได้", str(exc))
+                return False
+        preview = QMessageBox(self)
+        preview.setWindowTitle("ยืนยันการอัปเดต Context")
+        preview.setIcon(QMessageBox.Information)
+        preview.setText(f"แทนที่ไฟล์ Context ทั้งหมด?\n{context}\n\nเนื้อหาใหม่มาจาก {source.name}")
+        preview.setDetailedText(text)
+        preview.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        if preview.exec() != QMessageBox.Yes:
+            return False
+        staged = None
+        try:
+            fresh_profile = self._translator_profile_for_path(profile_id, source)
+            if (fresh_profile is None
+                    or Path(fresh_profile.context_path).expanduser().resolve() != context):
+                raise OSError("โปรไฟล์หรือไฟล์ที่ผูกไว้เปลี่ยนไประหว่างยืนยัน")
+            if hashlib.sha256(source.read_bytes()).digest() != source_digest:
+                raise OSError("Translator ถูกแก้ไขจากภายนอกระหว่างยืนยัน")
+            staged = _stage_text_file(context, text)
+            if hashlib.sha256(context.read_bytes()).digest() != original_digest:
+                raise OSError("Context ถูกแก้ไขจากภายนอกระหว่างการยืนยัน")
+            commit_staged([(context, staged)])
+        except OSError as exc:
+            QMessageBox.warning(self, "อัปเดต Context ไม่สำเร็จ", str(exc))
+            return False
+        finally:
+            _cleanup_staged_text_file(staged)
+        workspace.editor.apply_external_update(context, text)
+        self.refresh_translation_progress()
+        self.statusBar().showMessage("อัปเดต Context สำเร็จ", 5000)
+        QMessageBox.information(self, "อัปเดต Context สำเร็จ", "อัปเดต Context สำเร็จ")
+        return True
 
     def launch_profile(self):
         """Open supported profile targets inside the current workspace."""
