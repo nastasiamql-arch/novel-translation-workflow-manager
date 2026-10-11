@@ -314,3 +314,19 @@ def test_damaged_latest_metadata_does_not_block_new_snapshot(history):
     assert fresh.path != snap.path
     items = service.list(p)
     assert len(items) == 2 and sum(bool(x.error) for x in items) == 1
+
+def test_upgrade_fixture_accepts_unicode_history_on_legacy_windows_console(history):
+    import os
+    import subprocess
+    import sys
+    service, profile, _ = history
+    folder = service.repo.profile_dir(profile.id)
+    (folder / 'source' / 'chapter_1.txt').write_bytes('ไทย\n\n中文'.encode('utf-8'))
+    service.repo.save_profile(profile)
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).with_name('upgrade_history_fixture.py')),
+         str(folder / 'profile.json'), profile.main_folder],
+        env={**os.environ, 'PYTHONIOENCODING': 'cp1252'}, capture_output=True)
+    assert result.returncode == 0, result.stderr.decode('cp1252', errors='replace')
+    snapshots = service.list(service.repo.list_profiles()[0])
+    assert len(snapshots) == 1 and not snapshots[0].error

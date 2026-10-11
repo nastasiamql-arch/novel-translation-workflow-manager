@@ -17,7 +17,9 @@ def main():
     repo = ProjectRepository(profile_path.parent.parent.parent)
     repo.save_profile(profile)
     snapshot = PolishHistory(repo, AssemblyService(repo)).create(profile, step, '6-10')
-    print(snapshot.path)
+    # Hosted Windows consoles may use cp1252; keep diagnostics ASCII while
+    # the actual snapshot retains its Unicode chapter-range directory.
+    print('Polish History upgrade fixture PASS:', snapshot.manifest['snapshot_id'])
 
 
 if __name__ == '__main__': main()
