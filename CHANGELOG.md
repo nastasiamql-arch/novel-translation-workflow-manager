@@ -20,6 +20,8 @@ All notable changes to Palantir: Novel are documented here.
   Preserve editor, autosave, recovery, workflow and update behavior.
 - Extend native clipboard, DPI/theme geometry and Windows installer upgrade tests,
   including byte preservation and snapshot validation by the installed runtime.
+- Avoid reinstalling an unchanged global theme when opening another window,
+  preventing unnecessary Qt repolishing and long regression-suite delays.
 
 ## 3.6.9 - 2026-10-09
 

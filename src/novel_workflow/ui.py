@@ -60,7 +60,12 @@ class ManagementActionsMixin:
             capture_system_appearance(app)
             from .focus_style import install_focus_behavior
             install_focus_behavior(app)
-            app.setStyleSheet(application_stylesheet(self.settings.appearance))
+            stylesheet = application_stylesheet(self.settings.appearance)
+            # Reinstalling an identical global stylesheet repolishes every
+            # widget, including closed windows retained by Qt. New windows
+            # already inherit the application stylesheet.
+            if app.styleSheet() != stylesheet:
+                app.setStyleSheet(stylesheet)
             # Qt's stylesheet engine can repopulate disabled roles with its
             # generic pale gray; restore our contrast-checked palette after it.
             app.setPalette(qt_palette(self.settings.appearance))

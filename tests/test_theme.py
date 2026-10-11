@@ -186,3 +186,23 @@ def test_scrollbar_track_is_solid_and_thumb_remains_operable():
         QTest.mouseRelease(bar, Qt.LeftButton, pos=QPoint(8, 150))
         assert bar.value() > 0
         bar.close()
+
+def test_reapplying_same_theme_avoids_repolishing_every_open_widget(monkeypatch):
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QApplication
+    from novel_workflow.ui import ManagementActionsMixin
+    app = QApplication.instance() or QApplication([])
+    owner = SimpleNamespace(settings=SimpleNamespace(appearance='Light'))
+    ManagementActionsMixin.apply_theme(owner)
+    original = app.setStyleSheet
+    calls = []
+    def apply(stylesheet):
+        calls.append(stylesheet)
+        original(stylesheet)
+    monkeypatch.setattr(app, 'setStyleSheet', apply)
+    ManagementActionsMixin.apply_theme(owner)
+    assert calls == []
+    owner.settings.appearance = 'Dark'
+    ManagementActionsMixin.apply_theme(owner)
+    assert calls == [application_stylesheet('Dark')]
+    assert app.palette().color(QPalette.Window).name() == _DARK['app']
