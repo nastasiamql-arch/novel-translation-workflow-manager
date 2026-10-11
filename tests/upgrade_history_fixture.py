@@ -17,6 +17,11 @@ def main():
     repo = ProjectRepository(profile_path.parent.parent.parent)
     repo.save_profile(profile)
     snapshot = PolishHistory(repo, AssemblyService(repo)).create(profile, step, '6-10')
+    # Build an authentic v3.10.0 path while preserving its schema-1 manifest
+    # and payload bytes. The installed PATCH must discover and migrate it.
+    legacy_root = main_folder / 'Polish History' / f'{step.id}-{profile.id}'
+    legacy_root.mkdir()
+    snapshot.path.rename(legacy_root / f'บท 6-10__20261012-040000__{snapshot.manifest["snapshot_id"]}')
     # Hosted Windows consoles may use cp1252; keep diagnostics ASCII while
     # the actual snapshot retains its Unicode chapter-range directory.
     print('Polish History upgrade fixture PASS:', snapshot.manifest['snapshot_id'])

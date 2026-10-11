@@ -2,6 +2,18 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.10.1 - 2026-10-12
+
+- Store Polish History directly under readable `<step name>-บท <range>` folders;
+  add local timestamps, readable profile suffixes and numeric collision suffixes
+  when needed, without exposing stable IDs in completed directory names.
+- Keep schema-1 IDs and all snapshot bytes unchanged. Validate legacy v3.10.0
+  manifests/payload hashes before and after atomic migration; retain originals
+  on failure and defer moves while Clipboard references their paths.
+- Rename chapter-range folders together with metadata, preserving payload hashes
+  and a raw manifest backup. Verify legacy migration during Windows in-place
+  upgrade from v3.10.0. Clipboard, editor, export and workflow behavior stay intact.
+
 ## 3.10.0 - 2026-10-12
 
 - Add per-novel Polish History with automatic stage snapshots before the existing

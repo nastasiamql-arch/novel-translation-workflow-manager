@@ -54,7 +54,9 @@ class PolishHistoryPage(QWidget):
                 self.owner._history_workers[-1].finished.connect(after_job)
             return
         self.status.setText('กำลังตรวจสอบไฟล์และ Hash…')
-        self.owner.run_history_job(lambda: self.owner.polish_history.list(self.profile), self.loaded, self.failed)
+        mime = QApplication.clipboard().mimeData()
+        urls = [u.toLocalFile() for u in mime.urls()] if mime else []
+        self.owner.run_history_job(lambda: self.owner.polish_history.list(self.profile, clipboard_paths=urls), self.loaded, self.failed)
 
     def loaded(self, snapshots):
         self.snapshots = snapshots
@@ -103,6 +105,9 @@ class PolishHistoryPage(QWidget):
             if snapshot.error:
                 error = QLabel('ตรวจพบข้อผิดพลาด: ' + snapshot.error); error.setWordWrap(True)
                 rows.addWidget(error)
+            if snapshot.warning:
+                warning = QLabel(snapshot.warning); warning.setWordWrap(True)
+                rows.addWidget(warning)
             self.card_layout.addWidget(card)
         if not found:
             empty = QLabel('ยังไม่มีประวัติ\nเลือกขั้นตอนใน Settings แล้วคลิกขั้นตอนเพื่อบันทึกไฟล์'
@@ -123,7 +128,9 @@ class PolishHistoryPage(QWidget):
         elif action == rename:
             value, accepted = QInputDialog.getText(self, 'แก้ไขช่วงบท', 'ช่วงบท เช่น 6-10', text=snapshot.manifest['chapter_range'])
             if accepted:
-                self.owner.run_history_job(lambda: self.owner.polish_history.rename(self.profile, snapshot.path, value),
+                mime = QApplication.clipboard().mimeData()
+                urls = [u.toLocalFile() for u in mime.urls()] if mime else []
+                self.owner.run_history_job(lambda: self.owner.polish_history.rename(self.profile, snapshot.path, value, clipboard_paths=urls),
                                            lambda _: self.refresh(), self.failed)
         elif action == delete:
             if QMessageBox.question(self, 'ลบประวัติ', 'ลบประวัติที่เลือกและไฟล์สำรองทั้งหมด?',

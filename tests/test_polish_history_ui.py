@@ -206,3 +206,25 @@ def test_history_opened_during_snapshot_loads_after_job_finishes(window, monkeyp
     w.open_polish_history(); ready.set()
     wait_until(lambda: not w.history_busy())
     assert len(w._utility_pages['polish-history:' + p.id].snapshots) == 1
+
+def test_history_refresh_preserves_clipboard_then_migrates_legacy(window):
+    from PySide6.QtCore import QMimeData, QUrl
+    w, p, workspace, errors = window
+    step = p.workflow.steps[1]
+    snapshot = w.polish_history.create(p, step, '6-10')
+    legacy_root = w.polish_history.root(p) / f'{step.id}-{p.id}'
+    legacy_root.mkdir()
+    old = legacy_root / f'บท 6-10__20261012-040000__{snapshot.manifest["snapshot_id"]}'
+    snapshot.path.rename(old)
+    paths = w.polish_history.clipboard_paths(p, old, zipped=False)
+    mime = QMimeData(); mime.setUrls([QUrl.fromLocalFile(str(x)) for x in paths])
+    QApplication.clipboard().setMimeData(mime)
+    w.open_polish_history(); wait_until(lambda: not w.history_busy())
+    page = w._utility_pages['polish-history:' + p.id]
+    assert page.snapshots[0].path == old and page.snapshots[0].warning
+    assert all(x.is_file() for x in paths)
+    assert any(b.isEnabled() for b in page.findChildren(QPushButton) if b.text() == 'คัดลอก')
+    QApplication.clipboard().clear()
+    page.refresh(); wait_until(lambda: not w.history_busy())
+    assert page.snapshots[0].path.parent == w.polish_history.root(p)
+    assert not old.exists() and not errors

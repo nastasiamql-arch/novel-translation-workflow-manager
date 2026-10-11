@@ -13,8 +13,17 @@ Other workflow steps retain their existing enabled-file and ZIP behavior.
 
 ## Storage and integrity
 
-History must be inside an existing configured main novel folder. Stable step and
-profile IDs form the storage directory, so shared main folders cannot mix novels.
+History must be inside an existing configured main novel folder. Since v3.10.1,
+completed snapshots live directly in `Polish History/<step name>-บท <range>/`.
+Changed versions add a local timestamp and numeric suffix if necessary; shared
+main folders can add a readable profile name. Stable step/profile/snapshot IDs
+remain in schema-1 metadata and identify ownership independently of directory names.
+The v3.10.0 ID-container layout remains readable. Opening/refreshing History
+validates metadata, ownership and every payload hash before an atomic move into
+the flat layout, then validates again. Failed verification rolls back the move;
+failed rollback keeps all data discoverable at its new location. Corrupt records
+remain untouched. Clipboard references defer migration with a visible warning
+and working Copy action. Only verified empty legacy containers are removed.
 Payload files are streamed byte-for-byte without text normalization. Attachment
 order, flags and duplicate links are retained in metadata; repeated source files
 need only one payload copy. Folder trees retain their relative structure. Separate
@@ -35,7 +44,9 @@ Only unambiguous structural trailing commas can be recovered in a temporary
 parsed copy; quoted text and the original raw manifest remain unchanged. Other
 ambiguous JSON damage is reported. Payload, schema, types, counts and metadata
 fingerprint are validated before delivery. Range edits preserve a metadata backup
-and do not alter payload or rename paths that a clipboard may still reference.
+and update the disk directory with the range. Payload bytes stay unchanged;
+Clipboard references block renaming before either metadata or paths are changed.
+Interrupted range renames are reconciled on the next verified History refresh.
 
 ## Chapter ranges and recovery
 
@@ -61,6 +72,7 @@ deduplication, corruption, partial writes, permissions, traversal and source cha
 Real named-stage buttons, full-page copy/back navigation, profile settings and
 post-close file existence are covered. Native Windows CF_HDROP/CF_UNICODETEXT,
 four DPI scales in Light/Dark, full regression suite and installer-upgrade CI run
-before release. Upgrade CI starts from v3.9.0, downloads via the actual updater,
-checks size/SHA-256 and validates retained snapshots with the installed executable.
+before release. Upgrade CI starts from v3.10.0, downloads via the actual updater,
+checks size/SHA-256 and validates legacy migration with the installed executable,
+including unchanged raw manifest and payload hashes after migration.
 The user's particular installed machine remains outside this automated test.

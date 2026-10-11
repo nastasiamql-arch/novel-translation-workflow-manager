@@ -119,6 +119,7 @@ class Snapshot:
     path: Path
     manifest: dict
     error: str = ''
+    warning: str = ''
 
 
 class PolishHistory:
@@ -138,9 +139,57 @@ class PolishHistory:
     def _snapshot_path(self, profile, path):
         root = self.root(profile)
         path = _check_path(path)
-        if not path.is_relative_to(root) or len(path.relative_to(root).parts) != 2:
+        if not path.is_relative_to(root) or len(path.relative_to(root).parts) not in (1, 2):
             raise ValueError('Snapshot path outside novel history')
         return path
+
+    @staticmethod
+    def _directory_name(manifest):
+        return _safe_backup_stem(manifest['step_name'], 80) + '-บท ' + parse_range(manifest['chapter_range'])
+
+    def _destination(self, profile, manifest, exclude=None):
+        root = self.root(profile)
+        base = self._directory_name(manifest)
+        candidate = root / base
+        if candidate == exclude or not candidate.exists(): return candidate
+        try:
+            owner = _read_manifest(_check_path(candidate / 'manifest.json'))
+            if owner.get('profile_id') != profile.id:
+                base += ' (' + _safe_backup_stem(profile.name, 35) + ')'
+                candidate = root / base
+                if candidate == exclude or not candidate.exists(): return candidate
+        except (OSError, ValueError, TypeError, AttributeError): pass
+        stamp = datetime.fromisoformat(manifest['created_at']).astimezone().strftime('%Y-%m-%d %H-%M-%S')
+        base += f' ({stamp})'
+        candidate = root / base
+        number = 2
+        while candidate != exclude and candidate.exists():
+            candidate = root / f'{base} ({number})'; number += 1
+        return candidate
+
+    @staticmethod
+    def _guard_clipboard(path, clipboard_paths):
+        if any(Path(p).absolute().is_relative_to(path) for p in clipboard_paths):
+            raise ValueError('Clipboard ยังใช้ไฟล์ชุดนี้อยู่ กรุณาคัดลอกชุดอื่นก่อนย้ายหรือเปลี่ยนชื่อ')
+
+    def _relocate(self, profile, path, manifest, clipboard_paths=()):
+        self._guard_clipboard(path, clipboard_paths)
+        destination = self._destination(profile, manifest, exclude=path)
+        if destination == path: return path
+        # Windows rename never replaces an existing directory. Retry a collision
+        # caused by another writer after the name was selected.
+        while True:
+            try:
+                os.rename(path, destination)
+                break
+            except FileExistsError:
+                destination = self._destination(profile, manifest, exclude=path)
+        try:
+            self.validate(profile, destination)
+        except BaseException:
+            os.rename(destination, path)
+            raise
+        return destination
 
     def _plan(self, profile, step):
         root = self.root(profile)
@@ -214,7 +263,7 @@ class PolishHistory:
                   'file_type': item.file_type, 'enabled': item.enabled, 'order': item.order}
                  for item in sorted(step.files, key=lambda f: f.order)]
         fingerprint = _fingerprint(identity, links)
-        step_root = self.root(profile) / f'{_token(step.id)}-{_token(profile.id)}'
+        step_root = self.root(profile)
         step_root.mkdir(parents=True, exist_ok=True); _check_path(step_root)
         existing = self.list(profile, step_id=step.id, verify=False)
         latest = next((x for x in existing if not x.error), None)
@@ -225,7 +274,7 @@ class PolishHistory:
             except (OSError, ValueError):
                 pass  # Keep damaged history and publish a fresh verified snapshot.
         snapshot_id = uuid.uuid4().hex
-        staging = step_root / f'.staging-{snapshot_id}'; staging.mkdir()
+        staging = step_root / f'.staging-{snapshot_id}-{_token(step.id)}-{_token(profile.id)}'; staging.mkdir()
         entries = []
         try:
             for record, (source, target, _item, _ctx) in zip(identity, plan):
@@ -248,8 +297,7 @@ class PolishHistory:
                         'complete': True}
             write_json(staging / 'manifest.json', manifest)
             self._validate_manifest(profile, staging, manifest)
-            destination = step_root / f'บท {chapter_range}__{created.strftime("%Y%m%d-%H%M%S")}__{snapshot_id}'
-            os.rename(staging, destination)
+            destination = self._relocate(profile, staging, manifest)
             return Snapshot(destination, manifest)
         except BaseException:
             # Preserve partial payload for inspection after a crash/error; never publish it.
@@ -264,11 +312,15 @@ class PolishHistory:
         for key in ('step_id', 'step_name', 'chapter_range', 'created_at', 'snapshot_id', 'content_hash'):
             if not isinstance(manifest.get(key), str): raise ValueError(f'Invalid {key}')
         _token(manifest['step_id']); _token(manifest['snapshot_id'])
-        if (path.name != '.staging-' + manifest['snapshot_id']
-                and not path.name.endswith('__' + manifest['snapshot_id'])):
-            raise ValueError('Snapshot ID mismatch')
-        if path.parent.name != f'{manifest["step_id"]}-{profile.id}':
-            raise ValueError('Snapshot step identity mismatch')
+        parts = path.relative_to(self.root(profile)).parts
+        if len(parts) == 2:
+            if (path.name != '.staging-' + manifest['snapshot_id']
+                    and not path.name.endswith('__' + manifest['snapshot_id'])):
+                raise ValueError('Snapshot ID mismatch')
+            if path.parent.name != f'{manifest["step_id"]}-{profile.id}':
+                raise ValueError('Snapshot step identity mismatch')
+        elif len(parts) != 1:
+            raise ValueError('Snapshot path outside novel history')
         parse_range(manifest['chapter_range'])
         if datetime.fromisoformat(manifest['created_at']).tzinfo is None:
             raise ValueError('Snapshot time must include a timezone')
@@ -326,31 +378,69 @@ class PolishHistory:
         manifest = _read_manifest(path / 'manifest.json')
         return self._validate_manifest(profile, path, manifest)
 
-    def list(self, profile, step_id=None, *, verify=True):
+    def list(self, profile, step_id=None, *, verify=True, clipboard_paths=()):
         root = self.root(profile)
         if not root.exists(): return []
         result = []
-        for step in root.iterdir():
-            if not step.name.endswith('-' + profile.id): continue
-            if step_id and step.name != f'{_token(step_id)}-{profile.id}': continue
-            try: _check_path(step)
-            except (OSError, ValueError) as exc:
-                result.append(Snapshot(step, {}, str(exc))); continue
-            if not step.is_dir(): continue
-            for path in step.iterdir():
-                manifest = {}
+        candidates = []
+        for item in root.iterdir():
+            if (not item.name.endswith('-' + profile.id)
+                    and not item.name.startswith('.staging-') and '-บท ' not in item.name
+                    and not (item / 'manifest.json').exists()):
+                continue
+            # Legacy containers have no manifest of their own; never descend
+            # through symlinks or another novel's container.
+            if item.name.endswith('-' + profile.id) and not item.name.startswith('.staging-'):
                 try:
-                    _check_path(path)
-                    if not path.is_dir(): continue
-                    if path.name.startswith('.staging-'): raise ValueError('การบันทึกไม่สมบูรณ์ · เก็บไฟล์ไว้เพื่อกู้คืน')
-                    manifest = _read_manifest(_check_path(path / 'manifest.json'))
-                    if verify: self._validate_manifest(profile, path, manifest)
-                    elif (not isinstance(manifest, dict) or manifest.get('complete') is not True
-                          or manifest.get('profile_id') != profile.id or manifest.get('step_id') != step.name.removesuffix('-' + profile.id)):
-                        raise ValueError('Invalid manifest')
-                    result.append(Snapshot(path, manifest))
-                except (OSError, ValueError, TypeError, KeyError) as exc:
-                    result.append(Snapshot(path, manifest if isinstance(manifest, dict) else {}, str(exc)))
+                    _check_path(item)
+                    if item.is_dir() and not (item / 'manifest.json').exists():
+                        candidates.extend((path, True) for path in item.iterdir())
+                        continue
+                except (OSError, ValueError) as exc:
+                    result.append(Snapshot(item, {}, str(exc))); continue
+            candidates.append((item, False))
+        for path, legacy in candidates:
+            manifest = {}
+            try:
+                _check_path(path)
+                if not path.is_dir(): continue
+                if not legacy:
+                    if path.name.startswith('.staging-'):
+                        if not path.name.endswith('-' + profile.id): continue
+                    else:
+                        manifest = _read_manifest(_check_path(path / 'manifest.json'))
+                        if not isinstance(manifest, dict) or manifest.get('profile_id') != profile.id: continue
+                if step_id and ((legacy and path.parent.name != f'{_token(step_id)}-{profile.id}')
+                                or (not legacy and manifest and manifest.get('step_id') != step_id)): continue
+                if path.name.startswith('.staging-'): raise ValueError('การบันทึกไม่สมบูรณ์ · เก็บไฟล์ไว้เพื่อกู้คืน')
+                manifest = _read_manifest(_check_path(path / 'manifest.json'))
+                if verify: self._validate_manifest(profile, path, manifest)
+                elif (not isinstance(manifest, dict) or manifest.get('complete') is not True
+                      or manifest.get('profile_id') != profile.id
+                      or (legacy and path.parent.name != f'{manifest.get("step_id")}-{profile.id}')):
+                    raise ValueError('Invalid manifest')
+                warning = ''
+                expected = self._directory_name(manifest)
+                needs_move = legacy or not (path.name == expected or path.name.startswith(expected + ' ('))
+                if needs_move and verify:
+                    old = path
+                    try:
+                        if not any(s.id == manifest['step_id'] for s in profile.workflow.steps):
+                            raise ValueError('ขั้นตอนเดิมไม่อยู่ใน Workflow · คงประวัติเดิมไว้')
+                        path = self._relocate(profile, path, manifest, clipboard_paths)
+                        # Remove only a verified, now-empty legacy container.
+                        if legacy:
+                            try: old.parent.rmdir()
+                            except OSError: pass
+                    except (OSError, ValueError) as exc:
+                        warning = 'ยังย้ายประวัติเดิมไม่ได้ · ' + str(exc)
+                        if not old.exists():
+                            # A failed rollback leaves the complete data at its
+                            # new location, discoverable on the next refresh.
+                            raise OSError('การย้ายถูกขัดจังหวะ · กรุณา Refresh เพื่อตรวจตำแหน่งไฟล์') from exc
+                result.append(Snapshot(path, manifest, warning=warning))
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                result.append(Snapshot(path, manifest if isinstance(manifest, dict) else {}, str(exc)))
         return sorted(result, key=lambda x: str(x.manifest.get('created_at', x.path.name)), reverse=True)
 
     def clipboard_paths(self, profile, path, *, zipped):
@@ -372,13 +462,33 @@ class PolishHistory:
         except BaseException:
             archive.unlink(missing_ok=True); raise
 
-    def rename(self, profile, path, chapter_range):
+    def rename(self, profile, path, chapter_range, clipboard_paths=()):
         path = self._snapshot_path(profile, path); self.validate(profile, path)
+        self._guard_clipboard(path, clipboard_paths)
         manifest = _read_manifest(path / 'manifest.json')
         chapter_range = parse_range(chapter_range)
-        shutil.copyfile(path / 'manifest.json', path / f'manifest.{uuid.uuid4().hex}.bak')
+        backup = path / f'manifest.{uuid.uuid4().hex}.bak'
+        shutil.copyfile(path / 'manifest.json', backup)
+        raw = backup.read_bytes()
         manifest['chapter_range'] = chapter_range
-        write_json(path / 'manifest.json', manifest)
+        try:
+            # Updating metadata first leaves a readable snapshot if the process
+            # is interrupted before the atomic directory move.
+            write_json(path / 'manifest.json', manifest)
+            destination = self._relocate(profile, path, manifest, clipboard_paths)
+            if path.parent != self.root(profile):
+                try: path.parent.rmdir()
+                except OSError: pass
+            return destination
+        except BaseException:
+            if path.exists():
+                fd, temporary = tempfile.mkstemp(dir=path, suffix='.tmp')
+                try:
+                    with os.fdopen(fd, 'wb') as output:
+                        output.write(raw); output.flush(); os.fsync(output.fileno())
+                    os.replace(temporary, path / 'manifest.json')
+                finally: Path(temporary).unlink(missing_ok=True)
+            raise
 
     def delete(self, profile, path, clipboard_paths=()):
         path = self._snapshot_path(profile, path)

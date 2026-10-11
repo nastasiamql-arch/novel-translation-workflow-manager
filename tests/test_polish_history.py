@@ -155,10 +155,10 @@ def test_profile_and_stable_step_isolation(history):
 def test_rename_keeps_bytes_and_old_metadata_backup(history):
     service, p, s = history; snap = service.create(p, s, '6-10')
     before = [x.read_bytes() for x in service.validate(p, snap.path)]
-    service.rename(p, snap.path, '11-15')
+    renamed = service.rename(p, snap.path, '11-15')
     assert service.list(p)[0].manifest['chapter_range'] == '11-15'
-    assert [x.read_bytes() for x in service.validate(p, snap.path)] == before
-    assert list(snap.path.glob('manifest.*.bak'))
+    assert [x.read_bytes() for x in service.validate(p, renamed)] == before
+    assert list(renamed.glob('manifest.*.bak'))
 
 
 def test_failed_write_and_staging_are_visible_not_success(history, monkeypatch):
