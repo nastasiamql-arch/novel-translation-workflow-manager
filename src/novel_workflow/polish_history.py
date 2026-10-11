@@ -145,7 +145,12 @@ class PolishHistory:
 
     @staticmethod
     def _directory_name(manifest):
-        return _safe_backup_stem(manifest['step_name'], 80) + '-บท ' + parse_range(manifest['chapter_range'])
+        stem = _safe_backup_stem(manifest['step_name'], 80)
+        chapter_range = manifest.get('chapter_range')
+        if chapter_range:
+            return stem + ' บท ' + parse_range(chapter_range)
+        stamp = datetime.fromisoformat(manifest['created_at']).astimezone().strftime('%Y-%m-%d %H-%M-%S')
+        return stem + ' รอระบุช่วงบท (' + stamp + ')'
 
     def _destination(self, profile, manifest, exclude=None):
         root = self.root(profile)
@@ -193,7 +198,10 @@ class PolishHistory:
 
     def _plan(self, profile, step):
         root = self.root(profile)
-        context = _check_path(profile.context_path) if profile.context_path else None
+        context = None
+        if profile.context_path:
+            try: context = Path(profile.context_path).expanduser().absolute()
+            except (OSError, ValueError): pass
         plan, seen = [], set()
         attachments = []
         for index, item in enumerate(sorted(step.files, key=lambda f: f.order)):
@@ -211,9 +219,6 @@ class PolishHistory:
                 target = Path('files') / f'{index + 1:03d}' / _filename(source.name)
                 if components: target = target.joinpath(*components)
                 plan.append((candidate, target, item, candidate == context))
-        if context and context not in seen:
-            if not context.is_file(): raise ValueError('Context must be a file')
-            plan.append((context, Path('context') / _filename(context.name), None, True))
         if not plan: raise ValueError('ขั้นตอนนี้ไม่มีไฟล์สำหรับบันทึก')
         names = [str(p[1]).casefold() for p in plan]
         if len(names) != len(set(names)): raise ValueError('Snapshot filename collision')
@@ -226,14 +231,14 @@ class PolishHistory:
             shutil.copyfileobj(incoming, output, 1024 * 1024)
             output.flush(); os.fsync(output.fileno())
 
-    def create(self, profile, step, chapter_range=None):
+    def create(self, profile, step, chapter_range=None, *, allow_unresolved=False):
         if not any(s.id == step.id for s in profile.workflow.steps):
             raise ValueError('Step does not belong to novel')
         plan, attachments = self._plan(profile, step)
         hashes = [_hash(source) for source, *_ in plan]
         # Infer only from explicitly identified novel-content attachments, not Context.
         ranges = []
-        if not chapter_range:
+        if not chapter_range and not allow_unresolved:
             for (source, _target, item, is_context), digest in zip(plan, hashes):
                 if item and not is_context and (
                     item.reference_type == 'dynamic' or
@@ -246,10 +251,12 @@ class PolishHistory:
                     span = translator_chapter_range(content)
                     if span: ranges.append(span)
             # Different attachment spans could be references, not one submitted batch.
-            if not ranges or len(set(ranges)) != 1:
+            if ranges and len(set(ranges)) == 1:
+                chapter_range = ranges[0]
+            else:
                 raise RangeRequired('ยืนยันช่วงบทไม่ได้ กรุณากรอกช่วงบทแล้วคลิกขั้นตอนอีกครั้ง')
-            chapter_range = ranges[0]
-        chapter_range = parse_range(chapter_range)
+        if chapter_range:
+            chapter_range = parse_range(chapter_range)
         identity = [
             {'original_path': str(source), 'snapshot_path': target.as_posix(),
              'reference_type': item.reference_type if item else 'profile_context',
@@ -270,6 +277,9 @@ class PolishHistory:
         if latest and latest.manifest.get('chapter_range') == chapter_range and latest.manifest.get('content_hash') == fingerprint:
             try:
                 self.validate(profile, latest.path)
+                if latest.manifest.get('review_status', 'รอตรวจ') != 'รอตรวจ':
+                    self.set_review_status(profile, latest.path, 'รอตรวจ')
+                    latest.manifest['review_status'] = 'รอตรวจ'
                 return latest
             except (OSError, ValueError):
                 pass  # Keep damaged history and publish a fresh verified snapshot.
@@ -294,7 +304,8 @@ class PolishHistory:
                         'file_count': len(entries), 'files': entries, 'content_hash': fingerprint,
                         'attachments': links,
                         'context_hash': next((e['sha256'] for e in entries if e['is_context']), None),
-                        'complete': True}
+                        'complete': True, 'review_status': 'รอตรวจ',
+                        'range_pending': chapter_range is None}
             write_json(staging / 'manifest.json', manifest)
             self._validate_manifest(profile, staging, manifest)
             destination = self._relocate(profile, staging, manifest)
@@ -309,8 +320,17 @@ class PolishHistory:
             raise ValueError('Unsupported or damaged history schema')
         if manifest.get('complete') is not True or manifest.get('profile_id') != profile.id:
             raise ValueError('Incomplete snapshot or wrong novel')
-        for key in ('step_id', 'step_name', 'chapter_range', 'created_at', 'snapshot_id', 'content_hash'):
+        for key in ('step_id', 'step_name', 'created_at', 'snapshot_id', 'content_hash'):
             if not isinstance(manifest.get(key), str): raise ValueError(f'Invalid {key}')
+        pending_range = manifest.get('range_pending', manifest.get('chapter_range') is None)
+        chapter_range = manifest.get('chapter_range')
+        if type(pending_range) is not bool: raise ValueError('Invalid range_pending')
+        if pending_range:
+            if chapter_range not in (None, ''): raise ValueError('Invalid pending chapter range')
+        elif not isinstance(chapter_range, str):
+            raise ValueError('Invalid chapter_range')
+        if manifest.get('review_status', 'รอตรวจ') not in {'รอตรวจ', 'ตรวจแล้ว'}:
+            raise ValueError('Invalid review status')
         _token(manifest['step_id']); _token(manifest['snapshot_id'])
         parts = path.relative_to(self.root(profile)).parts
         if len(parts) == 2:
@@ -321,7 +341,7 @@ class PolishHistory:
                 raise ValueError('Snapshot step identity mismatch')
         elif len(parts) != 1:
             raise ValueError('Snapshot path outside novel history')
-        parse_range(manifest['chapter_range'])
+        if not pending_range: parse_range(chapter_range)
         if datetime.fromisoformat(manifest['created_at']).tzinfo is None:
             raise ValueError('Snapshot time must include a timezone')
         entries = manifest.get('files')
@@ -385,7 +405,9 @@ class PolishHistory:
         candidates = []
         for item in root.iterdir():
             if (not item.name.endswith('-' + profile.id)
-                    and not item.name.startswith('.staging-') and '-บท ' not in item.name
+                    and not item.name.startswith('.staging-') and ' บท ' not in item.name
+                    and '-บท ' not in item.name
+                    and ' รอระบุช่วงบท ' not in item.name
                     and not (item / 'manifest.json').exists()):
                 continue
             # Legacy containers have no manifest of their own; never descend
@@ -471,6 +493,7 @@ class PolishHistory:
         shutil.copyfile(path / 'manifest.json', backup)
         raw = backup.read_bytes()
         manifest['chapter_range'] = chapter_range
+        manifest['range_pending'] = False
         try:
             # Updating metadata first leaves a readable snapshot if the process
             # is interrupted before the atomic directory move.
@@ -489,6 +512,17 @@ class PolishHistory:
                     os.replace(temporary, path / 'manifest.json')
                 finally: Path(temporary).unlink(missing_ok=True)
             raise
+
+    def set_review_status(self, profile, path, status):
+        path = self._snapshot_path(profile, path)
+        if status not in {'รอตรวจ', 'ตรวจแล้ว'}:
+            raise ValueError('Invalid review status')
+        self.validate(profile, path)
+        manifest = _read_manifest(path / 'manifest.json')
+        manifest['review_status'] = status
+        write_json(path / 'manifest.json', manifest)
+        self.validate(profile, path)
+        return manifest
 
     def delete(self, profile, path, clipboard_paths=()):
         path = self._snapshot_path(profile, path)

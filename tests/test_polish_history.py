@@ -29,40 +29,43 @@ def history(tmp_path):
     return PolishHistory(repo, AssemblyService(repo)), profile, step
 
 
-def test_lossless_all_attachments_context_and_restart(history):
+def test_lossless_only_linked_attachments_and_restart(history):
     service, profile, step = history
     snapshot = service.create(profile, step, '6-10')
     assert snapshot.path.is_relative_to(Path(profile.main_folder) / 'Polish History')
-    assert snapshot.manifest['file_count'] == 5
-    assert [f['enabled'] for f in snapshot.manifest['files']] == [True, False, True, True, True]
+    assert snapshot.manifest['file_count'] == 4
+    assert [f['enabled'] for f in snapshot.manifest['files']] == [True, False, True, True]
     for entry, path in zip(snapshot.manifest['files'], service.validate(profile, snapshot.path)):
         assert path.read_bytes() == Path(entry['original_path']).read_bytes()
     Path(profile.context_path).write_bytes(b'new context')
     restarted = PolishHistory(service.repo, service.assembler)
     old = restarted.list(profile)[0]
     assert old.manifest['chapter_range'] == '6-10'
-    assert restarted.validate(profile, old.path)[-1].read_bytes() == b'old context\r\n\r\n'
+    assert all(path.read_bytes() != b'old context\r\n\r\n' for path in restarted.validate(profile, old.path))
+    assert old.manifest['context_hash'] is None
     assert profile.verified_goal_count == 0 and profile.verified_export_history == []
 
 
 def test_dedup_range_and_content_versions(history):
     service, p, s = history
     first = service.create(p, s, '1-5')
+    assert first.path.name == 'Custom polish บท 1-5'
     assert service.create(p, s, '1-5').path == first.path
-    assert service.create(p, s, '6-10').path != first.path
+    second = service.create(p, s, '6-10')
+    assert second.path != first.path
     Path(p.context_path).write_bytes(b'changed')
-    assert service.create(p, s, '6-10').path != first.path
-    assert len(service.list(p)) == 3
+    assert service.create(p, s, '6-10').path == second.path
+    assert len(service.list(p)) == 2
 
 
 def test_zip_persistent_and_payload_only(history):
     service, p, s = history
     snap = service.create(p, s, '25-31')
     paths = service.clipboard_paths(p, snap.path, zipped=False)
-    assert len(paths) == 5 and all(x.is_file() for x in paths)
+    assert len(paths) == 4 and all(x.is_file() for x in paths)
     archive = service.clipboard_paths(p, snap.path, zipped=True)[0]
     with zipfile.ZipFile(archive) as z:
-        assert len(z.namelist()) == 5
+        assert len(z.namelist()) == 4
         assert 'manifest.json' not in z.namelist()
         assert sorted(z.read(n) for n in z.namelist()) == sorted(x.read_bytes() for x in paths)
     del service
@@ -98,6 +101,29 @@ def test_never_infer_chapters_from_context(history):
     Path(p.context_path).write_text('Chapter 999\ntext')
     with pytest.raises(RangeRequired): service.create(p, s)
     assert service.list(p) == []
+
+
+def test_export_may_keep_unresolved_range_and_later_assign_it(history):
+    service, p, s = history
+    pending = service.create(p, s, allow_unresolved=True)
+    assert pending.manifest['chapter_range'] is None
+    assert pending.manifest['review_status'] == 'รอตรวจ'
+    assert pending.path.name.startswith('Custom polish รอระบุช่วงบท')
+    assert len(service.validate(p, pending.path)) == 4
+    updated = service.rename(p, pending.path, '101-150')
+    assert updated.name == 'Custom polish บท 101-150'
+    assert service.list(p)[0].manifest['chapter_range'] == '101-150'
+    service.set_review_status(p, updated, 'ตรวจแล้ว')
+    assert service.list(p)[0].manifest['review_status'] == 'ตรวจแล้ว'
+
+
+def test_new_save_of_identical_snapshot_returns_it_to_pending(history):
+    service, p, s = history
+    saved = service.create(p, s, '6-10')
+    service.set_review_status(p, saved.path, 'ตรวจแล้ว')
+    again = service.create(p, s, '6-10')
+    assert again.path == saved.path
+    assert again.manifest['review_status'] == 'รอตรวจ'
 
 
 @pytest.mark.parametrize('label', ['1-5', '6-10', '21-24', '25-31', '100-120', '100000-100123', '6'])
@@ -202,7 +228,7 @@ def test_repair_trailing_comma_only_in_memory(history):
     path = snap.path / 'manifest.json'
     raw = path.read_text(encoding='utf-8').rstrip(); raw = raw[:-1] + ',}'
     path.write_text(raw, encoding='utf-8')
-    assert len(service.validate(p, snap.path)) == 5
+    assert len(service.validate(p, snap.path)) == 4
     assert path.read_text(encoding='utf-8') == raw
 
 
@@ -212,7 +238,7 @@ def test_metadata_preserves_duplicate_links_and_status(history):
     snap = service.create(p, s, '6-10')
     assert len(snap.manifest['attachments']) == 5
     assert snap.manifest['attachments'][-1]['enabled'] is False
-    assert snap.manifest['file_count'] == 5
+    assert snap.manifest['file_count'] == 4
     s.files[-1].enabled = True
     assert service.create(p, s, '6-10').path != snap.path
 

@@ -53,7 +53,7 @@ def test_named_stage_click_snapshot_then_native_clipboard(window, zipped):
     workspace.stage_buttons[1].click()
     wait_until(lambda: not w.history_busy())
     urls = QApplication.clipboard().mimeData().urls()
-    assert len(urls) == (1 if zipped else 3)
+    assert len(urls) == (1 if zipped else 2)
     assert all(Path(u.toLocalFile()).is_file() for u in urls)
     assert w.si == 1 and not errors
     assert len(w.polish_history.list(p)) == 1
@@ -86,7 +86,7 @@ def test_history_page_copy_and_back_preserve_editor_and_stage(window):
     QTest.mouseClick(buttons[0], Qt.LeftButton)
     wait_until(lambda: not w.history_busy())
     payload = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
-    assert payload[-1].read_bytes() == b'old context\n\n'
+    assert all(path.read_bytes() != b'old context\n\n' for path in payload)
     assert Path(p.context_path).read_bytes() == b'new context'
     assert p.verified_goal_count == 0 and p.txt_export_settings.current == 1
     w.utility_back.click()
@@ -134,6 +134,54 @@ def test_history_copy_survives_window_close(window):
     assert all(path.is_file() for path in paths)
 
 
+def test_save_for_review_does_not_copy_or_advance(window):
+    w, p, workspace, errors = window
+    workspace.history_range.setText('101-150')
+    clipboard_before = [url.toLocalFile() for url in QApplication.clipboard().mimeData().urls()]
+    selection_before = w.si
+    counter_before = p.verified_goal_count
+    workspace.save_for_review_button.click()
+    wait_until(lambda: not w.history_busy())
+    items = w.polish_history.list(p)
+    assert len(items) == 1 and items[0].manifest['review_status'] == 'รอตรวจ'
+    assert items[0].path.name == 'Polish บท 101-150'
+    assert w.si == selection_before and p.verified_goal_count == counter_before
+    assert [url.toLocalFile() for url in QApplication.clipboard().mimeData().urls()] == clipboard_before
+
+
+def test_successful_txt_export_creates_pending_snapshot_without_reexport(window, tmp_path):
+    w, p, workspace, errors = window
+    export = workspace.editor.export_tab
+    export.directory.setText(str(tmp_path))
+    export.editor.setPlainText('บทที่ 51\nเนื้อหาที่ส่งออก')
+    assert export.export()
+    wait_until(lambda: not w.history_busy())
+    persisted = next(item for item in w.repo.list_profiles() if item.id == p.id)
+    items = w.polish_history.list(persisted)
+    assert len(items) == 1
+    assert items[0].manifest['chapter_range'] == '51'
+    assert items[0].manifest['review_status'] == 'รอตรวจ'
+    assert (tmp_path / 'segverified1.txt').is_file()
+    persisted = next(item for item in w.repo.list_profiles() if item.id == p.id)
+    assert persisted.verified_goal_count == 1
+    assert len(persisted.verified_export_history) == 1
+    assert not errors
+
+
+def test_export_without_verifiable_chapter_range_is_kept_unresolved(window, tmp_path):
+    w, p, workspace, errors = window
+    export = workspace.editor.export_tab
+    export.directory.setText(str(tmp_path))
+    export.editor.setPlainText('ข้อความที่ไม่มีหัวบท')
+    assert export.export()
+    wait_until(lambda: not w.history_busy())
+    item = w.polish_history.list(p)[0]
+    assert item.manifest['chapter_range'] is None
+    assert item.path.name.startswith('Polish รอระบุช่วงบท')
+    assert item.manifest['review_status'] == 'รอตรวจ'
+    assert not errors
+
+
 def test_failed_save_blocks_stage_snapshot(window, monkeypatch):
     w, p, workspace, errors = window
     assert hasattr(w, 'polish_history')
@@ -165,10 +213,10 @@ def test_multistage_zip_keeps_all_stages_and_snapshot_context(window):
     wait_until(lambda: not w.history_busy())
     archive = Path(QApplication.clipboard().mimeData().urls()[0].toLocalFile())
     with zipfile.ZipFile(archive) as content:
-        assert len(content.namelist()) == 5
+        assert len(content.namelist()) == 4
         assert any(name.startswith('01_Translate/') for name in content.namelist())
         assert any(name.startswith('02_Polish/') for name in content.namelist())
-    assert '5 ไฟล์' in w.statusBar().currentMessage()
+    assert '4 ไฟล์' in w.statusBar().currentMessage()
     assert not errors
 
 
@@ -187,7 +235,7 @@ def test_reopened_window_recovers_old_context_from_disk(window):
         copy = next(b for b in page.findChildren(QPushButton) if b.text() == 'คัดลอก')
         copy.click(); wait_until(lambda: not reopened.history_busy())
         files = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
-        assert files[-1].read_bytes() == b'old context\n\n'
+        assert all(path.read_bytes() != b'old context\n\n' for path in files)
         assert Path(p.context_path).read_bytes() == b'latest context after restart'
         assert reopened.profile.verified_export_history == []
     finally:
@@ -204,8 +252,8 @@ def test_history_opened_during_snapshot_loads_after_job_finishes(window, monkeyp
     monkeypatch.setattr(w.polish_history, 'create', pending)
     workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click()
     w.open_polish_history(); ready.set()
-    wait_until(lambda: not w.history_busy())
-    assert len(w._utility_pages['polish-history:' + p.id].snapshots) == 1
+    page = w._utility_pages['polish-history:' + p.id]
+    wait_until(lambda: not w.history_busy() and len(page.snapshots) == 1)
 
 def test_history_refresh_preserves_clipboard_then_migrates_legacy(window):
     from PySide6.QtCore import QMimeData, QUrl

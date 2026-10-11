@@ -19,9 +19,11 @@ def app():
 def panel(tmp_path, context_path_callback=None, **values):
     settings = AppSettings()
     settings.txt_export_directory = str(tmp_path)
+    callback = values.pop('export_success_callback', None)
     for key, value in values.items():
         setattr(settings, key, value)
-    return TxtExportTab(settings, context_path_callback=context_path_callback)
+    return TxtExportTab(settings, context_path_callback=context_path_callback,
+                        export_success_callback=callback)
 
 
 def quiet_warning(monkeypatch):
@@ -40,6 +42,25 @@ def test_export_increments_then_wraps_end_to_start(tmp_path):
     assert export.export()
     assert (tmp_path / "segverified2.txt").exists()
     assert export.current.value() == 1
+
+
+def test_successful_export_notifies_history_with_actual_chapter_range(tmp_path):
+    app()
+    observed = []
+    export = panel(tmp_path, export_success_callback=observed.append)
+    export.editor.setPlainText('บทที่ 101\nเนื้อหา\nบทที่ 150\nจบ')
+    assert export.export()
+    assert observed == ['101-150']
+
+
+def test_failed_export_does_not_notify_history(tmp_path, monkeypatch):
+    app()
+    quiet_warning(monkeypatch)
+    observed = []
+    export = panel(tmp_path, export_success_callback=observed.append)
+    export.directory.setText(str(tmp_path / 'missing'))
+    assert not export.export()
+    assert observed == []
 
 
 def test_submit_exports_only_and_preserves_context(tmp_path):

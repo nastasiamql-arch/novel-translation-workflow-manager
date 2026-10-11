@@ -250,6 +250,8 @@ class WorkspacePage(QWidget):
             context_path_callback=self._context_path_for_export,
             notification_callback=owner.show_submit_toast,
             export_service=ExportService(owner.repo, profile.id),
+            export_success_callback=lambda chapter_range=None, pid=profile.id:
+                owner.snapshot_export_for_review(pid, chapter_range),
         )
         self.editor.destructive_paste_callback = (
             lambda editor: owner._guard_destructive_paste(profile.id, editor)
@@ -302,6 +304,9 @@ class WorkspacePage(QWidget):
         self.history_button = QPushButton('ประวัติ')
         self.history_button.clicked.connect(lambda: self.owner.open_polish_history())
         history_row.addWidget(self.history_button)
+        self.save_for_review_button = QPushButton('บันทึกไว้รอตรวจ')
+        self.save_for_review_button.clicked.connect(lambda: self.owner.save_for_review())
+        history_row.addWidget(self.save_for_review_button)
         self.history_range = QLineEdit()
         self.history_range.setPlaceholderText('ช่วงบท เช่น 6-10')
         self.history_range.setAccessibleName('ช่วงบทสำหรับประวัติใหม่')
@@ -949,6 +954,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.polish_history = PolishHistory(self.repo, self.assembler)
         self._history_workers = []
         self._history_pending = False
+        self._pending_export_snapshots = []
         self._startup_pending_export_ids = {
             profile.id for profile, _path in self._pending_export_profiles()
         }
@@ -1001,10 +1007,12 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         def complete(result):
             self._history_pending = False
             success(result)
+            QTimer.singleShot(0, self._drain_export_snapshot_queue)
         def failed(error):
             self._history_pending = False
             self.statusBar().showMessage(str(error), 8000)
             if failure: failure(error)
+            QTimer.singleShot(0, self._drain_export_snapshot_queue)
         worker.succeeded.connect(complete)
         worker.failed.connect(failed)
         def cleanup():
@@ -1038,6 +1046,66 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     count = sum(not item.is_dir() for item in archive.infolist())
             return paths, count
         self.run_history_job(operation, lambda result: self._history_clipboard(result[0], result[1], zipped))
+
+    def _history_step_for_profile(self, profile):
+        step_id = getattr(profile, 'polish_history_step_id', None)
+        return next((step for step in profile.workflow.steps if step.id == step_id), None)
+
+    def save_for_review(self):
+        workspace = self.workspaces.get(self.profile.id) if self.profile else None
+        if not self.profile or not workspace:
+            return
+        step = self._history_step_for_profile(self.profile)
+        if step is None:
+            self.statusBar().showMessage('เลือกขั้นตอนตรวจคำแปลใน Settings ก่อน', 6000)
+            return
+        if not workspace.editor.save_all(include_normalization=False):
+            self.statusBar().showMessage('บันทึกไฟล์ Editor ไม่สำเร็จ จึงสร้างประวัติไม่ได้', 6000)
+            return
+        span = workspace.history_range.text().strip()
+        from copy import deepcopy
+        profile_copy, step_copy = deepcopy(self.profile), deepcopy(step)
+        self.run_history_job(
+            lambda: self.polish_history.create(profile_copy, step_copy, span),
+            lambda snapshot: self.statusBar().showMessage(
+                f'บันทึกไว้รอตรวจสำเร็จ · {snapshot.manifest["file_count"]} ไฟล์', 7000),
+            lambda error: workspace.history_range.setFocus() if isinstance(error, RangeRequired) else None,
+        )
+
+    def snapshot_export_for_review(self, profile_id, chapter_range=None):
+        if self.history_busy():
+            self._pending_export_snapshots.append((profile_id, chapter_range))
+            return
+        from copy import deepcopy
+        profile = next((item for item in self.repo.list_profiles() if item.id == profile_id), None)
+        if profile is None:
+            profile = self.profile if self.profile and self.profile.id == profile_id else None
+        step = self._history_step_for_profile(profile) if profile else None
+        if profile is None or step is None:
+            message = 'Export สำเร็จ แต่บันทึกประวัติรอตรวจไม่สำเร็จ'
+            self.statusBar().showMessage(message, 8000)
+            return
+        profile_copy, step_copy = deepcopy(profile), deepcopy(step)
+        def operation():
+            return self.polish_history.create(profile_copy, step_copy, chapter_range, allow_unresolved=True)
+        def success(snapshot):
+            span = snapshot.manifest.get('chapter_range')
+            label = f'บท {span}' if span else 'รอระบุช่วงบท'
+            message = f'Export สำเร็จ · บันทึกประวัติรอตรวจ {label} · {snapshot.manifest["file_count"]} ไฟล์'
+            self.statusBar().showMessage(message, 9000)
+        def failure(_error):
+            message = 'Export สำเร็จ แต่บันทึกประวัติรอตรวจไม่สำเร็จ'
+            self.statusBar().showMessage(message, 9000)
+        self.run_history_job(operation, success, failure)
+
+    def _drain_export_snapshot_queue(self):
+        if self.history_busy():
+            if self._pending_export_snapshots:
+                QTimer.singleShot(100, self._drain_export_snapshot_queue)
+            return
+        if self._pending_export_snapshots:
+            profile_id, chapter_range = self._pending_export_snapshots.pop(0)
+            self.snapshot_export_for_review(profile_id, chapter_range)
 
     def save_settings_history_step(self, _index):
         if not self.profile: return
@@ -2472,6 +2540,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def _sync_stage_buttons(workspace):
         profile = workspace.owner.profile
         workspace.history_range.setVisible(bool(profile and profile.polish_history_step_id))
+        workspace.save_for_review_button.setVisible(bool(profile and profile.polish_history_step_id))
         for index, button in enumerate(workspace.stage_buttons):
             active = (
                 not workspace.vocabulary_mode

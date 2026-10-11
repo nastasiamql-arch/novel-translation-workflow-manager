@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 
 from .theme import editor_colors
 from .models import AppSettings
-from .recovery import commit_staged
+from .recovery import commit_staged, translator_chapter_range
 from .storage import data_root, write_json
 from .text_normalization import (normalize_novel_text, normalize_editor_text,
     cleans_editor_text, is_vocabulary, vocabulary_warnings, detect_newline,
@@ -109,7 +109,8 @@ class TxtExportTab(QWidget):
 
     def __init__(self, settings, status_callback=None, settings_callback=None, parent=None,
                  font_size=11.0, appearance="Dark", context_path_callback=None,
-                 context_saved_callback=None, notification_callback=None, export_service=None):
+                 context_saved_callback=None, notification_callback=None, export_service=None,
+                 export_success_callback=None):
         super().__init__(parent)
         self.setObjectName("txtExportPanel")
         self.instances.add(self)
@@ -120,6 +121,7 @@ class TxtExportTab(QWidget):
         self.context_path_callback = context_path_callback or (lambda: None)
         self.context_saved_callback = context_saved_callback or (lambda _path, _text: None)
         self.notification_callback = notification_callback or (lambda _message: None)
+        self.export_success_callback = export_success_callback or (lambda _chapter_range=None: None)
         self.editor = CodeEditor(font_size=font_size, appearance=appearance, parent=self)
         self.editor.clean_empty_lines = True
         self.editor.compact_pasted_empty_lines = True
@@ -491,6 +493,7 @@ class TxtExportTab(QWidget):
             self.context_saved_callback(None, "")
         self.status_callback(f"ส่งออก {target.name} แล้ว")
         self.notification_callback(f"ส่งออก {target.name} แล้ว")
+        self.export_success_callback(translator_chapter_range(text.encode('utf-8')))
         return True
 
     def _export_split(self):
@@ -522,6 +525,10 @@ class TxtExportTab(QWidget):
             self.context_saved_callback(None, "")
         self.status_callback(f"ส่งออก {len(chapters)} บท เป็น {len(chapters)} ไฟล์แล้ว")
         self.notification_callback(f"ส่งออก {len(chapters)} บท เป็น {len(chapters)} ไฟล์แล้ว")
+        self.export_success_callback(
+            f'{chapters[0][0]}-{chapters[-1][0]}' if chapters and chapters[0][0] != chapters[-1][0]
+            else str(chapters[0][0]) if chapters else None
+        )
         return True
 
     def reset_number(self):
@@ -824,7 +831,8 @@ class EditorTabs(QWidget):
 
     def __init__(self, parent=None, font_size=11.0, appearance="Dark",
                  settings=None, settings_callback=None, status_callback=None,
-                 context_path_callback=None, notification_callback=None, export_service=None):
+                 context_path_callback=None, notification_callback=None, export_service=None,
+                 export_success_callback=None):
         super().__init__(parent)
         self.instances.add(self)
         self._font_size = float(font_size)
@@ -852,6 +860,7 @@ class EditorTabs(QWidget):
             appearance=appearance, context_path_callback=context_path_callback,
             context_saved_callback=self.apply_external_update,
             notification_callback=notification_callback, parent=self, export_service=export_service,
+            export_success_callback=export_success_callback,
         )
         self.tabs.addTab(self.export_tab, TXT_EXPORT_TAB)
         self.destructive_paste_callback = None

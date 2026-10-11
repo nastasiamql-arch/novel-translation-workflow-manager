@@ -28,7 +28,7 @@ class PolishHistoryPage(QWidget):
         self.snapshots = []
         self._refresh_queued = False
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0)
-        subtitle = QLabel('เลือกช่วงบทเพื่อคัดลอกไฟล์กลับมาใช้งาน · ใช้ Context ที่บันทึกไว้ในเวลานั้น')
+        subtitle = QLabel('ไฟล์ตามที่ผูกไว้กับขั้นตอนตรวจคำแปล · เลือกคัดลอกหรือระบุช่วงบทภายหลัง')
         subtitle.setWordWrap(True); subtitle.setObjectName('mutedLabel'); layout.addWidget(subtitle)
         tools = QHBoxLayout()
         self.search = QLineEdit(); self.search.setPlaceholderText('ค้นหาเลขบทหรือช่วงบท…')
@@ -87,7 +87,8 @@ class PolishHistoryPage(QWidget):
             card = QFrame(); card.setObjectName('settingsCard')
             rows = QVBoxLayout(card); rows.setContentsMargins(16, 14, 16, 14)
             top = QHBoxLayout()
-            title = QLabel('บท ' + str(snapshot.manifest.get('chapter_range', 'ไม่ทราบช่วงบท')).replace('-', '–'))
+            span = snapshot.manifest.get('chapter_range')
+            title = QLabel(('บท ' + str(span).replace('-', '–')) if span else 'รอระบุช่วงบท')
             title.setObjectName('historyRangeTitle'); title.setWordWrap(True); top.addWidget(title, 1)
             copy = QPushButton('คัดลอก'); copy.setObjectName('polishHistoryCopy')
             copy.setEnabled(not snapshot.error)
@@ -99,7 +100,8 @@ class PolishHistoryPage(QWidget):
             top.addWidget(more); rows.addLayout(top)
             try: stamp = datetime.fromisoformat(snapshot.manifest['created_at']).astimezone().strftime('%d/%m/%Y · %H:%M:%S')
             except (KeyError, ValueError, TypeError): stamp = snapshot.path.name
-            detail = QLabel(f'{stamp} · {snapshot.manifest.get("file_count", 0) if not snapshot.error else "?"} ไฟล์'
+            review_status = snapshot.manifest.get('review_status', 'รอตรวจ')
+            detail = QLabel(f'{review_status} · {stamp} · {snapshot.manifest.get("file_count", 0) if not snapshot.error else "?"} ไฟล์'
                             f' · {snapshot.manifest.get("step_name", "")}')
             detail.setWordWrap(True); detail.setObjectName('mutedLabel'); rows.addWidget(detail)
             if snapshot.error:
@@ -118,6 +120,9 @@ class PolishHistoryPage(QWidget):
     def more_menu(self, snapshot, button):
         menu = QMenu(button)
         rename = menu.addAction('แก้ไขช่วงบท'); rename.setEnabled(not snapshot.error)
+        status = menu.addAction('ทำเครื่องหมายตรวจแล้ว' if snapshot.manifest.get('review_status', 'รอตรวจ') == 'รอตรวจ'
+                                else 'ตั้งเป็นรอตรวจ')
+        status.setEnabled(not snapshot.error)
         open_folder = menu.addAction('เปิดโฟลเดอร์')
         verify = menu.addAction('ตรวจสอบไฟล์อีกครั้ง')
         delete = menu.addAction('ลบประวัติ…')
@@ -125,8 +130,12 @@ class PolishHistoryPage(QWidget):
         if action == open_folder:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(snapshot.path)))
         elif action == verify: self.refresh()
+        elif action == status:
+            target = 'ตรวจแล้ว' if snapshot.manifest.get('review_status', 'รอตรวจ') == 'รอตรวจ' else 'รอตรวจ'
+            self.owner.run_history_job(lambda: self.owner.polish_history.set_review_status(self.profile, snapshot.path, target),
+                                       lambda _: self.refresh(), self.failed)
         elif action == rename:
-            value, accepted = QInputDialog.getText(self, 'แก้ไขช่วงบท', 'ช่วงบท เช่น 6-10', text=snapshot.manifest['chapter_range'])
+            value, accepted = QInputDialog.getText(self, 'ระบุช่วงบท', 'ช่วงบท เช่น 6-10', text=snapshot.manifest.get('chapter_range') or '')
             if accepted:
                 mime = QApplication.clipboard().mimeData()
                 urls = [u.toLocalFile() for u in mime.urls()] if mime else []

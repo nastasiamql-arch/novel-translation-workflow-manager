@@ -15,7 +15,7 @@ function Install-TestBuild([bool]$First, [string]$SetupPath) {
     if ($process.ExitCode -ne 0) { throw "Setup failed: $($process.ExitCode)" }
 }
 
-$previousVersion = '3.10.0'
+$previousVersion = '3.10.1'
 $previousName = "NovelWorkflow-Setup-$previousVersion.exe"
 gh release download "v$previousVersion" --repo nastasiamql-arch/novel-translation-workflow-manager --pattern $previousName --dir $taskRoot
 if ($LASTEXITCODE -ne 0) { throw 'Could not download previous published installer.' }
@@ -102,7 +102,7 @@ if ($metadata.Count -ne 1 -or $metadata[0].Name -ne "novelworkflow-$Version.dist
 if ((New-Object -ComObject WScript.Shell).CreateShortcut($shortcut).TargetPath -ne $shortcutBefore) { throw 'Shortcut target changed.' }
 $probe = Start-Process -FilePath $executable -ArgumentList @('--check-runtime', '--expected-version', $Version, '--history-profile', ('"' + $profilePath + '"')) -WindowStyle Hidden -PassThru -Wait
 if ($probe.ExitCode -ne 0) { throw 'Upgraded executable version/runtime verification failed.' }
-$migratedSnapshot = Join-Path $taskRoot 'Polish History/Polish-บท 6-10'
+$migratedSnapshot = Join-Path $taskRoot 'Polish History/Polish บท 6-10'
 if (-not (Test-Path -LiteralPath $migratedSnapshot) -or (Test-Path -LiteralPath $legacySnapshot)) { throw 'Legacy snapshot migration did not publish a single flat folder.' }
 foreach ($path in $historyFiles) {
     $relative = $path.Substring($legacySnapshot.Length + 1)

@@ -19,7 +19,7 @@ def legacy(service, profile, step, span='6-10'):
 def test_flat_thai_name_without_visible_ids(history):
     service, p, s = history; s.name = 'ตรวจคำแปล'
     snap = service.create(p, s, '6-10')
-    assert snap.path == service.root(p) / 'ตรวจคำแปล-บท 6-10'
+    assert snap.path == service.root(p) / 'ตรวจคำแปล บท 6-10'
     assert s.id not in snap.path.name and p.id not in snap.path.name
     assert len(snap.path.relative_to(service.root(p)).parts) == 1
 
@@ -29,12 +29,13 @@ def test_versions_and_same_second_collisions_never_overwrite(history):
     first = service.create(p, s, '6-10')
     assert service.create(p, s, '6-10').path == first.path
     stamp = first.manifest['created_at']
+    attached_file = Path(first.manifest['files'][0]['original_path'])
     from datetime import datetime
     with patch('novel_workflow.polish_history.datetime') as clock:
         clock.now.return_value = datetime.fromisoformat(stamp)
         clock.fromisoformat = datetime.fromisoformat
         for value in (b'second', b'third'):
-            Path(p.context_path).write_bytes(value)
+            attached_file.write_bytes(value)
             service.create(p, s, '6-10')
     paths = [x.path for x in service.list(p)]
     assert len(paths) == 3 and first.path in paths
@@ -46,16 +47,29 @@ def test_verified_legacy_migrates_byte_for_byte_and_copies(history):
     service, p, s = history; s.name = 'ตรวจคำแปล'
     old = legacy(service, p, s)
     before = {str(x.relative_to(old)): x.read_bytes() for x in old.rglob('*') if x.is_file()}
-    assert len(service.clipboard_paths(p, old, zipped=False)) == 5
+    assert len(service.clipboard_paths(p, old, zipped=False)) == 4
     items = service.list(p)
     assert len(items) == 1 and not items[0].error
     new = items[0].path
-    assert new.name == 'ตรวจคำแปล-บท 6-10' and new.parent == service.root(p)
+    assert new.name == 'ตรวจคำแปล บท 6-10' and new.parent == service.root(p)
     assert not old.exists()
     assert before == {str(x.relative_to(new)): x.read_bytes() for x in new.rglob('*') if x.is_file()}
-    assert len(service.clipboard_paths(p, new, zipped=False)) == 5
+    assert len(service.clipboard_paths(p, new, zipped=False)) == 4
     assert service.clipboard_paths(p, new, zipped=True)[0].is_file()
     assert service.list(p)[0].path == new
+
+
+def test_3101_hyphenated_folder_migrates_to_space_name(history):
+    service, p, s = history; s.name = 'ตรวจคำแปล'
+    snapshot = service.create(p, s, '6-10')
+    legacy_path = service.root(p) / 'ตรวจคำแปล-บท 6-10'
+    snapshot.path.rename(legacy_path)
+    hashes = [entry['sha256'] for entry in snapshot.manifest['files']]
+    migrated = service.list(p)[0]
+    assert migrated.path.name == 'ตรวจคำแปล บท 6-10'
+    assert not migrated.error and not legacy_path.exists()
+    assert [entry['sha256'] for entry in migrated.manifest['files']] == hashes
+    assert len(service.clipboard_paths(p, migrated.path, zipped=False)) == 4
 
 
 def test_clipboard_defers_migration_and_range_rename(history):
@@ -106,7 +120,7 @@ def test_range_rename_updates_directory_and_only_range_metadata(history):
     old = service.create(p, s, '6-10')
     payload = [x.read_bytes() for x in service.validate(p, old.path)]
     new = service.rename(p, old.path, '11-15')
-    assert new.name == 'ตรวจคำแปล-บท 11-15' and not old.path.exists()
+    assert new.name == 'ตรวจคำแปล บท 11-15' and not old.path.exists()
     item = service.list(p)[0]
     assert item.path == new and item.manifest['chapter_range'] == '11-15'
     assert payload == [x.read_bytes() for x in service.validate(p, new)]
@@ -158,7 +172,7 @@ def test_restart_finishes_interrupted_range_directory_rename(history):
     manifest = dict(snap.manifest); manifest['chapter_range'] = '11-15'
     (snap.path / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
     item = service.list(p)[0]
-    assert not item.error and item.path.name == 'Custom polish-บท 11-15'
+    assert not item.error and item.path.name == 'Custom polish บท 11-15'
     assert not snap.path.exists() and service.validate(p, item.path)
 
 

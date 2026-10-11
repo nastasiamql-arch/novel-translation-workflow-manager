@@ -2,6 +2,18 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.11.0 - 2026-10-12
+
+- Add `บันทึกไว้รอตรวจ` for the configured review step without changing workflow
+  selection, clipboard, TXT exports or verified counters.
+- Automatically save a pending snapshot after successful TXT export. Preserve
+  unknown export ranges as editable `รอระบุช่วงบท` entries instead of guessing.
+- Snapshot only files attached to the configured step, including Disabled,
+  folder, dynamic and external attachments. Context is included only when the
+  user explicitly attaches it to that step.
+- Use readable `<ชื่อขั้นตอน> บท 6-10` folder names, retain verified older
+  layouts, and add pending/reviewed status management to the existing History page.
+
 ## 3.10.1 - 2026-10-12
 
 - Store Polish History directly under readable `<step name>-บท <range>` folders;
