@@ -492,6 +492,22 @@ class PolishHistory:
 
     def delete(self, profile, path, clipboard_paths=()):
         path = self._snapshot_path(profile, path)
+        # Legacy/staging paths encode ownership. Flat folders must identify
+        # their owner in metadata, even when payload corruption permits cleanup.
+        parts = path.relative_to(self.root(profile)).parts
+        if len(parts) == 2:
+            if not path.parent.name.endswith('-' + profile.id):
+                raise ValueError('Snapshot belongs to another novel')
+        elif path.name.startswith('.staging-'):
+            if not path.name.endswith('-' + profile.id):
+                raise ValueError('Snapshot belongs to another novel')
+        else:
+            try:
+                manifest = _read_manifest(_check_path(path / 'manifest.json'))
+                if not isinstance(manifest, dict) or manifest.get('profile_id') != profile.id:
+                    raise ValueError('Snapshot belongs to another novel')
+            except (OSError, ValueError) as exc:
+                raise ValueError('ยืนยันเจ้าของประวัติไม่ได้ · คงไฟล์ไว้เพื่อให้ตรวจสอบ') from exc
         if any(Path(p).absolute().is_relative_to(path) for p in clipboard_paths):
             raise ValueError('Clipboard ยังใช้ไฟล์ชุดนี้อยู่ กรุณาคัดลอกชุดอื่นก่อนลบ')
         # Reject unsafe descendants even in damaged/staging snapshots.

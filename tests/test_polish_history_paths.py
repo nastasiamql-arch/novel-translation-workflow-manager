@@ -170,3 +170,12 @@ def test_clipboard_blocks_flat_folder_rename_without_metadata_changes(history):
         service.rename(p, snap.path, '11-15', clipboard_paths=urls)
     assert (snap.path / 'manifest.json').read_bytes() == raw
     assert all(x.is_file() for x in urls)
+
+def test_delete_flat_history_requires_known_profile_ownership(history):
+    service, p, s = history; snap = service.create(p, s, '6-10')
+    other = NovelProfile(main_folder=p.main_folder)
+    with pytest.raises(ValueError): service.delete(other, snap.path)
+    assert snap.path.is_dir()
+    (snap.path / 'manifest.json').write_bytes(b'{ damaged metadata')
+    with pytest.raises(ValueError): service.delete(p, snap.path)
+    assert snap.path.is_dir()
