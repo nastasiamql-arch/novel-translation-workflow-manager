@@ -2,6 +2,25 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.10.0 - 2026-10-12
+
+- Add per-novel Polish History with automatic stage snapshots before the existing
+  named workflow button copies files. Enable one stable Step ID in Settings;
+  only unambiguous legacy polish names are detected automatically.
+- Preserve every attached file (including Disabled, folders, external and dynamic
+  references) and the profile's current Context as exact bytes with SHA-256 checks.
+  Stage and verify before publishing under the novel's `Polish History` folder.
+- Show chapter-range history in a full in-app page with one-click Copy Recovery,
+  search, refresh, range rename, folder access, verified file counts and confirmed
+  deletion. Preserve old snapshots across Context changes and application restart.
+- Reuse unchanged snapshots only when step, chapter range, attachment metadata
+  and all file hashes match. Keep incomplete/corrupt history visible for inspection;
+  never prune history automatically or modify Context/export counters on recovery.
+- Support persistent Windows file clipboard and existing ZIP delivery settings.
+  Preserve editor, autosave, recovery, workflow and update behavior.
+- Extend native clipboard, DPI/theme geometry and Windows installer upgrade tests,
+  including byte preservation and snapshot validation by the installed runtime.
+
 ## 3.6.9 - 2026-10-09
 
 - Compact only zero-character lines in every TXT/Markdown opened in the

@@ -162,6 +162,7 @@ class NovelProfile:
     main_folder: str = ""
     launch_targets: list[LaunchTarget] = field(default_factory=list)
     context_path: str | None = None
+    polish_history_step_id: str | None = None
     status: str = "translating"
     translation_goal_target: int | None = None
     translation_goal_baseline: int | None = None
@@ -182,6 +183,7 @@ class NovelProfile:
     txt_export_settings: TxtExportSettings = field(default_factory=TxtExportSettings)
     @classmethod
     def from_dict(cls,d):
+        from .polish_history import default_history_step
         state=d.get("chapter_state",{})
         return cls(
             id=d.get("id",uid()),
@@ -200,6 +202,8 @@ class NovelProfile:
             last_browse_directory=d.get("last_browse_directory"),
             launch_targets=[LaunchTarget.from_dict(x) for x in d.get("launch_targets",[])],
             context_path=d.get("context_path"),
+            polish_history_step_id=(d.get("polish_history_step_id") if "polish_history_step_id" in d
+                                   else default_history_step(Workflow.from_dict(d.get("workflow", {})))),
             status=str(d.get("status","translating")),
             translation_goal_target=d.get("translation_goal_target"),
             translation_goal_baseline=d.get("translation_goal_baseline"),

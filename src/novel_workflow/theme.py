@@ -130,6 +130,12 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QWidget:disabled {{ color: {c['disabled_text']}; }}
     QLabel:disabled, QAbstractButton:disabled, QTabBar::tab:disabled {{ color: {c['disabled_text']}; }}
     QMainWindow, QDialog, QWidget#appShell, QWidget#novelLibraryPage {{ background: {c['app']}; }}
+    QWidget#polishHistoryCards {{ background: {c['app']}; }}
+    QLabel#historyRangeTitle {{ color: {c['text']}; font-size: 13pt; font-weight: 600; }}
+    QPushButton#polishHistoryCopy {{ background: {c['primary']}; color: {c['primary_text']}; border: 0; border-radius: 8px; padding: 7px 16px; font-weight: 600; }}
+    QPushButton#polishHistoryCopy:hover {{ background: {c['primary_hover']}; }}
+    QPushButton#polishHistoryCopy[keyboardFocus="true"] {{ border: 2px solid {c['focus']}; }}
+    QPushButton#polishHistoryCopy:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; }}
     QLabel#pageTitle {{ color: {c['text']}; font-size: 16pt; font-weight: 600; }}
     QToolBar#mainToolbar {{ background: {c['sidebar']}; border: 0; border-bottom: 1px solid {c['border']}; spacing: 6px; padding: 3px 10px; margin: 0; min-height: 44px; }}
     QToolBar#mainToolbar QToolButton {{ color: {c['text']}; min-height: 36px; padding: 6px 12px; border: 0; border-radius: 0; }}

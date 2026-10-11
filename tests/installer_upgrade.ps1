@@ -15,7 +15,7 @@ function Install-TestBuild([bool]$First, [string]$SetupPath) {
     if ($process.ExitCode -ne 0) { throw "Setup failed: $($process.ExitCode)" }
 }
 
-$previousVersion = '3.6.8'
+$previousVersion = '3.9.0'
 $previousName = "NovelWorkflow-Setup-$previousVersion.exe"
 gh release download "v$previousVersion" --repo nastasiamql-arch/novel-translation-workflow-manager --pattern $previousName --dir $taskRoot
 if ($LASTEXITCODE -ne 0) { throw 'Could not download previous published installer.' }
@@ -69,7 +69,11 @@ $recoveryDir = Join-Path $dataDir 'recovery/editor'
 New-Item -ItemType Directory -Path $recoveryDir -Force | Out-Null
 $recoveryPath = Join-Path $recoveryDir "$profileId.json"
 Set-Content -LiteralPath $recoveryPath -Value '{"text":"unsaved ไทย 中文"}' -Encoding UTF8
-$preservedFiles = @($profilePath, $settingsPath, $contextPath, $novelPath, $recoveryPath)
+$fixturePython = Join-Path $PSScriptRoot '../.venv/Scripts/python.exe'
+& $fixturePython (Join-Path $PSScriptRoot 'upgrade_history_fixture.py') $profilePath $taskRoot
+if ($LASTEXITCODE -ne 0) { throw 'Could not create a real Polish History upgrade fixture.' }
+$historyFiles = @(Get-ChildItem -LiteralPath (Join-Path $taskRoot 'Polish History') -File -Recurse | ForEach-Object { $_.FullName })
+$preservedFiles = @($profilePath, $settingsPath, $contextPath, $novelPath, $recoveryPath) + $historyFiles
 $preservedHashes = @{}
 foreach ($path in $preservedFiles) { $preservedHashes[$path] = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
 $unrelated = Join-Path $installDir 'user-note.txt'
@@ -95,6 +99,6 @@ foreach ($folder in $oldMetadata) { if (Test-Path -LiteralPath $folder) { throw 
 $metadata = @(Get-ChildItem -LiteralPath (Join-Path $installDir '_internal') -Directory -Filter 'novelworkflow-*.dist-info')
 if ($metadata.Count -ne 1 -or $metadata[0].Name -ne "novelworkflow-$Version.dist-info") { throw 'Incorrect installed metadata.' }
 if ((New-Object -ComObject WScript.Shell).CreateShortcut($shortcut).TargetPath -ne $shortcutBefore) { throw 'Shortcut target changed.' }
-$probe = Start-Process -FilePath $executable -ArgumentList @('--check-runtime', '--expected-version', $Version) -WindowStyle Hidden -PassThru -Wait
+$probe = Start-Process -FilePath $executable -ArgumentList @('--check-runtime', '--expected-version', $Version, '--history-profile', ('"' + $profilePath + '"')) -WindowStyle Hidden -PassThru -Wait
 if ($probe.ExitCode -ne 0) { throw 'Upgraded executable version/runtime verification failed.' }
 Write-Output 'Silent installer upgrade PASS: stale metadata, executable, previous directory, shortcut and user data.'

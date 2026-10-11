@@ -37,6 +37,8 @@ from . import __version__
 from .update_bootstrap import launch_update, read_update_result
 from .updater import UpdateError, UpdateInfo, check_for_update, download_update
 from .file_import import import_files_into_directory
+from .polish_history import PolishHistory, RangeRequired
+from .polish_history_page import PolishHistoryPage, HistoryWorker
 
 
 PROFILE_STATUSES = (
@@ -296,6 +298,17 @@ class WorkspacePage(QWidget):
         )
         step_header.addWidget(self.copy_step_button)
         sidebar_layout.addLayout(step_header)
+        history_row = QHBoxLayout()
+        self.history_button = QPushButton('ประวัติ')
+        self.history_button.clicked.connect(lambda: self.owner.open_polish_history())
+        history_row.addWidget(self.history_button)
+        self.history_range = QLineEdit()
+        self.history_range.setPlaceholderText('ช่วงบท เช่น 6-10')
+        self.history_range.setAccessibleName('ช่วงบทสำหรับประวัติใหม่')
+        self.history_range.setToolTip('กรอกเมื่อไม่สามารถยืนยันช่วงบทจากไฟล์เนื้อหาได้ · ไม่อ่านช่วงบทจาก Context')
+        self.history_range.setMinimumWidth(0)
+        history_row.addWidget(self.history_range, 1)
+        sidebar_layout.addLayout(history_row)
         sidebar_layout.addWidget(self.vocabulary_button)
         sidebar_layout.addWidget(self.steps, 2)
         files_heading = QLabel("ไฟล์ของขั้นตอนปัจจุบัน")
@@ -933,6 +946,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._startup_pending_export_ids = set()
         self._close_export_reminder_accepted = False
         super().__init__(repo)
+        self.polish_history = PolishHistory(self.repo, self.assembler)
+        self._history_workers = []
+        self._history_pending = False
         self._startup_pending_export_ids = {
             profile.id for profile, _path in self._pending_export_profiles()
         }
@@ -970,6 +986,63 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
     def show_submit_toast(self, message):
         self.submit_toast.show_message(message)
+
+    def history_busy(self):
+        return self._history_pending or any(w.isRunning() for w in self._history_workers)
+
+    def run_history_job(self, operation, success, failure=None):
+        if self._history_pending:
+            self.statusBar().showMessage('กำลังจัดการประวัติ กรุณารอสักครู่', 3000)
+            return
+        self._history_pending = True
+        self.statusBar().showMessage('กำลังตรวจสอบและบันทึกไฟล์ประวัติ…')
+        worker = HistoryWorker(operation, self)
+        self._history_workers.append(worker)
+        def complete(result):
+            self._history_pending = False
+            success(result)
+        def failed(error):
+            self._history_pending = False
+            self.statusBar().showMessage(str(error), 8000)
+            if failure: failure(error)
+        worker.succeeded.connect(complete)
+        worker.failed.connect(failed)
+        def cleanup():
+            self._history_workers.remove(worker)
+            worker.deleteLater()
+        worker.finished.connect(cleanup)
+        worker.start()
+
+    def open_polish_history(self):
+        if not self.profile: return
+        key = 'polish-history:' + self.profile.id
+        self._show_utility_page(key, 'ประวัติไฟล์ขั้นตอนเกลา', lambda: PolishHistoryPage(self, self.profile))
+        self._utility_pages[key].profile = self.profile
+        self._utility_pages[key].refresh()
+
+    def _history_clipboard(self, paths, count, zipped):
+        from PySide6.QtCore import QMimeData, QUrl
+        mime = QMimeData(); mime.setUrls([QUrl.fromLocalFile(str(p)) for p in paths])
+        QApplication.clipboard().setMimeData(mime)
+        message = f'คัดลอก ZIP 1 ไฟล์ · ภายใน {count} ไฟล์' if zipped else f'คัดลอก {count} ไฟล์แล้ว'
+        self.statusBar().showMessage(message + ' · วางด้วย Ctrl+V', 7000)
+
+    def copy_history_snapshot(self, profile, snapshot):
+        zipped = self.settings.copy_files_as_zip
+        def operation():
+            paths = self.polish_history.clipboard_paths(profile, snapshot.path, zipped=zipped)
+            count = len(paths)
+            if zipped:
+                import zipfile
+                with zipfile.ZipFile(paths[0]) as archive:
+                    count = sum(not item.is_dir() for item in archive.infolist())
+            return paths, count
+        self.run_history_job(operation, lambda result: self._history_clipboard(result[0], result[1], zipped))
+
+    def save_settings_history_step(self, _index):
+        if not self.profile: return
+        self.profile.polish_history_step_id = self.settings_history_step.currentData()
+        self.save()
 
     def _show_utility_page(self, key, title, factory):
         if self._settings_page_state and key != "settings":
@@ -1098,6 +1171,15 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if not hasattr(self, "settings_launch_targets") or not self.profile:
             return
         self.settings_main_folder.setText(self.profile.main_folder)
+        if hasattr(self, 'settings_history_step'):
+            self.settings_history_step.blockSignals(True)
+            self.settings_history_step.clear()
+            self.settings_history_step.addItem('ปิดการบันทึกประวัติ', None)
+            for step in self.profile.workflow.steps:
+                self.settings_history_step.addItem(step.name, step.id)
+            current = self.settings_history_step.findData(self.profile.polish_history_step_id)
+            self.settings_history_step.setCurrentIndex(max(0, current))
+            self.settings_history_step.blockSignals(False)
         context = Path(self.profile.context_path).expanduser() if self.profile.context_path else None
         self.settings_context_hint.setText(
             f"Context: {context.name}" if context and context.is_file()
@@ -2388,6 +2470,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
     @staticmethod
     def _sync_stage_buttons(workspace):
+        profile = workspace.owner.profile
+        workspace.history_range.setVisible(bool(profile and profile.polish_history_step_id))
         for index, button in enumerate(workspace.stage_buttons):
             active = (
                 not workspace.vocabulary_mode
@@ -2548,6 +2632,51 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         workspace = self.workspaces.get(self.profile.id) if self.profile else None
         if workspace and not workspace.editor.save_all(include_normalization=False):
             self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงคัดลอกไฟล์ไม่ได้", 5000)
+            return
+        selected = selected_steps or ([self.step()] if self.step() else [])
+        protected = next((s for s in selected if self.profile and s.id == self.profile.polish_history_step_id), None)
+        if workspace and protected:
+            from copy import deepcopy
+            profile, step = deepcopy(self.profile), deepcopy(protected)
+            frozen = deepcopy(selected)
+            span = workspace.history_range.text().strip()
+            zipped = self.settings.copy_files_as_zip
+            def operation():
+                snapshot = self.polish_history.create(profile, step, span)
+                paths = self.polish_history.clipboard_paths(profile, snapshot.path, zipped=zipped)
+                count = snapshot.manifest['file_count']
+                if selected_steps and len(selected_steps) > 1 and zipped:
+                    # Keep the existing multi-stage ZIP layout, using frozen polish files.
+                    from .workflow_archive import create_workflow_archive
+                    for s in frozen:
+                        if s.id == step.id:
+                            s.files = [StepFile(reference_type='external_file', path=str(p), order=i)
+                                       for i, p in enumerate(self.polish_history.validate(profile, snapshot.path))]
+                    paths = [create_workflow_archive(self.repo, self.assembler, profile, frozen)]
+                    import zipfile
+                    with zipfile.ZipFile(paths[0]) as archive:
+                        count = sum(not item.is_dir() for item in archive.infolist())
+                return snapshot, paths, count
+            def copied(result):
+                snapshot, paths, count = result
+                self._history_clipboard(paths, count, zipped)
+                live = self.workspaces.get(profile.id) is workspace
+                if live and workspace.history_range.text().strip() == span:
+                    workspace.history_range.clear()
+                if (live and self.profile and self.profile.id == profile.id and advance and not selected_steps
+                        and not workspace.vocabulary_mode and 0 <= workspace.step_index < len(self.profile.workflow.steps)
+                        and self.profile.workflow.steps[workspace.step_index].id == step.id):
+                    from .services import WorkflowService
+                    self.si = WorkflowService.next_index(self.si, len(self.profile.workflow.steps))
+                    workspace.step_index = self.si
+                    self.steps.blockSignals(True); self.steps.setCurrentRow(self.si); self.steps.blockSignals(False)
+                    self.refresh_files(); self._sync_stage_buttons(workspace)
+                self._schedule_workspace_session_save()
+            def failed(error):
+                if isinstance(error, RangeRequired) and self.workspaces.get(profile.id) is workspace:
+                    workspace.history_range.setFocus()
+                    workspace.history_range.setPlaceholderText('กรอกช่วงบท เช่น 6-10')
+            self.run_history_job(operation, copied, failed)
             return
         super().copy_step(advance=advance, selected_steps=selected_steps)
         if advance and self.profile and workspace and not workspace.vocabulary_mode and self.si >= 0:
@@ -3256,6 +3385,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if timer is not None:
             timer.stop()
         workers = [self._update_check_worker, self._update_download_worker]
+        workers.extend(self._history_workers)
         workers.extend(getattr(page, "worker", None)
                        for key, page in self._utility_pages.items()
                        if key.startswith("downloader:"))
@@ -3265,7 +3395,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 if not getattr(worker, "_close_resume_connected", False):
                     worker._close_resume_connected = True
                     worker.finished.connect(lambda: QTimer.singleShot(0, self.close))
-                self.statusBar().showMessage("กำลังยกเลิกงานเบื้องหลังก่อนปิดโปรแกรม…")
+                self.statusBar().showMessage('กำลังบันทึกประวัติให้เสร็จก่อนปิดโปรแกรม…' if isinstance(worker, HistoryWorker)
+                                            else 'กำลังยกเลิกงานเบื้องหลังก่อนปิดโปรแกรม…')
                 event.ignore()
                 return
         for workspace in self.workspaces.values():

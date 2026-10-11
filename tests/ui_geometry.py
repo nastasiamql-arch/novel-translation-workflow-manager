@@ -2,6 +2,7 @@
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 from datetime import date
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
@@ -119,6 +120,31 @@ def main():
             if os.environ.get("PALANTIR_UI_CAPTURE"):
                 Path("build").mkdir(exist_ok=True)
                 win.grab().save(f"build/ui-{key}.png")
+        win.navigate('workspace')
+        p = win.profile
+        p.main_folder = str(root)
+        p.polish_history_step_id = p.workflow.steps[1].id
+        payload = repo.profile_dir(p.id) / 'history.txt'; payload.write_bytes(b'lossless\t\n\n')
+        p.workflow.steps[1].files = [StepFile(path='history.txt', enabled=False)]
+        win.polish_history.create(p, p.workflow.steps[1], '100000-100123')
+        win.open_polish_history()
+        deadline = time.monotonic() + 15
+        while win.history_busy() and time.monotonic() < deadline:
+            app.processEvents(); time.sleep(.01)
+        assert not win.history_busy()
+        history = win.utility_stack.currentWidget()
+        for appearance in ('Light', 'Dark'):
+            win.settings.appearance = appearance; win.apply_theme()
+            for dimensions in ((900,600), (1440,860)):
+                win.resize(*dimensions); app.processEvents(); QTest.qWait(30)
+                assert_layout(win.utility_page)
+                assert_layout(history)
+                for child in history.cards.findChildren(QWidget):
+                    if child.isVisible() and child.layout(): assert_layout(child)
+                if os.environ.get('PALANTIR_UI_CAPTURE'):
+                    win.grab().save(f'build/history-{appearance}-{dimensions[0]}.png')
+        win.utility_back.click()
+        assert win.workspace_stack.currentWidget() is ws
         win.close(); app.processEvents()
     print('DPI geometry passed',os.environ.get('QT_SCALE_FACTOR','1.0'))
     return 0

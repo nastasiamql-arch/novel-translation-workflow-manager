@@ -3,6 +3,7 @@ import ctypes
 from ctypes import wintypes
 from pathlib import Path
 import tempfile
+import time
 import zipfile
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QMimeData, QUrl
@@ -11,6 +12,7 @@ from novel_workflow.services import AssemblyService
 from novel_workflow.storage import ProjectRepository
 from novel_workflow.workflow_archive import create_workflow_archive
 from novel_workflow.workspace_editor import EditorTabs
+from novel_workflow.polish_history import PolishHistory
 
 
 def main():
@@ -19,6 +21,13 @@ def main():
     shell32 = ctypes.WinDLL('shell32', use_last_error=True)
     user32.OpenClipboard.argtypes = [wintypes.HWND]
     user32.OpenClipboard.restype = wintypes.BOOL
+    def open_clipboard():
+        # Explorer/clipboard managers can briefly hold the system-wide lock.
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            if user32.OpenClipboard(None): return True
+            app.processEvents(); time.sleep(.01)
+        return False
     user32.GetClipboardData.argtypes = [wintypes.UINT]
     user32.GetClipboardData.restype = wintypes.HANDLE
     shell32.DragQueryFileW.argtypes = [wintypes.HANDLE, wintypes.UINT, wintypes.LPWSTR, wintypes.UINT]
@@ -40,7 +49,7 @@ def main():
             data.setUrls([QUrl.fromLocalFile(str(path))])
             app.clipboard().setMimeData(data)
             app.processEvents()
-            assert user32.OpenClipboard(None)
+            assert open_clipboard()
             try:
                 handle = user32.GetClipboardData(15)  # CF_HDROP consumed by Explorer.
                 assert handle
@@ -53,6 +62,29 @@ def main():
                 user32.CloseClipboard()
         with zipfile.ZipFile(archive) as content:
             assert content.read(content.namelist()[0]) == source.read_bytes()
+        profile.main_folder = directory
+        profile.context_path = str(source)
+        binary = source.parent / 'Disabled.bin'; binary.write_bytes(bytes(range(256)))
+        step.files.append(StepFile(path='source/Disabled.bin', enabled=False))
+        profile.workflow.steps = [step]
+        history = PolishHistory(repo, AssemblyService(repo))
+        snapshot = history.create(profile, step, '6-10')
+        assert snapshot.manifest['file_count'] == 2
+        for zipped in (False, True):
+            paths = history.clipboard_paths(profile, snapshot.path, zipped=zipped)
+            data = QMimeData(); data.setUrls([QUrl.fromLocalFile(str(p)) for p in paths])
+            app.clipboard().setMimeData(data); app.processEvents()
+            assert open_clipboard()
+            try:
+                handle = user32.GetClipboardData(15)
+                assert handle and shell32.DragQueryFileW(handle, 0xFFFFFFFF, None, 0) == len(paths)
+                for index, path in enumerate(paths):
+                    length = shell32.DragQueryFileW(handle, index, None, 0)
+                    buffer = ctypes.create_unicode_buffer(length + 1)
+                    shell32.DragQueryFileW(handle, index, buffer, length + 1)
+                    assert Path(buffer.value).resolve() == path.resolve()
+            finally: user32.CloseClipboard()
+        print('Polish History CF_HDROP PASS: verified snapshots and persistent ZIP delivery.')
         vocabulary = '康斯坦丁\tคอนสแตนติน\tชาย\tชื่อเรียกคอนสแตนติน ฟอน นอยรัทในวงประชุมผู้นำนาซี'
         vocabulary += '\n李秀\tซิ่ว\t\t\n\t\t\t'
         glossary = Path(directory) / 'glossary.txt'
@@ -63,7 +95,7 @@ def main():
         app.clipboard().setMimeData(data); app.processEvents()
         assert app.clipboard().text() == vocabulary  # Evidence at clipboard input.
         editor.paste(); editor.selectAll(); editor.copy(); app.processEvents()
-        assert user32.OpenClipboard(None)
+        assert open_clipboard()
         try:
             handle = user32.GetClipboardData(13)  # CF_UNICODETEXT read by other apps.
             pointer = kernel32.GlobalLock(handle)

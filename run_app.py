@@ -50,6 +50,19 @@ def _check_packaged_qt_runtime():
             expected = sys.argv[sys.argv.index("--expected-version") + 1]
             if __version__ != expected:
                 raise RuntimeError(f"Expected v{expected}, running v{__version__}")
+        if '--history-profile' in sys.argv:
+            # Optional, read-only installed-runtime probe used by upgrade CI.
+            import json
+            from novel_workflow.models import NovelProfile
+            from novel_workflow.storage import ProjectRepository
+            from novel_workflow.services import AssemblyService
+            from novel_workflow.polish_history import PolishHistory
+            path = Path(sys.argv[sys.argv.index('--history-profile') + 1])
+            profile = NovelProfile.from_dict(json.loads(path.read_text(encoding='utf-8-sig')))
+            repo = ProjectRepository(path.parent.parent.parent)
+            history = PolishHistory(repo, AssemblyService(repo)).list(profile)
+            if not history or any(snapshot.error for snapshot in history):
+                raise RuntimeError('Installed runtime cannot verify preserved Polish History')
     except Exception as exc:
         if sys.stderr is not None:
             sys.stderr.write(f"Packaged Qt runtime check failed: {exc}\n")
