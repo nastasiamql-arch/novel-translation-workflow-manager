@@ -548,6 +548,7 @@ class CodeEditor(QPlainTextEdit):
         super().__init__(parent)
         self.clean_empty_lines = False
         self.compact_pasted_empty_lines = False
+        self.destructive_paste_callback = None
         self.appearance = appearance
         self.colors = editor_colors(appearance)
         self.setObjectName("codeEditor")
@@ -588,10 +589,22 @@ class CodeEditor(QPlainTextEdit):
 
     def insertFromMimeData(self, source):
         if source.hasText():
+            cursor = self.textCursor()
+            selected = cursor.selectionEnd() - cursor.selectionStart()
+            document_size = max(0, self.document().characterCount() - 1)
+            callback = self.destructive_paste_callback
+            if (selected and document_size and selected >= document_size * 0.8
+                    and callable(callback) and not callback(self)):
+                return
+            if selected and callable(callback):
+                start, end = cursor.selectionStart(), cursor.selectionEnd()
+                cursor = QTextCursor(self.document())
+                cursor.setPosition(min(start, self.document().characterCount() - 1))
+                cursor.setPosition(min(end, self.document().characterCount() - 1), QTextCursor.KeepAnchor)
+                self.setTextCursor(cursor)
             text = source.text()
             if self.compact_pasted_empty_lines:
                 text = self.normalized_text(text)
-            cursor = self.textCursor()
             if self.compact_pasted_empty_lines and text and text != source.text():
                 # Preserve supplied boundary separators next to existing text.
                 before = QTextCursor(self.document()); before.setPosition(cursor.selectionStart())
@@ -602,6 +615,11 @@ class CodeEditor(QPlainTextEdit):
                     text += '\n'
             cursor.beginEditBlock()
             cursor.insertText(text)
+            if (self.property("autoNewlineOnPaste") and text
+                    and not text.endswith(('\n', '\r', '\u2028', '\u2029', '\u0085'))
+                    and cursor.position() == self.document().characterCount() - 1):
+                cursor.insertText('\n')
+                self.setProperty("autoNewlineAtEnd", True)
             cursor.endEditBlock()
             self.setTextCursor(cursor)
         else:
@@ -617,6 +635,9 @@ class CodeEditor(QPlainTextEdit):
         old = self.toPlainText()
         path = self.property('documentPath')
         new = normalize_editor_text(Path(path), old) if path else normalize_novel_text(old)
+        if (self.property("autoNewlineAtEnd") and old.endswith("\n")
+                and not new.endswith("\n")):
+            new += "\n"
         if new == old:
             return
         original_cursor = self.textCursor()
@@ -833,6 +854,7 @@ class EditorTabs(QWidget):
             notification_callback=notification_callback, parent=self, export_service=export_service,
         )
         self.tabs.addTab(self.export_tab, TXT_EXPORT_TAB)
+        self.destructive_paste_callback = None
         self.tabs.tabBar().setTabButton(0, self.tabs.tabBar().ButtonPosition.LeftSide, None)
         self.tabs.tabBar().setTabButton(0, self.tabs.tabBar().ButtonPosition.RightSide, None)
         self.tabs.tabBar().setTabData(0, "txt-export")
@@ -960,6 +982,7 @@ class EditorTabs(QWidget):
         self._update_status(self.tabs.currentIndex())
 
     def _on_text_changed(self, editor):
+        editor.setProperty("exportDigestMatches", False)
         editor.setProperty('normalizationPending', False)
         self._set_dirty(editor, True, "กำลังรอบันทึกอัตโนมัติ…")
         timer = getattr(editor, "autosave_timer", None)
@@ -1021,6 +1044,8 @@ class EditorTabs(QWidget):
             return None
 
         editor = CodeEditor(font_size=self._font_size, appearance=self.appearance)
+        editor.destructive_paste_callback = self.destructive_paste_callback
+        editor.setProperty("autoNewlineOnPaste", path.suffix.casefold() in {".txt", ".md", ".markdown"})
         editor.vocabulary_mode = is_vocabulary(path, text)
         editor.clean_empty_lines = cleans_editor_text(path)
         editor.compact_pasted_empty_lines = cleans_editor_text(path)

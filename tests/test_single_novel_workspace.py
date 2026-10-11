@@ -68,6 +68,32 @@ def test_failed_save_keeps_current_workspace_and_unsaved_data(tmp_path, monkeypa
     assert workspace.editor.export_tab.editor.toPlainText() == 'unsaved ไทย'
 
 
+def test_profile_switch_export_reminder_cancel_and_later_preserve_pending_state(tmp_path):
+    repo, first, _ = setup_profile(tmp_path)
+    second = NovelProfile(name='Second'); repo.save_profile(second)
+    translator = repo.profile_dir(first.id) / 'source' / 'NovelTranslator.txt'
+    translator.parent.mkdir(parents=True, exist_ok=True)
+    translator.write_text('งานแปลเดิม', encoding='utf-8')
+    window = MainWindow(repo); select(window, first)
+    window._mark_export_pending(first.id, translator)
+    choices = iter(('cancel', 'later'))
+    window._export_reminder_choice = lambda _title, _details: next(choices)
+
+    select(window, second)
+    assert window.profile.id == first.id
+    assert set(window.workspaces) == {first.id}
+
+    select(window, second)
+    assert window.profile.id == second.id
+    assert set(window.workspaces) == {second.id}
+    state = repo.profile_dir(first.id) / 'export_status.json'
+    record = __import__('json').loads(state.read_text(encoding='utf-8'))[window._export_path_key(translator)]
+    assert record['pending'] is True
+    assert translator.read_text(encoding='utf-8') == 'งานแปลเดิม'
+    window._close_export_reminder_accepted = True
+    window.close()
+
+
 def test_old_multiple_novel_session_restores_only_last_active(tmp_path):
     repo, first, _ = setup_profile(tmp_path)
     second = NovelProfile(name='Second'); repo.save_profile(second)

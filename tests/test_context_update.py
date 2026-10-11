@@ -1,8 +1,12 @@
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import hashlib
+import json
+import os
 import pytest
 from pathlib import Path
+from PySide6.QtCore import QMimeData
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from novel_workflow.models import NovelProfile, StepFile
@@ -12,6 +16,48 @@ from novel_workflow.workspace_window import MainWindow
 
 def app():
     return QApplication.instance() or QApplication([])
+
+
+@pytest.mark.parametrize("choice", ["Keep Editing", "Replace Anyway"])
+def test_destructive_paste_preserves_old_text_or_saves_recovery(tmp_path, monkeypatch, choice):
+    app()
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile(name="Paste protection")
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "TESTTranslator.txt"
+    context = tmp_path / "TESTContext.md"
+    translator.parent.mkdir(parents=True)
+    translator.write_text("old translation", encoding="utf-8")
+    context.write_text("old context", encoding="utf-8")
+    profile.context_path = str(context)
+    profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    repo.save_profile(profile)
+    window = MainWindow(repo); window.refresh_profiles(profile.id)
+    workspace = window.workspaces[profile.id]
+    editor = workspace.editor.open_file(translator)
+    window._mark_export_pending(profile.id, translator)
+    editor.selectAll()
+    old_selection = editor.textCursor().selectedText()
+    QApplication.clipboard().setText("clipboard stays")
+    mime = QMimeData(); mime.setText("replacement")
+
+    def choose_dialog_button(dialog):
+        button = next(button for button in dialog.buttons() if button.text() == choice)
+        button.click()
+        return 0
+
+    monkeypatch.setattr(QMessageBox, "exec", choose_dialog_button)
+    editor.insertFromMimeData(mime)
+    assert QApplication.clipboard().text() == "clipboard stays"
+    if choice == "Keep Editing":
+        assert editor.toPlainText() == "old translation"
+        assert editor.textCursor().selectedText() == old_selection
+    else:
+        recovery = json.loads(workspace.editor._recovery_path(translator).read_text(encoding="utf-8"))
+        assert recovery["text"] == "old translation"
+        assert editor.toPlainText() == "replacement\n"
+    window._close_export_reminder_accepted = True
+    window.close()
 
 
 @pytest.mark.parametrize("tag", ["SELFLOVE", "WST", "ABC"])
@@ -43,13 +89,16 @@ def test_bound_translator_updates_only_its_profile_context(tmp_path, monkeypatch
     window.refresh_profiles(first.id)
     workspace = window._workspace(window.profile)
     editor = workspace.editor.open_file(translator)
+    assert workspace.export_status_label.text() == "Export Status Unknown"
     editor.setPlainText("บทที่ 77\nTemplate\nชื่อตัวละครเดิมและคำแนะนำการแปล")
+    assert workspace.export_status_label.text() == "Not Exported"
     monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.Yes)
     monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
 
     assert workspace.update_context_button.isHidden() is False
     original = editor.toPlainText()
     assert window.update_context_from_translator(workspace)
+    assert workspace.export_status_label.text() == "Exported"
 
     assert context.read_text(encoding="utf-8") == original
     assert translator.read_text(encoding="utf-8") == original
@@ -60,7 +109,53 @@ def test_bound_translator_updates_only_its_profile_context(tmp_path, monkeypatch
     exports = list((first_dir / "Context Exports").glob("*.txt"))
     assert [item.name for item in exports] == [f"{tag}Translator 77.txt"]
     assert exports[0].read_bytes() == context.read_bytes() == translator.read_bytes()
+    state_path = repo.profile_dir(first.id) / "export_status.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    record = state[os.path.normcase(str(translator.resolve()))]
+    assert record["profile_id"] == first.id
+    assert record["translator_path"] == os.path.normcase(str(translator.resolve()))
+    assert record["digest"] == hashlib.sha256(translator.read_bytes()).hexdigest()
+    assert record["exported_txt_path"] == str(exports[0].resolve())
+    assert record["exported_at"]
+    assert not (repo.profile_dir(second.id) / "export_status.json").exists()
+
+    editor.moveCursor(editor.textCursor().MoveOperation.End)
+    editor.insertPlainText("x")
+    assert workspace.export_status_label.text() == "Not Exported"
+    editor.undo()
+    workspace._confirm_export_digest()
+    assert workspace.export_status_label.text() == "Exported"
     assert not list(context.parent.glob(".palantir-recovery/*.bak"))
+    window.close()
+
+
+def test_export_now_saves_the_current_unsaved_translator_before_export(tmp_path, monkeypatch):
+    app()
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile(name="Export current draft")
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "TESTTranslator.txt"
+    context = tmp_path / "TESTContext.md"
+    translator.parent.mkdir(parents=True)
+    translator.write_text("old translation", encoding="utf-8")
+    context.write_text("old context", encoding="utf-8")
+    profile.context_path = str(context)
+    profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    repo.save_profile(profile)
+
+    window = MainWindow(repo)
+    window.refresh_profiles(profile.id)
+    workspace = window.workspaces[profile.id]
+    editor = workspace.editor.open_file(translator)
+    editor.setPlainText("[A]Chapter 1\ncurrent unsaved translation")
+    monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
+
+    assert window._export_profile_translator(profile.id)
+    expected = editor.toPlainText().encode("utf-8")
+    assert translator.read_bytes() == context.read_bytes() == expected
+    exports = list((folder / "Context Exports").glob("*.txt"))
+    assert len(exports) == 1 and exports[0].read_bytes() == expected
     window.close()
 
 
@@ -267,7 +362,8 @@ def test_export_without_chapter_heading_uses_visible_timestamp_name(tmp_path, mo
     window.refresh_profiles(profile.id)
     workspace = window._workspace(window.profile)
     workspace.editor.open_file(translator)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: QMessageBox.Ok)
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: (warnings.append(repr(_args)), QMessageBox.Ok)[1])
     monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.Yes)
     monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
     monkeypatch.setattr(
@@ -275,7 +371,7 @@ def test_export_without_chapter_heading_uses_visible_timestamp_name(tmp_path, mo
         lambda *_args: pytest.fail("Export confirmation must not receive novel text"),
     )
 
-    assert window.update_context_from_translator(workspace)
+    assert window.update_context_from_translator(workspace), warnings
     exports = list((folder / "Context Exports").glob("ABCTranslator *.txt"))
     assert len(exports) == 1
     assert exports[0].name.startswith("ABCTranslator 20")

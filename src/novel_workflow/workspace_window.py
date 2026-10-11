@@ -31,7 +31,8 @@ from .settings_page import SettingsPage
 from .export_service import ExportService, daily_export_count, verified_goal_text
 from .workspace_editor import EditorTabs, _stage_text_file, _cleanup_staged_text_file
 from .recovery import commit_staged
-from .theme import theme_colors
+from .storage import read_json, write_json
+from .theme import theme_colors, editor_colors
 from . import __version__
 from .update_bootstrap import launch_update, read_update_result
 from .updater import UpdateError, UpdateInfo, check_for_update, download_update
@@ -48,16 +49,21 @@ PROFILE_STATUSES = (
 
 def _stage_bytes_file(destination: Path, data: bytes) -> Path:
     """Stage exact document bytes beside their destination for atomic replacement."""
-    staging_dir = Path(tempfile.mkdtemp(dir=destination.parent, prefix=".palantir-staging-"))
-    staged = staging_dir / f"{destination.name}.part"
+    staged = None
     try:
-        with staged.open("xb") as output:
+        fd, name = tempfile.mkstemp(
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".part",
+        )
+        staged = Path(name)
+        with os.fdopen(fd, "wb") as output:
             output.write(data)
             output.flush()
             os.fsync(output.fileno())
         return staged
     except OSError:
-        _cleanup_staged_text_file(staged, staging_dir)
+        _cleanup_staged_text_file(staged)
         raise
 
 
@@ -207,6 +213,16 @@ class WorkspacePage(QWidget):
         self.owner = owner
         self.profile_id = profile.id
         self.step_index = 0
+        self._export_status_editor = None
+        self._export_status_path = None
+        self._export_binding_editor = None
+        self._export_binding_path = None
+        self._export_binding_allowed = False
+        self._export_digest_editor = None
+        self._export_digest_timer = QTimer(self)
+        self._export_digest_timer.setSingleShot(True)
+        self._export_digest_timer.setInterval(500)
+        self._export_digest_timer.timeout.connect(self._confirm_export_digest)
 
         self.file_model = QFileSystemModel(self)
         self.file_model.setReadOnly(False)
@@ -232,6 +248,9 @@ class WorkspacePage(QWidget):
             context_path_callback=self._context_path_for_export,
             notification_callback=owner.show_submit_toast,
             export_service=ExportService(owner.repo, profile.id),
+        )
+        self.editor.destructive_paste_callback = (
+            lambda editor: owner._guard_destructive_paste(profile.id, editor)
         )
         self.steps = QListWidget()
         self.steps.setObjectName("workflowSteps")
@@ -361,6 +380,11 @@ class WorkspacePage(QWidget):
         )
         self.update_context_button.hide()
         header_layout.addWidget(self.update_context_button)
+        self.export_status_label = QLabel("Export Status Unknown", self.editor_header)
+        self.export_status_label.setObjectName("exportStatusLabel")
+        self.export_status_label.setMinimumWidth(132)
+        self.export_status_label.hide()
+        header_layout.addWidget(self.export_status_label)
         web_source = QToolButton()
         web_source.setText("ต้นฉบับเว็บ")
         web_source.clicked.connect(self.owner.open_downloader)
@@ -494,7 +518,73 @@ class WorkspacePage(QWidget):
             and self.owner.profile.id == self.profile_id
             and self.owner._translator_profile_for_path(self.profile_id, path)
         )
+        if allowed and not getattr(editor, "_export_status_changed_bound", False):
+            editor.textChanged.connect(lambda e=editor: self.refresh_export_status(e, verified=True))
+            editor._export_status_changed_bound = True
         self.update_context_button.setVisible(allowed)
+        self.export_status_label.setVisible(allowed)
+        self._export_binding_editor = editor
+        self._export_binding_path = self.owner._export_path_key(path) if path else None
+        self._export_binding_allowed = allowed
+        self._export_status_editor = editor if allowed else None
+        self._export_status_path = self.owner._export_path_key(path) if allowed else None
+        self.refresh_export_status(editor if allowed else None, verified=allowed)
+
+    def refresh_export_status(self, editor=None, *, verified=False):
+        if editor is None:
+            editor = self.editor._current_editor()
+        path = self.editor._path(editor) if editor else None
+        key = self.owner._export_path_key(path) if path else None
+        cached = editor is self._export_binding_editor and key == self._export_binding_path
+        if not verified and not cached:
+            allowed = bool(path and self.owner._translator_profile_for_path(self.profile_id, path))
+            self._export_binding_editor = editor
+            self._export_binding_path = key
+            self._export_binding_allowed = allowed
+        allowed = verified or (cached and self._export_binding_allowed)
+        if not allowed or path is None:
+            self._export_status_editor = None
+            self._export_status_path = None
+            self.export_status_label.hide()
+            return
+        self._export_status_editor = editor
+        self._export_status_path = key
+        status = self.owner._translator_export_status(self.profile_id, path, editor)
+        self.export_status_label.setText({
+            "exported": "Exported",
+            "not_exported": "Not Exported",
+            "unknown": "Export Status Unknown",
+        }[status])
+        colors = theme_colors(self.owner.settings.appearance)
+        if status == "not_exported":
+            foreground, background = colors["warning"], colors["surface2"]
+        elif status == "exported":
+            foreground, background = colors["success"], colors["surface"]
+        else:
+            foreground, background = colors["muted"], colors["surface"]
+        self.export_status_label.setStyleSheet(
+            f"QLabel#exportStatusLabel {{ color:{foreground}; background:{background}; "
+            "border:1px solid " + colors["border"] + "; border-radius:3px; padding:2px 6px; }}"
+        )
+        self.export_status_label.show()
+        if self.editor._dirty(editor) and status != "exported":
+            self.owner._mark_export_pending(self.profile_id, path)
+            self._export_digest_editor = editor
+            self._export_digest_timer.start()
+        else:
+            self._export_digest_timer.stop()
+            if self._export_digest_editor is editor:
+                self._export_digest_editor = None
+
+    def _confirm_export_digest(self):
+        editor = self._export_digest_editor
+        self._export_digest_editor = None
+        if editor is None:
+            return
+        path = self.editor._path(editor)
+        if path is not None:
+            self.owner._confirm_exported_content(self.profile_id, path, editor)
+        self.refresh_export_status()
 
     def refresh_history(self):
         editor = self.editor._current_editor()
@@ -838,7 +928,14 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     """Novel Library with a focused workflow sidebar and full-size editor."""
 
     def __init__(self, repo=None):
+        self._export_status_cache = {}
+        self._startup_export_reminder_shown = False
+        self._startup_pending_export_ids = set()
+        self._close_export_reminder_accepted = False
         super().__init__(repo)
+        self._startup_pending_export_ids = {
+            profile.id for profile, _path in self._pending_export_profiles()
+        }
         self.setWindowTitle("Palantir: Novel")
         self.submit_toast = SubmitToast(self)
         result = read_update_result(self.repo.root)
@@ -858,12 +955,18 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.settings.editor_style_migrated = True
         if changed: self.repo.save_settings(self.settings)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.profile:
+            QTimer.singleShot(0, lambda pid=self.profile.id: self._show_startup_export_reminder(pid))
+
     def apply_theme(self):
         super().apply_theme()
         if hasattr(self, "navigation"):
             self.navigation.refresh_icons(self.settings.appearance)
         for workspace in getattr(self, "workspaces", {}).values():
             workspace.editor.set_appearance(self.settings.appearance)
+            workspace.refresh_export_status()
 
     def show_submit_toast(self, message):
         self.submit_toast.show_message(message)
@@ -2046,7 +2149,19 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     if pid != target_id]
         if not previous:
             return True
-        for _pid, workspace in previous:
+        for pid, workspace in previous:
+            pending_path = self._pending_export_for_profile(pid)
+            if pending_path is not None:
+                profile = next((item for item in self.repo.list_profiles() if item.id == pid), None)
+                name = profile.name if profile else "Novel"
+                choice = self._export_reminder_choice(
+                    "ยังไม่ได้ Export งานแปล!",
+                    f"{name}\nTranslator: {pending_path}\n\nTranslator มีเนื้อหาที่เปลี่ยนแปลงหลัง Export ครั้งล่าสุด",
+                )
+                if choice == "cancel":
+                    return False
+                if choice == "export" and not self._export_profile_translator(pid):
+                    return False
             if not workspace.editor.save_all(include_normalization=False):
                 self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนนิยายไม่ได้", 5000)
                 return False
@@ -2064,6 +2179,18 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if not profile_id or profile_id not in self._open_workspace_ids:
             return
         workspace = self.workspaces.get(profile_id)
+        pending_path = self._pending_export_for_profile(profile_id)
+        if pending_path is not None:
+            profile = next((item for item in self.repo.list_profiles() if item.id == profile_id), None)
+            name = profile.name if profile else "Novel"
+            choice = self._export_reminder_choice(
+                "ยังไม่ได้ Export งานแปล!",
+                f"{name}\nTranslator: {pending_path}\n\nTranslator มีเนื้อหาที่เปลี่ยนแปลงหลัง Export ครั้งล่าสุด",
+            )
+            if choice == "cancel":
+                return
+            if choice == "export" and not self._export_profile_translator(profile_id):
+                return
         if workspace and not workspace.editor.save_all(include_normalization=False):
             self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังปิดแท็บนิยายไม่ได้", 5000)
             return
@@ -2134,6 +2261,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             bool(self.profile.workflow.steps or self.profile.vocabulary_step)
         )
         self._update_context_button(workspace)
+        workspace.refresh_context_update_button()
         self.refresh_steps()
         if self.si >= 0:
             self.steps.setCurrentRow(self.si)
@@ -2446,6 +2574,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.refresh_translation_progress()
         if not self.profile:
             return
+        workspace = self.workspaces.get(self.profile.id)
+        if workspace is not None:
+            workspace.refresh_export_status()
         if self.profile.context_path:
             try:
                 if Path(self.profile.context_path).expanduser().resolve() == Path(saved_path).resolve():
@@ -2483,6 +2614,245 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             except (OSError, ValueError, TypeError):
                 continue
         return paths
+
+    def _export_status_path(self, profile_id):
+        return self.repo.profile_dir(profile_id) / "export_status.json"
+
+    @staticmethod
+    def _export_path_key(path):
+        return os.path.normcase(str(Path(path).expanduser().resolve()))
+
+    def _export_records(self, profile_id):
+        if profile_id not in self._export_status_cache:
+            try:
+                value = read_json(self._export_status_path(profile_id), {})
+                self._export_status_cache[profile_id] = value if isinstance(value, dict) else {}
+            except (OSError, ValueError, TypeError):
+                self._export_status_cache[profile_id] = {}
+        return self._export_status_cache[profile_id]
+
+    def _save_export_records(self, profile_id):
+        records = self._export_records(profile_id)
+        write_json(self._export_status_path(profile_id), records)
+
+    def _record_successful_export(self, profile_id, path, digest, exported_txt):
+        key = self._export_path_key(path)
+        records = self._export_records(profile_id)
+        previous = records.get(key)
+        records[key] = {
+            "profile_id": profile_id,
+            "translator_path": key,
+            "digest": digest.hex(),
+            "exported_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "exported_txt_path": str(Path(exported_txt).resolve()),
+            "pending": False,
+        }
+        try:
+            self._save_export_records(profile_id)
+        except (OSError, ValueError):
+            if previous is None:
+                records.pop(key, None)
+            else:
+                records[key] = previous
+            raise
+
+    def _mark_export_pending(self, profile_id, path):
+        key = self._export_path_key(path)
+        records = self._export_records(profile_id)
+        record = records.get(key)
+        if record and record.get("pending"):
+            return
+        record = dict(record or {})
+        record.update({
+            "profile_id": profile_id,
+            "translator_path": key,
+            "pending": True,
+        })
+        records[key] = record
+        try:
+            self._save_export_records(profile_id)
+        except (OSError, ValueError) as exc:
+            self.statusBar().showMessage(f"บันทึกสถานะ Export ไม่สำเร็จ: {exc}", 6000)
+
+    def _translator_export_status(self, profile_id, path, editor=None):
+        key = self._export_path_key(path)
+        record = self._export_records(profile_id).get(key)
+        if record is None:
+            if editor is not None and EditorTabs._dirty(editor):
+                self._mark_export_pending(profile_id, path)
+                return "not_exported"
+            return "unknown"
+        if editor is not None and EditorTabs._dirty(editor):
+            if editor.property("exportDigestMatches") and record.get("digest"):
+                if record.get("pending"):
+                    record["pending"] = False
+                    try:
+                        self._save_export_records(profile_id)
+                    except (OSError, ValueError):
+                        record["pending"] = True
+                        return "not_exported"
+                return "exported"
+            self._mark_export_pending(profile_id, path)
+            return "not_exported"
+        digest = getattr(editor, "disk_digest", None) if editor is not None else None
+        if digest is None:
+            try:
+                digest = hashlib.sha256(Path(path).read_bytes()).digest()
+            except OSError:
+                return "unknown"
+        if record.get("digest") and digest.hex() == record["digest"]:
+            if record.get("pending"):
+                record["pending"] = False
+                try:
+                    self._save_export_records(profile_id)
+                except (OSError, ValueError):
+                    record["pending"] = True
+                    return "not_exported"
+            return "exported"
+        self._mark_export_pending(profile_id, path)
+        return "not_exported"
+
+    def _confirm_exported_content(self, profile_id, path, editor):
+        key = self._export_path_key(path)
+        record = self._export_records(profile_id).get(key)
+        if not record or not record.get("digest"):
+            return
+        text = editor.toPlainText().replace("\n", getattr(editor, "disk_newline", "\n"))
+        if getattr(editor, "disk_bom", False):
+            text = "\ufeff" + text
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        editor.setProperty("exportDigestMatches", digest == record["digest"])
+        if digest == record["digest"]:
+            record["pending"] = False
+            try:
+                self._save_export_records(profile_id)
+            except (OSError, ValueError) as exc:
+                self.statusBar().showMessage(f"ยืนยันสถานะ Export ไม่สำเร็จ: {exc}", 6000)
+
+    def _pending_export_profiles(self):
+        pending = []
+        for profile in self.repo.list_profiles():
+            found = False
+            for key, record in self._export_records(profile.id).items():
+                path = Path(record.get("translator_path") or key)
+                if record.get("pending"):
+                    found = True
+                elif record.get("digest"):
+                    try:
+                        if hashlib.sha256(path.read_bytes()).hexdigest() != record["digest"]:
+                            self._mark_export_pending(profile.id, path)
+                            found = True
+                    except OSError:
+                        continue
+                if found:
+                    break
+            if found:
+                pending.append((profile, path))
+        return pending
+
+    def _pending_export_for_profile(self, profile_id):
+        for key, record in self._export_records(profile_id).items():
+            path = Path(record.get("translator_path") or key)
+            if record.get("pending"):
+                return path
+            if record.get("digest"):
+                try:
+                    if hashlib.sha256(path.read_bytes()).hexdigest() != record["digest"]:
+                        self._mark_export_pending(profile_id, path)
+                        return path
+                except OSError:
+                    continue
+        return None
+
+    def _export_profile_translator(self, profile_id):
+        workspace = self.workspaces.get(profile_id)
+        profile = next((item for item in self.repo.list_profiles() if item.id == profile_id), None)
+        if workspace is None or profile is None:
+            return False
+        records = self._export_records(profile_id)
+        path = next((Path(record.get("translator_path") or key)
+                     for key, record in records.items()
+                     if record.get("pending") and "translator.txt" in Path(key).name.casefold()), None)
+        if path is None:
+            path = next((item for item in self._profile_file_paths(profile)
+                         if "translator.txt" in item.name.casefold()), None)
+        if path is None or not path.is_file():
+            return False
+        editor = workspace.editor.open_file(path)
+        if editor is None:
+            return False
+        workspace.editor.tabs.setCurrentWidget(editor)
+        if workspace.editor._dirty(editor) and not workspace.editor.save_editor(editor, quiet=True):
+            return False
+        return bool(self.update_context_from_translator(workspace))
+
+    def _export_reminder_choice(self, title, details):
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(title)
+        dialog.setIcon(QMessageBox.Warning)
+        dialog.setText(details)
+        export_button = dialog.addButton("Export Now", QMessageBox.AcceptRole)
+        later_button = dialog.addButton("Later", QMessageBox.ActionRole)
+        cancel_button = dialog.addButton("Cancel", QMessageBox.RejectRole)
+        dialog.exec()
+        if dialog.clickedButton() is export_button:
+            return "export"
+        if dialog.clickedButton() is later_button:
+            return "later"
+        return "cancel"
+
+    def _show_startup_export_reminder(self, profile_id):
+        if (self._startup_export_reminder_shown
+                or profile_id not in self._startup_pending_export_ids
+                or not self.profile or self.profile.id != profile_id):
+            return
+        pending_path = self._pending_export_for_profile(profile_id)
+        if pending_path is None:
+            return
+        self._startup_export_reminder_shown = True
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("ยังไม่ได้ Export งานแปล!")
+        dialog.setIcon(QMessageBox.Warning)
+        dialog.setText(f"มีงานแปลที่ยังไม่ได้ Export จากครั้งก่อน\nTranslator: {pending_path}")
+        export_button = dialog.addButton("Export Now", QMessageBox.AcceptRole)
+        dialog.addButton("Later", QMessageBox.ActionRole)
+        dialog.exec()
+        if dialog.clickedButton() is export_button:
+            self._export_profile_translator(profile_id)
+
+    def _guard_destructive_paste(self, profile_id, editor):
+        path = EditorTabs._path(editor)
+        if (path is None or not self._translator_profile_for_path(profile_id, path)
+                or self._translator_export_status(profile_id, path, editor) != "not_exported"):
+            return True
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("ยังไม่ได้ Export งานแปล!")
+        dialog.setIcon(QMessageBox.Warning)
+        dialog.setText(
+            f"Translator: {path}\n\nมีงานแปลที่ยังไม่ได้ Export การวางนี้จะแทนที่ข้อความส่วนใหญ่ของไฟล์"
+        )
+        export_button = dialog.addButton("Export Now", QMessageBox.AcceptRole)
+        keep_button = dialog.addButton("Keep Editing", QMessageBox.RejectRole)
+        replace_button = dialog.addButton("Replace Anyway", QMessageBox.DestructiveRole)
+        dialog.exec()
+        if dialog.clickedButton() is export_button:
+            if not self._export_profile_translator(profile_id):
+                return False
+            return True
+        if dialog.clickedButton() is replace_button:
+            workspace = self.workspaces.get(profile_id)
+            if workspace is None:
+                return False
+            try:
+                recovery = workspace.editor._recovery_path(path)
+                write_json(recovery, {"path": str(path.resolve()), "text": editor.toPlainText()})
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(self, "สำรองงานเดิมไม่ได้", str(exc))
+                return False
+            return True
+        if dialog.clickedButton() is keep_button:
+            return False
+        return False
 
     def _translator_profile_for_path(self, profile_id, path):
         try:
@@ -2633,6 +3003,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             def verify_transaction():
                 if target.read_bytes() != translator_bytes or context.read_bytes() != translator_bytes:
                     raise OSError("ตรวจสอบหลังเขียนพบว่าไฟล์ TXT หรือ Context ไม่ตรงกับ Translator")
+                self._record_successful_export(profile_id, source, source_digest, target)
             commit_staged(
                 staged_files,
                 commit_metadata=verify_transaction,
@@ -2647,6 +3018,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 _cleanup_staged_text_file(staged)
 
         workspace.editor.apply_external_update(context, visible_text)
+        workspace.refresh_export_status()
         self.refresh_translation_progress()
         self.statusBar().showMessage(f"Export {target.name} และอัปเดต Context สำเร็จ", 5000)
         QMessageBox.information(self, "Export สำเร็จ", f"สร้าง {target.name} และอัปเดต Context สำเร็จ")
@@ -2806,6 +3178,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             return
         workspace = self.workspaces.get(self.profile.id)
         if workspace is not None and workspace.editor is editor:
+            workspace.refresh_export_status()
             context_path = Path(self.profile.context_path).expanduser().resolve() if self.profile.context_path else None
             if context_path:
                 for index in range(editor.tabs.count()):
@@ -2864,6 +3237,20 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.goal_status.setToolTip(f"{self.profile.name}: ยังไม่ได้ตั้งเป้าหมาย")
 
     def closeEvent(self, event):
+        pending = self._pending_export_profiles()
+        if pending and not self._close_export_reminder_accepted:
+            entries = "\n".join(f"• {profile.name} — {path.name}" for profile, path in pending)
+            dialog = QMessageBox(self)
+            dialog.setWindowTitle("ยังไม่ได้ Export งานแปล!")
+            dialog.setIcon(QMessageBox.Warning)
+            dialog.setText(f"มี Translator ที่ยังไม่ได้ Export:\n{entries}")
+            later_button = dialog.addButton("Later", QMessageBox.AcceptRole)
+            cancel_button = dialog.addButton("Cancel", QMessageBox.RejectRole)
+            dialog.exec()
+            if dialog.clickedButton() is not later_button:
+                event.ignore()
+                return
+            self._close_export_reminder_accepted = True
         self._automatic_update_timer.stop()
         timer = getattr(self, "_session_save_timer", None)
         if timer is not None:

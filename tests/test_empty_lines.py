@@ -59,10 +59,10 @@ def test_workspace_paste_compacts_blank_clipboard_lines_without_rewriting_open_f
     editor.moveCursor(editor.textCursor().MoveOperation.End)
     QApplication.clipboard().setText(RAW)
     editor.paste()
-    assert editor.toPlainText() == "existing\n" + CLEAN
+    assert editor.toPlainText() == "existing\n" + CLEAN + "\n"
     assert path.read_text(encoding="utf-8") == "existing\n"
     assert tabs.save_editor(editor)
-    assert path.read_text(encoding="utf-8") == "existing\n" + CLEAN
+    assert path.read_text(encoding="utf-8") == "existing\n" + CLEAN + "\n"
     editor.undo()
     assert editor.toPlainText() == "existing"
 
