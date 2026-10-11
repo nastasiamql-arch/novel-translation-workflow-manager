@@ -5,7 +5,7 @@ import pytest
 from PySide6.QtCore import QMimeData, QTimer, QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication
 from novel_workflow.text_normalization import remove_empty_lines
-from novel_workflow.workspace_editor import EditorTabs
+from novel_workflow.workspace_editor import CodeEditor, EditorTabs
 from test_txt_export import app, panel
 
 
@@ -53,13 +53,13 @@ def test_novel_open_paste_save_copy_reopen_without_open_autosave(tmp_path, folde
     editor.selectAll()
     mime = QMimeData(); mime.setText(RAW); mime.setHtml('<p>wrong</p>')
     editor.insertFromMimeData(mime)
-    assert editor.toPlainText() == CLEAN
+    assert editor.toPlainText() == CLEAN + '\n'
     editor.undo(); assert editor.toPlainText() == CLEAN
-    editor.redo(); assert editor.toPlainText() == CLEAN
+    editor.redo(); assert editor.toPlainText() == CLEAN + '\n'
     editor.selectAll(); editor.copy()
     assert QApplication.clipboard().text() == CLEAN
     assert tabs.save_editor(editor)
-    assert path.read_text(encoding='utf-8') == CLEAN
+    assert path.read_text(encoding='utf-8') == CLEAN + '\n'
     tabs.apply_external_update(path, path.read_text(encoding='utf-8'))
     assert editor.toPlainText() == CLEAN
     assert EditorTabs().open_file(path).toPlainText() == CLEAN
@@ -80,11 +80,11 @@ def test_every_open_txt_md_normalizes_regardless_of_name_or_folder(tmp_path, rel
     editor.selectAll()
     data = QMimeData(); data.setText(RAW)
     editor.insertFromMimeData(data)
-    assert editor.toPlainText() == CLEAN
+    assert editor.toPlainText() == CLEAN + '\n'
     editor.selectAll(); editor.copy()
     assert QApplication.clipboard().text() == CLEAN
     assert tabs.save_editor(editor, autosave=True)
-    assert path.read_text(encoding='utf-8') == CLEAN
+    assert path.read_text(encoding='utf-8') == CLEAN + '\n'
     assert unopened.read_text(encoding='utf-8') == RAW
     assert EditorTabs().open_file(path).toPlainText() == CLEAN
 
@@ -115,9 +115,10 @@ def test_tsv_exact_plain_html_roundtrip_empty_columns(tmp_path, name):
     mime = QMimeData(); mime.setText(text); mime.setHtml('<table><tr><td>wrong</td></tr></table>')
     editor.selectAll(); editor.insertFromMimeData(mime)
     editor.selectAll(); editor.copy()
+    expected_after_paste = expected + ('\n' if name.endswith('.txt') else '')
     assert QApplication.clipboard().text() == expected
     assert tabs.save_editor(editor, autosave=True)
-    assert path.read_text(encoding='utf-8') == expected
+    assert path.read_text(encoding='utf-8') == expected_after_paste
     assert EditorTabs().open_file(path).toPlainText() == expected
     assert expected.count('\t') == text.count('\t')
     editor.autosave_timer.stop()
@@ -168,7 +169,7 @@ def test_open_context_compacts_fence_and_paste_without_changing_characters(tmp_p
     editor.moveCursor(editor.textCursor().MoveOperation.End)
     data = QMimeData(); data.setText('\n\nnew\n\nvalue')
     editor.insertFromMimeData(data)
-    assert editor.toPlainText() == expected + '\nnew\nvalue'
+    assert editor.toPlainText() == expected + '\nnew\nvalue\n'
     editor.autosave_timer.stop()
 
 
@@ -261,3 +262,60 @@ def test_legacy_recovery_is_normalized_on_restore(tmp_path, monkeypatch):
     tabs.restore_recovery(editor)
     assert editor.toPlainText() == CLEAN
     assert path.read_text(encoding='utf-8') == 'disk'
+
+
+@pytest.mark.parametrize('text', [
+    'คำแปลภาษาไทย',
+    '冷却流道 ช่องทางไหลของสารหล่อเย็น',
+    'ศัพท์\tคำแปล\tหมายเหตุ',
+    '[A]\n[จบตอน]',
+    'มีช่องว่าง  และ\tแท็บ\u3000ยูนิโค้ด',
+])
+def test_paste_at_document_end_prepares_one_line_and_undoes_together(text):
+    app()
+    editor = CodeEditor()
+    editor.setProperty('autoNewlineOnPaste', True)
+    editor.setPlainText('previous')
+    editor.moveCursor(editor.textCursor().MoveOperation.End)
+    mime = QMimeData(); mime.setText(text)
+    editor.insertFromMimeData(mime)
+    expected = 'previous' + text + ('\n' if not text.endswith(('\n', '\r', '\u2028', '\u2029', '\u0085')) else '')
+    assert editor.toPlainText() == expected
+    editor.undo()
+    assert editor.toPlainText() == 'previous'
+    editor.redo()
+    assert editor.toPlainText() == expected
+
+
+def test_paste_uses_existing_next_line_without_adding_blank_line():
+    app()
+    editor = CodeEditor(); editor.setPlainText('first\nsecond')
+    editor.setProperty('autoNewlineOnPaste', True)
+    cursor = editor.textCursor(); cursor.setPosition(len('first'))
+    editor.setTextCursor(cursor)
+    mime = QMimeData(); mime.setText(' pasted')
+    editor.insertFromMimeData(mime)
+    assert editor.toPlainText() == 'first pasted\nsecond'
+
+
+def test_paste_that_already_ends_with_newline_does_not_add_another():
+    app()
+    editor = CodeEditor(); editor.setProperty('autoNewlineOnPaste', True)
+    editor.setPlainText('previous')
+    editor.moveCursor(editor.textCursor().MoveOperation.End)
+    mime = QMimeData(); mime.setText('new line\n')
+    editor.insertFromMimeData(mime)
+    assert editor.toPlainText() == 'previousnew line\n'
+    editor.undo()
+    assert editor.toPlainText() == 'previous'
+
+
+def test_paste_in_middle_does_not_add_a_newline():
+    app()
+    editor = CodeEditor(); editor.setPlainText('before after')
+    editor.setProperty('autoNewlineOnPaste', True)
+    cursor = editor.textCursor(); cursor.setPosition(len('before '))
+    editor.setTextCursor(cursor)
+    mime = QMimeData(); mime.setText('pasted')
+    editor.insertFromMimeData(mime)
+    assert editor.toPlainText() == 'before pastedafter'
