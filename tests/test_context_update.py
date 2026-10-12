@@ -18,6 +18,17 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
+def configure_translator_export_history(profile, folder, translator, context):
+    """Tests opt into the explicit step-two attachment required before Context replacement."""
+    profile.main_folder = str(folder)
+    step = profile.workflow.steps[1]
+    step.files = [
+        StepFile(label=translator.name, path=f"source/{translator.name}", order=0),
+        StepFile(label=context.name, reference_type="external_file", path=str(context), order=1),
+    ]
+    profile.polish_history_step_id = step.id
+
+
 @pytest.mark.parametrize("choice", ["Keep Editing", "Replace Anyway"])
 def test_destructive_paste_preserves_old_text_or_saves_recovery(tmp_path, monkeypatch, choice):
     app()
@@ -73,6 +84,7 @@ def test_bound_translator_updates_only_its_profile_context(tmp_path, monkeypatch
     context.write_text("old A", encoding="utf-8")
     first.context_path = str(context)
     first.working_files = [StepFile(label=translator.name, path=f"source/{translator.name}")]
+    configure_translator_export_history(first, first_dir, translator, context)
     repo.save_profile(first)
 
     second = NovelProfile(name="B")
@@ -94,6 +106,8 @@ def test_bound_translator_updates_only_its_profile_context(tmp_path, monkeypatch
     assert workspace.export_status_label.text() == "Not Exported"
     monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.Yes)
     monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[2]))
 
     assert workspace.update_context_button.isHidden() is False
     original = editor.toPlainText()
@@ -118,6 +132,15 @@ def test_bound_translator_updates_only_its_profile_context(tmp_path, monkeypatch
     assert record["exported_txt_path"] == str(exports[0].resolve())
     assert record["exported_at"]
     assert not (repo.profile_dir(second.id) / "export_status.json").exists()
+    history = first_dir / "Polish History" / "ตรวจคำแปล บท 77"
+    manifest = json.loads((history / "manifest.json").read_text(encoding="utf-8"))
+    context_record = next(item for item in manifest["files"] if item["is_context"])
+    assert manifest["step_id"] == first.workflow.steps[1].id
+    assert manifest["chapter_range"] == "77"
+    assert manifest["file_count"] == 2
+    assert context_record["sha256"] == hashlib.sha256(b"old A").hexdigest()
+    assert (history / context_record["snapshot_path"]).read_bytes() == b"old A"
+    assert not warnings
 
     editor.moveCursor(editor.textCursor().MoveOperation.End)
     editor.insertPlainText("x")
@@ -126,6 +149,144 @@ def test_bound_translator_updates_only_its_profile_context(tmp_path, monkeypatch
     workspace._confirm_export_digest()
     assert workspace.export_status_label.text() == "Exported"
     assert not list(context.parent.glob(".palantir-recovery/*.bak"))
+    window.close()
+
+
+def test_translator_export_requires_context_attached_to_selected_review_step(tmp_path, monkeypatch):
+    app()
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile()
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "ABCTranslator.txt"
+    context = tmp_path / "Context.md"
+    translator.parent.mkdir(parents=True)
+    translator.write_text("บทที่ 6-10\nnew", encoding="utf-8")
+    context.write_text("บทที่ 1-5\nold", encoding="utf-8")
+    profile.context_path = str(context)
+    profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    profile.main_folder = str(folder)
+    step = profile.workflow.steps[1]
+    step.files = [StepFile(path=f"source/{translator.name}")]
+    profile.polish_history_step_id = step.id
+    repo.save_profile(profile)
+    window = MainWindow(repo)
+    window.refresh_profiles(profile.id)
+    workspace = window._workspace(window.profile)
+    workspace.editor.open_file(translator)
+    confirmations = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: confirmations.append(args[2]))
+    monkeypatch.setattr(QMessageBox, "exec", lambda *_args: pytest.fail("must stop before confirmation"))
+
+    assert not window.update_context_from_translator(workspace)
+    assert "ยังไม่ได้เลือกไฟล์ Context ในขั้นตอนตรวจคำแปล" in confirmations[0]
+    assert context.read_text(encoding="utf-8") == "บทที่ 1-5\nold"
+    assert not list((folder / "Context Exports").glob("*.txt"))
+    assert not list((folder / "Polish History").glob("ตรวจคำแปล บท *"))
+    window.close()
+
+
+def test_cancelled_translator_export_does_not_create_history(tmp_path, monkeypatch):
+    app()
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile()
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "ABCTranslator.txt"
+    context = tmp_path / "Context.md"
+    translator.parent.mkdir(parents=True)
+    translator.write_text("บทที่ 6-10\nnew", encoding="utf-8")
+    old_context = b"\xef\xbb\xbf\xe0\xb8\x9a\xe0\xb8\x97\xe0\xb8\x97\xe0\xb8\xb5\xe0\xb9\x88 1-5\r\nold\t \r\n"
+    context.write_bytes(old_context)
+    profile.context_path = str(context)
+    profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
+    repo.save_profile(profile)
+    window = MainWindow(repo)
+    window.refresh_profiles(profile.id)
+    workspace = window._workspace(window.profile)
+    workspace.editor.open_file(translator)
+    monkeypatch.setattr(QMessageBox, "exec", lambda *_args: QMessageBox.No)
+
+    assert not window.update_context_from_translator(workspace)
+    assert context.read_bytes() == old_context
+    assert not list((folder / "Context Exports").glob("*.txt"))
+    assert not list((folder / "Polish History").glob("ตรวจคำแปล บท *"))
+    window.close()
+
+
+def test_snapshot_failure_stops_translator_export_before_context_write(tmp_path, monkeypatch):
+    app()
+    import novel_workflow.polish_history as polish_history
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile()
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "ABCTranslator.txt"
+    context = tmp_path / "Context.md"
+    translator.parent.mkdir(parents=True)
+    translator.write_text("บทที่ 6-10\nnew", encoding="utf-8")
+    old_context = "\ufeffบทที่ 1-5\r\nold\t \r\n".encode("utf-8")
+    context.write_bytes(old_context)
+    profile.context_path = str(context)
+    profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
+    repo.save_profile(profile)
+    window = MainWindow(repo)
+    window.refresh_profiles(profile.id)
+    workspace = window._workspace(window.profile)
+    workspace.editor.open_file(translator)
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "exec", lambda *_args: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    monkeypatch.setattr(
+        polish_history.PolishHistory, "_copy_file",
+        lambda *_args: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    assert not window.update_context_from_translator(workspace)
+    assert context.read_bytes() == old_context
+    assert not list((folder / "Context Exports").glob("*.txt"))
+    assert any("disk full" in message for message in warnings)
+    assert not list((folder / "Polish History").glob("ตรวจคำแปล บท *"))
+    window.close()
+
+
+def test_translator_changed_during_snapshot_stops_context_replacement(tmp_path, monkeypatch):
+    app()
+    import novel_workflow.polish_history as polish_history
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile()
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "ABCTranslator.txt"
+    context = tmp_path / "Context.md"
+    translator.parent.mkdir(parents=True)
+    translator.write_text("บทที่ 6-10\ntranslator", encoding="utf-8")
+    context.write_bytes("\ufeffบทที่ 1-5\r\nold\t\r\n".encode("utf-8"))
+    original_context = context.read_bytes()
+    profile.context_path = str(context)
+    profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
+    repo.save_profile(profile)
+    window = MainWindow(repo)
+    window.refresh_profiles(profile.id)
+    workspace = window._workspace(window.profile)
+    workspace.editor.open_file(translator)
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "exec", lambda *_args: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    copy_file = polish_history.PolishHistory._copy_file
+
+    def mutate_after_copy(source, destination):
+        copy_file(source, destination)
+        if source.resolve() == translator.resolve():
+            translator.write_text("บทที่ 6-10\nexternal edit", encoding="utf-8")
+
+    monkeypatch.setattr(polish_history.PolishHistory, "_copy_file", staticmethod(mutate_after_copy))
+
+    assert not window.update_context_from_translator(workspace)
+    assert context.read_bytes() == original_context
+    assert "external edit" in translator.read_text(encoding="utf-8")
+    assert not list((folder / "Context Exports").glob("*.txt"))
+    assert not list((folder / "Polish History").glob("ตรวจคำแปล บท *"))
+    assert any("changed" in message or "เปลี่ยน" in message for message in warnings)
     window.close()
 
 
@@ -141,6 +302,7 @@ def test_export_now_saves_the_current_unsaved_translator_before_export(tmp_path,
     context.write_text("old context", encoding="utf-8")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
     repo.save_profile(profile)
 
     window = MainWindow(repo)
@@ -169,11 +331,12 @@ def test_export_replaces_context_with_exact_translator_bytes_without_backup(tmp_
     translator = folder / "source" / "SELFLOVETranslator.txt"
     context = tmp_path / "SELFLOVEContext.md"
     translator.parent.mkdir(parents=True)
-    translator.write_text("บทที่ 1-10\nNew Context", encoding="utf-8")
+    translator.write_text("บทที่ 6-10\nNew Context", encoding="utf-8")
     old_bytes = "\ufeff# Chapter Progress\r\n\r\nChapter 1\r\nChapter 2\r\nChapter 3\r\nChapter 4\r\nChapter 5\r\n\t中文  \r\n".encode("utf-8")
     context.write_bytes(old_bytes)
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
     repo.save_profile(profile)
     window = MainWindow(repo)
     window.refresh_profiles(profile.id)
@@ -185,8 +348,15 @@ def test_export_replaces_context_with_exact_translator_bytes_without_backup(tmp_
     assert window.update_context_from_translator(workspace)
 
     exports = list((folder / "Context Exports").glob("*.txt"))
-    assert [item.name for item in exports] == ["SELFLOVETranslator 1-10.txt"]
+    assert [item.name for item in exports] == ["SELFLOVETranslator 6-10.txt"]
     assert exports[0].read_bytes() == context.read_bytes() == translator.read_bytes()
+    history = folder / "Polish History" / "ตรวจคำแปล บท 6-10"
+    manifest = json.loads((history / "manifest.json").read_text(encoding="utf-8"))
+    context_record = next(item for item in manifest["files"] if item["is_context"])
+    assert manifest["chapter_range"] == "6-10"
+    assert manifest["file_count"] == 2
+    assert context_record["sha256"] == hashlib.sha256(old_bytes).hexdigest()
+    assert (history / context_record["snapshot_path"]).read_bytes() == old_bytes
     assert not list_backups(context)
     assert not list(context.parent.glob(".palantir-recovery/*.bak"))
     assert not list(context.parent.glob(".palantir-recovery/*.bak.meta"))
@@ -199,13 +369,15 @@ def test_context_update_backup_uses_actual_translator_name_and_profile_binding(t
 
     repo = ProjectRepository(tmp_path / "data")
     profile = NovelProfile()
-    translator = repo.profile_dir(profile.id) / "source" / "作品Translator.txt"
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "作品Translator.txt"
     context = tmp_path / "Context.md"
     translator.parent.mkdir(parents=True)
     translator.write_text("第101章\n新しい内容", encoding="utf-8")
     context.write_text("Chapter 101\nold", encoding="utf-8")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
     repo.save_profile(profile)
     window = MainWindow(repo)
     window.refresh_profiles(profile.id)
@@ -234,6 +406,7 @@ def test_translator_button_is_hidden_for_unbound_and_other_tabs(tmp_path):
     context.write_text("Context", encoding="utf-8")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
     repo.save_profile(profile)
     window = MainWindow(repo)
     window.refresh_profiles(profile.id)
@@ -276,6 +449,7 @@ def test_export_uses_dynamic_chapter_span_and_keeps_exact_bytes(
     context.write_bytes(b"old context must not be appended")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
     repo.save_profile(profile)
     window = MainWindow(repo)
     window.refresh_profiles(profile.id)
@@ -310,6 +484,7 @@ def test_export_duplicate_names_are_case_insensitive_and_never_overwrite(tmp_pat
     prior.write_text("keep", encoding="utf-8")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
     repo.save_profile(profile)
     window = MainWindow(repo)
     window.refresh_profiles(profile.id)
@@ -357,6 +532,7 @@ def test_export_without_chapter_heading_uses_visible_timestamp_name(tmp_path, mo
     context.write_text("old", encoding="utf-8")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
     repo.save_profile(profile)
     window = MainWindow(repo)
     window.refresh_profiles(profile.id)
@@ -366,6 +542,7 @@ def test_export_without_chapter_heading_uses_visible_timestamp_name(tmp_path, mo
     monkeypatch.setattr(QMessageBox, "warning", lambda *_args: (warnings.append(repr(_args)), QMessageBox.Ok)[1])
     monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.Yes)
     monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
+    monkeypatch.setattr("novel_workflow.workspace_window.QInputDialog.getText", lambda *_args: ("1-5", True))
     monkeypatch.setattr(
         QMessageBox, "setDetailedText",
         lambda *_args: pytest.fail("Export confirmation must not receive novel text"),
@@ -392,6 +569,7 @@ def test_export_large_translator_reuses_saved_snapshot_and_profile_listing(tmp_p
     context.write_bytes(b"old context")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
     repo.save_profile(profile)
     window = MainWindow(repo)
     window.refresh_profiles(profile.id)
@@ -429,9 +607,9 @@ def test_export_large_translator_reuses_saved_snapshot_and_profile_listing(tmp_p
 
     assert window.update_context_from_translator(workspace)
     tracking["active"] = False
-    assert reads["source"] == 2
-    assert snapshot_hashes["count"] == 2
-    assert profile_lists["count"] <= 12
+    assert reads["source"] == 3
+    assert snapshot_hashes["count"] == 3
+    assert profile_lists["count"] <= 14
     assert context.read_bytes() == translator.read_bytes() == next(
         (folder / "Context Exports").glob("FASTTranslator 82.txt")
     ).read_bytes()
@@ -452,6 +630,7 @@ def test_export_staging_failure_leaves_context_and_export_folder_unchanged(tmp_p
     context.write_text("old", encoding="utf-8")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
     repo.save_profile(profile)
     window = MainWindow(repo)
     window.refresh_profiles(profile.id)
@@ -514,6 +693,7 @@ def test_context_update_refuses_unsaved_context_edits(tmp_path, monkeypatch):
     context.write_text("บทที่ 1\nold", encoding="utf-8")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
     repo.save_profile(profile)
     window = MainWindow(repo)
     window.refresh_profiles(profile.id)
@@ -541,6 +721,7 @@ def test_translator_external_conflict_stops_before_context_replace(tmp_path, mon
     context.write_text("old context", encoding="utf-8")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
     repo.save_profile(profile)
     window = MainWindow(repo)
     window.refresh_profiles(profile.id)
@@ -552,6 +733,7 @@ def test_translator_external_conflict_stops_before_context_replace(tmp_path, mon
     assert not window.update_context_from_translator(workspace)
 
     assert context.read_text(encoding="utf-8") == "old context"
+    assert not list((folder / "Polish History").glob("ตรวจคำแปล บท *"))
     window.close()
 
 
@@ -563,10 +745,11 @@ def test_translator_external_change_during_confirmation_stops_update(tmp_path, m
     translator = folder / "source" / "ABCTranslator.txt"
     context = tmp_path / "ABCContext.md"
     translator.parent.mkdir(parents=True)
-    translator.write_text("old translator", encoding="utf-8")
+    translator.write_text("Chapter 6\nold translator", encoding="utf-8")
     context.write_text("old context", encoding="utf-8")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
     repo.save_profile(profile)
     window = MainWindow(repo)
     window.refresh_profiles(profile.id)
@@ -574,7 +757,7 @@ def test_translator_external_change_during_confirmation_stops_update(tmp_path, m
     workspace.editor.open_file(translator)
 
     def external_change(_self):
-        translator.write_text("external translator", encoding="utf-8")
+        translator.write_text("Chapter 6\nexternal translator", encoding="utf-8")
         return QMessageBox.Yes
 
     monkeypatch.setattr(QMessageBox, "exec", external_change)
@@ -583,6 +766,7 @@ def test_translator_external_change_during_confirmation_stops_update(tmp_path, m
     assert not window.update_context_from_translator(workspace)
 
     assert context.read_text(encoding="utf-8") == "old context"
+    assert not list((folder / "Polish History").glob("ตรวจคำแปล บท *"))
     window.close()
 
 
@@ -599,6 +783,7 @@ def test_atomic_context_write_failure_keeps_original_and_recovery(tmp_path, monk
     context.write_text("old context", encoding="utf-8")
     profile.context_path = str(context)
     profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
     repo.save_profile(profile)
     window = MainWindow(repo)
     window.refresh_profiles(profile.id)
@@ -613,4 +798,8 @@ def test_atomic_context_write_failure_keeps_original_and_recovery(tmp_path, monk
     assert context.read_text(encoding="utf-8") == "old context"
     assert not list((context.parent / ".palantir-recovery").glob("*.bak"))
     assert not list((folder / "Context Exports").glob("*.txt"))
+    history = folder / "Polish History" / "ตรวจคำแปล บท 1"
+    manifest = json.loads((history / "manifest.json").read_text(encoding="utf-8"))
+    context_record = next(item for item in manifest["files"] if item["is_context"])
+    assert (history / context_record["snapshot_path"]).read_bytes() == b"old context"
     window.close()

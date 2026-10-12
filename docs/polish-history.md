@@ -66,6 +66,19 @@ is taken from exported content; if it cannot be verified, the item remains
 between `รอตรวจ` and `ตรวจแล้ว` in the History menu. Neither action snapshots
 files outside the configured step.
 
+Translator Editor `Export` has a separate ordered transaction: it first asks for
+confirmation, then snapshots the configured step and validates every payload.
+The profile Context must already be attached to that step because Export replaces
+it; the service never adds Context implicitly. Snapshot range comes from the
+current Translator headings, or from a range the user enters when headings are
+not conclusive. The Context payload therefore contains the exact pre-Export bytes.
+Only after that snapshot and a second source/profile conflict check does the
+existing atomic TXT/Context replacement run. Canceling creates no snapshot; a
+snapshot failure leaves both TXT output and Context untouched; an Export failure
+retains the verified snapshot and rolls the file transaction back. This button
+does not use the clipboard or alter workflow selection, verified counters or TXT
+Submit behavior.
+
 History reads and verifies disk records after restart. Copy always uses the
 selected snapshot and never writes Context, changes workflow selection, creates
 export events or advances verified/TXT counters. ZIP mode uses the existing
@@ -81,7 +94,7 @@ deduplication, corruption, partial writes, permissions, traversal and source cha
 Real named-stage buttons, full-page copy/back navigation, profile settings and
 post-close file existence are covered. Native Windows CF_HDROP/CF_UNICODETEXT,
 four DPI scales in Light/Dark, full regression suite and installer-upgrade CI run
-before release. Upgrade CI starts from v3.10.1, downloads via the actual updater,
+before release. Upgrade CI starts from v3.11.0, downloads via the actual updater,
 checks size/SHA-256 and validates legacy migration with the installed executable,
 including unchanged raw manifest and payload hashes after migration.
 The user's particular installed machine remains outside this automated test.

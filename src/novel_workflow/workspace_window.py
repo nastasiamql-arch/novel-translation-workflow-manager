@@ -8,7 +8,7 @@ from datetime import date, datetime
 from pathlib import Path
 import subprocess
 
-from PySide6.QtCore import QDir, QFileSystemWatcher, QSize, Qt, QTimer, Signal, QThread
+from PySide6.QtCore import QDir, QFileSystemWatcher, QEventLoop, QSize, Qt, QTimer, Signal, QThread
 from PySide6.QtGui import QAction, QFontMetrics, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QDialog, QFileDialog, QFileSystemModel, QFrame, QGridLayout,
@@ -954,6 +954,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.polish_history = PolishHistory(self.repo, self.assembler)
         self._history_workers = []
         self._history_pending = False
+        self._translator_export_in_progress = False
         self._pending_export_snapshots = []
         self._startup_pending_export_ids = {
             profile.id for profile, _path in self._pending_export_profiles()
@@ -3087,7 +3088,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
     def update_context_from_translator(self, workspace):
         """Export bound Translator bytes and replace its Context in one transaction."""
+        from copy import deepcopy
         from .recovery import translator_chapter_range
+        if self._translator_export_in_progress:
+            self.statusBar().showMessage("กำลังสำรองและ Export กรุณารอสักครู่", 5000)
+            return False
         profile_id = workspace.profile_id
         if not self.profile or self.profile.id != profile_id:
             QMessageBox.warning(self, "Export ไม่ได้", "โปรไฟล์ที่เลือกเปลี่ยนไปแล้ว กรุณาเลือกแท็บใหม่")
@@ -3134,10 +3139,35 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 raise OSError("Translator ถูกแก้ไขจากภายนอก")
             original_digest = hashlib.sha256(context.read_bytes()).digest()
             chapter_range = translator_chapter_range(translator_bytes)
+            history_range = chapter_range
+            if chapter_range is None:
+                entered_range, accepted = QInputDialog.getText(
+                    self, "ระบุช่วงบท", "ยืนยันช่วงบทจาก Translator เช่น 6-10:"
+                )
+                if not accepted:
+                    return False
+                from .polish_history import parse_range
+                history_range = parse_range(entered_range)
+            history_step = self._history_step_for_profile(profile)
+            if history_step is None:
+                raise OSError("เลือกขั้นตอนตรวจคำแปลสำหรับ Polish History ใน Settings ก่อน")
+            if not profile.main_folder.strip():
+                raise OSError("กรุณาตั้งค่าโฟลเดอร์หลักของนิยายก่อน Export")
+            profile_for_snapshot, step_for_snapshot = deepcopy(profile), deepcopy(history_step)
+            planned, _attachments = self.polish_history._plan(profile_for_snapshot, step_for_snapshot)
+
+            def attachment_signature(entries):
+                return tuple((str(path), item.id, item.reference_type, item.order,
+                              item.enabled, is_context)
+                             for path, _target, item, is_context in entries)
+
+            initial_attachment_signature = attachment_signature(planned)
+            if not any(path.resolve() == context for path, _target, _item, _ctx in planned):
+                raise OSError("ยังไม่ได้เลือกไฟล์ Context ในขั้นตอนตรวจคำแปล")
             root = (Path(profile.main_folder).expanduser() if profile.main_folder.strip()
                     else self.repo.profile_dir(profile.id))
             if not root.is_dir():
-                root = self.repo.profile_dir(profile.id)
+                raise OSError("ไม่พบโฟลเดอร์หลักของนิยาย")
             export_folder = root.resolve() / "Context Exports"
             export_folder.mkdir(parents=True, exist_ok=True)
             if chapter_range is None:
@@ -3177,7 +3207,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         preview.setWindowTitle("ยืนยัน Export")
         preview.setIcon(QMessageBox.Information)
         preview.setText(
-            f"สร้างไฟล์ TXT และแทนที่ Context ทั้งหมด?\n"
+            f"สำรองไฟล์ขั้นตอนตรวจคำแปลก่อน แล้วสร้างไฟล์ TXT และแทนที่ Context ทั้งหมด?\n"
             f"TXT: {target.name}\n{chapter_label}\n"
             f"Translator: {source}\nContext: {context}"
         )
@@ -3185,13 +3215,90 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if preview.exec() != QMessageBox.Yes:
             return False
 
+        self._translator_export_in_progress = True
+        snapshot_verified = False
         try:
+            if self.history_busy():
+                raise OSError("กำลังจัดการประวัติ กรุณารอสักครู่แล้วลอง Export อีกครั้ง")
             fresh_profile = self._translator_profile_for_path(profile_id, source)
             if (fresh_profile is None
-                    or Path(fresh_profile.context_path).expanduser().resolve() != context):
+                    or Path(fresh_profile.context_path).expanduser().resolve() != context
+                    or getattr(fresh_profile, "polish_history_step_id", None) != history_step.id):
                 raise OSError("โปรไฟล์หรือไฟล์ที่ผูกไว้เปลี่ยนไประหว่างยืนยัน")
+            fresh_step = self._history_step_for_profile(fresh_profile)
+            if fresh_step is None or fresh_step != history_step:
+                raise OSError("รายการไฟล์ขั้นตอนตรวจคำแปลเปลี่ยนระหว่างยืนยัน")
+            fresh_plan, _fresh_attachments = self.polish_history._plan(fresh_profile, fresh_step)
+            if attachment_signature(fresh_plan) != initial_attachment_signature:
+                raise OSError("ไฟล์ที่ Resolve สำหรับขั้นตอนตรวจคำแปลเปลี่ยนระหว่างยืนยัน")
             if hashlib.sha256(source.read_bytes()).digest() != source_digest:
                 raise OSError("Translator ถูกแก้ไขจากภายนอกระหว่างยืนยัน")
+            if hashlib.sha256(context.read_bytes()).digest() != original_digest:
+                raise OSError("Context ถูกแก้ไขจากภายนอกระหว่างยืนยัน")
+            loop = QEventLoop(self)
+            outcome = {}
+            self._history_pending = True
+            self.statusBar().showMessage("กำลังสำรองไฟล์ขั้นตอนตรวจคำแปลก่อน Export…")
+            worker = HistoryWorker(
+                lambda: self.polish_history.create(profile_for_snapshot, step_for_snapshot, history_range), self
+            )
+            self._history_workers.append(worker)
+
+            def snapshot_succeeded(value):
+                outcome["snapshot"] = value
+                self._history_pending = False
+                QTimer.singleShot(0, loop.quit)
+
+            def snapshot_failed(error):
+                outcome["error"] = error
+                self._history_pending = False
+                QTimer.singleShot(0, loop.quit)
+
+            worker.succeeded.connect(snapshot_succeeded, Qt.ConnectionType.QueuedConnection)
+            worker.failed.connect(snapshot_failed, Qt.ConnectionType.QueuedConnection)
+
+            def cleanup_snapshot_worker():
+                if worker in self._history_workers:
+                    self._history_workers.remove(worker)
+                worker.deleteLater()
+            worker.start()
+            loop.exec()
+            worker.wait()
+            cleanup_snapshot_worker()
+            if "error" in outcome:
+                raise OSError(f"สำรองไฟล์ขั้นตอนตรวจคำแปลไม่สำเร็จ: {outcome['error']}")
+            snapshot = outcome.get("snapshot")
+            if snapshot is None:
+                raise OSError("ไม่พบผลการบันทึก Polish History")
+            payloads = self.polish_history.validate(profile, snapshot.path)
+            manifest = snapshot.manifest
+            if (manifest.get("step_id") != history_step.id
+                    or manifest.get("chapter_range") != history_range
+                    or manifest.get("file_count") != len(payloads)):
+                raise OSError("ตรวจสอบ Snapshot แล้วพบ Metadata ไม่ตรงกับ Export")
+            saved_attachment_signature = tuple(
+                (entry["original_path"], entry["attachment_id"], entry["reference_type"],
+                 entry["order"], entry["enabled"], entry["is_context"])
+                for entry in manifest.get("files", [])
+            )
+            if saved_attachment_signature != initial_attachment_signature:
+                raise OSError("รายการไฟล์ใน Snapshot ไม่ตรงกับชุดที่ยืนยันไว้ก่อน Export")
+            saved_context = next((entry for entry in manifest.get("files", [])
+                                  if entry.get("is_context") and
+                                  Path(entry.get("original_path", "")).resolve() == context), None)
+            if saved_context is None or saved_context.get("sha256") != original_digest.hex():
+                raise OSError("ตรวจสอบ Snapshot แล้วไม่พบ Context เวอร์ชันก่อน Export")
+            snapshot_verified = True
+            fresh_profile = self._translator_profile_for_path(profile_id, source)
+            if (fresh_profile is None
+                    or Path(fresh_profile.context_path).expanduser().resolve() != context
+                    or getattr(fresh_profile, "polish_history_step_id", None) != history_step.id):
+                raise OSError("โปรไฟล์หรือไฟล์ที่ผูกไว้เปลี่ยนไประหว่างยืนยัน")
+            fresh_step = self._history_step_for_profile(fresh_profile)
+            if fresh_step is None or fresh_step != history_step:
+                raise OSError("รายการไฟล์ขั้นตอนตรวจคำแปลเปลี่ยนระหว่างสำรอง")
+            if hashlib.sha256(source.read_bytes()).digest() != source_digest:
+                raise OSError("Translator ถูกแก้ไขระหว่างสำรอง")
             if target.exists():
                 raise OSError("พบไฟล์ชื่อเดียวกันระหว่างเตรียม Export กรุณาลองอีกครั้ง")
             if hashlib.sha256(context.read_bytes()).digest() != original_digest:
@@ -3209,17 +3316,30 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 no_overwrite=(target,),
             )
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "Export ไม่สำเร็จ", str(exc))
+            if snapshot_verified:
+                message = f"สำรองประวัติสำเร็จ แต่ Export ไม่สำเร็จ\n{exc}"
+            else:
+                message = f"สำรองไฟล์ขั้นตอนที่ 2 ไม่สำเร็จ\n{exc}\n\nContext เดิมยังไม่ถูกเปลี่ยนแปลง"
+            QMessageBox.warning(self, "Export ไม่สำเร็จ", message)
             return False
         finally:
+            self._translator_export_in_progress = False
             for _destination, staged in staged_files:
                 _cleanup_staged_text_file(staged)
 
         workspace.editor.apply_external_update(context, visible_text)
         workspace.refresh_export_status()
         self.refresh_translation_progress()
-        self.statusBar().showMessage(f"Export {target.name} และอัปเดต Context สำเร็จ", 5000)
-        QMessageBox.information(self, "Export สำเร็จ", f"สร้าง {target.name} และอัปเดต Context สำเร็จ")
+        count = snapshot.manifest["file_count"]
+        self.statusBar().showMessage(
+            f"สำรอง {history_step.name} บท {history_range} สำเร็จ · {count} ไฟล์ · Export {target.name} สำเร็จ", 8000
+        )
+        QMessageBox.information(
+            self, "Export สำเร็จ",
+            f"สำรอง {history_step.name} บท {history_range} สำเร็จ\n"
+            f"สำรองไฟล์ {count} ไฟล์\nContext ที่สำรอง: เวอร์ชันก่อน Export\n\n"
+            f"ส่งออก Translator สำเร็จ\nอัปเดต Context ปัจจุบันเรียบร้อย",
+        )
         return True
 
     def launch_profile(self):

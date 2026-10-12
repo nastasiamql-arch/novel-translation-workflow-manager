@@ -2,6 +2,18 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.11.1 - 2026-10-12
+
+- Translator Editor Export now confirms first, snapshots the configured review
+  step and verifies its payload hashes before writing the TXT export or replacing
+  the profile Context. The attached Context is preserved byte-for-byte at its
+  pre-Export state; Export stops with a clear message when Context is not attached.
+- Resolve the snapshot chapter range from Translator headings or ask the user to
+  confirm one. Keep the existing timestamp-based TXT filename when headings are
+  unavailable, and retain the existing atomic TXT/Context transaction.
+- Use a shorter internal staging directory name to avoid Windows path-length
+  failures while keeping the same readable published History folder layout.
+
 ## 3.11.0 - 2026-10-12
 
 - Add `บันทึกไว้รอตรวจ` for the configured review step without changing workflow

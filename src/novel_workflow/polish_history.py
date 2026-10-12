@@ -284,7 +284,8 @@ class PolishHistory:
             except (OSError, ValueError):
                 pass  # Keep damaged history and publish a fresh verified snapshot.
         snapshot_id = uuid.uuid4().hex
-        staging = step_root / f'.staging-{snapshot_id}-{_token(step.id)}-{_token(profile.id)}'; staging.mkdir()
+        # Keep the unpublished staging path short for Windows MAX_PATH users.
+        staging = step_root / f'.staging-{snapshot_id[:12]}-{profile.id[:12]}'; staging.mkdir()
         entries = []
         try:
             for record, (source, target, _item, _ctx) in zip(identity, plan):
@@ -333,9 +334,12 @@ class PolishHistory:
             raise ValueError('Invalid review status')
         _token(manifest['step_id']); _token(manifest['snapshot_id'])
         parts = path.relative_to(self.root(profile)).parts
-        if len(parts) == 2:
-            if (path.name != '.staging-' + manifest['snapshot_id']
-                    and not path.name.endswith('__' + manifest['snapshot_id'])):
+        if path.name.startswith('.staging-'):
+            expected_staging = f'.staging-{manifest["snapshot_id"][:12]}-{profile.id[:12]}'
+            if path.name != expected_staging:
+                raise ValueError('Snapshot ID mismatch')
+        elif len(parts) == 2:
+            if not path.name.endswith('__' + manifest['snapshot_id']):
                 raise ValueError('Snapshot ID mismatch')
             if path.parent.name != f'{manifest["step_id"]}-{profile.id}':
                 raise ValueError('Snapshot step identity mismatch')
@@ -428,7 +432,7 @@ class PolishHistory:
                 if not path.is_dir(): continue
                 if not legacy:
                     if path.name.startswith('.staging-'):
-                        if not path.name.endswith('-' + profile.id): continue
+                        if not path.name.endswith('-' + profile.id[:12]): continue
                     else:
                         manifest = _read_manifest(_check_path(path / 'manifest.json'))
                         if not isinstance(manifest, dict) or manifest.get('profile_id') != profile.id: continue
