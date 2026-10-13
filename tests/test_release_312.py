@@ -461,3 +461,81 @@ def test_history_number_sits_immediately_before_copy_in_both_themes(window, appe
         assert row.height() <= (100 if width < 600 else 60)
     finally:
         page.hide(); page.setParent(w)
+
+
+def test_history_numerical_sort_requires_selection_and_persists_per_novel(window):
+    from PySide6.QtWidgets import QLabel, QComboBox
+    from novel_workflow.polish_history_page import PolishHistoryPage
+    w, profile, _ws, errors = window
+    step = profile.workflow.steps[1]
+    for chapter in ('430', '429', '403-404'):
+        w.polish_history.create(profile, step, chapter)
+    w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
+    page = w._utility_pages['polish-history:' + profile.id]
+    selector = page.findChild(QComboBox, 'polishHistorySort')
+    def shown():
+        rows = [page.card_layout.itemAt(i).widget()
+                for i in range(page.card_layout.count())
+                if page.card_layout.itemAt(i).widget() is not None]
+        return [
+            (row.findChild(QLabel, 'historySequenceNumber').text(),
+             row.findChild(QLabel, 'historyRangeTitle').text())
+            for row in rows
+        ]
+    # Default stays newest-first until the reader chooses a sort.
+    assert selector.currentData() == 'recent'
+    assert shown() == [('1', 'บท 403–404'), ('2', 'บท 429'), ('3', 'บท 430')]
+    selector.setCurrentIndex(selector.findData('chapter_desc'))
+    assert shown() == [('1', 'บท 430'), ('2', 'บท 429'), ('3', 'บท 403–404')]
+    selector.setCurrentIndex(selector.findData('chapter_asc'))
+    assert shown() == [('1', 'บท 403–404'), ('2', 'บท 429'), ('3', 'บท 430')]
+    assert w.repo.load_settings().history_sort_modes[profile.id] == 'chapter_asc'
+    # New History window uses persisted selection for this same profile.
+    next_page = PolishHistoryPage(w, profile)
+    next_page.snapshots = list(page.snapshots)
+    next_page.render()
+    assert next_page.sort_selector.currentData() == 'chapter_asc'
+    assert [s.manifest['chapter_range'] for s in next_page._ordered_snapshots()] == [
+        '403-404', '429', '430'
+    ]
+    next_page.deleteLater()
+    assert not errors
+
+
+def test_history_manual_move_and_copy_target_remain_stable(window):
+    from PySide6.QtWidgets import QLabel, QComboBox, QToolButton
+    w, profile, _ws, errors = window
+    step = profile.workflow.steps[1]
+    for chapter in ('430', '429', '403-404'):
+        w.polish_history.create(profile, step, chapter)
+    w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
+    page = w._utility_pages['polish-history:' + profile.id]
+    selector = page.findChild(QComboBox, 'polishHistorySort')
+    selector.setCurrentIndex(selector.findData('chapter_desc'))
+    selector.setCurrentIndex(selector.findData('manual'))
+    def row_list():
+        return [page.card_layout.itemAt(i).widget()
+                for i in range(page.card_layout.count())
+                if page.card_layout.itemAt(i).widget() is not None]
+    assert [row.findChild(QLabel, 'historyRangeTitle').text() for row in row_list()] == [
+        'บท 430', 'บท 429', 'บท 403–404'
+    ]
+    middle = row_list()[1]
+    middle.findChild(QToolButton, 'polishHistoryMoveUp').click()
+    assert [row.findChild(QLabel, 'historyRangeTitle').text() for row in row_list()] == [
+        'บท 429', 'บท 430', 'บท 403–404'
+    ]
+    assert [row.findChild(QLabel, 'historySequenceNumber').text() for row in row_list()] == [
+        '1', '2', '3'
+    ]
+    assert w.repo.load_settings().history_manual_order[profile.id] == [
+        page._snapshot_id(s) for s in page._ordered_snapshots()
+    ]
+    page.search.setText('429')
+    assert len(row_list()) == 1
+    assert not row_list()[0].findChild(QToolButton, 'polishHistoryMoveUp').isEnabled()
+    page.search.clear()
+    assert row_list()[0].findChild(QPushButton, 'polishHistoryCopy').accessibleName().startswith('ลำดับ 1 บท 429')
+    assert not errors
