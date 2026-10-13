@@ -133,7 +133,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QWidget#polishHistoryCards {{ background: {c['app']}; }}
     QLabel#completedTranslationSummary {{ color: {c['text']}; font-family: "Segoe UI"; font-size: 10pt; }}
     QLabel#historyRangeTitle {{ color: {c['text']}; font-size: 11pt; font-weight: 600; }}
-    QLabel#historySequenceNumber {{ color: {c['secondary']}; background: {c['surface2']}; border: 1px solid {c['border']}; border-radius: 6px; padding: 4px 8px; font-size: 9pt; font-weight: 600; }}
+    QLabel#historySequenceNumber {{ color: {c['secondary']}; background: {c['surface2']}; border: 1px solid {c['border']}; border-radius: 6px; padding: 2px 3px; font-size: 9pt; font-weight: 600; }}
     QFrame#polishHistoryRow {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 6px; }}
     QPushButton#polishHistoryCopy {{ background: {c['primary']}; color: {c['primary_text']}; border: 0; border-radius: 8px; padding: 7px 16px; font-weight: 600; }}
     QPushButton#polishHistoryCopy:hover {{ background: {c['primary_hover']}; }}
