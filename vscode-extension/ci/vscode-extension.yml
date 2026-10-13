@@ -1,0 +1,32 @@
+name: VS Code Extension
+
+on:
+  push:
+    branches: [main, vscode-extension]
+    paths:
+      - 'vscode-extension/**'
+      - '.github/workflows/vscode-extension.yml'
+  pull_request:
+    paths:
+      - 'vscode-extension/**'
+      - '.github/workflows/vscode-extension.yml'
+
+jobs:
+  extension:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check extension and run tests
+        working-directory: vscode-extension
+        run: npm run check
+      - name: Package VSIX
+        working-directory: vscode-extension
+        run: npx --yes @vscode/vsce package --no-dependencies --out NovelWorkflow.vsix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NovelWorkflow-vscode-extension
+          path: vscode-extension/NovelWorkflow.vsix
+          if-no-files-found: error
