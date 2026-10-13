@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.14.0 - 2026-10-13
+
+- Add explicit Polish History sorting by newest, actual chapter number descending or ascending, and manual move-up/down order. Each novel remembers its own selected mode and manual arrangement.
+- Group a clean, unpadded row number, chapter title and Copy button together on the left; keep Delete and More at the far right. Review payloads, hashes, identities, Context and snapshot paths remain untouched.
+- Maintain search, keyboard-accessible ordering controls, Light/Dark appearance and compact row height.
+
 ## 3.13.4 - 2026-10-13
 
 - Enlarge Polish History sequence badges beside Copy from 44px/9pt to 64px/12pt bold, with stronger theme-aware contrast and a 34px minimum height.

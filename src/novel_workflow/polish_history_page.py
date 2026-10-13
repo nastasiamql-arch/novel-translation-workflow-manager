@@ -1,11 +1,13 @@
 """Full-page history using the shell's navigation and existing theme tokens."""
 from datetime import datetime
 from pathlib import Path
+import re
 
 from PySide6.QtCore import Qt, QThread, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QScrollArea, QFrame, QMenu, QInputDialog, QMessageBox, QApplication, QStyle)
+    QPushButton, QScrollArea, QFrame, QMenu, QInputDialog, QMessageBox, QApplication, QStyle,
+    QComboBox, QToolButton)
 
 
 class HistoryWorker(QThread):
@@ -27,6 +29,9 @@ class PolishHistoryPage(QWidget):
         self.owner, self.profile = owner, profile
         self.snapshots = []
         self._refresh_queued = False
+        self._sort_mode = self.owner.settings.history_sort_modes.get(profile.id, 'recent')
+        if self._sort_mode not in ('recent', 'chapter_desc', 'chapter_asc', 'manual'):
+            self._sort_mode = 'recent'
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0)
         subtitle = QLabel('ไฟล์ตามที่ผูกไว้กับขั้นตอนตรวจคำแปล · เลือกคัดลอกหรือระบุช่วงบทภายหลัง')
         subtitle.setWordWrap(True); subtitle.setObjectName('mutedLabel'); layout.addWidget(subtitle)
@@ -36,6 +41,27 @@ class PolishHistoryPage(QWidget):
         self.search.textChanged.connect(self.render); tools.addWidget(self.search, 1)
         self.refresh_button = QPushButton('Refresh'); self.refresh_button.clicked.connect(self.refresh)
         tools.addWidget(self.refresh_button); layout.addLayout(tools)
+        sort_tools = QHBoxLayout()
+        sort_label = QLabel('จัดเรียง:')
+        sort_label.setObjectName('mutedLabel')
+        sort_tools.addWidget(sort_label)
+        self.sort_selector = QComboBox()
+        self.sort_selector.setObjectName('polishHistorySort')
+        self.sort_selector.setAccessibleName('จัดเรียงประวัติตามเลขบทหรือเวลา')
+        for label, value in (
+            ('ล่าสุดก่อน', 'recent'),
+            ('เลขบท: มาก → น้อย', 'chapter_desc'),
+            ('เลขบท: น้อย → มาก', 'chapter_asc'),
+            ('จัดเรียงด้วยตัวเอง', 'manual'),
+        ):
+            self.sort_selector.addItem(label, value)
+        self.sort_selector.setCurrentIndex(
+            max(0, self.sort_selector.findData(self._sort_mode))
+        )
+        self.sort_selector.currentIndexChanged.connect(self._change_sort)
+        sort_tools.addWidget(self.sort_selector)
+        sort_tools.addStretch(1)
+        layout.addLayout(sort_tools)
         self.status = QLabel(); self.status.setWordWrap(True); layout.addWidget(self.status)
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
         self.cards = QWidget(); self.cards.setObjectName('polishHistoryCards')
@@ -68,13 +94,90 @@ class PolishHistoryPage(QWidget):
     def failed(self, error):
         self.status.setText(str(error))
 
+    @staticmethod
+    def _snapshot_id(snapshot):
+        return str(snapshot.manifest.get('snapshot_id') or snapshot.path)
+
+    @staticmethod
+    def _chapter_range(snapshot):
+        span = str(snapshot.manifest.get('chapter_range') or '')
+        match = re.fullmatch(r'\s*(\d+)(?:\s*[-–]\s*(\d+))?\s*', span)
+        if match is None:
+            return None
+        return int(match.group(1)), int(match.group(2) or match.group(1))
+
+    def _ordered_snapshots(self, mode=None):
+        mode = mode or self._sort_mode
+        # Service returns newest first; Python's stable sort retains that
+        # ordering for equal chapter keys or unresolved ranges.
+        snapshots = list(self.snapshots)
+        if mode in ('chapter_asc', 'chapter_desc'):
+            def key(snapshot):
+                span = self._chapter_range(snapshot)
+                if span is None:
+                    return (1, 0, 0)
+                start, end = span
+                if mode == 'chapter_desc':
+                    return (0, -start, -end)
+                return (0, start, end)
+            return sorted(snapshots, key=key)
+        if mode == 'manual':
+            identifiers = self.owner.settings.history_manual_order.get(self.profile.id, [])
+            if not isinstance(identifiers, list):
+                identifiers = []
+            by_id = {self._snapshot_id(s): s for s in snapshots}
+            existing = [by_id[i] for i in identifiers if i in by_id]
+            used = {self._snapshot_id(s) for s in existing}
+            # New snapshots appear first, without disturbing manually placed
+            # existing rows; removed snapshots never get restored.
+            return [s for s in snapshots if self._snapshot_id(s) not in used] + existing
+        return snapshots
+
+    def _persist_sort(self):
+        try:
+            self.owner.repo.save_settings(self.owner.settings)
+        except (OSError, ValueError) as exc:
+            self.failed('บันทึกการจัดเรียงไม่ได้: ' + str(exc))
+
+    def _change_sort(self, _index):
+        choice = self.sort_selector.currentData()
+        if choice not in ('recent', 'chapter_desc', 'chapter_asc', 'manual'):
+            return
+        if choice == 'manual' and self._sort_mode != 'manual':
+            # Manual mode starts with exactly the order currently visible.
+            self.owner.settings.history_manual_order[self.profile.id] = [
+                self._snapshot_id(s) for s in self._ordered_snapshots()
+            ]
+        self._sort_mode = choice
+        self.owner.settings.history_sort_modes[self.profile.id] = choice
+        self._persist_sort()
+        self.render()
+
+    def _move_snapshot(self, snapshot, direction):
+        if self._sort_mode != 'manual':
+            return
+        arranged = self._ordered_snapshots()
+        identities = [self._snapshot_id(s) for s in arranged]
+        current = self._snapshot_id(snapshot)
+        if current not in identities:
+            return
+        index = identities.index(current)
+        new_index = index + direction
+        if not 0 <= new_index < len(identities):
+            return
+        identities[index], identities[new_index] = identities[new_index], identities[index]
+        self.owner.settings.history_manual_order[self.profile.id] = identities
+        self._persist_sort()
+        self.render()
+
     def render(self, *_):
         while self.card_layout.count():
             item = self.card_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
         query = self.search.text().strip().replace('–', '-')
+        ordered = self._ordered_snapshots()
         found = []
-        for snapshot in self.snapshots:
+        for snapshot in ordered:
             span = str(snapshot.manifest.get('chapter_range', ''))
             match = not query or query in span
             if query.isdigit() and span:
@@ -83,50 +186,65 @@ class PolishHistoryPage(QWidget):
                     match = bounds[0] <= int(query) <= bounds[-1]
                 except (ValueError, TypeError): pass
             if match: found.append(snapshot)
-        # Visible ordinal labels are continuous even after deletion. The
-        # manifest history_number remains a durable internal identity.
-        visible_numbers = {
-            item.path: len(self.snapshots) - index
-            for index, item in enumerate(self.snapshots)
-        }
-        for snapshot in found:
+        # Sequential UI labels follow the selected (and optionally filtered)
+        # presentation order. The immutable manifest ID is never modified.
+        for index, snapshot in enumerate(found):
             card = QFrame(); card.setObjectName('polishHistoryRow')
             rows = QHBoxLayout(card); rows.setContentsMargins(8, 4, 8, 4); rows.setSpacing(6)
             card.setMinimumHeight(54)
-            text_column = QVBoxLayout(); text_column.setSpacing(0)
-            rows.addLayout(text_column, 1)
-            top = QHBoxLayout()
-            span = snapshot.manifest.get('chapter_range')
-            title = QLabel(('บท ' + str(span).replace('-', '–')) if span else 'รอระบุช่วงบท')
-            number = visible_numbers[snapshot.path]
-            title.setObjectName('historyRangeTitle'); title.setWordWrap(True); text_column.addWidget(title)
-            # Keep the chapter label uncluttered. Display the current list
-            # number alongside its action so the copy target is easy to find.
-            sequence = QLabel(f'[{number:03d}]')
+            # Keep number → chapter/details → copy as one left-aligned group.
+            # Destructive actions stay isolated on the far right.
+            sequence = QLabel(str(index + 1))
             sequence.setObjectName('historySequenceNumber')
             sequence.setAlignment(Qt.AlignCenter)
-            sequence.setFixedWidth(64)
-            sequence.setMinimumHeight(34)
-            sequence.setToolTip('ลำดับรายการในประวัติ')
-            sequence.setAccessibleName(f'ประวัติหมายเลข {number:03d}')
+            sequence.setFixedSize(36, 36)
+            sequence.setToolTip('ลำดับรายการที่แสดง')
+            sequence.setAccessibleName(f'ลำดับ {index + 1}')
             rows.addWidget(sequence)
+            text_column = QVBoxLayout(); text_column.setSpacing(0)
+            rows.addLayout(text_column)
+            span = snapshot.manifest.get('chapter_range')
+            title = QLabel(('บท ' + str(span).replace('-', '–')) if span else 'รอระบุช่วงบท')
+            title.setObjectName('historyRangeTitle')
+            title.setWordWrap(True)
+            text_column.addWidget(title)
             copy = QPushButton('คัดลอก'); copy.setObjectName('polishHistoryCopy')
             changed_payload = snapshot.error.startswith('ไฟล์ในประวัติถูกแก้ไขหรือ Hash ไม่ตรง:')
             copy.setEnabled(not snapshot.error or changed_payload)
             if changed_payload:
                 copy.setToolTip('ไฟล์ในประวัติถูกแก้ไข · คลิกเพื่อยืนยันไฟล์ที่แก้แล้วและคัดลอก')
-            copy.setAccessibleName(sequence.text() + ' ' + title.text() + ' คัดลอกไฟล์ทั้งหมด')
+            copy.setAccessibleName(f'ลำดับ {index + 1} ' + title.text() + ' คัดลอกไฟล์ทั้งหมด')
             copy.clicked.connect(lambda _=False, s=snapshot: self.copy_snapshot(s))
             rows.addWidget(copy)
+            if self._sort_mode == 'manual':
+                up = QToolButton()
+                up.setObjectName('polishHistoryMoveUp')
+                up.setText('↑')
+                up.setToolTip('เลื่อนประวัติขึ้น')
+                up.setAccessibleName(f'เลื่อนบท {span} ขึ้น')
+                up.setFixedWidth(25)
+                up.setEnabled(index > 0 and not self.search.text().strip())
+                up.clicked.connect(lambda _=False, s=snapshot: self._move_snapshot(s, -1))
+                rows.addWidget(up)
+                down = QToolButton()
+                down.setObjectName('polishHistoryMoveDown')
+                down.setText('↓')
+                down.setToolTip('เลื่อนประวัติลง')
+                down.setAccessibleName(f'เลื่อนบท {span} ลง')
+                down.setFixedWidth(25)
+                down.setEnabled(index < len(found) - 1 and not self.search.text().strip())
+                down.clicked.connect(lambda _=False, s=snapshot: self._move_snapshot(s, 1))
+                rows.addWidget(down)
+            rows.addStretch(1)
             delete = QPushButton(); delete.setObjectName('polishHistoryDelete')
             delete.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
             delete.setToolTip('ลบประวัตินี้ไปยังถังรีไซเคิล')
-            delete.setAccessibleName(sequence.text() + ' ' + title.text() + ' ลบประวัตินี้ไปยังถังรีไซเคิล')
+            delete.setAccessibleName(f'ลำดับ {index + 1} ' + title.text() + ' ลบประวัตินี้ไปยังถังรีไซเคิล')
             delete.setFixedWidth(32)
             delete.setStyleSheet('QPushButton:hover { background: #f6caca; color: #782020; }')
             delete.clicked.connect(lambda _=False, s=snapshot, b=delete: self.delete_snapshot(s, b))
             rows.addWidget(delete)
-            more = QPushButton('⋯'); more.setAccessibleName(sequence.text() + ' ' + title.text() + ' ตัวเลือกเพิ่มเติม')
+            more = QPushButton('⋯'); more.setAccessibleName(f'ลำดับ {index + 1} ' + title.text() + ' ตัวเลือกเพิ่มเติม')
             more.clicked.connect(lambda _=False, s=snapshot, b=more: self.more_menu(s, b))
             more.setFixedWidth(28); rows.addWidget(more)
             try: stamp = datetime.fromisoformat(snapshot.manifest['created_at']).astimezone().strftime('%H:%M')

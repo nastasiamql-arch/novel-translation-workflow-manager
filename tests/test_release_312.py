@@ -128,7 +128,7 @@ def test_compact_history_delete_has_no_confirmation(window, monkeypatch):
     page = w._utility_pages['polish-history:' + p.id]
     buttons = page.findChildren(QPushButton, 'polishHistoryDelete')
     assert len(buttons) == 1
-    assert '[001]' in buttons[0].accessibleName()
+    assert 'ลำดับ 1' in buttons[0].accessibleName()
     monkeypatch.setattr(QMessageBox, 'question', lambda *a: pytest.fail('No confirmation allowed'))
     buttons[0].click(); wait_until(lambda: not w.history_busy())
     wait_until(lambda: not page.snapshots)
@@ -390,7 +390,7 @@ def test_history_visible_numbers_renumber_after_delete_without_mutating_ids(wind
         return [label.text() for row in active_rows()
                 for label in row.findChildren(QLabel, 'historySequenceNumber')]
     assert titles() == ['บท 324', 'บท 322–323', 'บท 320–321']
-    assert numbers() == ['[003]', '[002]', '[001]']
+    assert numbers() == ['1', '2', '3']
     original_ids = {s.manifest['snapshot_id']: s.manifest['history_number'] for s in page.snapshots}
     trash_folder = tmp_path / 'recycled'
     monkeypatch.setattr(recycle, 'recycle_snapshot', lambda folder: Path(folder).rename(trash_folder))
@@ -400,7 +400,7 @@ def test_history_visible_numbers_renumber_after_delete_without_mutating_ids(wind
     # Page refresh may queue its own worker on the next event-loop tick.
     wait_until(lambda: len(page.snapshots) == 2)
     assert titles() == ['บท 324', 'บท 320–321']
-    assert numbers() == ['[002]', '[001]']
+    assert numbers() == ['1', '2']
     for snap in page.snapshots:
         assert snap.manifest['history_number'] == original_ids[snap.manifest['snapshot_id']]
 
@@ -446,16 +446,15 @@ def test_history_number_sits_immediately_before_copy_in_both_themes(window, appe
         ordinal = row.findChild(QLabel, 'historySequenceNumber')
         copy = row.findChild(QPushButton, 'polishHistoryCopy')
         assert chapter.text() == 'บท 322–323'
-        assert ordinal.text() == '[001]'
+        assert ordinal.text() == '1'
         assert ordinal.objectName() == 'historySequenceNumber'
-        # A 12pt bold 64px badge is deliberately easier to read than the
-        # previous 9pt 44px ordinal, without enlarging the compact card.
-        assert ordinal.width() == 64
-        assert ordinal.height() >= 34
+        # The number is now a compact leading marker, not a distant badge.
+        assert ordinal.width() == 36
+        assert ordinal.height() == 36
         assert 'font-size: 12pt; font-weight: 700' in w.styleSheet()
-        assert ordinal.geometry().right() < copy.geometry().left()
-        assert copy.geometry().left() - ordinal.geometry().right() <= 12
-        assert chapter.geometry().right() < ordinal.geometry().left()
+        assert ordinal.geometry().right() < chapter.geometry().left()
+        assert chapter.geometry().right() < copy.geometry().left()
+        assert copy.geometry().left() - chapter.geometry().right() < 90
         assert ordinal.geometry().left() >= 0
         assert ordinal.geometry().right() < row.width()
         assert copy.geometry().right() < row.width()

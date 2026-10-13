@@ -125,3 +125,9 @@ The chapter label stands alone at the left of each History row; the contiguous d
 ## v3.13.4 larger History number badges
 
 The History sequence number beside Copy uses a larger 12pt bold, 64px-wide, at least 34px-tall pill with theme-appropriate text contrast. The chapter title remains on the left. The number is a display ordinal and still closes gaps when history rows are deleted, without changing any stored Snapshot identities.
+
+## v3.14.0 History sorting and compact action grouping
+
+The History page defaults to the existing newest-first order. To switch to numerical sorting, explicitly choose `เลขบท: มาก → น้อย` or `เลขบท: น้อย → มาก`; the sort is numeric by the first chapter and then the final chapter. Unknown chapter ranges remain at the bottom. `จัดเรียงด้วยตัวเอง` exposes accessible Up/Down buttons, disabled while search is filtering to avoid moving the wrong item. A novel's sort mode and manual Snapshot-ID list are saved in application settings under its profile ID and restored on reopening. New manual-mode captures appear above retained custom positions.
+
+Rows use the compact left cluster `1 บท 430 คัดลอก`, with time, file count and review status under the chapter. Delete and More remain at the far right. Visible ordinals restart from 1 in the selected display/search order and are not stored in manifests. Real chapter numbers, Snapshot IDs, Context, payloads, manifest hashes and directory names are not changed.
