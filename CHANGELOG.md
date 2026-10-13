@@ -2,6 +2,11 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.13.4 - 2026-10-13
+
+- Enlarge Polish History sequence badges beside Copy from 44px/9pt to 64px/12pt bold, with stronger theme-aware contrast and a 34px minimum height.
+- Keep chapter labels, delete/copy/menu actions and compact history rows intact; extend Light/Dark responsive UI regression tests.
+
 ## 3.13.3 - 2026-10-13
 
 - Move the compact History row's visible ordinal to a subtle theme-aware badge immediately before Copy. Show chapter ranges clearly on the left without a number prefix.

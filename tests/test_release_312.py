@@ -448,6 +448,11 @@ def test_history_number_sits_immediately_before_copy_in_both_themes(window, appe
         assert chapter.text() == 'บท 322–323'
         assert ordinal.text() == '[001]'
         assert ordinal.objectName() == 'historySequenceNumber'
+        # A 12pt bold 64px badge is deliberately easier to read than the
+        # previous 9pt 44px ordinal, without enlarging the compact card.
+        assert ordinal.width() == 64
+        assert ordinal.height() >= 34
+        assert 'font-size: 12pt; font-weight: 700' in w.styleSheet()
         assert ordinal.geometry().right() < copy.geometry().left()
         assert copy.geometry().left() - ordinal.geometry().right() <= 12
         assert chapter.geometry().right() < ordinal.geometry().left()

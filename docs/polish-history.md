@@ -121,3 +121,7 @@ Editing any History payload outside the application intentionally invalidates it
 ## v3.13.3 compact review row position
 
 The chapter label stands alone at the left of each History row; the contiguous display ordinal (e.g. `[003]`) sits immediately to the left of Copy. The ordinal uses the existing theme palette for Light/Dark contrast and does not modify snapshot identities, manifest contents, deletion, copying, or History sorting.
+
+## v3.13.4 larger History number badges
+
+The History sequence number beside Copy uses a larger 12pt bold, 64px-wide, at least 34px-tall pill with theme-appropriate text contrast. The chapter title remains on the left. The number is a display ordinal and still closes gaps when history rows are deleted, without changing any stored Snapshot identities.
