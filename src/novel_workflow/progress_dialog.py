@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from .models import NovelProfile
 from .export_service import daily_export_count, verified_goal_text
 from .storage import ProjectRepository
-from .translation_progress import daily_chapter_count, goal_progress, profile_week_count, reset_goal_progress
+from .translation_progress import daily_chapter_count, goal_progress, profile_week_count, reset_goal_progress, completed_chapter_count, completion_label, completion_tooltip
 
 
 class StatisticsPage(QWidget):
@@ -172,8 +172,8 @@ class StatisticsPage(QWidget):
             return
         try:
             for profile in eligible:
-                if profile.translation_goal_target is None or profile.translation_goal_baseline is None:
-                    profile.translation_goal_baseline = profile.chapter_state.current_chapter
+                if profile.translation_goal_target is None or profile.translator_goal_baseline is None:
+                    profile.translator_goal_baseline = completed_chapter_count(profile)
                 profile.translation_goal_target = target
                 self.repo.save_profile(profile)
         except OSError as exc:
@@ -224,12 +224,20 @@ class StatisticsPage(QWidget):
         title = QLabel(profile.name)
         title.setObjectName("metricLabel")
         title.setWordWrap(True)
-        latest = QLabel(f"ถึงบท {profile.chapter_state.current_chapter}" if profile.context_path else "ยังไม่ได้เชื่อม Context")
-        latest.setObjectName("mutedLabel")
+        latest = QLabel(completion_label(profile))
+        latest.setObjectName("mutedLabel"); latest.setWordWrap(True)
+        latest.setToolTip(completion_tooltip(profile))
         header.addWidget(title, 1)
         header.addWidget(latest)
         layout.addLayout(header)
 
+        if profile.translation_daily_activity:
+            legacy = QPushButton('สถิติ Context เดิม (ไม่นับเป็น Export ที่ยืนยัน) ▾')
+            legacy.setCheckable(True)
+            legacy_text = QLabel('\n'.join(f'{day} · {len(chapters)} บท (Context)' for day, chapters in sorted(profile.translation_daily_activity.items())))
+            legacy_text.setWordWrap(True); legacy_text.hide()
+            legacy.toggled.connect(legacy_text.setVisible)
+            layout.addWidget(legacy); layout.addWidget(legacy_text)
         count = daily_chapter_count(profile, today_key)
         today_label = QLabel(f"วันนี้แปลเพิ่ม {count} บท")
         today_label.setObjectName("bodyLabel")
@@ -248,7 +256,7 @@ class StatisticsPage(QWidget):
         controls = QHBoxLayout()
         if goal:
             completed, target, percentage = goal
-            goal_label = QLabel(f"เป้าหมาย {completed}/{target} บท")
+            goal_label = QLabel(f"แปลสำเร็จ {completed}/{target} บท{' ✓' if completed >= target else ''}")
             goal_label.setObjectName("bodyLabel")
             goal_bar = QProgressBar()
             goal_bar.setRange(0, 100)
@@ -290,7 +298,7 @@ class StatisticsPage(QWidget):
         controls.addWidget(save_goal)
         if goal:
             reset = QPushButton("รีเซ็ตความคืบหน้า")
-            reset.setToolTip("เริ่มนับเป้าหมายใหม่จากบทปัจจุบัน โดยเก็บจำนวนเป้าหมายเดิมไว้")
+            reset.setToolTip("เริ่มนับบทใหม่จาก Translator Export ถัดไป โดยเก็บประวัติ Export เดิมไว้")
             reset.clicked.connect(lambda checked=False, item=profile: self._reset_goal(item))
             controls.addWidget(reset)
         layout.addLayout(controls)
@@ -302,7 +310,7 @@ class StatisticsPage(QWidget):
         answer = QMessageBox.question(
             self,
             "รีเซ็ตความคืบหน้าเป้าหมาย",
-            f"เริ่มเป้าหมาย {profile.translation_goal_target} บทใหม่จากบท {profile.chapter_state.current_chapter} ใช่ไหม?\n\nจำนวนบทที่แปลรายวันจะไม่ถูกลบ",
+            f"เริ่มเป้าหมาย {profile.translation_goal_target} บทใหม่จาก Translator Export ถัดไป ใช่ไหม?\n\nจำนวนบทที่แปลรายวันจะไม่ถูกลบ",
         )
         if answer != QMessageBox.Yes:
             return
@@ -316,8 +324,8 @@ class StatisticsPage(QWidget):
         self.refresh()
 
     def _save_goal(self, profile: NovelProfile, target: int):
-        if profile.translation_goal_target is None or profile.translation_goal_baseline is None:
-            profile.translation_goal_baseline = profile.chapter_state.current_chapter
+        if profile.translation_goal_target is None or profile.translator_goal_baseline is None:
+            profile.translator_goal_baseline = completed_chapter_count(profile)
         profile.translation_goal_target = target
         try:
             self.repo.save_profile(profile)

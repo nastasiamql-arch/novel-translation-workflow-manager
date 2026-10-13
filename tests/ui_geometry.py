@@ -86,7 +86,7 @@ def main():
                 assert bar.tabButton(bar.count()-1,bar.ButtonPosition.LeftSide) is None
                 for button in ws.editor_header.findChildren(QAbstractButton):
                     if button.isVisible(): assert button.height()>=button.fontMetrics().height()
-                assert 'แปลถึงบท 123' in ws.novel_header.progress.text()
+                assert 'ยังไม่มี Export ที่ยืนยัน' in ws.novel_header.progress.text()
                 assert ws.workspace_splitter.count() == 2
                 if os.environ.get("PALANTIR_UI_CAPTURE"):
                     Path("build").mkdir(exist_ok=True)

@@ -7,7 +7,7 @@ from .models import AppSettings, LaunchTarget, NovelGroup, StepFile, Workflow, W
 from .services import ProfileService, WorkflowService, AssemblyService
 from .launcher import LauncherService
 from .storage import ProjectRepository
-from .translation_progress import sync_profile_context, read_context_chapter, daily_chapter_count, goal_progress
+from .translation_progress import sync_profile_context, read_context_chapter, daily_chapter_count, goal_progress, completion_label, completion_tooltip
 from .progress_dialog import TranslationDashboardDialog
 from .theme import application_stylesheet, capture_system_appearance, qt_palette
 
@@ -239,25 +239,15 @@ class ManagementActionsMixin:
             self.goal_label.setText("ยังไม่ได้เลือกนิยาย")
             self.goal_bar.setRange(0,100)
             self.goal_bar.setValue(0)
-            self.latest_chapter_label.setText("เลือกนิยายเพื่อดูบทล่าสุดจาก Context")
+            self.latest_chapter_label.setText('ยังไม่มี Export ที่ยืนยัน')
             return
         today=daily_chapter_count(self.profile)
-        latest=None
-        if self.profile.context_path:
-            try:
-                context=Path(self.profile.context_path).expanduser()
-                if context.is_file():
-                    latest=read_context_chapter(context)
-            except OSError:
-                latest=None
-        self.latest_chapter_label.setText(
-            f"นิยายนี้แปลถึงบท {latest} แล้ว · จากไฟล์ Context" if latest is not None
-            else "ยังอ่านบทล่าสุดจากไฟล์ Context ไม่ได้"
-        )
+        self.latest_chapter_label.setText(completion_label(self.profile))
+        self.latest_chapter_label.setToolTip(completion_tooltip(self.profile))
         goal=goal_progress(self.profile)
         if goal:
             completed,target,percentage=goal
-            self.goal_label.setText(f"เป้าหมาย {completed}/{target} บท · {percentage}% · วันนี้ +{today} บท")
+            self.goal_label.setText(f"แปลสำเร็จ {completed}/{target} บท · {percentage}% · วันนี้ +{today} บท")
             self.goal_bar.setRange(0,100)
             self.goal_bar.setValue(percentage)
             self.goal_bar.setFormat(f"{percentage}%")

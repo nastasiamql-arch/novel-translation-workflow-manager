@@ -47,12 +47,14 @@ class Workflow:
     def from_dict(cls,d): return cls([WorkflowStep.from_dict(x) for x in d.get("steps",[])])
 
 _LEGACY_BASIC_STEP_NAMES = ("หาศัพท์","แปล","ตรวจคำแปล","เกลาสำนวน")
-PROFILE_SCHEMA_VERSION = 8
+PROFILE_SCHEMA_VERSION = 9
 
 def migrate_profile_schema(profile: "NovelProfile") -> bool:
     """Advance old profile documents after additive, non-destructive upgrades."""
+    from .translation_progress import migrate_translation_progress
+    changed = migrate_translation_progress(profile)
     if profile.schema_version >= PROFILE_SCHEMA_VERSION:
-        return False
+        return changed
     profile.schema_version = PROFILE_SCHEMA_VERSION
     return True
 
@@ -168,6 +170,10 @@ class NovelProfile:
     translation_goal_baseline: int | None = None
     translation_checkpoint_path: str | None = None
     translation_daily_activity: dict[str, list[int]] = field(default_factory=dict)
+    translator_export_events: list[dict] = field(default_factory=list)
+    translator_goal_baseline: int | None = None
+    translation_progress_version: int = 2
+    legacy_translation_progress: dict = field(default_factory=dict)
     cover_image_path: str | None = None
     working_files: list[StepFile] = field(default_factory=list)
     open_working_tabs_on_open: bool = False
@@ -209,6 +215,10 @@ class NovelProfile:
             translation_goal_baseline=d.get("translation_goal_baseline"),
             translation_checkpoint_path=d.get("translation_checkpoint_path"),
             translation_daily_activity=_daily_activity_from_dict(d.get("translation_daily_activity", {})),
+            translator_export_events=d.get('translator_export_events', []),
+            translator_goal_baseline=d.get('translator_goal_baseline'),
+            translation_progress_version=int(d.get('translation_progress_version', 1)),
+            legacy_translation_progress=d.get('legacy_translation_progress', {}),
             cover_image_path=d.get("cover_image_path"),
             working_files=[StepFile.from_dict(item) for item in d.get("working_files", [])],
             open_working_tabs_on_open=bool(d.get("open_working_tabs_on_open", False)),

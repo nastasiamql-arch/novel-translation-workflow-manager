@@ -1,9 +1,4 @@
-"""Context-driven translation progress tracking.
-
-A Context chapter increase is attributed to the Context file's last-write time in
-the computer's local timezone. The chapter number saved in ChapterState serves as
-the durable checkpoint, so changes made while the app is closed are included.
-"""
+"""Confirmed Translator Export activity; Context scanning is informational only."""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -70,12 +65,7 @@ def read_context_chapter(path, stat=None):
 
 
 def sync_profile_context(profile: NovelProfile) -> bool:
-    """Read one profile's Context and record each newly reached chapter once.
-
-    The first scan establishes a baseline unless an earlier chapter checkpoint
-    is already present (for example, imported from Novel-Launcher).
-    A Context path change or chapter rollback establishes a fresh baseline.
-    """
+    """Update informational Context chapter state; never completed activity."""
     if not profile.context_path:
         return False
     path = Path(profile.context_path).expanduser()
@@ -91,76 +81,145 @@ def sync_profile_context(profile: NovelProfile) -> bool:
         return False
 
     canonical_path = os.path.normcase(str(path.resolve()))
-    old_path = profile.translation_checkpoint_path
-    same_context = old_path is None or os.path.normcase(str(Path(old_path).expanduser().resolve())) == canonical_path
-    previous = profile.chapter_state.current_chapter
-    changed = False
-
-    if old_path is not None and not same_context:
-        # A different novel/context file must never inherit the old chapter delta.
-        profile.chapter_state.current_chapter = latest
-        profile.translation_checkpoint_path = canonical_path
-        return True
-
-    if latest < previous:
-        # Context was corrected or restarted. Do not create negative activity.
-        profile.chapter_state.current_chapter = latest
-        profile.translation_checkpoint_path = canonical_path
-        return True
-
-    # On an uninitialized profile, chapter 1 is only a default, not history.
-    can_count = old_path is not None or previous > 1
-    if latest > previous and can_count:
-        day = local_day(stat.st_mtime)
-        seen = set(profile.translation_daily_activity.get(day, []))
-        new_chapters = [chapter for chapter in range(previous + 1, latest + 1) if chapter not in seen]
-        if new_chapters:
-            profile.translation_daily_activity[day] = sorted(seen.union(new_chapters))
-            changed = True
-
-    if profile.chapter_state.current_chapter != latest:
-        profile.chapter_state.current_chapter = latest
-        changed = True
-    if old_path != canonical_path:
-        profile.translation_checkpoint_path = canonical_path
-        changed = True
-    if restart_completed_goal_cycles(profile):
-        changed = True
+    changed = (profile.chapter_state.current_chapter != latest
+               or profile.translation_checkpoint_path != canonical_path)
+    profile.chapter_state.current_chapter = latest
+    profile.translation_checkpoint_path = canonical_path
     return changed
 
 
+def migrate_translation_progress(profile):
+    if profile.translation_progress_version >= 2: return False
+    from copy import deepcopy
+    profile.legacy_translation_progress = {
+        **profile.legacy_translation_progress,
+        'source': 'context_scan',
+        'daily_activity': deepcopy(profile.translation_daily_activity),
+        'goal_target': profile.translation_goal_target,
+        'goal_baseline': profile.translation_goal_baseline,
+        'checkpoint_path': profile.translation_checkpoint_path,
+    }
+    profile.translation_progress_version = 2
+    if profile.translation_goal_target is not None and profile.translator_goal_baseline is None:
+        profile.translator_goal_baseline = completed_chapter_count(profile)
+    return True
+
+
+def confirmed_events(profile):
+    for event in profile.translator_export_events:
+        if (isinstance(event, dict) and event.get('profile_id') == profile.id
+                and event.get('status') == 'committed' and isinstance(event.get('chapters'), list)
+                and all(type(n) is int and 0 < n <= 2_147_483_647 for n in event['chapters'])):
+            yield event
+
+
+def completed_chapters(profile):
+    return {n for event in confirmed_events(profile) for n in event['chapters']}
+
+
+def completed_chapter_count(profile):
+    return len(completed_chapters(profile))
+
+
+def confirmed_daily_activity(profile):
+    seen, activity, ids = set(), {}, set()
+    for event in confirmed_events(profile):
+        if event.get('event_id') in ids: continue
+        ids.add(event.get('event_id'))
+        fresh = set(event['chapters']) - seen
+        seen.update(event['chapters'])
+        activity.setdefault(event['local_date'], set()).update(fresh)
+    return activity
+
+
+def record_translator_export(profile, chapters, *, source_path, digest, exported_path,
+                             event_id, completed_at=None, snapshot_path=None):
+    if (not event_id or not re.fullmatch(r'[0-9a-f]{64}', digest)
+            or any(type(n) is not int or not 0 < n <= 2_147_483_647 for n in chapters)):
+        raise ValueError('Invalid confirmed Translator Export')
+    chapters = sorted(set(chapters))
+    for event in profile.translator_export_events:
+        if event.get('event_id') == event_id:
+            if (event.get('profile_id') != profile.id or event.get('chapters') != chapters
+                    or event.get('sha256') != digest or event.get('translator_path') != str(source_path)):
+                raise ValueError('Export event ID conflict')
+            return event
+    fresh = sorted(set(chapters) - completed_chapters(profile))
+    when = completed_at or datetime.now().astimezone()
+    if when.tzinfo is None: when = when.astimezone()
+    event = {'event_id': event_id, 'profile_id': profile.id,
+             'completed_at': when.isoformat(timespec='microseconds'), 'local_date': when.date().isoformat(),
+             'chapters': chapters, 'new_chapters': fresh, 'chapter_range': format_chapters(chapters),
+             'translator_path': str(source_path), 'sha256': digest,
+             'exported_txt_path': str(exported_path), 'snapshot_path': str(snapshot_path or ''),
+             'status': 'committed'}
+    profile.translator_export_events.append(event)
+    return event
+
+
+def translator_chapters(data):
+    from .recovery import _TRANSLATOR_CHAPTER_LINE
+    chapters = set()
+    for match in _TRANSLATOR_CHAPTER_LINE.finditer(data.decode('utf-8-sig', errors='strict')):
+        groups = match.groups()
+        first = next((groups[i] for i in (0,2,4) if groups[i]), None)
+        last = next((groups[i] for i in (1,3,5) if groups[i]), None)
+        if first:
+            first, last = int(first), int(last or first)
+            if not 0 < first <= last <= 2_147_483_647:
+                raise ValueError('Invalid Translator chapter interval')
+            if last - first > 100000: raise ValueError('Translator chapter interval is too large to verify')
+            chapters.update(range(first, last + 1))
+    return sorted(chapters)
+
+
+def format_chapters(chapters):
+    intervals = []
+    for n in sorted(set(chapters)):
+        if intervals and n == intervals[-1][1] + 1: intervals[-1][1] = n
+        else: intervals.append([n,n])
+    return ', '.join(str(first) if first == last else f'{first}–{last}' for first,last in intervals)
+
+
+def completion_label(profile):
+    chapters = completed_chapters(profile)
+    if not chapters: return 'ยังไม่มี Export ที่ยืนยัน'
+    highest = max(chapters)
+    if min(chapters) == 1 and len(chapters) == highest:
+        return f'แปลเสร็จถึงบท {highest}'
+    latest = next((event for event in reversed(list(confirmed_events(profile))) if event['chapters']), None)
+    return 'Export ล่าสุด: บท ' + format_chapters(latest['chapters'])
+
+
+def completion_tooltip(profile):
+    chapters = completed_chapters(profile)
+    continuous = 0
+    while continuous + 1 in chapters: continuous += 1
+    return ('นับเฉพาะบทใหม่จาก Translator Export ที่สำเร็จครบทุกขั้นตอน\n'
+            f'ยืนยันทั้งหมด {len(chapters):,} บท · บทสูงสุด {max(chapters, default=0):,}\n'
+            f'ต่อเนื่องจากบท 1 ถึงบท {continuous:,} · Context และ TXT Submit ไม่นับยอดนี้')
+
+
 def daily_chapter_count(profile: NovelProfile, day: str | None = None) -> int:
-    return len(profile.translation_daily_activity.get(day or local_day(), []))
+    return len(confirmed_daily_activity(profile).get(day or local_day(), set()))
 
 
 def goal_progress(profile: NovelProfile) -> tuple[int, int, int] | None:
     target = profile.translation_goal_target
-    baseline = profile.translation_goal_baseline
-    if target is None or target <= 0 or baseline is None:
-        return None
-    completed = max(0, profile.chapter_state.current_chapter - baseline)
+    if target is None or target <= 0: return None
+    completed = max(0, completed_chapter_count(profile) - (profile.translator_goal_baseline or 0))
     return completed, target, min(100, round(completed * 100 / target))
 
 
 def reset_goal_progress(profile: NovelProfile) -> bool:
-    """Start a fresh goal cycle at the profile's current Context chapter."""
-    if profile.translation_goal_target is None or profile.translation_goal_baseline is None:
-        return False
-    profile.translation_goal_baseline = profile.chapter_state.current_chapter
+    if profile.translation_goal_target is None: return False
+    profile.translator_goal_baseline = completed_chapter_count(profile)
     return True
 
 
 def restart_completed_goal_cycles(profile: NovelProfile) -> bool:
-    """Advance the baseline for completed cycles and keep any overflow progress."""
-    progress = goal_progress(profile)
-    if progress is None:
-        return False
-    completed, target, _percentage = progress
-    cycles = completed // target
-    if cycles < 1:
-        return False
-    profile.translation_goal_baseline += cycles * target
-    return True
+    # Compatibility only: goals now reset exclusively through explicit Reset.
+    return False
 
 
 def week_start(day: date | None = None) -> date:
@@ -173,6 +232,6 @@ def profile_week_count(profile: NovelProfile, today: date | None = None) -> int:
     start = week_start(end)
     return sum(
         len(chapters)
-        for key, chapters in profile.translation_daily_activity.items()
+        for key, chapters in confirmed_daily_activity(profile).items()
         if start.isoformat() <= key <= end.isoformat()
     )

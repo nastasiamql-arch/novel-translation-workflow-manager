@@ -2,6 +2,13 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.13.0 - 2026-10-13
+
+- Count completed translation chapters only from successful Translator Export transactions; deduplicate actual chapter headings/ranges across exports, dates and profiles.
+- Keep Context-derived activity as legacy data, separate from confirmed daily/weekly activity and translation goals. Goals keep overflow and reset only when requested.
+- Replace the workspace header with a compact confirmed-export summary; remove the verified file-counter line while keeping TXT Submit and its goals/history intact.
+- Stage TXT, Context, export status and statistics together with a durable recovery journal. Interrupted exports recover consistently; conflicting external changes are preserved and reported.
+
 ## 3.12.0 - 2026-10-13
 
 - Reconcile persisted Translator export status with the successful SHA-256 after restart and session restore; undo to the saved baseline preserves BOM/CRLF and avoids normalization-only autosaves.

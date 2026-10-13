@@ -34,7 +34,8 @@ class NovelHeader(QFrame):
         self.title = ElidingLabel(); self.title.setObjectName('sectionHeading')
         self.title.setMinimumWidth(0); self.title.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Preferred)
         self.progress = QLabel(); self.progress.setWordWrap(True)
-        self.progress.setToolTip('อ่านจาก Context; verified นับเมื่อส่งออกสำเร็จ')
+        self.progress.setObjectName('completedTranslationSummary')
+        self.progress.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         text.addWidget(self.title); text.addWidget(self.progress)
         layout.addLayout(text, 1)
         self.close_button = QToolButton(); self.close_button.setText('×')
@@ -43,8 +44,7 @@ class NovelHeader(QFrame):
         layout.addWidget(self.close_button, 0, Qt.AlignTop)
 
     def refresh(self, profile, chapter=None):
-        from .translation_progress import daily_chapter_count, goal_progress
-        from .export_service import daily_export_count, verified_goal_text
+        from .translation_progress import daily_chapter_count, completion_label, completion_tooltip
         self.title.setText(profile.name)
         self.cover.setToolTip(profile.name)
         self.cover.setProperty('coverPath', '')
@@ -63,12 +63,10 @@ class NovelHeader(QFrame):
             self.cover.setText('▤')
         else:
             self.cover.setPixmap(image.scaled(self.cover.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        chapter = chapter if chapter is not None else profile.chapter_state.current_chapter
-        translated = f'แปลถึงบท {chapter}' if profile.context_path else 'ยังไม่ได้เลือก Context'
-        goal = goal_progress(profile)
-        if goal: translated += f' · เป้าหมายแปล {goal[0]}/{goal[1]} บท'
-        self.progress.setText(f'{translated}  ·  วันนี้แปล +{daily_chapter_count(profile)} บท\n'
-            f'วันนี้ส่ง {profile.txt_export_settings.filename} {daily_export_count(profile)} ไฟล์  ·  รอบส่ง {verified_goal_text(profile)}')
+        today = daily_chapter_count(profile)
+        today_text = f'วันนี้ +{today:,} บท' if today else 'วันนี้ 0 บท'
+        self.progress.setText(f'{completion_label(profile)}  ·  {today_text}')
+        self.progress.setToolTip(completion_tooltip(profile))
 
 
 class NavigationSidebar(QFrame):

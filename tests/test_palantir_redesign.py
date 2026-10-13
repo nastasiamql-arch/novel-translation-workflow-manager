@@ -141,13 +141,16 @@ def test_goal_wrap_manual_reset_and_immediate_header(window,tmp_path):
     p=window.repo.list_profiles()[0]
     assert p.verified_goal_count==12
     assert panel.current.value()==3
-    assert '12/5 ✓' in ws.novel_header.progress.text()
-    assert 'แปลถึงบท 123' in ws.novel_header.progress.text()
+    assert '12/5 ✓' in panel.goal_label.text()
+    assert '12/5' not in ws.novel_header.progress.text()
+    assert 'ยังไม่มี Export ที่ยืนยัน' in ws.novel_header.progress.text()
+    assert 'วันนี้ส่ง' not in ws.novel_header.progress.text()
     panel.goal_reset.click()
     p=window.repo.list_profiles()[0]
     assert p.verified_goal_count==0 and len(p.verified_export_history)==12
     assert p.verified_goal_cycles[-1]['count']==12
-    assert '0/5' in ws.novel_header.progress.text()
+    assert '0/5' in panel.goal_label.text()
+    assert 'วันนี้ส่ง' not in ws.novel_header.progress.text()
     assert panel.current.value()==3
     assert list((tmp_path/'.palantir-recovery').glob('*.bak'))
 

@@ -15,7 +15,7 @@ function Install-TestBuild([bool]$First, [string]$SetupPath) {
     if ($process.ExitCode -ne 0) { throw "Setup failed: $($process.ExitCode)" }
 }
 
-$previousVersion = '3.11.1'
+$previousVersion = '3.12.0'
 $previousName = "NovelWorkflow-Setup-$previousVersion.exe"
 gh release download "v$previousVersion" --repo nastasiamql-arch/novel-translation-workflow-manager --pattern $previousName --dir $taskRoot
 if ($LASTEXITCODE -ne 0) { throw 'Could not download previous published installer.' }
@@ -54,6 +54,8 @@ Set-Content -LiteralPath $contextPath -Value "# Chapter Progress`nChapter 125" -
 $profilePath = Join-Path $profileDir 'profile.json'
 @{id=$profileId; name='Upgrade fixture'; schema_version=7; context_path=$contextPath;
     txt_export_draft=$draft; verified_goal_count=12; verified_goal_target=5;
+    translation_daily_activity=@{'2026-10-13'=@(6,7)};
+    translation_goal_target=5; translation_goal_baseline=125;
     verified_export_history=@(@{success=$true; filename='verified1.txt'});
     txt_export_settings=@{filename='verified'; current=13; start=1; end=100; directory=$taskRoot}
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $profilePath -Encoding UTF8
@@ -110,4 +112,7 @@ foreach ($path in $historyFiles) {
     if ((Get-FileHash -LiteralPath $migratedFile -Algorithm SHA256).Hash -ne $preservedHashes[$path]) { throw 'Snapshot payload or manifest changed during migration.' }
 }
 Write-Output 'Legacy history migration PASS: flat folder, original manifest and every payload SHA-256 preserved.'
+$completionProbe = Start-Process -FilePath $executable -ArgumentList @('--check-runtime', '--expected-version', $Version, '--completion-profile', ('"' + $profilePath + '"')) -WindowStyle Hidden -PassThru -Wait
+if ($completionProbe.ExitCode -ne 0) { throw 'Installed Translator completion migration failed.' }
+Write-Output 'Translator completion migration PASS: old Context activity retained, no fake Export events, profile statistics preserved.'
 Write-Output 'Silent installer upgrade PASS: stale metadata, executable, previous directory, shortcut and user data.'

@@ -367,14 +367,14 @@ def main() -> int:
                 context_editor.setPlainText("บทที่ 157-159\nContext updated")
                 assert workspace.editor.save_current()
                 app.processEvents()
-                assert "วันนี้ +3 บท" in window.progress_status.text()
-                assert "เป้าหมาย 3/10 บท · 30%" == window.goal_status.text()
-                assert window.goal_status_bar.value() == 30
+                assert "วันนี้ +0 บท" in window.progress_status.text()
+                assert "เป้าหมาย 0/10 บท · 0%" == window.goal_status.text()
+                assert window.goal_status_bar.value() == 0
                 context.write_text("บทที่ 160-161\nExternal Context update", encoding="utf-8")
                 QTest.qWait(450)
                 app.processEvents()
-                assert "วันนี้ +5 บท" in window.progress_status.text()
-                assert "เป้าหมาย 5/10 บท · 50%" == window.goal_status.text()
+                assert "วันนี้ +0 บท" in window.progress_status.text()
+                assert "เป้าหมาย 0/10 บท · 0%" == window.goal_status.text()
                 workspace.editor.tabs.setCurrentWidget(editor)
                 app.processEvents()
                 QTest.keyClick(workspace.editor.find_input, Qt.Key_Escape)
@@ -547,11 +547,11 @@ def main() -> int:
                 status_bar = window.statusBar()
                 assert window.editor_status.geometry().right() <= status_bar.width()
                 assert status_bar.height() >= 27
-                assert "แปลถึงบท 161" in window.context_status.fullText()
+                assert "Context: บท 161" in window.context_status.fullText()
                 assert window.editor_status.height() >= 20
                 assert workspace.novel_header.isVisible()
-                assert "แปลถึงบท" in workspace.novel_header.progress.text()
-                assert "วันนี้ส่ง" in workspace.novel_header.progress.text()
+                assert "ยังไม่มี Export ที่ยืนยัน" in workspace.novel_header.progress.text()
+                assert "วันนี้ส่ง" not in workspace.novel_header.progress.text()
 
                 context_editor = workspace.editor.open_file(context)
                 context_editor.setPlainText("ข้อความเก่าที่รอ Auto Save")

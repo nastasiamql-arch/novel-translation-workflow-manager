@@ -228,10 +228,12 @@ def backup_file(path, *, display_name=None, metadata=None):
 
 
 def commit_staged(staged_files, commit_metadata=None, *, backup_options=None,
-                  create_backups=True, no_overwrite=()):
+                  create_backups=True, no_overwrite=(), journal_path=None, verify_before=None,
+                  prepare_destination=None):
     destinations = [Path(path).resolve() for path, _ in staged_files]
     if len(set(destinations)) != len(destinations):
         raise ValueError('TXT และ Context ต้องเป็นคนละไฟล์')
+    if journal_path and create_backups: raise ValueError('Durable export requires temporary rollback snapshots')
     backup_options = backup_options or {}
     backups = {}
     temporary_recovery = {}
@@ -256,26 +258,76 @@ def commit_staged(staged_files, commit_metadata=None, *, backup_options=None,
             raise
     replaced = []
     no_overwrite = {Path(item).resolve() for item in no_overwrite}
+    journal = None
+    if journal_path:
+        from .storage import write_json
+        from .workflow_archive import file_digest
+        intended = {Path(path).resolve(): file_digest(staged).hex() for path, staged in staged_files}
+        original_digests = {path: file_digest(temporary_recovery[path]).hex() if path in temporary_recovery else None
+                            for path in destinations}
+        journal = {'phase': 'prepared', 'entries': [
+            {'path': str(path), 'backup': str(temporary_recovery[path]) if path in temporary_recovery else None,
+             'after_digest': intended.get(path)}
+            for path in destinations]}
+        write_json(Path(journal_path), journal)
     try:
+        if verify_before: verify_before()
         for destination, staged in staged_files:
             destination = Path(destination).resolve()
+            def check_original():
+                if journal:
+                    current = file_digest(destination).hex() if destination.exists() else None
+                    if current != original_digests[destination]:
+                        raise OSError(f'ไฟล์ถูกแก้จากภายนอกก่อนแทนที่ · ไม่เขียนทับ: {destination}')
+            check_original()
+            if prepare_destination and prepare_destination(destination, staged) is not False:
+                if journal:
+                    changed = False
+                    for path, pending in staged_files:
+                        path = Path(path).resolve()
+                        if path not in replaced and Path(pending).exists():
+                            digest = file_digest(pending).hex()
+                            if intended[path] != digest:
+                                intended[path] = digest
+                                next(e for e in journal['entries'] if Path(e['path']) == path)['after_digest'] = digest
+                                changed = True
+                    if changed: write_json(Path(journal_path), journal)
+                check_original()
             if destination in no_overwrite:
                 os.link(staged, destination)
             else:
                 replace_with_retry(staged, destination)
             replaced.append(destination)
-        if commit_metadata: commit_metadata()
+        if commit_metadata:
+            commit_metadata()
+        if journal:
+            journal['phase'] = 'committed'
+            write_json(Path(journal_path), journal)
     except Exception as original:
         errors = []
         for destination in reversed(replaced):
             try:
+                if journal and destination.exists():
+                    current = file_digest(destination).hex()
+                    backup = temporary_recovery.get(destination)
+                    previous = file_digest(backup).hex() if backup else None
+                    if current not in (intended.get(destination), previous):
+                        raise OSError(f'พบการแก้จากภายนอกระหว่าง Export · เก็บไฟล์ไว้: {destination}')
                 if not create_backups:
                     backup = temporary_recovery.get(destination)
                     if backup is None:
                         destination.unlink(missing_ok=True)
                     else:
-                        replace_with_retry(backup, destination)
-                        temporary_recovery.pop(destination, None)
+                        if journal:
+                            fd, restore = tempfile.mkstemp(dir=destination.parent, suffix='.restore')
+                            os.close(fd)
+                            try:
+                                shutil.copyfile(backup, restore)
+                                replace_with_retry(restore, destination)
+                            finally: Path(restore).unlink(missing_ok=True)
+                        else:
+                            replace_with_retry(backup, destination)
+                            temporary_recovery.pop(destination, None)
                 else:
                     backup = backups[destination]
                     if backup is None: destination.unlink(missing_ok=True)
@@ -288,6 +340,7 @@ def commit_staged(staged_files, commit_metadata=None, *, backup_options=None,
                         finally: Path(name).unlink(missing_ok=True)
             except OSError as error: errors.append(str(error))
         if not errors:
+            if journal_path: Path(journal_path).unlink(missing_ok=True)
             for snapshot in temporary_recovery.values():
                 snapshot.unlink(missing_ok=True)
         if errors:
@@ -295,8 +348,14 @@ def commit_staged(staged_files, commit_metadata=None, *, backup_options=None,
             raise OSError(f'{original}; กู้คืนอัตโนมัติไม่สำเร็จ: {errors}. ไฟล์กู้คืน: {locations}') from original
         raise
     else:
+        if journal_path:
+            # Once committed, failed cleanup must not turn a successful export
+            # into a rollback. Startup will clean a committed journal safely.
+            try: Path(journal_path).unlink(missing_ok=True)
+            except OSError: return
         for snapshot in temporary_recovery.values():
-            snapshot.unlink(missing_ok=True)
+            try: snapshot.unlink(missing_ok=True)
+            except OSError: pass
 
 
 def restore_backup(destination, backup, *, profile_id=None):

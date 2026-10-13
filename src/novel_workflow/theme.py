@@ -131,6 +131,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QLabel:disabled, QAbstractButton:disabled, QTabBar::tab:disabled {{ color: {c['disabled_text']}; }}
     QMainWindow, QDialog, QWidget#appShell, QWidget#novelLibraryPage {{ background: {c['app']}; }}
     QWidget#polishHistoryCards {{ background: {c['app']}; }}
+    QLabel#completedTranslationSummary {{ color: {c['text']}; font-family: "Segoe UI"; font-size: 10pt; }}
     QLabel#historyRangeTitle {{ color: {c['text']}; font-size: 11pt; font-weight: 600; }}
     QFrame#polishHistoryRow {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 6px; }}
     QPushButton#polishHistoryCopy {{ background: {c['primary']}; color: {c['primary_text']}; border: 0; border-radius: 8px; padding: 7px 16px; font-weight: 600; }}

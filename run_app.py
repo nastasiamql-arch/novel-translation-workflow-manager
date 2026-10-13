@@ -72,6 +72,22 @@ def _check_packaged_qt_runtime():
             history = PolishHistory(repo, AssemblyService(repo)).list(profile)
             if not history or any(snapshot.error for snapshot in history):
                 raise RuntimeError('Installed runtime cannot verify preserved Polish History')
+        if '--completion-profile' in sys.argv:
+            import json
+            from novel_workflow.storage import ProjectRepository
+            from novel_workflow.translation_progress import completed_chapter_count
+            path = Path(sys.argv[sys.argv.index('--completion-profile') + 1])
+            before = json.loads(path.read_text(encoding='utf-8-sig'))
+            repo = ProjectRepository(path.parent.parent.parent)
+            profile = next(p for p in repo.list_profiles() if p.id == before['id'])
+            if profile.translation_daily_activity != before.get('translation_daily_activity', {}):
+                raise RuntimeError('Legacy Context statistics changed during upgrade')
+            if profile.translator_export_events != before.get('translator_export_events', []):
+                raise RuntimeError('Upgrade invented or removed Translator Export events')
+            if not before.get('translator_export_events') and completed_chapter_count(profile):
+                raise RuntimeError('Upgrade counted legacy Context chapters as confirmed exports')
+            if profile.translation_progress_version != 2:
+                raise RuntimeError('Completion progress migration did not finish')
     except Exception as exc:
         if sys.stderr is not None:
             sys.stderr.write(f"Packaged Qt runtime check failed: {exc}\n")

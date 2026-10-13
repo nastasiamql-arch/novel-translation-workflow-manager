@@ -45,18 +45,37 @@ class ProjectRepository:
     CATEGORIES=("prompts","glossary","characters","style","source","translated","reviewed","notes","reference","custom")
     def __init__(self,root=None):
         self.profile_lock = RLock()
+        self.export_recovery_errors = {}
         self.root=Path(root) if root else data_root(); self.profiles_dir=self.root/"profiles"
         self.settings_path=self.root/"settings.json"; self.templates_path=self.root/"templates.json";self.groups_path=self.root/"groups.json"
         self.profiles_dir.mkdir(parents=True,exist_ok=True)
     def profile_dir(self,pid):
         if not re.fullmatch(r"[a-fA-F0-9]{32}",pid): raise ValueError("Invalid profile ID")
         return self.profiles_dir/pid
+    @profile_guard
     def list_profiles(self):
         profiles=[]
         missing_order=[]
         for folder in self.profiles_dir.iterdir():
             path=folder/"profile.json"
             if not path.is_file():continue
+            from .export_recovery import recover_export, ExportRecoveryConflict
+            try:
+                recover_export(self, folder.name)
+                self.export_recovery_errors.pop(folder.name, None)
+            except ExportRecoveryConflict as exc:
+                self.export_recovery_errors[folder.name] = str(exc)
+                data=read_json(path,{})
+                # Show the profile with its pre-transaction confirmed statistics.
+                # Keep every live file untouched until the conflict is resolved.
+                journal=read_json(folder/'translator_export_transaction.json',{})
+                original=next(e.get('backup') for e in journal['entries'] if Path(e['path']).resolve()==path.resolve())
+                before=read_json(Path(original),{})
+                data['id']=folder.name
+                data['translator_export_events']=before.get('translator_export_events',[])
+                data['translator_goal_baseline']=before.get('translator_goal_baseline')
+                profiles.append(NovelProfile.from_dict(data))
+                continue
             data=read_json(path,{})
             profile=NovelProfile.from_dict(data)
             changed=False
@@ -102,7 +121,9 @@ class ProjectRepository:
                 self.save_profile(profile)
         return destination
     @profile_guard
-    def save_profile(self,p, *, update_source_binding=False):
+    def save_profile(self,p, *, update_source_binding=False, destination=None):
+        if p.id in self.export_recovery_errors:
+            raise OSError(self.export_recovery_errors[p.id])
         folder=self.profile_dir(p.id); folder.mkdir(parents=True,exist_ok=True)
         for c in self.CATEGORIES: (folder/c).mkdir(exist_ok=True)
         path=folder/"profile.json"
@@ -130,7 +151,7 @@ class ProjectRepository:
                     result.append(preserve_unknown(old,item) if isinstance(item,dict) else item)
                 return result
             return current
-        write_json(path,preserve_unknown(existing, serialized))
+        write_json(Path(destination) if destination else path,preserve_unknown(existing, serialized))
     def delete_profile(self,pid):
         import shutil; shutil.rmtree(self.profile_dir(pid))
         for order,profile in enumerate(self.list_profiles()):

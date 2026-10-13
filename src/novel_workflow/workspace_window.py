@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from .models import LaunchTarget, StepFile, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
 from .translation_progress import (
-    daily_chapter_count, goal_progress, latest_context_chapter,
+    daily_chapter_count, goal_progress, latest_context_chapter, completion_label, completion_tooltip, completed_chapter_count,
     sync_profile_context, read_context_chapter,
 )
 from .ui import ManagementActionsMixin
@@ -1203,6 +1203,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def save_settings_goal_target(self):
         if not self.profile:
             return
+        if self.profile.translation_goal_target is None or self.profile.translator_goal_baseline is None:
+            self.profile.translator_goal_baseline = completed_chapter_count(self.profile)
         self.profile.translation_goal_target = self.settings_goal_target.value() or None
         self.save()
         self.refresh_translation_progress()
@@ -1737,13 +1739,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             watcher.addPaths(to_watch)
 
     def refresh_translation_progress(self):
-        """Reload Context-backed progress from disk, including external edits."""
+        """Refresh confirmed Export activity plus informational Context state."""
         if any(getattr(listing,"_dragging",False) for listing in (self.profile_cards,self.profiles)):
             self.context_refresh_timer.start(250)
             return self.ps_list
         profiles = self.repo.list_profiles()
         for profile in profiles:
-            if sync_profile_context(profile):
+            if profile.id not in self.repo.export_recovery_errors and sync_profile_context(profile):
                 try:
                     self.repo.save_profile(profile)
                 except OSError as exc:
@@ -1754,8 +1756,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             card = self.profile_cards.item(index)
             profile = by_id.get(card.data(Qt.UserRole))
             if profile:
-                card.setText(f"{profile.name}\nแปลถึงบท {profile.chapter_state.current_chapter} · วันนี้ +{daily_chapter_count(profile)}\nวันนี้ส่ง {daily_export_count(profile)} ไฟล์ · {verified_goal_text(profile)}\n{_profile_status_label(_profile_status(profile))}")
-                card.setToolTip(f"{profile.name}\nแปลถึงบท {profile.chapter_state.current_chapter}\nverified {verified_goal_text(profile)}")
+                card.setText(f"{profile.name}\n{completion_label(profile)} · วันนี้ +{daily_chapter_count(profile)}\nวันนี้ส่ง {daily_export_count(profile)} ไฟล์ · {verified_goal_text(profile)}\n{_profile_status_label(_profile_status(profile))}")
+                card.setToolTip(f"{profile.name}\n{completion_label(profile)}\nverified {verified_goal_text(profile)}")
         if self.profile:
             fresh = next((item for item in profiles if item.id == self.profile.id), None)
             if fresh:
@@ -2067,7 +2069,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             changed = migrate_legacy_basic_workflow(profile.workflow)
             if migrate_legacy_vocabulary_step(profile):
                 changed = True
-            if sync_profile_context(profile):
+            if profile.id not in self.repo.export_recovery_errors and sync_profile_context(profile):
                 changed = True
             if changed:
                 self.repo.save_profile(profile)
@@ -2113,11 +2115,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 pixmap = pixmap.copy((pixmap.width()-148)//2, (pixmap.height()-188)//2, 148, 188)
             status = _profile_status(profile)
             card = QListWidgetItem(
-                QIcon(pixmap), f"{profile.name}\nแปลถึงบท {profile.chapter_state.current_chapter} · วันนี้ +{daily_chapter_count(profile)}\nวันนี้ส่ง {daily_export_count(profile)} ไฟล์ · {verified_goal_text(profile)}\n{_profile_status_label(status)}"
+                QIcon(pixmap), f"{profile.name}\n{completion_label(profile)} · วันนี้ +{daily_chapter_count(profile)}\nวันนี้ส่ง {daily_export_count(profile)} ไฟล์ · {verified_goal_text(profile)}\n{_profile_status_label(status)}"
             )
             card.setData(Qt.UserRole, profile.id)
             card.setData(Qt.UserRole + 1, status)
-            card.setToolTip(f"{profile.name}\nแปลถึงบท {profile.chapter_state.current_chapter}\nverified {verified_goal_text(profile)}")
+            card.setToolTip(f"{profile.name}\n{completion_label(profile)}\nverified {verified_goal_text(profile)}")
             self.profile_cards.addItem(card)
 
         target_id = pid or (
@@ -2136,6 +2138,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.workspace_stack.setCurrentWidget(self.empty_page)
             self.main_pages.setCurrentWidget(self.library_page)
         self.filter_profiles(self.library_search.text())
+        if self.repo.export_recovery_errors:
+            self.statusBar().showMessage(' · '.join(self.repo.export_recovery_errors.values()), 15000)
 
     def filter_profiles(self, query):
         query = query.strip().casefold()
@@ -2862,6 +2866,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             raise
 
     def _mark_export_pending(self, profile_id, path):
+        if profile_id in self.repo.export_recovery_errors: return
         key = self._export_path_key(path)
         records = self._export_records(profile_id)
         record = records.get(key)
@@ -2880,6 +2885,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.statusBar().showMessage(f"บันทึกสถานะ Export ไม่สำเร็จ: {exc}", 6000)
 
     def _translator_export_status(self, profile_id, path, editor=None):
+        if profile_id in self.repo.export_recovery_errors: return 'not_exported'
         key = self._export_path_key(path)
         record = self._export_records(profile_id).get(key)
         if not record:
@@ -3072,6 +3078,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.statusBar().showMessage("กำลังสำรองและ Export กรุณารอสักครู่", 5000)
             return False
         profile_id = workspace.profile_id
+        if profile_id in self.repo.export_recovery_errors:
+            QMessageBox.warning(self, 'Export ไม่ได้', self.repo.export_recovery_errors[profile_id])
+            return False
         if not self.profile or self.profile.id != profile_id:
             QMessageBox.warning(self, "Export ไม่ได้", "โปรไฟล์ที่เลือกเปลี่ยนไปแล้ว กรุณาเลือกแท็บใหม่")
             return False
@@ -3113,6 +3122,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 raise OSError("ไม่พบไฟล์ Context ที่ผูกกับโปรไฟล์นี้")
             translator_bytes = source.read_bytes()
             source_digest = hashlib.sha256(translator_bytes).digest()
+            from .translation_progress import translator_chapters
+            confirmed_chapters = translator_chapters(translator_bytes)
             if source_digest != editor.disk_digest:
                 raise OSError("Translator ถูกแก้ไขจากภายนอก")
             original_digest = hashlib.sha256(context.read_bytes()).digest()
@@ -3283,17 +3294,60 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 raise OSError("Context ถูกแก้ไขจากภายนอกระหว่างการยืนยัน")
             staged_files.append((target, _stage_bytes_file(target, translator_bytes)))
             staged_files.append((context, _stage_bytes_file(context, translator_bytes)))
-            def verify_transaction():
-                if target.read_bytes() != translator_bytes or context.read_bytes() != translator_bytes:
-                    raise OSError("ตรวจสอบหลังเขียนพบว่าไฟล์ TXT หรือ Context ไม่ตรงกับ Translator")
-                self._record_successful_export(profile_id, source, source_digest, target)
-            commit_staged(
-                staged_files,
-                commit_metadata=verify_transaction,
-                create_backups=False,
-                no_overwrite=(target,),
-            )
+            with self.repo.profile_lock:
+                from .translation_progress import record_translator_export
+                import uuid
+                event = record_translator_export(fresh_profile, confirmed_chapters,
+                    source_path=str(source), digest=source_digest.hex(), exported_path=str(target),
+                    event_id=uuid.uuid4().hex, snapshot_path=str(snapshot.path))
+                profile_path = self.repo.profile_dir(profile_id) / 'profile.json'
+                from .workflow_archive import file_digest
+                profile_before_digest = file_digest(profile_path)
+                staged_profile = _stage_bytes_file(profile_path, b'')
+                staged_files.append((profile_path, staged_profile))
+                self.repo.save_profile(fresh_profile, destination=staged_profile)
+                records = deepcopy(self._export_records(profile_id))
+                key = self._export_path_key(source)
+                records[key] = {'profile_id': profile_id, 'translator_path': key,
+                    'digest': source_digest.hex(), 'exported_at': event['completed_at'],
+                    'exported_txt_path': str(target), 'pending': False, 'event_id': event['event_id']}
+                status_path = self._export_status_path(profile_id)
+                status_before_digest = file_digest(status_path) if status_path.exists() else None
+                staged_status = _stage_bytes_file(status_path, b'')
+                staged_files.append((status_path, staged_status))
+                write_json(staged_status, records)
+                def verify_transaction():
+                    if target.read_bytes() != translator_bytes or context.read_bytes() != translator_bytes:
+                        raise OSError('ตรวจสอบหลังเขียนพบว่าไฟล์ TXT หรือ Context ไม่ตรงกับ Translator')
+                    persisted = read_json(profile_path, {})
+                    if not any(e.get('event_id') == event['event_id'] for e in persisted.get('translator_export_events', [])):
+                        raise OSError('บันทึกสถิติ Translator Export ไม่สำเร็จ')
+                journal_path = self.repo.profile_dir(profile_id) / 'translator_export_transaction.json'
+                if journal_path.exists(): raise OSError('ยังมี Export ค้างที่ต้องตรวจสอบก่อน Export ใหม่')
+                def verify_before():
+                    current_status_digest = file_digest(status_path) if status_path.exists() else None
+                    if (file_digest(context) != original_digest or file_digest(source) != source_digest
+                            or file_digest(profile_path) != profile_before_digest
+                            or current_status_digest != status_before_digest):
+                        raise OSError('ไฟล์ถูกแก้ไขจากภายนอกระหว่างเตรียม Export · ไม่เขียนทับข้อมูล')
+                def prepare_destination(destination, staged):
+                    if destination == profile_path.resolve():
+                        if target.read_bytes() != translator_bytes or context.read_bytes() != translator_bytes:
+                            raise OSError('ตรวจสอบ TXT/Context ก่อนบันทึกสถิติไม่สำเร็จ')
+                        when = datetime.now().astimezone()
+                        event['completed_at'] = when.isoformat(timespec='microseconds')
+                        event['local_date'] = when.date().isoformat()
+                        records[key]['exported_at'] = event['completed_at']
+                        self.repo.save_profile(fresh_profile, destination=staged_profile)
+                        write_json(staged_status, records)
+                        return True
+                    return False
+                commit_staged(staged_files, commit_metadata=verify_transaction,
+                    create_backups=False, no_overwrite=(target,), journal_path=journal_path,
+                    verify_before=verify_before, prepare_destination=prepare_destination)
+                self._export_status_cache.pop(profile_id, None)
         except (OSError, ValueError) as exc:
+            self._export_status_cache.pop(profile_id, None)
             if snapshot_verified:
                 message = f"สำรองประวัติสำเร็จ แต่ Export ไม่สำเร็จ\n{exc}"
             else:
@@ -3305,10 +3359,14 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             for _destination, staged in staged_files:
                 _cleanup_staged_text_file(staged)
 
+        self.ps_list = [fresh_profile if p.id == profile_id else p for p in self.ps_list]
+        self.profile = fresh_profile
         workspace.editor.apply_external_update(context, visible_text)
         workspace.refresh_export_status()
         self.refresh_translation_progress()
         count = snapshot.manifest["file_count"]
+        if not confirmed_chapters:
+            QMessageBox.warning(self, 'ยังยืนยันจำนวนบทไม่ได้', 'Export สำเร็จ แต่ไม่พบหัวบทที่ตรวจสอบได้ จึงไม่ได้เพิ่มยอดแปลเสร็จ')
         self.statusBar().showMessage(
             f"สำรอง {history_step.name} บท {history_range} สำเร็จ · {count} ไฟล์ · Export {target.name} สำเร็จ", 8000
         )
@@ -3425,7 +3483,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         elif latest is None:
             self.context_status.setFullText("ไม่พบบทใน Context")
         else:
-            self.context_status.setFullText(f"แปลถึงบท {latest}")
+            self.context_status.setFullText(f"Context: บท {latest}")
         self._latest_chapter_status = (
             f"  ·  ล่าสุดบท {latest}" if latest is not None else ""
         )
@@ -3485,7 +3543,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                         latest = latest_context_chapter(text_editor.toPlainText())
                         self._latest_context_chapter = latest
                         self.context_status.setFullText(
-                            f"แปลถึงบท {latest}" if latest is not None else "ไม่พบบทใน Context"
+                            f"Context: บท {latest}" if latest is not None else "ไม่พบบทใน Context"
                         )
                         break
             self._update_editor_status(text)
@@ -3513,7 +3571,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if latest is not None:
             progress_tooltip = f"วันนี้ {today} บท · Context ล่าสุดบท {latest}"
         else:
-            progress_tooltip = "จำนวนบทที่ Context บันทึกเพิ่มในวันนี้"
+            progress_tooltip = "จำนวนบทใหม่จาก Translator Export ที่สำเร็จครบทุกขั้นตอน"
         self.progress_status.setFullText(today_text)
         if workspace:
             workspace.novel_header.refresh(self.profile, latest)
