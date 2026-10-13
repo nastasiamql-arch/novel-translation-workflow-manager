@@ -117,3 +117,7 @@ Review-step Copy and post-TXT-Export history creation prefer a verified pre-Expo
 Polish History list numbers are contiguous display positions, newest first. Removing any row shifts the displayed ordinals without rewriting stable snapshot IDs, `history_number`, file paths or manifests.
 
 Editing any History payload outside the application intentionally invalidates its original SHA-256/size record. On Copy the UI now offers an explicit confirmation if the recorded error is specifically a payload hash/size mismatch. Confirmation validates the entire snapshot structure and file membership, preserves an exact pre-revision manifest backup (`manifest.<id>.bak`), updates only the changed payload size/hash and derived manifest fields, marks it pending review, validates again, and copies the accepted content. Missing or unexpected payloads, traversal, symlinks, tampered manifests and external file conflicts are not auto-repaired. Merely editing the linked live Context does not change existing History snapshots.
+
+## v3.13.3 compact review row position
+
+The chapter label stands alone at the left of each History row; the contiguous display ordinal (e.g. `[003]`) sits immediately to the left of Copy. The ordinal uses the existing theme palette for Light/Dark contrast and does not modify snapshot identities, manifest contents, deletion, copying, or History sorting.

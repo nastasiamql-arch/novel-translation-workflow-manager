@@ -2,7 +2,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Signal, QUrl
+from PySide6.QtCore import Qt, QThread, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QScrollArea, QFrame, QMenu, QInputDialog, QMessageBox, QApplication, QStyle)
@@ -99,8 +99,16 @@ class PolishHistoryPage(QWidget):
             span = snapshot.manifest.get('chapter_range')
             title = QLabel(('บท ' + str(span).replace('-', '–')) if span else 'รอระบุช่วงบท')
             number = visible_numbers[snapshot.path]
-            title.setText(f'[{number:03d}] ' + title.text())
             title.setObjectName('historyRangeTitle'); title.setWordWrap(True); text_column.addWidget(title)
+            # Keep the chapter label uncluttered. Display the current list
+            # number alongside its action so the copy target is easy to find.
+            sequence = QLabel(f'[{number:03d}]')
+            sequence.setObjectName('historySequenceNumber')
+            sequence.setAlignment(Qt.AlignCenter)
+            sequence.setMinimumWidth(52)
+            sequence.setToolTip('ลำดับรายการในประวัติ')
+            sequence.setAccessibleName(f'ประวัติหมายเลข {number:03d}')
+            rows.addWidget(sequence)
             copy = QPushButton('คัดลอก'); copy.setObjectName('polishHistoryCopy')
             changed_payload = snapshot.error.startswith('ไฟล์ในประวัติถูกแก้ไขหรือ Hash ไม่ตรง:')
             copy.setEnabled(not snapshot.error or changed_payload)

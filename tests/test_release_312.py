@@ -378,16 +378,19 @@ def test_history_visible_numbers_renumber_after_delete_without_mutating_ids(wind
     w.open_polish_history()
     wait_until(lambda: not w.history_busy())
     page = w._utility_pages['polish-history:' + profile.id]
+    def active_rows():
+        # Qt defers deleteLater(): inspect layout rows, not all children.
+        return [page.card_layout.itemAt(index).widget()
+                for index in range(page.card_layout.count())
+                if page.card_layout.itemAt(index).widget() is not None]
     def titles():
-        # Qt defers deleteLater() for removed rows. Only current layout rows
-        # count; findChildren() may also return obsolete pending-delete labels.
-        result = []
-        for index in range(page.card_layout.count()):
-            row = page.card_layout.itemAt(index).widget()
-            if row is not None:
-                result.extend(label.text() for label in row.findChildren(QLabel, 'historyRangeTitle'))
-        return result
-    assert titles() == ['[003] บท 324', '[002] บท 322–323', '[001] บท 320–321']
+        return [label.text() for row in active_rows()
+                for label in row.findChildren(QLabel, 'historyRangeTitle')]
+    def numbers():
+        return [label.text() for row in active_rows()
+                for label in row.findChildren(QLabel, 'historySequenceNumber')]
+    assert titles() == ['บท 324', 'บท 322–323', 'บท 320–321']
+    assert numbers() == ['[003]', '[002]', '[001]']
     original_ids = {s.manifest['snapshot_id']: s.manifest['history_number'] for s in page.snapshots}
     trash_folder = tmp_path / 'recycled'
     monkeypatch.setattr(recycle, 'recycle_snapshot', lambda folder: Path(folder).rename(trash_folder))
@@ -396,7 +399,8 @@ def test_history_visible_numbers_renumber_after_delete_without_mutating_ids(wind
     wait_until(lambda: not w.history_busy())
     # Page refresh may queue its own worker on the next event-loop tick.
     wait_until(lambda: len(page.snapshots) == 2)
-    assert titles() == ['[002] บท 324', '[001] บท 320–321']
+    assert titles() == ['บท 324', 'บท 320–321']
+    assert numbers() == ['[002]', '[001]']
     for snap in page.snapshots:
         assert snap.manifest['history_number'] == original_ids[snap.manifest['snapshot_id']]
 
@@ -421,3 +425,35 @@ def test_copy_intentionally_revised_history_payload_with_explicit_confirmation(w
     clipboard = [Path(url.toLocalFile()) for url in QApplication.clipboard().mimeData().urls()]
     assert any(item.read_bytes() == edited for item in clipboard)
     assert not w.polish_history.list(profile)[0].error
+
+
+
+@pytest.mark.parametrize('appearance', ['Light', 'Dark'])
+@pytest.mark.parametrize('width', [420, 1000])
+def test_history_number_sits_immediately_before_copy_in_both_themes(window, appearance, width):
+    from PySide6.QtWidgets import QFrame, QLabel
+    from novel_workflow.theme import application_stylesheet
+    w, profile, ws, errors = window
+    w.setStyleSheet(application_stylesheet(appearance))
+    w.polish_history.create(profile, profile.workflow.steps[1], '322-323')
+    w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
+    page = w._utility_pages['polish-history:' + profile.id]
+    page.setParent(None); page.resize(width, 400); page.show(); QApplication.processEvents()
+    try:
+        row = page.findChild(QFrame, 'polishHistoryRow')
+        chapter = row.findChild(QLabel, 'historyRangeTitle')
+        ordinal = row.findChild(QLabel, 'historySequenceNumber')
+        copy = row.findChild(QPushButton, 'polishHistoryCopy')
+        assert chapter.text() == 'บท 322–323'
+        assert ordinal.text() == '[001]'
+        assert ordinal.objectName() == 'historySequenceNumber'
+        assert ordinal.geometry().right() < copy.geometry().left()
+        assert copy.geometry().left() - ordinal.geometry().right() <= 12
+        assert chapter.geometry().right() < ordinal.geometry().left()
+        assert ordinal.geometry().left() >= 0
+        assert ordinal.geometry().right() < row.width()
+        assert copy.geometry().right() < row.width()
+        assert row.height() <= (80 if width < 600 else 60)
+    finally:
+        page.hide(); page.setParent(w)

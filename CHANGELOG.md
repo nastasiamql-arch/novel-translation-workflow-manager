@@ -2,6 +2,11 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.13.3 - 2026-10-13
+
+- Move the compact History row's visible ordinal to a subtle theme-aware badge immediately before Copy. Show chapter ranges clearly on the left without a number prefix.
+- Preserve the continuous-on-delete numbering behavior, stable snapshot identities, Copy, Recycle and More actions, with Light/Dark and responsive geometry tests.
+
 ## 3.13.2 - 2026-10-13
 
 - Show compact Polish History numbering as contiguous newest-to-oldest display ordinals; after deletion the remaining rows close the gap without rewriting immutable snapshot identities or metadata.
