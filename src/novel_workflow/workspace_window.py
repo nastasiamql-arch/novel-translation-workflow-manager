@@ -585,7 +585,8 @@ class WorkspacePage(QWidget):
             "border:1px solid " + colors["border"] + "; border-radius:3px; padding:2px 6px; }}"
         )
         self.export_status_label.show()
-        if self.editor._dirty(editor) and status != "exported":
+        if (self.editor._dirty(editor) and status != "exported"
+                and editor.toPlainText() != editor.property('documentSavedText')):
             self.owner._mark_export_pending(self.profile_id, path)
             self._export_digest_editor = editor
             self._export_digest_timer.start()
@@ -2580,7 +2581,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if not self.profile or self.profile.id != profile_id:
             return
         workspace = self.workspaces.get(profile_id)
-        if not workspace or not workspace.editor.save_all():
+        if not workspace:
             self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงคัดลอกไฟล์ไม่ได้", 5000)
             return
         if stage == "vocabulary":
@@ -2699,60 +2700,65 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
 
     def copy_step(self, advance=True, selected_steps=None):
-        workspace = self.workspaces.get(self.profile.id) if self.profile else None
-        if workspace and not workspace.editor.save_all(include_normalization=False):
-            self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงคัดลอกไฟล์ไม่ได้", 5000)
+        if not self.profile or not self.step(): return
+        if self.history_busy():
+            self.statusBar().showMessage('กำลังจัดการไฟล์ กรุณารอสักครู่', 3000)
             return
-        selected = selected_steps or ([self.step()] if self.step() else [])
-        protected = next((s for s in selected if self.profile and s.id == self.profile.polish_history_step_id), None)
-        if workspace and protected:
-            from copy import deepcopy
-            profile, step = deepcopy(self.profile), deepcopy(protected)
-            frozen = deepcopy(selected)
-            span = workspace.history_range.text().strip()
-            zipped = self.settings.copy_files_as_zip
-            def operation():
-                snapshot = self.polish_history.create(profile, step, span)
-                paths = self.polish_history.clipboard_paths(profile, snapshot.path, zipped=zipped)
-                count = snapshot.manifest['file_count']
-                if selected_steps and len(selected_steps) > 1 and zipped:
-                    # Keep the existing multi-stage ZIP layout, using frozen polish files.
-                    from .workflow_archive import create_workflow_archive
-                    for s in frozen:
-                        if s.id == step.id:
-                            s.files = [StepFile(reference_type='external_file', path=str(p), order=i)
-                                       for i, p in enumerate(self.polish_history.validate(profile, snapshot.path))]
-                    paths = [create_workflow_archive(self.repo, self.assembler, profile, frozen)]
-                    import zipfile
-                    with zipfile.ZipFile(paths[0]) as archive:
-                        count = sum(not item.is_dir() for item in archive.infolist())
-                return snapshot, paths, count
-            def copied(result):
-                snapshot, paths, count = result
-                self._history_clipboard(paths, count, zipped)
-                live = self.workspaces.get(profile.id) is workspace
-                if live and workspace.history_range.text().strip() == span:
-                    workspace.history_range.clear()
-                if (live and self.profile and self.profile.id == profile.id and advance and not selected_steps
-                        and not workspace.vocabulary_mode and 0 <= workspace.step_index < len(self.profile.workflow.steps)
-                        and self.profile.workflow.steps[workspace.step_index].id == step.id):
-                    from .services import WorkflowService
-                    self.si = WorkflowService.next_index(self.si, len(self.profile.workflow.steps))
-                    workspace.step_index = self.si
-                    self.steps.blockSignals(True); self.steps.setCurrentRow(self.si); self.steps.blockSignals(False)
-                    self.refresh_files(); self._sync_stage_buttons(workspace)
-                self._schedule_workspace_session_save()
-            def failed(error):
-                if isinstance(error, RangeRequired) and self.workspaces.get(profile.id) is workspace:
-                    workspace.history_range.setFocus()
-                    workspace.history_range.setPlaceholderText('กรอกช่วงบท เช่น 6-10')
+        from copy import deepcopy
+        from .clipboard_bundle import prepare_bundle
+        from .workflow_archive import create_workflow_archive
+        from .services import WorkflowService
+        workspace = self.workspaces.get(self.profile.id)
+        profile = deepcopy(self.profile)
+        selected = deepcopy(selected_steps or [self.step()])
+        protected = next((s for s in selected if s.id == profile.polish_history_step_id), None)
+        zipped = self.settings.copy_files_as_zip
+        span = workspace.history_range.text().strip() if workspace else ''
+        try:
+            # All Qt/editor access stays on the GUI thread. Worker receives only
+            # frozen files and value objects, never live widgets.
+            bundle = prepare_bundle(self.repo, self.assembler, profile, selected,
+                                    workspace.editor if workspace else None,
+                                    all_files=zipped)
+        except (OSError, ValueError, KeyError) as exc:
+            QMessageBox.warning(self, 'คัดลอกไฟล์ไม่สำเร็จ', str(exc))
+            self.statusBar().showMessage('คัดลอกไฟล์ไม่สำเร็จ: ' + str(exc), 6000)
+            return
+        step_id = self.step().id
+        old_index = self.si
+        def operation():
+            if protected:
+                self.polish_history.create(profile, protected, span, prepared=bundle)
+            paths = ([create_workflow_archive(self.repo, self.assembler, profile, selected, prepared=bundle)]
+                     if zipped else list(bundle.values()))
+            count = len(bundle)
+            if zipped:
+                import zipfile
+                with zipfile.ZipFile(paths[0]) as archive: count = len(archive.infolist())
+            return paths, count
+        def copied(result):
+            self._history_clipboard(result[0], result[1], zipped)
+            live = self.workspaces.get(profile.id) is workspace and self.profile and self.profile.id == profile.id
+            if protected and live and workspace.history_range.text().strip() == span:
+                workspace.history_range.clear()
+            if (live and advance and not selected_steps and not workspace.vocabulary_mode
+                    and self.si == old_index and self.step().id == step_id):
+                self.si = WorkflowService.next_index(self.si, len(self.profile.workflow.steps))
+                workspace.step_index = self.si
+                self.steps.blockSignals(True); self.steps.setCurrentRow(self.si); self.steps.blockSignals(False)
+                self.refresh_files()
+            if live: self._sync_stage_buttons(workspace)
+            self._schedule_workspace_session_save()
+        def failed(error):
+            if isinstance(error, RangeRequired) and workspace:
+                workspace.history_range.setFocus()
+                workspace.history_range.setPlaceholderText('กรอกช่วงบท เช่น 6-10')
+            QMessageBox.warning(self, 'คัดลอกไฟล์ไม่สำเร็จ', str(error))
+        if protected:
             self.run_history_job(operation, copied, failed)
-            return
-        super().copy_step(advance=advance, selected_steps=selected_steps)
-        if advance and self.profile and workspace and not workspace.vocabulary_mode and self.si >= 0:
-            workspace.step_index = self.si
-        if workspace:
-            self._sync_stage_buttons(workspace)
+        else:
+            try: copied(operation())
+            except (OSError, ValueError, KeyError) as exc: failed(exc)
 
     def set_editor_font_size(self, size):
         size = max(8.0, min(28.0, float(size)))
@@ -2876,91 +2882,63 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def _translator_export_status(self, profile_id, path, editor=None):
         key = self._export_path_key(path)
         record = self._export_records(profile_id).get(key)
-        if record is None:
-            if editor is not None and EditorTabs._dirty(editor):
+        if not record:
+            if editor is not None and EditorTabs._dirty(editor) and not editor.property('normalizationPending'):
                 self._mark_export_pending(profile_id, path)
                 return "not_exported"
             return "unknown"
-        if editor is not None and EditorTabs._dirty(editor):
-            if editor.property("exportDigestMatches") and record.get("digest"):
-                if record.get("pending"):
-                    record["pending"] = False
-                    try:
-                        self._save_export_records(profile_id)
-                    except (OSError, ValueError):
-                        record["pending"] = True
-                        return "not_exported"
-                return "exported"
-            self._mark_export_pending(profile_id, path)
-            return "not_exported"
-        digest = getattr(editor, "disk_digest", None) if editor is not None else None
-        if digest is None:
-            try:
-                digest = hashlib.sha256(Path(path).read_bytes()).digest()
-            except OSError:
-                return "unknown"
-        if record.get("digest") and digest.hex() == record["digest"]:
-            if record.get("pending"):
-                record["pending"] = False
+        try:
+            from .workflow_archive import file_digest
+            digest = file_digest(path)
+        except OSError:
+            return "not_exported" if record.get('pending') else "unknown"
+        matches = digest.hex() == record.get('digest')
+        if editor is not None:
+            text = editor.toPlainText()
+            # Opening/restore may normalize the display without changing disk.
+            # Undo to that baseline is also unchanged content, regardless of dirty flags.
+            baseline = editor.property('documentSavedText')
+            changed = text != baseline
+            if changed:
+                encoded = text.replace("\n", getattr(editor, 'disk_newline', "\n"))
+                if getattr(editor, 'disk_bom', False): encoded = "\ufeff" + encoded
+                matches = hashlib.sha256(encoded.encode('utf-8')).hexdigest() == record.get('digest')
+            editor.setProperty('exportDigestMatches', matches)
+        if matches:
+            if record.get('pending'):
+                record['pending'] = False
                 try:
                     self._save_export_records(profile_id)
-                except (OSError, ValueError):
-                    record["pending"] = True
-                    return "not_exported"
-            return "exported"
+                except (OSError, ValueError) as exc:
+                    record['pending'] = True
+                    self.statusBar().showMessage(f'บันทึกสถานะ Export ไม่สำเร็จ: {exc}', 6000)
+            return 'exported'
         self._mark_export_pending(profile_id, path)
-        return "not_exported"
+        return 'not_exported'
 
     def _confirm_exported_content(self, profile_id, path, editor):
-        key = self._export_path_key(path)
-        record = self._export_records(profile_id).get(key)
-        if not record or not record.get("digest"):
-            return
-        text = editor.toPlainText().replace("\n", getattr(editor, "disk_newline", "\n"))
-        if getattr(editor, "disk_bom", False):
-            text = "\ufeff" + text
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        editor.setProperty("exportDigestMatches", digest == record["digest"])
-        if digest == record["digest"]:
-            record["pending"] = False
-            try:
-                self._save_export_records(profile_id)
-            except (OSError, ValueError) as exc:
-                self.statusBar().showMessage(f"ยืนยันสถานะ Export ไม่สำเร็จ: {exc}", 6000)
+        self._translator_export_status(profile_id, path, editor)
 
     def _pending_export_profiles(self):
         pending = []
         for profile in self.repo.list_profiles():
-            found = False
-            for key, record in self._export_records(profile.id).items():
-                path = Path(record.get("translator_path") or key)
-                if record.get("pending"):
-                    found = True
-                elif record.get("digest"):
-                    try:
-                        if hashlib.sha256(path.read_bytes()).hexdigest() != record["digest"]:
-                            self._mark_export_pending(profile.id, path)
-                            found = True
-                    except OSError:
-                        continue
-                if found:
-                    break
-            if found:
-                pending.append((profile, path))
+            path = self._pending_export_for_profile(profile.id)
+            if path is not None: pending.append((profile, path))
         return pending
 
     def _pending_export_for_profile(self, profile_id):
-        for key, record in self._export_records(profile_id).items():
-            path = Path(record.get("translator_path") or key)
-            if record.get("pending"):
+        workspace = self.workspaces.get(profile_id)
+        for key, record in list(self._export_records(profile_id).items()):
+            path = Path(record.get('translator_path') or key)
+            editor = None
+            if workspace:
+                for i in range(workspace.editor.tabs.count()):
+                    candidate = workspace.editor.tabs.widget(i)
+                    if EditorTabs._path(candidate) == path.resolve():
+                        editor = candidate
+                        break
+            if self._translator_export_status(profile_id, path, editor) == 'not_exported':
                 return path
-            if record.get("digest"):
-                try:
-                    if hashlib.sha256(path.read_bytes()).hexdigest() != record["digest"]:
-                        self._mark_export_pending(profile_id, path)
-                        return path
-                except OSError:
-                    continue
         return None
 
     def _export_profile_translator(self, profile_id):

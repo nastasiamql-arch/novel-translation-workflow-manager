@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QScrollArea, QFrame, QMenu, QInputDialog, QMessageBox, QApplication)
+    QPushButton, QScrollArea, QFrame, QMenu, QInputDialog, QMessageBox, QApplication, QStyle)
 
 
 class HistoryWorker(QThread):
@@ -40,7 +40,7 @@ class PolishHistoryPage(QWidget):
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
         self.cards = QWidget(); self.cards.setObjectName('polishHistoryCards')
         self.card_layout = QVBoxLayout(self.cards)
-        self.card_layout.setContentsMargins(0, 4, 0, 4); self.card_layout.setSpacing(12)
+        self.card_layout.setContentsMargins(0, 2, 0, 2); self.card_layout.setSpacing(4)
         scroll.setWidget(self.cards); layout.addWidget(scroll, 1)
 
     def refresh(self):
@@ -84,38 +84,66 @@ class PolishHistoryPage(QWidget):
                 except (ValueError, TypeError): pass
             if match: found.append(snapshot)
         for snapshot in found:
-            card = QFrame(); card.setObjectName('settingsCard')
-            rows = QVBoxLayout(card); rows.setContentsMargins(16, 14, 16, 14)
+            card = QFrame(); card.setObjectName('polishHistoryRow')
+            rows = QHBoxLayout(card); rows.setContentsMargins(8, 4, 8, 4); rows.setSpacing(6)
+            card.setMinimumHeight(54)
+            text_column = QVBoxLayout(); text_column.setSpacing(0)
+            rows.addLayout(text_column, 1)
             top = QHBoxLayout()
             span = snapshot.manifest.get('chapter_range')
             title = QLabel(('บท ' + str(span).replace('-', '–')) if span else 'รอระบุช่วงบท')
-            title.setObjectName('historyRangeTitle'); title.setWordWrap(True); top.addWidget(title, 1)
+            number = snapshot.manifest.get('history_number')
+            title.setText((f'[{number:03d}] ' if type(number) is int and number > 0 else '[—] ') + title.text())
+            title.setObjectName('historyRangeTitle'); title.setWordWrap(True); text_column.addWidget(title)
             copy = QPushButton('คัดลอก'); copy.setObjectName('polishHistoryCopy')
             copy.setEnabled(not snapshot.error)
             copy.setAccessibleName(title.text() + ' คัดลอกไฟล์ทั้งหมด')
             copy.clicked.connect(lambda _=False, s=snapshot: self.owner.copy_history_snapshot(self.profile, s))
-            top.addWidget(copy)
+            rows.addWidget(copy)
+            delete = QPushButton(); delete.setObjectName('polishHistoryDelete')
+            delete.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
+            delete.setToolTip('ลบประวัตินี้ไปยังถังรีไซเคิล')
+            delete.setAccessibleName(title.text() + ' ลบประวัตินี้ไปยังถังรีไซเคิล')
+            delete.setFixedWidth(32)
+            delete.setStyleSheet('QPushButton:hover { background: #f6caca; color: #782020; }')
+            delete.clicked.connect(lambda _=False, s=snapshot, b=delete: self.delete_snapshot(s, b))
+            rows.addWidget(delete)
             more = QPushButton('⋯'); more.setAccessibleName(title.text() + ' ตัวเลือกเพิ่มเติม')
             more.clicked.connect(lambda _=False, s=snapshot, b=more: self.more_menu(s, b))
-            top.addWidget(more); rows.addLayout(top)
-            try: stamp = datetime.fromisoformat(snapshot.manifest['created_at']).astimezone().strftime('%d/%m/%Y · %H:%M:%S')
+            more.setFixedWidth(28); rows.addWidget(more)
+            try: stamp = datetime.fromisoformat(snapshot.manifest['created_at']).astimezone().strftime('%H:%M')
             except (KeyError, ValueError, TypeError): stamp = snapshot.path.name
             review_status = snapshot.manifest.get('review_status', 'รอตรวจ')
-            detail = QLabel(f'{review_status} · {stamp} · {snapshot.manifest.get("file_count", 0) if not snapshot.error else "?"} ไฟล์'
-                            f' · {snapshot.manifest.get("step_name", "")}')
-            detail.setWordWrap(True); detail.setObjectName('mutedLabel'); rows.addWidget(detail)
+            detail = QLabel(f'{stamp} · {snapshot.manifest.get("file_count", 0) if not snapshot.error else "?"} ไฟล์ · {review_status}')
+            detail.setWordWrap(True); detail.setObjectName('mutedLabel'); text_column.addWidget(detail)
             if snapshot.error:
                 error = QLabel('ตรวจพบข้อผิดพลาด: ' + snapshot.error); error.setWordWrap(True)
-                rows.addWidget(error)
+                text_column.addWidget(error)
             if snapshot.warning:
                 warning = QLabel(snapshot.warning); warning.setWordWrap(True)
-                rows.addWidget(warning)
+                text_column.addWidget(warning)
             self.card_layout.addWidget(card)
         if not found:
             empty = QLabel('ยังไม่มีประวัติ\nเลือกขั้นตอนใน Settings แล้วคลิกขั้นตอนเพื่อบันทึกไฟล์'
                            if not self.snapshots else 'ไม่พบช่วงบทที่ค้นหา')
             empty.setWordWrap(True); empty.setObjectName('emptyStateDescription'); self.card_layout.addWidget(empty)
         self.card_layout.addStretch()
+
+    def delete_snapshot(self, snapshot, button=None):
+        if self.owner.history_busy():
+            self.status.setText('กำลังจัดการประวัติ กรุณารอสักครู่')
+            return
+        mime = QApplication.clipboard().mimeData()
+        urls = [u.toLocalFile() for u in mime.urls()] if mime else []
+        if button: button.setEnabled(False)
+        def failed(error):
+            if button: button.setEnabled(True)
+            self.failed('ลบประวัติไม่สำเร็จ: ' + str(error))
+        def deleted(_):
+            self.status.setText('ย้ายประวัติไปยังถังรีไซเคิลแล้ว · Clipboard คงเดิม')
+            self.refresh()
+        self.owner.run_history_job(lambda: self.owner.polish_history.delete(self.profile, snapshot.path, urls),
+                                   deleted, failed)
 
     def more_menu(self, snapshot, button):
         menu = QMenu(button)
@@ -125,7 +153,7 @@ class PolishHistoryPage(QWidget):
         status.setEnabled(not snapshot.error)
         open_folder = menu.addAction('เปิดโฟลเดอร์')
         verify = menu.addAction('ตรวจสอบไฟล์อีกครั้ง')
-        delete = menu.addAction('ลบประวัติ…')
+        delete = menu.addAction('ลบประวัติไปยังถังรีไซเคิล')
         action = menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
         if action == open_folder:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(snapshot.path)))
@@ -142,9 +170,4 @@ class PolishHistoryPage(QWidget):
                 self.owner.run_history_job(lambda: self.owner.polish_history.rename(self.profile, snapshot.path, value, clipboard_paths=urls),
                                            lambda _: self.refresh(), self.failed)
         elif action == delete:
-            if QMessageBox.question(self, 'ลบประวัติ', 'ลบประวัติที่เลือกและไฟล์สำรองทั้งหมด?',
-                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
-                mime = QApplication.clipboard().mimeData()
-                urls = [u.toLocalFile() for u in mime.urls()] if mime else []
-                self.owner.run_history_job(lambda: self.owner.polish_history.delete(self.profile, snapshot.path, urls),
-                                           lambda _: self.refresh(), self.failed)
+            self.delete_snapshot(snapshot)

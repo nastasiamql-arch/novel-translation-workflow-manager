@@ -98,3 +98,10 @@ before release. Upgrade CI starts from v3.11.0, downloads via the actual updater
 checks size/SHA-256 and validates legacy migration with the installed executable,
 including unchanged raw manifest and payload hashes after migration.
 The user's particular installed machine remains outside this automated test.
+# v3.12 history controls
+
+Each complete snapshot has a permanent `history_number` displayed as `[001]`. A per-profile `history_numbers.json` ledger reserves numbers before publication, remembers deleted IDs and prevents number reuse. Legacy snapshots are numbered by creation timestamp and stable ID without changing their folder names, payloads or hashes.
+
+Compact rows expose Copy, Recycle and More. Recycle has no confirmation dialog and requires the modern Windows shell API; missing support or a failed operation preserves the row and reports the error. Ownership, containment, traversal, symlink/junction and clipboard checks apply before recycling. History operations share a lock to prevent concurrent writers and deletion from racing.
+
+New clipboard payloads are independent copies in the persistent application cache. They preserve historical snapshot bytes and remain usable after recycling the source snapshot. Direct clipboard references created by older versions are still guarded and block deletion until another clipboard selection is made.

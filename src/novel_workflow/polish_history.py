@@ -10,10 +10,22 @@ import shutil
 import tempfile
 import uuid
 import zipfile
+import threading
+from functools import wraps
+
+_history_lock = threading.RLock()
+
+
+def serialized(operation):
+    @wraps(operation)
+    def locked(*args, **kwargs):
+        with _history_lock:
+            return operation(*args, **kwargs)
+    return locked
 
 from .recovery import translator_chapter_range, _safe_backup_stem
 from .storage import write_json
-from .workflow_archive import _check_path, resolve_attachment
+from .workflow_archive import _check_path, resolve_attachment, stream_digest
 
 
 class RangeRequired(ValueError):
@@ -126,6 +138,55 @@ class PolishHistory:
     def __init__(self, repo, assembler):
         self.repo, self.assembler = repo, assembler
 
+    def _number_ledger(self, profile):
+        path = self.repo.profile_dir(profile.id) / 'history_numbers.json'
+        if not path.exists(): return path, {'next': 1, 'numbers': {}}
+        value = _read_manifest(_check_path(path))
+        if (not isinstance(value, dict) or type(value.get('next')) is not int
+                or value['next'] < 1 or not isinstance(value.get('numbers'), dict)
+                or any(type(n) is not int or n < 1 for n in value['numbers'].values())
+                or len(set(value['numbers'].values())) != len(value['numbers'])):
+            raise ValueError('Invalid history number ledger; preserving history')
+        return path, value
+
+    def _allocate_number(self, profile, stable_id):
+        path, ledger = self._number_ledger(profile)
+        numbers = ledger['numbers']
+        if stable_id not in numbers:
+            number = max(ledger['next'], max(numbers.values(), default=0) + 1)
+            numbers[stable_id] = number
+            ledger['next'] = number + 1
+            # Reserve before publishing: a crash may leave a gap, never reuse.
+            write_json(path, ledger)
+        return numbers[stable_id]
+
+    def _migrate_numbers(self, profile, snapshots):
+        path, ledger = self._number_ledger(profile)
+        valid = [s for s in snapshots if not s.error]
+        for snapshot in valid:
+            manifest = snapshot.manifest
+            number = manifest.get('history_number')
+            stable_id = manifest.get('snapshot_id')
+            if not isinstance(stable_id, str) or not isinstance(manifest.get('created_at'), str):
+                snapshot.error = 'Invalid stable snapshot metadata'
+                continue
+            if number is not None:
+                if type(number) is not int or number < 1:
+                    snapshot.error = 'Invalid permanent history number'; continue
+                existing = ledger['numbers'].get(stable_id)
+                if existing is not None and existing != number:
+                    snapshot.error = 'History number does not match ledger'; continue
+                if any(n == number and sid != stable_id for sid, n in ledger['numbers'].items()):
+                    snapshot.error = 'Duplicate permanent history number'; continue
+                ledger['numbers'][stable_id] = number
+                ledger['next'] = max(ledger['next'], number + 1)
+        if valid: write_json(path, ledger)
+        for snapshot in sorted([s for s in valid if not s.error], key=lambda s: (s.manifest['created_at'], s.manifest['snapshot_id'])):
+            number = self._allocate_number(profile, snapshot.manifest['snapshot_id'])
+            if snapshot.manifest.get('history_number') != number:
+                snapshot.manifest['history_number'] = number
+                write_json(snapshot.path / 'manifest.json', snapshot.manifest)
+
     def root(self, profile):
         if not profile.main_folder.strip():
             raise ValueError('กรุณาตั้งค่าโฟลเดอร์หลักของนิยายก่อนใช้ประวัติ')
@@ -138,6 +199,7 @@ class PolishHistory:
 
     def _snapshot_path(self, profile, path):
         root = self.root(profile)
+        if '..' in Path(path).parts: raise ValueError('Snapshot path traversal')
         path = _check_path(path)
         if not path.is_relative_to(root) or len(path.relative_to(root).parts) not in (1, 2):
             raise ValueError('Snapshot path outside novel history')
@@ -231,10 +293,14 @@ class PolishHistory:
             shutil.copyfileobj(incoming, output, 1024 * 1024)
             output.flush(); os.fsync(output.fileno())
 
-    def create(self, profile, step, chapter_range=None, *, allow_unresolved=False):
+    @serialized
+    def create(self, profile, step, chapter_range=None, *, allow_unresolved=False, prepared=None):
         if not any(s.id == step.id for s in profile.workflow.steps):
             raise ValueError('Step does not belong to novel')
         plan, attachments = self._plan(profile, step)
+        original_plan = plan
+        if prepared is not None:
+            plan = [(prepared[source], target, item, context) for source, target, item, context in plan]
         hashes = [_hash(source) for source, *_ in plan]
         # Infer only from explicitly identified novel-content attachments, not Context.
         ranges = []
@@ -263,7 +329,7 @@ class PolishHistory:
              'attachment_id': item.id if item else None, 'order': item.order if item else len(plan),
              'enabled': item.enabled if item else True, 'sha256': digest,
              'is_context': is_context}
-            for (source, target, item, is_context), digest in zip(plan, hashes)
+            for (source, target, item, is_context), digest in zip(original_plan, hashes)
         ]
         links = [{'id': item.id, 'label': item.label, 'reference_type': item.reference_type,
                   'path': item.path, 'dynamic_reference': item.dynamic_reference,
@@ -296,8 +362,9 @@ class PolishHistory:
             for (source, *_), digest in zip(plan, hashes):
                 if _hash(_check_path(source)) != digest:
                     raise OSError(f'Attachment changed while copying: {source}')
-            for source, candidates in attachments:
-                if _files(source) != candidates: raise OSError(f'Folder changed while copying: {source}')
+            if prepared is None:
+                for source, candidates in attachments:
+                    if _files(source) != candidates: raise OSError(f'Folder changed while copying: {source}')
             created = datetime.now(timezone.utc)
             manifest = {'schema_version': 1, 'profile_id': profile.id, 'step_id': step.id,
                         'step_name': step.name, 'chapter_range': chapter_range,
@@ -307,6 +374,7 @@ class PolishHistory:
                         'context_hash': next((e['sha256'] for e in entries if e['is_context']), None),
                         'complete': True, 'review_status': 'รอตรวจ',
                         'range_pending': chapter_range is None}
+            manifest['history_number'] = self._allocate_number(profile, snapshot_id)
             write_json(staging / 'manifest.json', manifest)
             self._validate_manifest(profile, staging, manifest)
             destination = self._relocate(profile, staging, manifest)
@@ -402,6 +470,7 @@ class PolishHistory:
         manifest = _read_manifest(path / 'manifest.json')
         return self._validate_manifest(profile, path, manifest)
 
+    @serialized
     def list(self, profile, step_id=None, *, verify=True, clipboard_paths=()):
         root = self.root(profile)
         if not root.exists(): return []
@@ -436,8 +505,6 @@ class PolishHistory:
                     else:
                         manifest = _read_manifest(_check_path(path / 'manifest.json'))
                         if not isinstance(manifest, dict) or manifest.get('profile_id') != profile.id: continue
-                if step_id and ((legacy and path.parent.name != f'{_token(step_id)}-{profile.id}')
-                                or (not legacy and manifest and manifest.get('step_id') != step_id)): continue
                 if path.name.startswith('.staging-'): raise ValueError('การบันทึกไม่สมบูรณ์ · เก็บไฟล์ไว้เพื่อกู้คืน')
                 manifest = _read_manifest(_check_path(path / 'manifest.json'))
                 if verify: self._validate_manifest(profile, path, manifest)
@@ -467,12 +534,28 @@ class PolishHistory:
                 result.append(Snapshot(path, manifest, warning=warning))
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 result.append(Snapshot(path, manifest if isinstance(manifest, dict) else {}, str(exc)))
-        return sorted(result, key=lambda x: str(x.manifest.get('created_at', x.path.name)), reverse=True)
+        self._migrate_numbers(profile, result)
+        if step_id: result = [x for x in result if x.manifest.get('step_id') == step_id]
+        return sorted(result, key=lambda x: (str(x.manifest.get('created_at', x.path.name)),
+                                            str(x.manifest.get('snapshot_id', ''))), reverse=True)
 
+    @serialized
     def clipboard_paths(self, profile, path, *, zipped):
         path = self._snapshot_path(profile, path)
         paths = self.validate(profile, path)
-        if not zipped: return paths
+        if not zipped:
+            # Independent immutable copies let users recycle history while its
+            # clipboard payload remains available, including after app exit.
+            cache = self.repo.root / 'cache' / 'clipboard'; cache.mkdir(parents=True, exist_ok=True)
+            bundle = Path(tempfile.mkdtemp(prefix='History-', dir=cache))
+            frozen = []
+            for i, payload in enumerate(paths, 1):
+                target = bundle / str(i) / payload.name
+                self._copy_file(payload, target)
+                if _hash(target) != _hash(payload): raise OSError('History clipboard verification failed')
+                frozen.append(target)
+            self.validate(profile, path)
+            return frozen
         cache = self.repo.root / 'cache' / 'clipboard'; cache.mkdir(parents=True, exist_ok=True)
         fd, name = tempfile.mkstemp(prefix='Polish-', suffix='.zip', dir=cache); os.close(fd)
         archive = Path(name)
@@ -482,12 +565,18 @@ class PolishHistory:
             with zipfile.ZipFile(archive) as output:
                 if len(output.infolist()) != len(paths) or output.testzip() is not None:
                     raise OSError('ZIP payload verification failed')
+                for payload in paths:
+                    with output.open(payload.relative_to(path).as_posix()) as content:
+                        digest = stream_digest(content).hex()
+                    if digest != _hash(payload):
+                        raise OSError('ZIP snapshot hash verification failed')
             # Validate again before publishing clipboard paths.
             self.validate(profile, path)
             return [archive]
         except BaseException:
             archive.unlink(missing_ok=True); raise
 
+    @serialized
     def rename(self, profile, path, chapter_range, clipboard_paths=()):
         path = self._snapshot_path(profile, path); self.validate(profile, path)
         self._guard_clipboard(path, clipboard_paths)
@@ -517,6 +606,7 @@ class PolishHistory:
                 finally: Path(temporary).unlink(missing_ok=True)
             raise
 
+    @serialized
     def set_review_status(self, profile, path, status):
         path = self._snapshot_path(profile, path)
         if status not in {'รอตรวจ', 'ตรวจแล้ว'}:
@@ -528,6 +618,7 @@ class PolishHistory:
         self.validate(profile, path)
         return manifest
 
+    @serialized
     def delete(self, profile, path, clipboard_paths=()):
         path = self._snapshot_path(profile, path)
         # Legacy/staging paths encode ownership. Flat folders must identify
@@ -548,8 +639,23 @@ class PolishHistory:
                 raise ValueError('ยืนยันเจ้าของประวัติไม่ได้ · คงไฟล์ไว้เพื่อให้ตรวจสอบ') from exc
         if any(Path(p).absolute().is_relative_to(path) for p in clipboard_paths):
             raise ValueError('Clipboard ยังใช้ไฟล์ชุดนี้อยู่ กรุณาคัดลอกชุดอื่นก่อนลบ')
+        active_files = list(profile.working_files)
+        for step in profile.workflow.steps: active_files.extend(step.files)
+        if profile.vocabulary_step: active_files.extend(profile.vocabulary_step.files)
+        for item in active_files:
+            try: current = resolve_attachment(self.repo, self.assembler, profile, item)
+            except (OSError, ValueError, KeyError): continue
+            if current == path or current.is_relative_to(path):
+                raise ValueError('ประวัตินี้มีไฟล์ที่ผูกอยู่กับ Workflow · กรุณายกเลิกการผูกก่อนลบ')
+        if profile.context_path:
+            context = Path(profile.context_path).expanduser().resolve()
+            if context == path or context.is_relative_to(path):
+                raise ValueError('ประวัตินี้ถูกใช้เป็น Context จริง · ไม่สามารถลบได้')
         # Reject unsafe descendants even in damaged/staging snapshots.
         def unreadable(error): raise error
         for folder, directories, files in os.walk(path, followlinks=False, onerror=unreadable):
             for name in directories + files: _check_path(Path(folder) / name)
-        shutil.rmtree(path)
+        if os.name != 'nt':
+            raise OSError('Windows Recycle Bin is unavailable; history was preserved')
+        from .recycle_bin import recycle_snapshot
+        return recycle_snapshot(path)

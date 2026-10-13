@@ -992,6 +992,13 @@ class EditorTabs(QWidget):
 
     def _on_text_changed(self, editor):
         editor.setProperty("exportDigestMatches", False)
+        if editor.toPlainText() == editor.property('documentSavedText'):
+            pending = bool(editor.property('displayNormalization'))
+            editor.setProperty('normalizationPending', pending)
+            self._set_dirty(editor, pending, 'ลบบรรทัดว่างแล้ว · ยังไม่ได้บันทึก' if pending else 'บันทึกแล้ว')
+            timer = getattr(editor, 'autosave_timer', None)
+            if timer is not None: timer.stop()
+            return
         editor.setProperty('normalizationPending', False)
         self._set_dirty(editor, True, "กำลังรอบันทึกอัตโนมัติ…")
         timer = getattr(editor, "autosave_timer", None)
@@ -1060,6 +1067,7 @@ class EditorTabs(QWidget):
         editor.compact_pasted_empty_lines = cleans_editor_text(path)
         original_text = text
         text = normalize_editor_text(path, text)
+        editor.setProperty('displayNormalization', text != original_text)
         editor.disk_digest = hashlib.sha256(original_bytes).digest()
         editor.disk_bom = original_bytes.startswith(b"\xef\xbb\xbf")
         editor.disk_newline = detect_newline(original_text)
@@ -1201,6 +1209,7 @@ class EditorTabs(QWidget):
         if timer is not None:
             timer.stop()
         editor.setProperty('normalizationPending', False)
+        editor.setProperty('displayNormalization', False)
         self._set_dirty(
             editor,
             False,
@@ -1243,6 +1252,7 @@ class EditorTabs(QWidget):
             editor._cached_character_count = len(text)
             editor._cached_word_count = len(text.split())
             editor.setProperty('normalizationPending', normalized != text)
+            editor.setProperty('displayNormalization', normalized != text)
             editor.setProperty("documentSavedText", editor.toPlainText())
             self._set_dirty(editor, normalized != text,
                             "ลบบรรทัดว่างแล้ว · ยังไม่ได้บันทึก" if normalized != text else "บันทึกแล้ว")

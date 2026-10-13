@@ -50,6 +50,15 @@ def _check_packaged_qt_runtime():
             expected = sys.argv[sys.argv.index("--expected-version") + 1]
             if __version__ != expected:
                 raise RuntimeError(f"Expected v{expected}, running v{__version__}")
+        if '--check-recycle-bin' in sys.argv:
+            import tempfile
+            from novel_workflow.recycle_bin import recycle_snapshot
+            with tempfile.TemporaryDirectory(prefix='Palantir-Recycle-Probe-') as folder:
+                snapshot = Path(folder) / 'Snapshot'; snapshot.mkdir()
+                (snapshot / 'payload.txt').write_bytes(b'packaged recycle probe')
+                destination = recycle_snapshot(snapshot)
+                if (destination / 'payload.txt').read_bytes() != b'packaged recycle probe':
+                    raise RuntimeError('Packaged Recycle Bin payload verification failed')
         if '--history-profile' in sys.argv:
             # Optional, read-only installed-runtime probe used by upgrade CI.
             import json

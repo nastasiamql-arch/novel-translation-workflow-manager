@@ -185,7 +185,9 @@ def test_export_without_verifiable_chapter_range_is_kept_unresolved(window, tmp_
 def test_failed_save_blocks_stage_snapshot(window, monkeypatch):
     w, p, workspace, errors = window
     assert hasattr(w, 'polish_history')
-    monkeypatch.setattr(workspace.editor, 'save_all', lambda **kwargs: False)
+    editor = workspace.editor.open_file(w.repo.profile_dir(p.id) / 'a.txt')
+    editor.insertPlainText('unsaved work')
+    monkeypatch.setattr(workspace.editor, 'save_editor', lambda *args, **kwargs: False)
     workspace.stage_buttons[1].click()
     assert w.polish_history.list(p) == []
 
@@ -264,7 +266,7 @@ def test_history_refresh_preserves_clipboard_then_migrates_legacy(window):
     legacy_root.mkdir()
     old = legacy_root / f'บท 6-10__20261012-040000__{snapshot.manifest["snapshot_id"]}'
     snapshot.path.rename(old)
-    paths = w.polish_history.clipboard_paths(p, old, zipped=False)
+    paths = w.polish_history.validate(p, old)  # Simulate pre-upgrade direct clipboard references.
     mime = QMimeData(); mime.setUrls([QUrl.fromLocalFile(str(x)) for x in paths])
     QApplication.clipboard().setMimeData(mime)
     w.open_polish_history(); wait_until(lambda: not w.history_busy())

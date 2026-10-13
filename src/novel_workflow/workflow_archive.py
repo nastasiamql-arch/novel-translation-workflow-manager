@@ -8,6 +8,19 @@ import os
 import re
 import tempfile
 import zipfile
+import hashlib
+
+
+def stream_digest(source):
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: source.read(1024 * 1024), b''):
+        digest.update(chunk)
+    return digest.digest()
+
+
+def file_digest(path):
+    with Path(path).open('rb') as source:
+        return stream_digest(source)
 
 
 def _safe_name(value):
@@ -37,7 +50,7 @@ def resolve_attachment(repo, assembler, profile, item):
     return _check_path(repo.profile_dir(profile.id) / item.path)
 
 
-def create_workflow_archive(repo, assembler, profile, steps):
+def create_workflow_archive(repo, assembler, profile, steps, *, prepared=None):
     """Validate every attachment before publishing a single ZIP64 archive."""
     if not steps:
         raise ValueError('No workflow steps selected')
@@ -83,8 +96,10 @@ def create_workflow_archive(repo, assembler, profile, steps):
                 # Permission errors are detected now and again during streaming.
                 with path.open('rb'):
                     pass
-                stat = path.stat()
-                plan.append((path, member, (stat.st_size, stat.st_mtime_ns, stat.st_ino)))
+                payload = prepared[path] if prepared is not None else path
+                stat = payload.stat()
+                digest = file_digest(payload)
+                plan.append((payload, member, (stat.st_size, stat.st_mtime_ns, stat.st_ino), digest))
     cache = repo.root / 'cache' / 'clipboard'
     cache.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix='Workflow-', suffix='.zip', dir=cache)
@@ -92,10 +107,16 @@ def create_workflow_archive(repo, assembler, profile, steps):
     archive = Path(name)
     try:
         with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as output:
-            for path, member, before in plan:
+            for path, member, before, digest in plan:
                 output.write(path, member)
                 stat = path.stat()
                 if before != (stat.st_size, stat.st_mtime_ns, stat.st_ino):
+                    raise OSError(f'Attachment changed during archive creation: {path}')
+        with zipfile.ZipFile(archive) as output:
+            if output.testzip() is not None: raise OSError('Archive CRC verification failed')
+            for path, member, before, digest in plan:
+                with output.open(member) as content: archived_digest = stream_digest(content)
+                if (archived_digest != digest or file_digest(_check_path(path)) != digest):
                     raise OSError(f'Attachment changed during archive creation: {path}')
         return archive
     except BaseException:

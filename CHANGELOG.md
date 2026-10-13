@@ -2,6 +2,13 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.12.0 - 2026-10-13
+
+- Reconcile persisted Translator export status with the successful SHA-256 after restart and session restore; undo to the saved baseline preserves BOM/CRLF and avoids normalization-only autosaves.
+- Freeze current workflow attachments before copying normal files or ZIPs; save actual editor edits, reject external conflicts, verify dynamic references and archive payloads, and keep clipboard/step unchanged on failure.
+- Compact Polish History rows with permanent per-novel numbers, stable legacy migration, direct recycle-only deletion, and immutable historical clipboard payloads.
+- Require modern Windows Recycle Bin support (Send2Trash and pywin32), serialize history operations, and verify native recycling from both tests and the packaged executable.
+
 ## 3.11.1 - 2026-10-12
 
 - Translator Editor Export now confirms first, snapshots the configured review

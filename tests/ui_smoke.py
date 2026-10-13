@@ -221,11 +221,15 @@ def main() -> int:
                 assert workspace.vocabulary_button.text() == "หาศัพท์"
                 assert workspace.vocabulary_button.property("workflowActive")
                 assert workspace.files.item(0).text() == "Find Terms"
-                assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [context.resolve()]
+                copied = [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()]
+                assert len(copied) == 1 and copied[0] != context.resolve()
+                assert copied[0].name == context.name and copied[0].read_bytes() == context.read_bytes()
                 workspace.vocabulary_button.click()
                 app.processEvents()
                 assert workspace.vocabulary_mode
-                assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [context.resolve()]
+                copied_again = [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()]
+                assert len(copied_again) == 1 and copied_again[0] != context.resolve()
+                assert copied_again[0].name == context.name and copied_again[0].read_bytes() == context.read_bytes()
                 translation_button = workspace.steps.itemWidget(workspace.steps.item(0))
                 translation_geometry = translation_button.geometry()
                 QTest.mouseMove(translation_button, translation_button.rect().center())
@@ -240,13 +244,17 @@ def main() -> int:
                 review_button = workspace.steps.itemWidget(workspace.steps.item(1))
                 assert review_button.text() == "ตรวจคำแปล"
                 assert workspace.steps.currentRow() == 0
-                assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [chapter.resolve()]
+                copied_chapter = [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()]
+                assert len(copied_chapter) == 1 and copied_chapter[0] != chapter.resolve()
+                assert copied_chapter[0].name == chapter.name and copied_chapter[0].read_bytes() == chapter.read_bytes()
                 review_button.click()
                 app.processEvents()
                 assert workspace.steps.currentRow() == 1
                 assert review_button.text() == "ตรวจคำแปล"
                 assert review_button.property("workflowActive")
-                assert [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()] == [review.resolve()]
+                copied_review = [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()]
+                assert len(copied_review) == 1 and copied_review[0] != review.resolve()
+                assert copied_review[0].name == review.name and copied_review[0].read_bytes() == review.read_bytes()
                 translation_button.click()
                 app.processEvents()
 
@@ -385,7 +393,9 @@ def main() -> int:
                 workspace.copy_step_button.click()
                 app.processEvents()
                 urls = app.clipboard().mimeData().urls()
-                assert [Path(url.toLocalFile()) for url in urls] == [chapter.resolve()]
+                copied_step = [Path(url.toLocalFile()) for url in urls]
+                assert len(copied_step) == 1 and copied_step[0] != chapter.resolve()
+                assert copied_step[0].name == chapter.name and copied_step[0].read_bytes() == chapter.read_bytes()
                 assert workspace.steps.currentRow() == 1
                 assert workspace.steps.itemWidget(workspace.steps.item(1)).text() == "ตรวจคำแปล"
 

@@ -318,7 +318,9 @@ def test_copy_step_shortcut_is_distinct_from_copy(window,tmp_path):
     assert QApplication.clipboard().text()=='copy me'
     assert window.si==0
     QTest.keyClick(editor,Qt.Key_C,Qt.ControlModifier|Qt.ShiftModifier)
-    assert [Path(url.toLocalFile()) for url in QApplication.clipboard().mimeData().urls()]==[path.resolve()]
+    copied = [Path(url.toLocalFile()) for url in QApplication.clipboard().mimeData().urls()]
+    assert len(copied) == 1 and copied[0] != path.resolve()
+    assert copied[0].name == path.name and copied[0].read_bytes() == path.read_bytes()
     assert window.si==1
 
 

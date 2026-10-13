@@ -75,7 +75,7 @@ def test_3101_hyphenated_folder_migrates_to_space_name(history):
 def test_clipboard_defers_migration_and_range_rename(history):
     service, p, s = history
     old = legacy(service, p, s)
-    urls = service.clipboard_paths(p, old, zipped=False)
+    urls = service.validate(p, old)  # Legacy clipboard that directly references snapshot.
     item = service.list(p, clipboard_paths=urls)[0]
     assert item.path == old and item.warning and not item.error
     assert all(x.exists() for x in urls)
@@ -179,7 +179,7 @@ def test_restart_finishes_interrupted_range_directory_rename(history):
 def test_clipboard_blocks_flat_folder_rename_without_metadata_changes(history):
     service, p, s = history; snap = service.create(p, s, '6-10')
     raw = (snap.path / 'manifest.json').read_bytes()
-    urls = service.clipboard_paths(p, snap.path, zipped=False)
+    urls = service.validate(p, snap.path)  # Existing direct references must still be guarded.
     with pytest.raises(ValueError, match='Clipboard'):
         service.rename(p, snap.path, '11-15', clipboard_paths=urls)
     assert (snap.path / 'manifest.json').read_bytes() == raw
