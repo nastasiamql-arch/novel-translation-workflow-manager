@@ -83,6 +83,12 @@ class PolishHistoryPage(QWidget):
                     match = bounds[0] <= int(query) <= bounds[-1]
                 except (ValueError, TypeError): pass
             if match: found.append(snapshot)
+        # Visible ordinal labels are continuous even after deletion. The
+        # manifest history_number remains a durable internal identity.
+        visible_numbers = {
+            item.path: len(self.snapshots) - index
+            for index, item in enumerate(self.snapshots)
+        }
         for snapshot in found:
             card = QFrame(); card.setObjectName('polishHistoryRow')
             rows = QHBoxLayout(card); rows.setContentsMargins(8, 4, 8, 4); rows.setSpacing(6)
@@ -92,13 +98,16 @@ class PolishHistoryPage(QWidget):
             top = QHBoxLayout()
             span = snapshot.manifest.get('chapter_range')
             title = QLabel(('บท ' + str(span).replace('-', '–')) if span else 'รอระบุช่วงบท')
-            number = snapshot.manifest.get('history_number')
-            title.setText((f'[{number:03d}] ' if type(number) is int and number > 0 else '[—] ') + title.text())
+            number = visible_numbers[snapshot.path]
+            title.setText(f'[{number:03d}] ' + title.text())
             title.setObjectName('historyRangeTitle'); title.setWordWrap(True); text_column.addWidget(title)
             copy = QPushButton('คัดลอก'); copy.setObjectName('polishHistoryCopy')
-            copy.setEnabled(not snapshot.error)
+            changed_payload = snapshot.error.startswith('ไฟล์ในประวัติถูกแก้ไขหรือ Hash ไม่ตรง:')
+            copy.setEnabled(not snapshot.error or changed_payload)
+            if changed_payload:
+                copy.setToolTip('ไฟล์ในประวัติถูกแก้ไข · คลิกเพื่อยืนยันไฟล์ที่แก้แล้วและคัดลอก')
             copy.setAccessibleName(title.text() + ' คัดลอกไฟล์ทั้งหมด')
-            copy.clicked.connect(lambda _=False, s=snapshot: self.owner.copy_history_snapshot(self.profile, s))
+            copy.clicked.connect(lambda _=False, s=snapshot: self.copy_snapshot(s))
             rows.addWidget(copy)
             delete = QPushButton(); delete.setObjectName('polishHistoryDelete')
             delete.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
@@ -128,6 +137,44 @@ class PolishHistoryPage(QWidget):
                            if not self.snapshots else 'ไม่พบช่วงบทที่ค้นหา')
             empty.setWordWrap(True); empty.setObjectName('emptyStateDescription'); self.card_layout.addWidget(empty)
         self.card_layout.addStretch()
+
+    def copy_snapshot(self, snapshot):
+        """Only explicitly confirmed historical edits may update stored hashes."""
+        if not snapshot.error:
+            self.owner.copy_history_snapshot(self.profile, snapshot)
+            return
+        if not snapshot.error.startswith('ไฟล์ในประวัติถูกแก้ไขหรือ Hash ไม่ตรง:'):
+            self.failed('ไฟล์ประวัติเสียหายหรือหายไป ไม่สามารถคัดลอกได้')
+            return
+        confirmation = QMessageBox.question(
+            self, 'ยืนยันไฟล์ที่แก้ไขในประวัติ',
+            'ไฟล์สำรองในประวัติชุดนี้ถูกแก้ไขหลังบันทึก\\n\\n'
+            'หากคุณแก้ไขไฟล์นี้โดยตั้งใจ ให้กด Yes เพื่อเก็บ Hash เดิม'
+            ' ไว้เป็นประวัติ ตรวจไฟล์ที่แก้ใหม่ แล้วคัดลอก\\n\\n'
+            'หากไม่ได้แก้เอง ให้กด No และตรวจไฟล์ก่อน',
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if confirmation != QMessageBox.Yes:
+            return
+        zipped = self.owner.settings.copy_files_as_zip
+        def operation():
+            modified = self.owner.polish_history.accept_snapshot_edits(
+                self.profile, snapshot.path
+            )
+            paths = self.owner.polish_history.clipboard_paths(
+                self.profile, snapshot.path, zipped=zipped
+            )
+            count = len(paths)
+            if zipped:
+                import zipfile
+                with zipfile.ZipFile(paths[0]) as archive:
+                    count = sum(not item.is_dir() for item in archive.infolist())
+            return paths, count, modified
+        def success(result):
+            paths, count, modified = result
+            self.owner._history_clipboard(paths, count, zipped)
+            self.refresh()
+        self.owner.run_history_job(operation, success, self.failed)
 
     def delete_snapshot(self, snapshot, button=None):
         if self.owner.history_busy():

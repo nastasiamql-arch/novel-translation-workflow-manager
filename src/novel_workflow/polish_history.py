@@ -423,7 +423,7 @@ class PolishHistory:
             # Preserve partial payload for inspection after a crash/error; never publish it.
             raise
 
-    def _validate_manifest(self, profile, path, manifest):
+    def _validate_manifest(self, profile, path, manifest, *, allow_payload_edits=False):
         if (not isinstance(manifest, dict) or type(manifest.get('schema_version')) is not int
                 or manifest['schema_version'] != 1):
             raise ValueError('Unsupported or damaged history schema')
@@ -491,7 +491,8 @@ class PolishHistory:
             payload = _check_path(path / relative)
             if not payload.is_relative_to(path) or not payload.is_file(): raise ValueError('Unsafe payload')
             if payload.stat().st_size != entry['size'] or _hash(payload) != entry['sha256']:
-                raise ValueError(f'ไฟล์หายหรือ Hash ไม่ตรง: {entry["original_name"]}')
+                if not allow_payload_edits:
+                    raise ValueError(f'ไฟล์ในประวัติถูกแก้ไขหรือ Hash ไม่ตรง: {entry["original_name"]}')
             paths.append(payload)
         actual = []
         for folder in ('files', 'context'):
@@ -578,6 +579,70 @@ class PolishHistory:
         if step_id: result = [x for x in result if x.manifest.get('step_id') == step_id]
         return sorted(result, key=lambda x: (str(x.manifest.get('created_at', x.path.name)),
                                             str(x.manifest.get('snapshot_id', ''))), reverse=True)
+
+    @serialized
+    def accept_snapshot_edits(self, profile, path):
+        """Explicitly accept changed *existing* History payloads after user confirmation.
+
+        Never substitutes the current Context or silently repairs missing,
+        unexpected, symlinked, or structurally damaged snapshot files.
+        """
+        path = self._snapshot_path(profile, path)
+        if path.name.startswith('.staging-'):
+            raise ValueError('ไม่สามารถยืนยันประวัติที่บันทึกไม่สมบูรณ์')
+        manifest_path = _check_path(path / 'manifest.json')
+        raw = manifest_path.read_bytes()
+        manifest = _read_manifest(manifest_path)
+        # Verify all metadata, listed paths, ownership, and the original
+        # fingerprint before allowing any payload digest to change.
+        payloads = self._validate_manifest(
+            profile, path, manifest, allow_payload_edits=True
+        )
+        changes = []
+        for entry, payload in zip(manifest['files'], payloads):
+            stat_size = payload.stat().st_size
+            digest = _hash(payload)
+            if (stat_size, digest) != (entry['size'], entry['sha256']):
+                changes.append((entry, payload, stat_size, digest))
+        if not changes:
+            self.validate(profile, path)
+            return 0
+        # Preserve the exact old manifest, including its original hashes, so
+        # a later audit can distinguish intentional revisions from originals.
+        backup = path / f'manifest.{uuid.uuid4().hex}.bak'
+        with backup.open('xb') as output:
+            output.write(raw)
+            output.flush()
+            os.fsync(output.fileno())
+        for entry, _payload, size, digest in changes:
+            entry['size'] = size
+            entry['sha256'] = digest
+        manifest['context_hash'] = next(
+            (e['sha256'] for e in manifest['files'] if e['is_context']), None
+        )
+        manifest['content_hash'] = _fingerprint(
+            manifest['files'], manifest.get('attachments', [])
+        )
+        manifest['review_status'] = 'รอตรวจ'
+        manifest['revision_count'] = int(manifest.get('revision_count', 0)) + 1
+        manifest['revised_at'] = datetime.now(timezone.utc).isoformat()
+        manifest['revision_reason'] = 'user_confirmed_history_edit'
+        try:
+            write_json(manifest_path, manifest)
+            self.validate(profile, path)
+        except BaseException:
+            # Restore metadata atomically; do not delete the user's edits.
+            fd, temporary = tempfile.mkstemp(dir=path, suffix='.tmp')
+            try:
+                with os.fdopen(fd, 'wb') as out:
+                    out.write(raw)
+                    out.flush()
+                    os.fsync(out.fileno())
+                os.replace(temporary, manifest_path)
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+            raise
+        return len(changes)
 
     @serialized
     def clipboard_paths(self, profile, path, *, zipped):

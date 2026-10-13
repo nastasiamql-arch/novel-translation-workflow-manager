@@ -365,3 +365,52 @@ def test_compact_history_geometry_themes(window, appearance, width):
         assert all(b.geometry().right() < row.width() for b in buttons)
         assert all(not a.geometry().intersects(b.geometry()) for i, a in enumerate(buttons) for b in buttons[i + 1:])
     finally: page.hide(); page.setParent(w)
+
+
+def test_history_visible_numbers_renumber_after_delete_without_mutating_ids(window, monkeypatch, tmp_path):
+    import re
+    from PySide6.QtWidgets import QLabel
+    import novel_workflow.recycle_bin as recycle
+    w, profile, ws, errors = window
+    step = profile.workflow.steps[1]
+    for span in ('320-321', '322-323', '324'):
+        w.polish_history.create(profile, step, span)
+    w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
+    page = w._utility_pages['polish-history:' + profile.id]
+    def titles():
+        return [label.text() for label in page.findChildren(QLabel, 'historyRangeTitle')]
+    assert titles() == ['[003] บท 324', '[002] บท 322–323', '[001] บท 320–321']
+    original_ids = {s.manifest['snapshot_id']: s.manifest['history_number'] for s in page.snapshots}
+    trash_folder = tmp_path / 'recycled'
+    monkeypatch.setattr(recycle, 'recycle_snapshot', lambda folder: Path(folder).rename(trash_folder))
+    buttons = page.findChildren(QPushButton, 'polishHistoryDelete')
+    buttons[1].click()
+    wait_until(lambda: not w.history_busy())
+    # Page refresh may queue its own worker on the next event-loop tick.
+    wait_until(lambda: len(page.snapshots) == 2)
+    assert titles() == ['[002] บท 324', '[001] บท 320–321']
+    for snap in page.snapshots:
+        assert snap.manifest['history_number'] == original_ids[snap.manifest['snapshot_id']]
+
+
+def test_copy_intentionally_revised_history_payload_with_explicit_confirmation(window, monkeypatch):
+    w, profile, ws, errors = window
+    step = profile.workflow.steps[1]
+    snapshot = w.polish_history.create(profile, step, '325')
+    entry = snapshot.manifest['files'][0]
+    payload = snapshot.path / entry['snapshot_path']
+    edited = payload.read_bytes() + b' corrected'
+    payload.write_bytes(edited)
+    w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
+    page = w._utility_pages['polish-history:' + profile.id]
+    assert page.snapshots[0].error
+    monkeypatch.setattr(QMessageBox, 'question', lambda *_args: QMessageBox.Yes)
+    button = page.findChildren(QPushButton, 'polishHistoryCopy')[0]
+    assert button.isEnabled()
+    button.click()
+    wait_until(lambda: not w.history_busy())
+    clipboard = [Path(url.toLocalFile()) for url in QApplication.clipboard().mimeData().urls()]
+    assert any(item.read_bytes() == edited for item in clipboard)
+    assert not w.polish_history.list(profile)[0].error

@@ -111,3 +111,9 @@ New clipboard payloads are independent copies in the persistent application cach
 Display-only blank-line normalization in an open Context tab no longer blocks Translator Export or overwrites its old bytes before the verified History snapshot. Real unsaved edits and external disk changes remain blockers. New pre-Export snapshots identify `capture_reason: translator_pre_export`.
 
 Review-step Copy and post-TXT-Export history creation prefer a verified pre-Export capture when reusing the same chapter range after Context changed. Explicit `บันทึกไว้รอตรวจ` remains available for deliberate new versions. ZIP keeps other steps' fresh attachments independently. Without an old capture, a matching Translator/Context cannot be falsely claimed as an old review snapshot.
+
+## v3.13.2 revised snapshots and display order
+
+Polish History list numbers are contiguous display positions, newest first. Removing any row shifts the displayed ordinals without rewriting stable snapshot IDs, `history_number`, file paths or manifests.
+
+Editing any History payload outside the application intentionally invalidates its original SHA-256/size record. On Copy the UI now offers an explicit confirmation if the recorded error is specifically a payload hash/size mismatch. Confirmation validates the entire snapshot structure and file membership, preserves an exact pre-revision manifest backup (`manifest.<id>.bak`), updates only the changed payload size/hash and derived manifest fields, marks it pending review, validates again, and copies the accepted content. Missing or unexpected payloads, traversal, symlinks, tampered manifests and external file conflicts are not auto-repaired. Merely editing the linked live Context does not change existing History snapshots.

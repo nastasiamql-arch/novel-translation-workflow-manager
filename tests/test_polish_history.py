@@ -356,3 +356,48 @@ def test_upgrade_fixture_accepts_unicode_history_on_legacy_windows_console(histo
     assert result.returncode == 0, result.stderr.decode('cp1252', errors='replace')
     snapshots = service.list(service.repo.list_profiles()[0])
     assert len(snapshots) == 1 and not snapshots[0].error
+
+
+def test_confirm_intentional_edit_preserves_manifest_and_reenables_copy(history):
+    import json
+    service, profile, step = history
+    snapshot = service.create(profile, step, '6-10')
+    entry = snapshot.manifest['files'][0]
+    original_hash = entry['sha256']
+    payload = snapshot.path / entry['snapshot_path']
+    revised = payload.read_bytes() + b' user correction'
+    payload.write_bytes(revised)
+    assert service.list(profile)[0].error.startswith('ไฟล์ในประวัติถูกแก้ไขหรือ Hash ไม่ตรง:')
+    with pytest.raises(ValueError):
+        service.clipboard_paths(profile, snapshot.path, zipped=False)
+    assert service.accept_snapshot_edits(profile, snapshot.path) == 1
+    corrected = service.list(profile)[0]
+    assert not corrected.error
+    assert corrected.manifest['files'][0]['sha256'] != original_hash
+    assert corrected.manifest['review_status'] == 'รอตรวจ'
+    assert corrected.manifest['revision_reason'] == 'user_confirmed_history_edit'
+    backups = list(snapshot.path.glob('manifest.*.bak'))
+    assert len(backups) == 1
+    assert json.loads(backups[0].read_text(encoding='utf-8'))['files'][0]['sha256'] == original_hash
+    assert any(path.read_bytes() == revised for path in service.clipboard_paths(profile, snapshot.path, zipped=False))
+
+
+def test_confirm_edit_refuses_missing_payload_and_modified_manifest(history):
+    import json
+    service, profile, step = history
+    snapshot = service.create(profile, step, '6-10')
+    payload = snapshot.path / snapshot.manifest['files'][0]['snapshot_path']
+    payload.unlink()
+    with pytest.raises((ValueError, OSError)):
+        service.accept_snapshot_edits(profile, snapshot.path)
+    assert not list(snapshot.path.glob('manifest.*.bak'))
+    payload.write_bytes(b'restored but edited')
+    manifest_path = snapshot.path / 'manifest.json'
+    raw = manifest_path.read_bytes()
+    data = json.loads(raw)
+    data['content_hash'] = '0' * 64
+    manifest_path.write_text(json.dumps(data), encoding='utf-8')
+    with pytest.raises(ValueError, match='Manifest content hash mismatch'):
+        service.accept_snapshot_edits(profile, snapshot.path)
+    assert manifest_path.read_bytes() == json.dumps(data).encode('utf-8')
+    assert not list(snapshot.path.glob('manifest.*.bak'))

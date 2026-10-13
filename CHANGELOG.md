@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.13.2 - 2026-10-13
+
+- Show compact Polish History numbering as contiguous newest-to-oldest display ordinals; after deletion the remaining rows close the gap without rewriting immutable snapshot identities or metadata.
+- When a stored History payload was intentionally edited, offer an explicit confirmation on Copy, preserve the original manifest hashes in a backup, validate ownership and file membership, then register new hashes and copy. Missing, extra, symlinked or structurally invalid files remain blocked.
+- Preserve Context, Translator, historical snapshot data, byte-for-byte edited content and Windows in-place upgrade behavior.
+
 ## 3.13.1 - 2026-10-13
 
 - Let Translator Export proceed when Context is only display-normalized; preserve pre-Export disk bytes and still block real unsaved edits and external conflicts.
