@@ -379,7 +379,14 @@ def test_history_visible_numbers_renumber_after_delete_without_mutating_ids(wind
     wait_until(lambda: not w.history_busy())
     page = w._utility_pages['polish-history:' + profile.id]
     def titles():
-        return [label.text() for label in page.findChildren(QLabel, 'historyRangeTitle')]
+        # Qt defers deleteLater() for removed rows. Only current layout rows
+        # count; findChildren() may also return obsolete pending-delete labels.
+        result = []
+        for index in range(page.card_layout.count()):
+            row = page.card_layout.itemAt(index).widget()
+            if row is not None:
+                result.extend(label.text() for label in row.findChildren(QLabel, 'historyRangeTitle'))
+        return result
     assert titles() == ['[003] บท 324', '[002] บท 322–323', '[001] บท 320–321']
     original_ids = {s.manifest['snapshot_id']: s.manifest['history_number'] for s in page.snapshots}
     trash_folder = tmp_path / 'recycled'
