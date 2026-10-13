@@ -803,3 +803,82 @@ def test_atomic_context_write_failure_keeps_original_and_recovery(tmp_path, monk
     context_record = next(item for item in manifest["files"] if item["is_context"])
     assert (history / context_record["snapshot_path"]).read_bytes() == b"old context"
     window.close()
+
+
+def test_display_normalization_only_context_does_not_block_export(tmp_path, monkeypatch):
+    app()
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile()
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "FATETranslator.txt"
+    translator.parent.mkdir(parents=True)
+    translator.write_text("บทที่ 6-10\nNew Context", encoding="utf-8")
+    context = tmp_path / "FATEContext.md"
+    old = b"Chapter 1-5\r\n\r\nold text  \r\n\r\n"
+    context.write_bytes(old)
+    profile.context_path = str(context)
+    profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
+    repo.save_profile(profile)
+    window = MainWindow(repo); window.refresh_profiles(profile.id)
+    workspace = window._workspace(window.profile)
+    context_editor = workspace.editor.open_file(context)
+    assert workspace.editor._dirty(context_editor)
+    assert context_editor.property("normalizationPending")
+    assert context_editor.property("displayNormalization")
+    assert context_editor.toPlainText() == context_editor.property("documentSavedText")
+    assert context.read_bytes() == old
+    workspace.editor.open_file(translator)
+    monkeypatch.setattr(QMessageBox, "exec", lambda *_: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *_: QMessageBox.Ok)
+    assert window.update_context_from_translator(workspace)
+    assert context.read_bytes() == translator.read_bytes()
+    history = folder / "Polish History" / "ตรวจคำแปล บท 6-10"
+    manifest = json.loads((history / "manifest.json").read_text(encoding="utf-8"))
+    entry = next(item for item in manifest["files"] if item["is_context"])
+    assert (history / entry["snapshot_path"]).read_bytes() == old
+    assert manifest.get("capture_reason") == "translator_pre_export"
+    window._close_export_reminder_accepted = True; window.close()
+
+
+def test_review_copy_and_post_txt_export_keep_pre_export_context(tmp_path, monkeypatch):
+    import time
+    app()
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile()
+    folder = repo.profile_dir(profile.id)
+    translator = folder / "source" / "FATETranslator.txt"
+    translator.parent.mkdir(parents=True)
+    translator.write_text("บทที่ 6-10\nTranslation", encoding="utf-8")
+    context = tmp_path / "FATEContext.md"
+    old = b"Chapter 1-5\nold Context"
+    context.write_bytes(old)
+    profile.context_path = str(context)
+    profile.working_files = [StepFile(path=f"source/{translator.name}")]
+    configure_translator_export_history(profile, folder, translator, context)
+    repo.save_profile(profile)
+    window = MainWindow(repo); window.refresh_profiles(profile.id)
+    workspace = window._workspace(window.profile)
+    workspace.editor.open_file(translator)
+    monkeypatch.setattr(QMessageBox, "exec", lambda *_: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *_: QMessageBox.Ok)
+    assert window.update_context_from_translator(workspace)
+    assert context.read_bytes() == translator.read_bytes()
+    assert len(window.polish_history.list(window.profile)) == 1
+    workspace.history_range.setText("6-10")
+    workspace.stage_buttons[1].click()
+    stop = time.monotonic() + 15
+    while window.history_busy() and time.monotonic() < stop:
+        QApplication.processEvents(); time.sleep(0.01)
+    assert not window.history_busy()
+    payloads = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
+    assert any(path.read_bytes() == old for path in payloads)
+    assert len(window.polish_history.list(window.profile)) == 1
+    window.snapshot_export_for_review(profile.id, "6-10")
+    stop = time.monotonic() + 15
+    while window.history_busy() and time.monotonic() < stop:
+        QApplication.processEvents(); time.sleep(0.01)
+    assert not window.history_busy()
+    assert len(window.polish_history.list(window.profile)) == 1
+    assert context.read_bytes() == translator.read_bytes()
+    window._close_export_reminder_accepted = True; window.close()

@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.13.1 - 2026-10-13
+
+- Let Translator Export proceed when Context is only display-normalized; preserve pre-Export disk bytes and still block real unsaved edits and external conflicts.
+- Reuse verified pre-Export old-Context snapshots for repeated review copies and automatic post-TXT-Export captures; explicit Save for Review still creates intentional revisions.
+- Keep other steps' live files independent in multi-step ZIPs and refuse falsely labelled old-Context captures.
+
 ## 3.13.0 - 2026-10-13
 
 - Count completed translation chapters only from successful Translator Export transactions; deduplicate actual chapter headings/ranges across exports, dates and profiles.

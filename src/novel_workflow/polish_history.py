@@ -294,7 +294,8 @@ class PolishHistory:
             output.flush(); os.fsync(output.fileno())
 
     @serialized
-    def create(self, profile, step, chapter_range=None, *, allow_unresolved=False, prepared=None):
+    def create(self, profile, step, chapter_range=None, *, allow_unresolved=False, prepared=None,
+               prefer_pre_export=False, capture_reason=None):
         if not any(s.id == step.id for s in profile.workflow.steps):
             raise ValueError('Step does not belong to novel')
         plan, attachments = self._plan(profile, step)
@@ -323,6 +324,43 @@ class PolishHistory:
                 raise RangeRequired('ยืนยันช่วงบทไม่ได้ กรุณากรอกช่วงบทแล้วคลิกขั้นตอนอีกครั้ง')
         if chapter_range:
             chapter_range = parse_range(chapter_range)
+        if prefer_pre_export and chapter_range:
+            # The linked Context changes after Export. Reuse the verified
+            # earlier capture instead of copying the new Context into review.
+            context_hash = next((digest for (_source, _target, _item, is_context), digest
+                                 in zip(plan, hashes) if is_context), None)
+            if context_hash:
+                candidates = [
+                    previous for previous in self.list(profile, step_id=step.id)
+                    if not previous.error
+                    and previous.manifest.get('chapter_range') == chapter_range
+                    and previous.manifest.get('context_hash')
+                    and previous.manifest['context_hash'] != context_hash
+                ]
+                marked = [previous for previous in candidates
+                          if previous.manifest.get('capture_reason') == 'translator_pre_export']
+                # Recent tagged captures take priority; for legacy snapshots
+                # prefer the earliest to avoid accidental later duplicates.
+                ordered = marked if marked else list(reversed(candidates))
+                for previous in ordered:
+                    if not any(entry.get('is_context')
+                               and Path(entry.get('original_path', '')).absolute()
+                                   == Path(profile.context_path).expanduser().absolute()
+                               for entry in previous.manifest.get('files', [])):
+                        continue
+                    try:
+                        self.validate(profile, previous.path)
+                        return previous
+                    except (OSError, ValueError):
+                        continue
+                for (original, _target, _item, is_context), digest in zip(original_plan, hashes):
+                    if (not is_context and digest == context_hash
+                            and original.stem.casefold().endswith('translator')):
+                        raise OSError(
+                            'Context ตรงกับ Translator ที่ Export แล้ว '
+                            'แต่ไม่พบประวัติก่อน Export สำหรับช่วงบทนี้ '
+                            'กรุณาตรวจ Polish History เดิมก่อน'
+                        )
         identity = [
             {'original_path': str(source), 'snapshot_path': target.as_posix(),
              'reference_type': item.reference_type if item else 'profile_context',
@@ -374,6 +412,8 @@ class PolishHistory:
                         'context_hash': next((e['sha256'] for e in entries if e['is_context']), None),
                         'complete': True, 'review_status': 'รอตรวจ',
                         'range_pending': chapter_range is None}
+            if capture_reason:
+                manifest['capture_reason'] = capture_reason
             manifest['history_number'] = self._allocate_number(profile, snapshot_id)
             write_json(staging / 'manifest.json', manifest)
             self._validate_manifest(profile, staging, manifest)

@@ -1089,7 +1089,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             return
         profile_copy, step_copy = deepcopy(profile), deepcopy(step)
         def operation():
-            return self.polish_history.create(profile_copy, step_copy, chapter_range, allow_unresolved=True)
+            return self.polish_history.create(profile_copy, step_copy, chapter_range, allow_unresolved=True, prefer_pre_export=True)
         def success(snapshot):
             span = snapshot.manifest.get('chapter_range')
             label = f'บท {span}' if span else 'รอระบุช่วงบท'
@@ -2731,11 +2731,34 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         step_id = self.step().id
         old_index = self.si
         def operation():
+            snapshot = None
             if protected:
-                self.polish_history.create(profile, protected, span, prepared=bundle)
-            paths = ([create_workflow_archive(self.repo, self.assembler, profile, selected, prepared=bundle)]
-                     if zipped else list(bundle.values()))
-            count = len(bundle)
+                snapshot = self.polish_history.create(
+                    profile, protected, span, prepared=bundle, prefer_pre_export=True
+                )
+            overrides = {}
+            if snapshot:
+                frozen = self.polish_history.validate(profile, snapshot.path)
+                overrides = {
+                    (protected.id, Path(entry['original_path'])): payload
+                    for entry, payload in zip(snapshot.manifest['files'], frozen)
+                }
+            if zipped:
+                # Historical review content only; other steps stay current.
+                paths = [create_workflow_archive(
+                    self.repo, self.assembler, profile, selected,
+                    prepared=bundle, prepared_overrides=overrides
+                )]
+            elif snapshot and len(selected) == 1:
+                paths = self.polish_history.clipboard_paths(profile, snapshot.path, zipped=False)
+            elif snapshot:
+                protected_sources = {Path(entry['original_path'])
+                                     for entry in snapshot.manifest['files']}
+                paths = [value for source, value in bundle.items()
+                         if source not in protected_sources] + frozen
+            else:
+                paths = list(bundle.values())
+            count = len(paths)
             if zipped:
                 import zipfile
                 with zipfile.ZipFile(paths[0]) as archive: count = len(archive.infolist())
@@ -3183,7 +3206,14 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                                if workspace.editor._path(workspace.editor.tabs.widget(index)) == context), None)
         if context_editor is not None:
             try:
-                if workspace.editor._dirty(context_editor):
+                # Opening Context can compact empty lines only in the display.
+                # Do not write this presentation-only change over old Context.
+                normalization_only = (
+                    context_editor.property("normalizationPending")
+                    and context_editor.property("displayNormalization")
+                    and context_editor.toPlainText() == context_editor.property("documentSavedText")
+                )
+                if workspace.editor._dirty(context_editor) and not normalization_only:
                     QMessageBox.warning(self, "Export ไม่ได้", "Context มีการแก้ไขที่ยังไม่ได้บันทึก")
                     return False
                 if hashlib.sha256(context.read_bytes()).digest() != context_editor.disk_digest:
@@ -3229,7 +3259,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self._history_pending = True
             self.statusBar().showMessage("กำลังสำรองไฟล์ขั้นตอนตรวจคำแปลก่อน Export…")
             worker = HistoryWorker(
-                lambda: self.polish_history.create(profile_for_snapshot, step_for_snapshot, history_range), self
+                lambda: self.polish_history.create(profile_for_snapshot, step_for_snapshot, history_range, capture_reason='translator_pre_export'), self
             )
             self._history_workers.append(worker)
 

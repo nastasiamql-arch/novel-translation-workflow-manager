@@ -50,7 +50,8 @@ def resolve_attachment(repo, assembler, profile, item):
     return _check_path(repo.profile_dir(profile.id) / item.path)
 
 
-def create_workflow_archive(repo, assembler, profile, steps, *, prepared=None):
+def create_workflow_archive(repo, assembler, profile, steps, *, prepared=None,
+                            prepared_overrides=None):
     """Validate every attachment before publishing a single ZIP64 archive."""
     if not steps:
         raise ValueError('No workflow steps selected')
@@ -96,7 +97,8 @@ def create_workflow_archive(repo, assembler, profile, steps, *, prepared=None):
                 # Permission errors are detected now and again during streaming.
                 with path.open('rb'):
                     pass
-                payload = prepared[path] if prepared is not None else path
+                payload = ((prepared_overrides or {}).get((step.id, path), prepared[path])
+                           if prepared is not None else path)
                 stat = payload.stat()
                 digest = file_digest(payload)
                 plan.append((payload, member, (stat.st_size, stat.st_mtime_ns, stat.st_ino), digest))

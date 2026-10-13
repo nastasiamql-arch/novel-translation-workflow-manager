@@ -105,3 +105,9 @@ Each complete snapshot has a permanent `history_number` displayed as `[001]`. A 
 Compact rows expose Copy, Recycle and More. Recycle has no confirmation dialog and requires the modern Windows shell API; missing support or a failed operation preserves the row and reports the error. Ownership, containment, traversal, symlink/junction and clipboard checks apply before recycling. History operations share a lock to prevent concurrent writers and deletion from racing.
 
 New clipboard payloads are independent copies in the persistent application cache. They preserve historical snapshot bytes and remain usable after recycling the source snapshot. Direct clipboard references created by older versions are still guarded and block deletion until another clipboard selection is made.
+
+## v3.13.1 Context and review consistency
+
+Display-only blank-line normalization in an open Context tab no longer blocks Translator Export or overwrites its old bytes before the verified History snapshot. Real unsaved edits and external disk changes remain blockers. New pre-Export snapshots identify `capture_reason: translator_pre_export`.
+
+Review-step Copy and post-TXT-Export history creation prefer a verified pre-Export capture when reusing the same chapter range after Context changed. Explicit `บันทึกไว้รอตรวจ` remains available for deliberate new versions. ZIP keeps other steps' fresh attachments independently. Without an old capture, a matching Translator/Context cannot be falsely claimed as an old review snapshot.
