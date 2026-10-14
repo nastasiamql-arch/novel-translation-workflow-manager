@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from .chapter_numbering import chapter_issues, preview_renumber, scan_chapters
+from .chapter_number_reference import resolve_translator_reference, should_auto_propose
 from .storage import read_json, write_json
 
 
@@ -52,22 +53,35 @@ class ChapterNumberDialog(QDialog):
         self.history_path = self.profile_dir / "chapter_numbering" / "history.json"
         self.original = editor.toPlainText()
         self.headings = scan_chapters(self.original)
+        open_texts = {}
+        for tab_index in range(workspace.editor.tabs.count()):
+            opened = workspace.editor.tabs.widget(tab_index)
+            opened_path = workspace.editor._path(opened)
+            if opened_path is not None:
+                open_texts[Path(opened_path).expanduser().resolve()] = opened.toPlainText()
+        self.translator_reference = resolve_translator_reference(
+            workspace.owner.repo, workspace.profile_id, self.path, open_texts
+        )
         self.setWindowTitle("ตรวจเลขบทต้นฉบับ · " + self.path.name)
         self.resize(850, 580)
         layout = QVBoxLayout(self)
         intro = QLabel(
             f"ไฟล์: {self.path.name} · พบหัวบท {len(self.headings)} บท\n"
-            "ตรวจจากไฟล์ที่เปิดอยู่เท่านั้น · ไม่อ่าน Translator/Context · ไม่มี Export\n"
+            "ตรวจและแก้เฉพาะไฟล์ต้นฉบับที่เปิดอยู่ · ไม่แก้ Translator/Context · ไม่มี Export\n"
             "เลขกระโดดอาจเกิดจากบทหายจริง โปรดตรวจเนื้อเรื่องก่อนยืนยัน"
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
+        self.reference_label = QLabel(self.translator_reference.message)
+        self.reference_label.setObjectName("chapterTranslatorReference")
+        self.reference_label.setWordWrap(True)
+        layout.addWidget(self.reference_label)
 
         top = QHBoxLayout()
         top.addWidget(QLabel("เริ่มเรียงจากบท"))
         self.start_number = QSpinBox()
         self.start_number.setRange(1, 2_147_483_647)
-        self.start_number.setValue(self.headings[0].number if self.headings else 1)
+        self.start_number.setValue(self.translator_reference.start or (self.headings[0].number if self.headings else 1))
         top.addWidget(self.start_number)
         self.sequence_button = QPushButton("เรียงเลขต่อเนื่อง (เสนอ)")
         self.sequence_button.clicked.connect(self.propose_sequence)
@@ -128,6 +142,12 @@ class ChapterNumberDialog(QDialog):
         close.clicked.connect(self.reject)
         actions.addWidget(close)
         layout.addLayout(actions)
+        if should_auto_propose(self.headings, self.translator_reference.start):
+            self.propose_sequence()
+            self.result.setText(
+                f"เสนอเลขจาก {self.translator_reference.path.name} แล้ว · "
+                "กรุณาตรวจความต่อเนื่องก่อนกดแก้ทั้งหมด"
+            )
         self.sequence_button.setEnabled(bool(self.headings))
         self.selected_button.setEnabled(bool(self.headings))
         self.all_button.setEnabled(bool(self.headings))
