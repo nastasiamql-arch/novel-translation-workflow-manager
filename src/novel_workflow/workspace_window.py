@@ -397,6 +397,14 @@ class WorkspacePage(QWidget):
             lambda: self.owner.update_context_from_translator(self)
         )
         self.update_context_button.hide()
+        self.chapter_number_button = QToolButton(self.editor_header)
+        self.chapter_number_button.setText("ตรวจเลขบท")
+        self.chapter_number_button.setObjectName("chapterNumberButton")
+        self.chapter_number_button.setToolTip("ตรวจและแก้เลขหัวบทในไฟล์ต้นฉบับที่เปิดอยู่ · ไม่มี Export")
+        self.chapter_number_button.setAccessibleName("ตรวจเลขบทต้นฉบับ")
+        self.chapter_number_button.clicked.connect(self.inspect_chapter_numbers)
+        self.chapter_number_button.hide()
+        header_layout.addWidget(self.chapter_number_button)
         header_layout.addWidget(self.update_context_button)
         self.export_status_label = QLabel("Export Status Unknown", self.editor_header)
         self.export_status_label.setObjectName("exportStatusLabel")
@@ -527,6 +535,46 @@ class WorkspacePage(QWidget):
             editor._history_bound = True
         self.refresh_history()
 
+    def _source_file_eligible(self, path):
+        """Do not expose Chinese-source renumbering for Translator or Context."""
+        if path is None:
+            return False
+        try:
+            path = Path(path).expanduser().resolve()
+            if not path.is_file() or path.suffix.casefold() not in {".txt", ".md", ".markdown"}:
+                return False
+            if path.name.casefold().endswith("translator.txt"):
+                return False
+            profile = next(
+                (item for item in self.owner.repo.list_profiles() if item.id == self.profile_id),
+                None,
+            )
+            if profile is None:
+                return False
+            if profile.context_path and path == Path(profile.context_path).expanduser().resolve():
+                return False
+            if path.name.casefold().startswith(("context.", "glossary.", "vocabulary.")):
+                return False
+            return True
+        except (OSError, ValueError, TypeError):
+            return False
+
+    def inspect_chapter_numbers(self):
+        editor = self.editor._current_editor()
+        path = self.editor._path(editor) if editor else None
+        if not self._source_file_eligible(path):
+            QMessageBox.warning(self, "ตรวจเลขบทไม่ได้", "เปิดไฟล์ต้นฉบับ TXT/MD ก่อน")
+            return
+        from .chapter_numbering_dialog import ChapterNumberDialog
+        dialog = ChapterNumberDialog(self, editor, Path(path))
+        if not dialog.headings:
+            QMessageBox.information(
+                self, "ไม่พบหัวบท",
+                "ไฟล์นี้ไม่มีหัวบทที่รองรับ เช่น 第430章, 第四百三十章, Chapter 430"
+            )
+            return
+        dialog.exec()
+
     def refresh_context_update_button(self):
         editor = self.editor._current_editor()
         path = self.editor._path(editor) if editor else None
@@ -539,6 +587,7 @@ class WorkspacePage(QWidget):
         if allowed and not getattr(editor, "_export_status_changed_bound", False):
             editor.textChanged.connect(lambda e=editor: self.refresh_export_status(e, verified=True))
             editor._export_status_changed_bound = True
+        self.chapter_number_button.setVisible(self._source_file_eligible(path))
         self.update_context_button.setVisible(allowed)
         self.export_status_label.setVisible(allowed)
         self._export_binding_editor = editor
