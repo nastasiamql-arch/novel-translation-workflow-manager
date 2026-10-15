@@ -1091,7 +1091,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 else 'คัดลอกไฟล์ของขั้นตอนที่เลือก · Ctrl+Shift+C')
         for page in self._utility_pages.values():
             if isinstance(page, PolishHistoryPage):
-                page.render()
+                # Update the existing buttons in place. Qt deleteLater() keeps old
+                # card widgets discoverable until the event loop processes them.
+                for button in page.findChildren(QPushButton, 'polishHistoryCopy'):
+                    button.setText('คัดลอก ZIP' if zipped else 'คัดลอก')
+                    button.setToolTip(
+                        'รวมไฟล์ทั้งหมดของรายการนี้เป็น ZIP เดียว · วางด้วย Ctrl+V' if zipped
+                        else 'คัดลอกไฟล์ทั้งหมดของรายการนี้ · วางด้วย Ctrl+V')
 
     def _history_clipboard(self, paths, count, zipped):
         from PySide6.QtCore import QMimeData, QUrl
