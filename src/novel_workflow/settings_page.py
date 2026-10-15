@@ -312,10 +312,13 @@ class SettingsPage(QWidget):
         appearance.setObjectName("preferencesAppearance")
         appearance.setCurrentText(owner.settings.appearance)
         general_layout.addWidget(appearance)
-        zip_mode = QCheckBox("คัดลอกไฟล์เป็น ZIP")
+        zip_mode = QCheckBox("คัดลอกเป็น ZIP (เฉพาะขั้นตอน/รายการที่กด)")
         zip_mode.setObjectName("copyFilesAsZip")
         zip_mode.setChecked(owner.settings.copy_files_as_zip)
         general_layout.addWidget(zip_mode)
+        zip_hint = QLabel("รวมไฟล์ทั้งหมดของขั้นตอนหรือรายการประวัติที่กดเป็น ZIP เดียว · วางด้วย Ctrl+V · ไม่สร้าง Export ใหม่")
+        zip_hint.setWordWrap(True)
+        general_layout.addWidget(zip_hint)
         general_layout.addWidget(QLabel("ตัวคั่นเนื้อหา · ใช้ {FILE_NAME} แทนชื่อไฟล์"))
         separator = QLineEdit(owner.settings.separator)
         separator.setObjectName("assemblySeparator")
@@ -331,11 +334,14 @@ class SettingsPage(QWidget):
             checks.append((check, attr))
         def save_general(*_args):
             theme_changed = owner.settings.appearance != appearance.currentText()
+            zip_changed = owner.settings.copy_files_as_zip != zip_mode.isChecked()
             owner.settings.appearance = appearance.currentText()
             owner.settings.separator = separator.text()
             for check, attr in checks:
                 setattr(owner.settings, attr, check.isChecked())
             owner.repo.save_settings(owner.settings)
+            if zip_changed:
+                owner.update_copy_mode_labels()
             if theme_changed:
                 owner.apply_theme()
             owner.statusBar().showMessage("บันทึกการตั้งค่าแล้ว", 2000)

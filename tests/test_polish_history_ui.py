@@ -278,3 +278,29 @@ def test_history_refresh_preserves_clipboard_then_migrates_legacy(window):
     page.refresh(); wait_until(lambda: not w.history_busy())
     assert page.snapshots[0].path.parent == w.polish_history.root(p)
     assert not old.exists() and not errors
+
+
+def test_history_copy_button_shows_zip_scope_when_enabled(window):
+    import zipfile
+    w, p, workspace, errors = window
+    workspace.history_range.setText('6-10')
+    workspace.stage_buttons[1].click()
+    wait_until(lambda: not w.history_busy())
+    w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
+    page = w._utility_pages['polish-history:' + p.id]
+    button = page.findChild(QPushButton, 'polishHistoryCopy')
+    assert button.text() == 'คัดลอก'
+
+    w.settings.copy_files_as_zip = True
+    w.update_copy_mode_labels()
+    button = page.findChild(QPushButton, 'polishHistoryCopy')
+    assert button.text() == 'คัดลอก ZIP'
+    assert workspace.copy_step_button.text() == 'COPY ZIP'
+    button.click()
+    wait_until(lambda: not w.history_busy())
+    files = [Path(url.toLocalFile()) for url in QApplication.clipboard().mimeData().urls()]
+    assert len(files) == 1
+    with zipfile.ZipFile(files[0]) as archived:
+        assert len(archived.namelist()) == 2
+    assert not errors

@@ -292,9 +292,11 @@ class WorkspacePage(QWidget):
         sidebar_heading = QLabel("ขั้นตอนการแปล")
         sidebar_heading.setObjectName("sectionHeading")
         step_header.addWidget(sidebar_heading, 1)
-        self.copy_step_button = QPushButton("COPY STEP")
+        self.copy_step_button = QPushButton("COPY ZIP" if self.owner.settings.copy_files_as_zip else "COPY STEP")
         self.copy_step_button.setObjectName("copyStepButton")
-        self.copy_step_button.setToolTip("คัดลอกไฟล์ของขั้นตอนที่เลือก  ·  Ctrl+Shift+C")
+        self.copy_step_button.setToolTip("รวมไฟล์ทั้งหมดของขั้นตอนที่เลือกเป็น ZIP เดียว · Ctrl+Shift+C"
+                                     if self.owner.settings.copy_files_as_zip else
+                                     "คัดลอกไฟล์ของขั้นตอนที่เลือก · Ctrl+Shift+C")
         self.copy_step_button.clicked.connect(
             lambda checked=False: self.owner.copy_step()
         )
@@ -1078,6 +1080,18 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._show_utility_page(key, 'ประวัติไฟล์ขั้นตอนเกลา', lambda: PolishHistoryPage(self, self.profile))
         self._utility_pages[key].profile = self.profile
         self._utility_pages[key].refresh()
+
+    def update_copy_mode_labels(self):
+        """Reflect the persisted clipboard mode without changing Export controls."""
+        zipped = self.settings.copy_files_as_zip
+        for workspace in self.workspaces.values():
+            workspace.copy_step_button.setText('COPY ZIP' if zipped else 'COPY STEP')
+            workspace.copy_step_button.setToolTip(
+                'รวมไฟล์ทั้งหมดของขั้นตอนที่เลือกเป็น ZIP เดียว · Ctrl+Shift+C' if zipped
+                else 'คัดลอกไฟล์ของขั้นตอนที่เลือก · Ctrl+Shift+C')
+        for page in self._utility_pages.values():
+            if isinstance(page, PolishHistoryPage):
+                page.render()
 
     def _history_clipboard(self, paths, count, zipped):
         from PySide6.QtCore import QMimeData, QUrl

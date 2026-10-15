@@ -104,7 +104,10 @@ def create_workflow_archive(repo, assembler, profile, steps, *, prepared=None,
                 plan.append((payload, member, (stat.st_size, stat.st_mtime_ns, stat.st_ino), digest))
     cache = repo.root / 'cache' / 'clipboard'
     cache.mkdir(parents=True, exist_ok=True)
-    fd, name = tempfile.mkstemp(prefix='Workflow-', suffix='.zip', dir=cache)
+    # A single COPY STEP produces one recognizable, step-scoped clipboard ZIP.
+    # Keep the random suffix so repeated copies never overwrite an earlier paste.
+    label = (_safe_name(steps[0].name)[:45] + '-') if len(steps) == 1 else 'Workflow-'
+    fd, name = tempfile.mkstemp(prefix=label, suffix='.zip', dir=cache)
     os.close(fd)
     archive = Path(name)
     try:

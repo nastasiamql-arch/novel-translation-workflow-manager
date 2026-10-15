@@ -33,7 +33,7 @@ class PolishHistoryPage(QWidget):
         if self._sort_mode not in ('recent', 'chapter_desc', 'chapter_asc', 'manual'):
             self._sort_mode = 'recent'
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0)
-        subtitle = QLabel('ไฟล์ตามที่ผูกไว้กับขั้นตอนตรวจคำแปล · เลือกคัดลอกหรือระบุช่วงบทภายหลัง')
+        subtitle = QLabel('คัดลอกเฉพาะไฟล์ในประวัติที่กด · เปิดโหมด ZIP ใน Settings เพื่อรวมไฟล์เป็น ZIP เดียว')
         subtitle.setWordWrap(True); subtitle.setObjectName('mutedLabel'); layout.addWidget(subtitle)
         tools = QHBoxLayout()
         self.search = QLineEdit(); self.search.setPlaceholderText('ค้นหาเลขบทหรือช่วงบท…')
@@ -208,7 +208,11 @@ class PolishHistoryPage(QWidget):
             title.setObjectName('historyRangeTitle')
             title.setWordWrap(True)
             text_column.addWidget(title)
-            copy = QPushButton('คัดลอก'); copy.setObjectName('polishHistoryCopy')
+            zipped = self.owner.settings.copy_files_as_zip
+            copy = QPushButton('คัดลอก ZIP' if zipped else 'คัดลอก')
+            copy.setObjectName('polishHistoryCopy')
+            copy.setToolTip('รวมไฟล์ทั้งหมดของรายการนี้เป็น ZIP เดียว · วางด้วย Ctrl+V' if zipped
+                            else 'คัดลอกไฟล์ทั้งหมดของรายการนี้ · วางด้วย Ctrl+V')
             changed_payload = snapshot.error.startswith('ไฟล์ในประวัติถูกแก้ไขหรือ Hash ไม่ตรง:')
             copy.setEnabled(not snapshot.error or changed_payload)
             if changed_payload:

@@ -401,3 +401,26 @@ def test_confirm_edit_refuses_missing_payload_and_modified_manifest(history):
         service.accept_snapshot_edits(profile, snapshot.path)
     assert manifest_path.read_bytes() == json.dumps(data).encode('utf-8')
     assert not list(snapshot.path.glob('manifest.*.bak'))
+
+
+def test_zip_is_separate_for_each_history_record(history):
+    service, profile, step = history
+    first = service.create(profile, step, '320-323')
+    source = service.repo.profile_dir(profile.id) / 'Prompt.md'
+    old = source.read_bytes()
+    source.write_bytes(b'new contents for next history only')
+    second = service.create(profile, step, '324-327')
+
+    first_zip = service.clipboard_paths(profile, first.path, zipped=True)[0]
+    second_zip = service.clipboard_paths(profile, second.path, zipped=True)[0]
+    assert first_zip != second_zip
+    assert first_zip.name.startswith('บท-320-323-')
+    assert second_zip.name.startswith('บท-324-327-')
+    with zipfile.ZipFile(first_zip) as one, zipfile.ZipFile(second_zip) as two:
+        first_files = {Path(name).name: one.read(name) for name in one.namelist()}
+        second_files = {Path(name).name: two.read(name) for name in two.namelist()}
+        assert len(first_files) == len(second_files) == 4
+        assert first_files['Prompt.md'] == old
+        assert second_files['Prompt.md'] == b'new contents for next history only'
+        assert 'manifest.json' not in one.namelist()
+    assert first_zip.is_file() and second_zip.is_file()

@@ -662,7 +662,11 @@ class PolishHistory:
             self.validate(profile, path)
             return frozen
         cache = self.repo.root / 'cache' / 'clipboard'; cache.mkdir(parents=True, exist_ok=True)
-        fd, name = tempfile.mkstemp(prefix='Polish-', suffix='.zip', dir=cache); os.close(fd)
+        # Give each selected history record its own recognizable clipboard ZIP.
+        # The chapter range was schema-validated above; it never includes paths.
+        manifest = _read_manifest(path / 'manifest.json')
+        label = manifest.get('chapter_range') or 'รอระบุ'
+        fd, name = tempfile.mkstemp(prefix=f'บท-{label}-', suffix='.zip', dir=cache); os.close(fd)
         archive = Path(name)
         try:
             with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as output:

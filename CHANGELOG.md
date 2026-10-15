@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.16.0 - 2026-10-15
+
+- Make clipboard ZIP mode obvious on COPY STEP and each Polish History copy button; the ZIP contains only the chosen step or history record, including all linked files, never another record.
+- Name clipboard archives after their step or chapter range, with unique suffixes for repeated copies and persistent cache backing for Windows Ctrl+V.
+- Keep ordinary file copying selectable, remember the ZIP preference, and leave source files, history data and TXT Export unchanged. Add regression tests for per-step ZIP isolation and per-history clipboard copies.
+
 ## 3.14.0 - 2026-10-13
 
 - Add explicit Polish History sorting by newest, actual chapter number descending or ascending, and manual move-up/down order. Each novel remembers its own selected mode and manual arrangement.
