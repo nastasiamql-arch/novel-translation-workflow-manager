@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QScrollArea, QFrame, QMenu, QInputDialog, QMessageBox, QApplication, QStyle,
-    QComboBox, QToolButton)
+    QComboBox, QToolButton, QCheckBox)
 
 
 class HistoryWorker(QThread):
@@ -33,8 +33,14 @@ class PolishHistoryPage(QWidget):
         if self._sort_mode not in ('recent', 'chapter_desc', 'chapter_asc', 'manual'):
             self._sort_mode = 'recent'
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0)
-        subtitle = QLabel('คัดลอกเฉพาะไฟล์ในประวัติที่กด · เปิดโหมด ZIP ใน Settings เพื่อรวมไฟล์เป็น ZIP เดียว')
+        subtitle = QLabel('คัดลอกเฉพาะไฟล์ในประวัติที่กด · ไม่เกี่ยวกับการคัดลอกขั้นตอนแปลหรือ Export')
         subtitle.setWordWrap(True); subtitle.setObjectName('mutedLabel'); layout.addWidget(subtitle)
+        self.zip_mode = QCheckBox('คัดลอกประวัติเป็น ZIP (เฉพาะรายการที่กด)')
+        self.zip_mode.setObjectName('historyCopyAsZip')
+        self.zip_mode.setChecked(self.owner.settings.history_copy_as_zip)
+        self.zip_mode.setToolTip('รวมไฟล์ของประวัติรายการเดียวเป็น ZIP · ไม่กระทบขั้นตอน Workflow')
+        self.zip_mode.toggled.connect(self._change_zip_mode)
+        layout.addWidget(self.zip_mode)
         tools = QHBoxLayout()
         self.search = QLineEdit(); self.search.setPlaceholderText('ค้นหาเลขบทหรือช่วงบท…')
         self.search.setAccessibleName('ค้นหาประวัติช่วงบท')
@@ -68,6 +74,21 @@ class PolishHistoryPage(QWidget):
         self.card_layout = QVBoxLayout(self.cards)
         self.card_layout.setContentsMargins(0, 2, 0, 2); self.card_layout.setSpacing(4)
         scroll.setWidget(self.cards); layout.addWidget(scroll, 1)
+
+    def _change_zip_mode(self, enabled):
+        previous = self.owner.settings.history_copy_as_zip
+        self.owner.settings.history_copy_as_zip = enabled
+        try:
+            self.owner.repo.save_settings(self.owner.settings)
+        except (OSError, ValueError) as error:
+            self.owner.settings.history_copy_as_zip = previous
+            self.zip_mode.blockSignals(True)
+            self.zip_mode.setChecked(previous)
+            self.zip_mode.blockSignals(False)
+            self.failed('บันทึกโหมดคัดลอก ZIP ไม่สำเร็จ: ' + str(error))
+            return
+        # Update existing controls immediately, without depending on Qt deferred deletion.
+        self.owner.update_copy_mode_labels()
 
     def refresh(self):
         if self.owner._history_pending:
@@ -208,7 +229,7 @@ class PolishHistoryPage(QWidget):
             title.setObjectName('historyRangeTitle')
             title.setWordWrap(True)
             text_column.addWidget(title)
-            zipped = self.owner.settings.copy_files_as_zip
+            zipped = self.owner.settings.history_copy_as_zip
             copy = QPushButton('คัดลอก ZIP' if zipped else 'คัดลอก')
             copy.setObjectName('polishHistoryCopy')
             copy.setToolTip('รวมไฟล์ทั้งหมดของรายการนี้เป็น ZIP เดียว · วางด้วย Ctrl+V' if zipped
@@ -287,7 +308,7 @@ class PolishHistoryPage(QWidget):
         )
         if confirmation != QMessageBox.Yes:
             return
-        zipped = self.owner.settings.copy_files_as_zip
+        zipped = self.owner.settings.history_copy_as_zip
         def operation():
             modified = self.owner.polish_history.accept_snapshot_edits(
                 self.profile, snapshot.path

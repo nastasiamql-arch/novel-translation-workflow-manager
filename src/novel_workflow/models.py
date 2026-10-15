@@ -251,6 +251,8 @@ class NovelGroup:
 @dataclass
 class AppSettings:
     copy_files_as_zip: bool = False
+    history_copy_as_zip: bool = False
+    history_zip_migrated: bool = False
     appearance: str = "Light"
     appearance_migrated: bool = False
     flat_vscode_theme_migrated: bool = False

@@ -167,7 +167,16 @@ class ProjectRepository:
         return target
     def load_settings(self):
         d=read_json(self.settings_path,{})
-        return AppSettings(**{k:v for k,v in d.items() if k in AppSettings.__dataclass_fields__})
+        settings = AppSettings(**{k:v for k,v in d.items() if k in AppSettings.__dataclass_fields__})
+        if not settings.history_zip_migrated:
+            # The previous release shared one ZIP switch across Workflow and
+            # History. Preserve the user's History ZIP choice, but restore the
+            # original normal-copy behavior for Workflow steps on upgrade.
+            settings.history_copy_as_zip = bool(settings.copy_files_as_zip)
+            settings.copy_files_as_zip = False
+            settings.history_zip_migrated = True
+            self.save_settings(settings)
+        return settings
     def save_settings(self,s):
         existing=read_json(self.settings_path,{})
         write_json(self.settings_path,{**(existing if isinstance(existing,dict) else {}),**asdict(s)})

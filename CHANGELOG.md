@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.17.0 - 2026-10-15
+
+- Separate History clipboard ZIP from Workflow ZIP: History now has its own immediately saved checkbox directly on the History page. Only the clicked record is archived.
+- On first upgrade from the combined ZIP preference, migrate the existing choice to History and restore ordinary Workflow copying; retain the separate Workflow ZIP toggle in Settings for deliberate use.
+- Do not alter Export, history contents, or underlying translation files. Add independent-setting and clipboard UI regression coverage.
+
 ## 3.16.0 - 2026-10-15
 
 - Make clipboard ZIP mode obvious on COPY STEP and each Polish History copy button; the ZIP contains only the chosen step or history record, including all linked files, never another record.

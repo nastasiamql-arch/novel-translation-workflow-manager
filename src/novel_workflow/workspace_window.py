@@ -1094,9 +1094,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 # Update the existing buttons in place. Qt deleteLater() keeps old
                 # card widgets discoverable until the event loop processes them.
                 for button in page.findChildren(QPushButton, 'polishHistoryCopy'):
-                    button.setText('คัดลอก ZIP' if zipped else 'คัดลอก')
+                    history_zip = self.settings.history_copy_as_zip
+                    button.setText('คัดลอก ZIP' if history_zip else 'คัดลอก')
                     button.setToolTip(
-                        'รวมไฟล์ทั้งหมดของรายการนี้เป็น ZIP เดียว · วางด้วย Ctrl+V' if zipped
+                        'รวมไฟล์ทั้งหมดของรายการนี้เป็น ZIP เดียว · วางด้วย Ctrl+V' if history_zip
                         else 'คัดลอกไฟล์ทั้งหมดของรายการนี้ · วางด้วย Ctrl+V')
 
     def _history_clipboard(self, paths, count, zipped):
@@ -1107,7 +1108,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.statusBar().showMessage(message + ' · วางด้วย Ctrl+V', 7000)
 
     def copy_history_snapshot(self, profile, snapshot):
-        zipped = self.settings.copy_files_as_zip
+        zipped = self.settings.history_copy_as_zip
         def operation():
             paths = self.polish_history.clipboard_paths(profile, snapshot.path, zipped=zipped)
             count = len(paths)

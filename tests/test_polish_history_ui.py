@@ -292,11 +292,13 @@ def test_history_copy_button_shows_zip_scope_when_enabled(window):
     button = page.findChild(QPushButton, 'polishHistoryCopy')
     assert button.text() == 'คัดลอก'
 
-    w.settings.copy_files_as_zip = True
-    w.update_copy_mode_labels()
+    assert page.zip_mode.objectName() == 'historyCopyAsZip'
+    page.zip_mode.setChecked(True)
     button = page.findChild(QPushButton, 'polishHistoryCopy')
     assert button.text() == 'คัดลอก ZIP'
-    assert workspace.copy_step_button.text() == 'COPY ZIP'
+    assert workspace.copy_step_button.text() == 'COPY STEP'
+    assert w.repo.load_settings().history_copy_as_zip is True
+    assert w.repo.load_settings().copy_files_as_zip is False
     button.click()
     wait_until(lambda: not w.history_busy())
     files = [Path(url.toLocalFile()) for url in QApplication.clipboard().mimeData().urls()]
