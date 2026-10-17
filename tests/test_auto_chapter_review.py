@@ -161,6 +161,7 @@ def test_auto_source_review_opens_existing_inspector_only_when_issues(tmp_path, 
     source = repo.profile_dir(profile.id) / "source" / "FATE.txt"
     source.parent.mkdir(exist_ok=True)
     source.write_text("第1章 开始\n正文\n第1章 又一章", encoding="utf-8")
+    (source.parent / "FATETranslator.txt").write_text("บทที่ 0\nยังไม่เริ่ม", encoding="utf-8")
     profile.auto_review_enabled = True
     repo.save_profile(profile)
     window = MainWindow(repo)

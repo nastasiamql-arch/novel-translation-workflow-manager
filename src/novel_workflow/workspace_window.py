@@ -547,7 +547,8 @@ class WorkspacePage(QWidget):
             path = Path(path).expanduser().resolve()
             if not path.is_file() or path.suffix.casefold() not in {".txt", ".md", ".markdown"}:
                 return False
-            if path.name.casefold().endswith("translator.txt"):
+            if (path.name.casefold() == "novel.txt"
+                    or path.name.casefold().endswith("translator.txt")):
                 return False
             profile = next(
                 (item for item in self.owner.repo.list_profiles() if item.id == self.profile_id),
