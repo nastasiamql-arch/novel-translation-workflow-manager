@@ -47,7 +47,7 @@ class Workflow:
     def from_dict(cls,d): return cls([WorkflowStep.from_dict(x) for x in d.get("steps",[])])
 
 _LEGACY_BASIC_STEP_NAMES = ("หาศัพท์","แปล","ตรวจคำแปล","เกลาสำนวน")
-PROFILE_SCHEMA_VERSION = 10
+PROFILE_SCHEMA_VERSION = 9
 
 def migrate_profile_schema(profile: "NovelProfile") -> bool:
     """Advance old profile documents after additive, non-destructive upgrades."""
