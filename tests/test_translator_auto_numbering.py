@@ -71,7 +71,7 @@ def make_window(tmp_path, *, source_text="第641章 开端\n原文正文", trans
     if duplicate:
         other = folder / "SEG_Translator.txt"
         other.write_text("บทที่ 888\nข้อมูลอื่น", encoding="utf-8")
-        p.working_files.append(StepFile(path="source/OtherTranslator.txt"))
+        p.working_files.append(StepFile(path="source/SEG_Translator.txt"))
     p.auto_review_enabled = True
     p.auto_chapter_number_mode = "fix"
     repo.save_profile(p)
