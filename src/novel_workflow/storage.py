@@ -151,7 +151,13 @@ class ProjectRepository:
                     result.append(preserve_unknown(old,item) if isinstance(item,dict) else item)
                 return result
             return current
-        write_json(Path(destination) if destination else path,preserve_unknown(existing, serialized))
+        merged = preserve_unknown(existing, serialized)
+        # This known map is a live set of pending reminders, not extensible
+        # metadata. Acknowledging one must delete its key on disk too.
+        merged["chapter_number_pending_files"] = dict(
+            serialized.get("chapter_number_pending_files", {})
+        )
+        write_json(Path(destination) if destination else path, merged)
     def delete_profile(self,pid):
         import shutil; shutil.rmtree(self.profile_dir(pid))
         for order,profile in enumerate(self.list_profiles()):

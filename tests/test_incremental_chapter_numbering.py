@@ -145,3 +145,16 @@ def test_manual_mode_reminds_and_does_not_edit_until_user_confirms(tmp_path, mon
     assert not next(p for p in repo.list_profiles() if p.id == profile.id).chapter_number_pending_files
     assert source.read_bytes() == original
     _close(window)
+
+def test_acknowledged_review_is_really_removed_from_profile_json(tmp_path):
+    repo, profile, window, ws, editor, source, translator, messages = _window(
+        tmp_path, fix=False
+    )
+    window._set_chapter_pending(window.profile, ws, source, True)
+    assert str(source.resolve()) in repo.list_profiles()[0].chapter_number_pending_files
+    window._set_chapter_pending(window.profile, ws, source, False)
+    profile_file = repo.profile_dir(profile.id) / "profile.json"
+    assert json.loads(profile_file.read_text(encoding="utf-8"))[
+        "chapter_number_pending_files"
+    ] == {}
+    _close(window)
