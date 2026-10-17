@@ -3080,12 +3080,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     self.show_submit_toast("ไม่ได้แก้เลขบท · " + reference.message)
                     self.statusBar().showMessage("ไม่ได้แก้เลขบท · " + reference.message, 16000)
                     return
-                verified_prefix = verified_prefix_from_history(
+                checkpoint = verified_prefix_from_history(
                     self.repo.profile_dir(profile_id), profile_id, path, text, reference.start
                 )
+                verified_prefix, last_original = checkpoint if checkpoint else (None, None)
                 try:
                     _expected, changes = automatic_append_plan(
-                        text, reference.start, verified_prefix
+                        text, reference.start, verified_prefix, last_original
                     )
                 except ValueError as exc:
                     workspace.auto_chapter_review_seen = fingerprint
@@ -3109,7 +3110,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                         )
                         return
                     if not dialog.apply_automatic(
-                        reference.start, verified_prefix=verified_prefix
+                        reference.start, verified_prefix=verified_prefix,
+                        previous_original=last_original,
                     ):
                         self.show_submit_toast(
                             "ไม่ได้แก้เลขบท · " + getattr(dialog, "auto_error", "บันทึกไม่สำเร็จ")

@@ -150,7 +150,7 @@ def test_original_source_detection_rejects_context_and_unbound_files(tmp_path):
     assert issues == ["ปกติ", "เลขซ้ำ", "เลขกระโดด / อาจมีบทขาดจริง"]
 
 
-def test_auto_source_review_opens_existing_inspector_only_when_issues(tmp_path, monkeypatch):
+def test_manual_numbering_mode_marks_source_pending_without_opening_dialog(tmp_path, monkeypatch):
     import hashlib
     from PySide6.QtWidgets import QApplication
     from novel_workflow.workspace_window import MainWindow
@@ -161,40 +161,27 @@ def test_auto_source_review_opens_existing_inspector_only_when_issues(tmp_path, 
     source = repo.profile_dir(profile.id) / "source" / "FATE.txt"
     source.parent.mkdir(exist_ok=True)
     source.write_text("第1章 开始\n正文\n第1章 又一章", encoding="utf-8")
-    (source.parent / "FATETranslator.txt").write_text("บทที่ 0\nยังไม่เริ่ม", encoding="utf-8")
+    (source.parent / "FATETranslator.txt").write_text("บทที่ 1\nแปลไทย", encoding="utf-8")
     profile.auto_review_enabled = True
+    profile.auto_chapter_number_mode = "check"
     repo.save_profile(profile)
     window = MainWindow(repo)
     window.select_profile(next(i for i, p in enumerate(window.ps_list) if p.id == profile.id))
     workspace = window.workspaces[profile.id]
     editor = workspace.editor.open_file(source)
     workspace.editor.tabs.setCurrentWidget(editor)
-    inspections, messages = [], []
+    inspections = []
     monkeypatch.setattr(workspace, "inspect_chapter_numbers", lambda: inspections.append("review"))
-    monkeypatch.setattr(window, "show_submit_toast", messages.append)
     before = hashlib.sha256(source.read_bytes()).hexdigest()
     window._schedule_auto_chapter_review(str(source))
-    assert workspace.auto_chapter_review_timer.isActive()
-    assert workspace.auto_chapter_review_timer.interval() == 2500
-    workspace.auto_chapter_review_timer.stop()
-    window._run_auto_chapter_review(profile.id)
-    window._run_auto_chapter_review(profile.id)
-    assert inspections == ["review"]
-    assert any("พบปัญหาเลขบท" in msg for msg in messages)
+    assert not hasattr(workspace, "auto_chapter_review_timer")
+    assert not inspections
+    assert str(source.resolve()) in repo.list_profiles()[0].chapter_number_pending_files
+    assert "รอตรวจ" in workspace.chapter_number_button.text()
     assert hashlib.sha256(source.read_bytes()).hexdigest() == before
-
-    source.write_text("第1章 开始\n正文\n第2章 又一章", encoding="utf-8")
-    editor.disk_digest = hashlib.sha256(source.read_bytes()).digest()
-    editor.setPlainText(source.read_text(encoding="utf-8"))
-    editor.setProperty("documentSavedText", editor.toPlainText())
-    workspace.editor._set_dirty(editor, False)
-    window._schedule_auto_chapter_review(str(source))
-    workspace.auto_chapter_review_timer.stop()
-    window._run_auto_chapter_review(profile.id)
-    assert inspections == ["review"]
-    assert any("ลำดับปกติ" in msg for msg in messages)
     window._close_export_reminder_accepted = True
     window.close()
+
 
 
 def test_source_auto_review_disabled_does_not_schedule(tmp_path):

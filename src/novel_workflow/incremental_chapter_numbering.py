@@ -15,7 +15,10 @@ from .chapter_numbering import (
 from .storage import read_json
 
 
-def automatic_append_plan(text: str, start: int, verified_prefix: str | None = None):
+def automatic_append_plan(
+    text: str, start: int, verified_prefix: str | None = None,
+    previous_original: int | None = None,
+):
     """Return (new_text, changes), altering only newly appended chapter headings.
 
     The prefix must exactly match the recorded corrected file (including story
@@ -23,6 +26,8 @@ def automatic_append_plan(text: str, start: int, verified_prefix: str | None = N
     """
     if verified_prefix is None:
         return automatic_renumber_plan(text, start)
+    if type(previous_original) is not int:
+        raise ValueError("ไม่มีหลักฐานเลขต้นฉบับของบทก่อนหน้า")
     if not verified_prefix or not text.startswith(verified_prefix):
         raise ValueError("เนื้อหาบทเก่าเปลี่ยนหลังตรวจ กรุณาตรวจด้วยตนเอง")
     old = scan_chapters(verified_prefix)
@@ -57,7 +62,7 @@ def automatic_append_plan(text: str, start: int, verified_prefix: str | None = N
     next_chapter = start + len(old)
     if next_chapter + len(fresh) - 1 > _MAX:
         raise ValueError("เลขบทใหม่เกินช่วงที่รองรับ")
-    if (fresh[0].number < next_chapter or any(
+    if (fresh[0].number != previous_original + 1 or any(
             h.number != fresh[0].number + index
             for index, h in enumerate(fresh))):
         raise ValueError("บทใหม่มีเลขซ้ำ/ย้อนกลับ/กระโดดจริง กรุณาตรวจด้วยตนเอง")
@@ -124,4 +129,10 @@ def verified_prefix_from_history(profile_dir, profile_id, source_path, text, sta
         range(start, start + len(headings))
     ):
         return None
-    return after
+    # The original website sequence must also advance exactly one chapter
+    # across successive pastes. Never mask genuine missing chapters.
+    last_change = event["changes"][-1]
+    last_original = last_change.get("original")
+    if type(last_original) is not int:
+        return None
+    return after, last_original

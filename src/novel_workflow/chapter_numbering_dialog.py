@@ -217,11 +217,16 @@ class ChapterNumberDialog(QDialog):
     def apply_selected(self):
         self._apply(False)
 
-    def apply_automatic(self, start: int, *, verified_prefix: str | None = None) -> bool:
+    def apply_automatic(
+        self, start: int, *, verified_prefix: str | None = None,
+        previous_original: int | None = None,
+    ) -> bool:
         """Reuse existing safe editor/backup path for a verified appended chapter."""
         from .incremental_chapter_numbering import automatic_append_plan
         try:
-            automatic_append_plan(self.original, start, verified_prefix)
+            automatic_append_plan(
+                self.original, start, verified_prefix, previous_original
+            )
         except ValueError as exc:
             self.auto_error = str(exc)
             return False
