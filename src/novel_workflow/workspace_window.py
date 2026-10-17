@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from .models import LaunchTarget, StepFile, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
+from .auto_chapter_review import suggested_review_step_ids, review_step_index
 from .translation_progress import (
     daily_chapter_count, goal_progress, latest_context_chapter, completion_label, completion_tooltip, completed_chapter_count,
     sync_profile_context, read_context_chapter,
@@ -1309,10 +1310,52 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if not self.profile.working_files:
             self.working_files.addItem("ยังไม่มีไฟล์ · กด “เลือกหลายไฟล์” เพื่อเพิ่ม")
 
+    def save_settings_auto_chapter_review(self, *_args):
+        if not self.profile or not hasattr(self, "settings_auto_review_enabled"):
+            return
+        source_id = self.settings_auto_review_source.currentData()
+        review_id = self.settings_auto_review_target.currentData()
+        enabled = self.settings_auto_review_enabled.isChecked()
+        if enabled and (not source_id or not review_id or source_id == review_id):
+            self.settings_auto_review_enabled.blockSignals(True)
+            self.settings_auto_review_enabled.setChecked(False)
+            self.settings_auto_review_enabled.blockSignals(False)
+            enabled = False
+            self.statusBar().showMessage(
+                "เลือกขั้นตอนแปลและขั้นตอนตรวจสอบบทให้ต่างกันก่อนเปิดอัตโนมัติ", 6000
+            )
+        self.profile.auto_review_enabled = enabled
+        self.profile.auto_review_translation_step_id = source_id
+        self.profile.auto_review_step_id = review_id
+        self.save()
+
     def refresh_settings_launch_targets(self):
         if not hasattr(self, "settings_launch_targets") or not self.profile:
             return
         self.settings_main_folder.setText(self.profile.main_folder)
+        if hasattr(self, "settings_auto_review_enabled"):
+            source_default, review_default = suggested_review_step_ids(self.profile)
+            source_id = self.profile.auto_review_translation_step_id or source_default
+            review_id = self.profile.auto_review_step_id or review_default
+            source = self.settings_auto_review_source
+            target = self.settings_auto_review_target
+            controls = (self.settings_auto_review_enabled, source, target)
+            for control in controls:
+                control.blockSignals(True)
+            try:
+                source.clear()
+                target.clear()
+                source.addItem("เลือกขั้นตอนแปล", None)
+                target.addItem("เลือกขั้นตอนตรวจ", None)
+                for step in self.profile.workflow.steps:
+                    source.addItem(step.name, step.id)
+                    target.addItem(step.name, step.id)
+                source.setCurrentIndex(max(0, source.findData(source_id)))
+                target.setCurrentIndex(max(0, target.findData(review_id)))
+                self.settings_auto_review_enabled.setChecked(self.profile.auto_review_enabled)
+            finally:
+                for control in controls:
+                    control.blockSignals(False)
         if hasattr(self, 'settings_history_step'):
             self.settings_history_step.blockSignals(True)
             self.settings_history_step.clear()
@@ -2888,6 +2931,60 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                         self._update_context_button(workspace)
             except OSError:
                 pass
+        self._schedule_auto_chapter_review(saved_path)
+
+    def _schedule_auto_chapter_review(self, saved_path):
+        """Schedule an opt-in review-stage handoff, never an AI quality verdict."""
+        profile = self.profile
+        if not profile or not profile.auto_review_enabled or getattr(self, "_settings_open", False):
+            return
+        workspace = self.workspaces.get(profile.id)
+        if not workspace or workspace.vocabulary_mode:
+            return
+        if review_step_index(profile, workspace.step_index, saved_path) is None:
+            return
+        if self._translator_profile_for_path(profile.id, saved_path) is None:
+            return
+        path = Path(saved_path).expanduser().resolve()
+        timer = getattr(workspace, "auto_chapter_review_timer", None)
+        if timer is None:
+            timer = QTimer(workspace)
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda pid=profile.id: self._run_auto_chapter_review(pid))
+            workspace.auto_chapter_review_timer = timer
+        workspace.auto_chapter_review_path = path
+        timer.start(12000)
+
+    def _run_auto_chapter_review(self, profile_id):
+        profile = self.profile
+        workspace = self.workspaces.get(profile_id)
+        if (not profile or profile.id != profile_id or not workspace
+                or workspace.vocabulary_mode or getattr(self, "_settings_open", False)):
+            return
+        path = getattr(workspace, "auto_chapter_review_path", None)
+        if path is None:
+            return
+        review_index = review_step_index(profile, workspace.step_index, path)
+        if review_index is None:
+            return
+        editor = workspace.editor._current_editor()
+        if (editor is None or workspace.editor._path(editor) != path
+                or workspace.editor._dirty(editor)):
+            return
+        if self._translator_profile_for_path(profile_id, path) is None:
+            return
+        try:
+            if not path.is_file() or path.stat().st_size == 0:
+                return
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            return
+        fingerprint = (str(path), digest)
+        if getattr(workspace, "auto_chapter_review_seen", None) == fingerprint:
+            return
+        workspace.auto_chapter_review_seen = fingerprint
+        self.copy_named_stage(profile_id, review_index)
+        self.show_submit_toast("เตรียมขั้นตอนตรวจสอบบทอัตโนมัติแล้ว · โปรดตรวจคำแปลด้วยตัวเอง")
 
     def _update_context_button(self, workspace):
         path = Path(self.profile.context_path).expanduser() if self.profile and self.profile.context_path else None

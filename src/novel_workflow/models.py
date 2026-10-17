@@ -177,6 +177,10 @@ class NovelProfile:
     cover_image_path: str | None = None
     working_files: list[StepFile] = field(default_factory=list)
     open_working_tabs_on_open: bool = False
+    # Optional handoff to the existing review workflow after a saved Translator chapter.
+    auto_review_enabled: bool = False
+    auto_review_translation_step_id: str | None = None
+    auto_review_step_id: str | None = None
     order: int = 0
     last_browse_directory: str | None = None
     schema_version: int = PROFILE_SCHEMA_VERSION
@@ -222,6 +226,9 @@ class NovelProfile:
             cover_image_path=d.get("cover_image_path"),
             working_files=[StepFile.from_dict(item) for item in d.get("working_files", [])],
             open_working_tabs_on_open=bool(d.get("open_working_tabs_on_open", False)),
+            auto_review_enabled=bool(d.get("auto_review_enabled", False)),
+            auto_review_translation_step_id=d.get("auto_review_translation_step_id"),
+            auto_review_step_id=d.get("auto_review_step_id"),
             txt_export_draft=str(d.get("txt_export_draft", "")),
             verified_goal_target=d.get("verified_goal_target"),
             verified_goal_count=max(0, int(d.get("verified_goal_count", 0))),

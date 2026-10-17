@@ -210,6 +210,33 @@ class SettingsPage(QWidget):
         owner.settings_history_step.currentIndexChanged.connect(owner.save_settings_history_step)
         history_row.addWidget(owner.settings_history_step, 1)
         workflow_layout.addLayout(history_row)
+        owner.settings_auto_review_enabled = QCheckBox("ตรวจสอบบทอัตโนมัติ (ปิดเป็นค่าเริ่มต้น)")
+        owner.settings_auto_review_enabled.setObjectName("autoChapterReviewEnabled")
+        owner.settings_auto_review_enabled.setToolTip(
+            "หลังบันทึกไฟล์ Translator และหยุดพิมพ์ชั่วครู่ จะเลือกและคัดลอกไฟล์ของขั้นตอนตรวจสอบบท"
+        )
+        workflow_layout.addWidget(owner.settings_auto_review_enabled)
+        auto_review_steps = QHBoxLayout()
+        auto_review_steps.addWidget(QLabel("ขั้นตอนแปล"))
+        owner.settings_auto_review_source = QComboBox()
+        owner.settings_auto_review_source.setObjectName("autoReviewTranslationStep")
+        auto_review_steps.addWidget(owner.settings_auto_review_source, 1)
+        auto_review_steps.addWidget(QLabel("ขั้นตอนตรวจ"))
+        owner.settings_auto_review_target = QComboBox()
+        owner.settings_auto_review_target.setObjectName("autoReviewTargetStep")
+        auto_review_steps.addWidget(owner.settings_auto_review_target, 1)
+        workflow_layout.addLayout(auto_review_steps)
+        auto_review_hint = QLabel(
+            "เมื่อเปิด: รอไฟล์ Translator บันทึกเสร็จและไม่มีการแก้ไข 12 วินาที "
+            "จากนั้นเตรียม/คัดลอกไฟล์ของขั้นตอนตรวจให้อัตโนมัติ "
+            "ไม่ได้ตรวจคุณภาพคำแปลด้วย AI และไม่แตะ Export หรือ Backup"
+        )
+        auto_review_hint.setObjectName("mutedLabel")
+        auto_review_hint.setWordWrap(True)
+        workflow_layout.addWidget(auto_review_hint)
+        owner.settings_auto_review_enabled.toggled.connect(owner.save_settings_auto_chapter_review)
+        owner.settings_auto_review_source.currentIndexChanged.connect(owner.save_settings_auto_chapter_review)
+        owner.settings_auto_review_target.currentIndexChanged.connect(owner.save_settings_auto_chapter_review)
         workflow_columns = QHBoxLayout()
         steps_panel = QWidget()
         steps_column = QVBoxLayout(steps_panel)
