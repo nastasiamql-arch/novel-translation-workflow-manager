@@ -3,6 +3,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from pathlib import Path
+from datetime import date
 
 from PySide6.QtWidgets import QApplication
 from novel_workflow.chapter_number_reference import matched_translator_path, resolve_translator_reference
@@ -30,6 +31,8 @@ def prepared(tmp_path, *, translator_number=630, confirmed_export=None):
             "translator_path": str(translator.resolve()),
             "chapters": [confirmed_export],
             "status": "committed",
+            "local_date": date.today().isoformat(),
+            "event_id": "fixture-confirmed",
         }]
     repo.save_profile(profile)
     app = QApplication.instance() or QApplication([])
@@ -63,7 +66,7 @@ def test_only_paired_seg_is_changed_and_novel_tab_is_ignored(tmp_path):
     work.auto_chapter_review_timer.stop()
     work.editor.tabs.setCurrentWidget(editor_novel)
     window._run_auto_chapter_review(profile.id)
-    assert "第631章 长篇标题" in source.read_text(encoding="utf-8")
+    assert "第631章 长篇标题" in source.read_text(encoding="utf-8"), toast
     assert "第632章 后续" in source.read_text(encoding="utf-8")
     assert novel.read_bytes() == before_novel
     assert trans.read_text(encoding="utf-8").startswith("บทที่ 630")
