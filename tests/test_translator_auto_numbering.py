@@ -69,7 +69,7 @@ def make_window(tmp_path, *, source_text="第641章 开端\n原文正文", trans
     translator.write_text(f"บทที่ {translator_number}\nงานแปลไทย", encoding="utf-8")
     p.working_files = [StepFile(path="source/SEGTranslator.txt")]
     if duplicate:
-        other = folder / "OtherTranslator.txt"
+        other = folder / "SEG_Translator.txt"
         other.write_text("บทที่ 888\nข้อมูลอื่น", encoding="utf-8")
         p.working_files.append(StepFile(path="source/OtherTranslator.txt"))
     p.auto_review_enabled = True

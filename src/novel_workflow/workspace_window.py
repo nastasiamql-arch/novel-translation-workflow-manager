@@ -1317,9 +1317,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         source_id = self.settings_auto_review_source.currentData()
         review_id = self.settings_auto_review_target.currentData()
         enabled = self.settings_auto_review_enabled.isChecked()
-        # A source chapter can be inspected without selecting either workflow
-        # step. Optional step selection is only for the older Translator handoff.
         self.profile.auto_review_enabled = enabled
+        self.profile.auto_chapter_number_mode = (
+            self.settings_auto_chapter_number_mode.currentData() if enabled else "off"
+        )
         self.profile.auto_review_translation_step_id = source_id
         self.profile.auto_review_step_id = review_id
         self.save()
@@ -1334,7 +1335,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             review_id = self.profile.auto_review_step_id or review_default
             source = self.settings_auto_review_source
             target = self.settings_auto_review_target
-            controls = (self.settings_auto_review_enabled, source, target)
+            controls = (self.settings_auto_review_enabled, self.settings_auto_chapter_number_mode, source, target)
             for control in controls:
                 control.blockSignals(True)
             try:
@@ -1348,6 +1349,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 source.setCurrentIndex(max(0, source.findData(source_id)))
                 target.setCurrentIndex(max(0, target.findData(review_id)))
                 self.settings_auto_review_enabled.setChecked(self.profile.auto_review_enabled)
+                self.settings_auto_chapter_number_mode.setCurrentIndex(
+                    1 if self.profile.auto_chapter_number_mode == "fix" else 0
+                )
             finally:
                 for control in controls:
                     control.blockSignals(False)
@@ -3101,7 +3105,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 workspace.inspect_chapter_numbers()
             elif reference.start is None:
                 self.show_submit_toast(
-                    "ตรวจต้นฉบับแล้ว แต่ยังเทียบ Translator ไม่ได้ · " + reference.message
+                    f"ตรวจเลขบทต้นฉบับแล้ว · {len(headings)} บท ลำดับปกติ ✓ "
+                    f"· ยังเทียบ Translator ไม่ได้: {reference.message}"
                 )
             else:
                 self.show_submit_toast(
