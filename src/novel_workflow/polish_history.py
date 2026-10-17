@@ -377,16 +377,23 @@ class PolishHistory:
         step_root = self.root(profile)
         step_root.mkdir(parents=True, exist_ok=True); _check_path(step_root)
         existing = self.list(profile, step_id=step.id, verify=False)
-        latest = next((x for x in existing if not x.error), None)
-        if latest and latest.manifest.get('chapter_range') == chapter_range and latest.manifest.get('content_hash') == fingerprint:
+        matching_range = [
+            previous for previous in existing
+            if not previous.error and previous.manifest.get('chapter_range') == chapter_range
+        ]
+        for previous in matching_range:
+            if previous.manifest.get('content_hash') != fingerprint:
+                continue
             try:
-                self.validate(profile, latest.path)
-                if latest.manifest.get('review_status', 'รอตรวจ') != 'รอตรวจ':
-                    self.set_review_status(profile, latest.path, 'รอตรวจ')
-                    latest.manifest['review_status'] = 'รอตรวจ'
-                return latest
+                self.validate(profile, previous.path)
+                # A repeat copy never revokes an explicit 'ตรวจแล้ว' status.
+                return previous
             except (OSError, ValueError):
-                pass  # Keep damaged history and publish a fresh verified snapshot.
+                continue
+        revision_parent = next((
+            previous for previous in matching_range
+            if previous.manifest.get('snapshot_id')
+        ), None)
         snapshot_id = uuid.uuid4().hex
         # Keep the unpublished staging path short for Windows MAX_PATH users.
         staging = step_root / f'.staging-{snapshot_id[:12]}-{profile.id[:12]}'; staging.mkdir()
@@ -414,6 +421,12 @@ class PolishHistory:
                         'range_pending': chapter_range is None}
             if capture_reason:
                 manifest['capture_reason'] = capture_reason
+            if revision_parent is not None:
+                manifest['revision_of'] = (
+                    revision_parent.manifest.get('revision_of')
+                    or revision_parent.manifest['snapshot_id']
+                )
+                manifest['revision_number'] = len(matching_range) + 1
             manifest['history_number'] = self._allocate_number(profile, snapshot_id)
             write_json(staging / 'manifest.json', manifest)
             self._validate_manifest(profile, staging, manifest)

@@ -117,13 +117,27 @@ def test_export_may_keep_unresolved_range_and_later_assign_it(history):
     assert service.list(p)[0].manifest['review_status'] == 'ตรวจแล้ว'
 
 
-def test_new_save_of_identical_snapshot_returns_it_to_pending(history):
+def test_identical_snapshot_keeps_reviewed_status_even_after_other_ranges(history):
     service, p, s = history
     saved = service.create(p, s, '6-10')
     service.set_review_status(p, saved.path, 'ตรวจแล้ว')
+    service.create(p, s, '11-15')
     again = service.create(p, s, '6-10')
     assert again.path == saved.path
-    assert again.manifest['review_status'] == 'รอตรวจ'
+    assert again.manifest['review_status'] == 'ตรวจแล้ว'
+    assert len(service.list(p)) == 2
+
+
+def test_changed_content_in_same_range_is_a_separate_revision(history):
+    service, p, s = history
+    first = service.create(p, s, '6-10')
+    src = service.repo.profile_dir(p.id) / 'Prompt.md'
+    src.write_bytes(b'revised translation content')
+    second = service.create(p, s, '6-10')
+    assert first.path != second.path
+    assert second.manifest['revision_of'] == first.manifest['snapshot_id']
+    assert second.manifest['revision_number'] == 2
+    assert len(service.list(p)) == 2
 
 
 @pytest.mark.parametrize('label', ['1-5', '6-10', '21-24', '25-31', '100-120', '100000-100123', '6'])

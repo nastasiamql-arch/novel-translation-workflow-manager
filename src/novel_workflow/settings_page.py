@@ -224,16 +224,6 @@ class SettingsPage(QWidget):
         owner.settings_auto_chapter_number_mode.addItem("ตรวจและแก้เลขบทอัตโนมัติ · วางต่อท้ายทีละบท", "fix")
         mode_row.addWidget(owner.settings_auto_chapter_number_mode, 1)
         workflow_layout.addLayout(mode_row)
-        auto_review_steps = QHBoxLayout()
-        auto_review_steps.addWidget(QLabel("ขั้นตอนแปล"))
-        owner.settings_auto_review_source = QComboBox()
-        owner.settings_auto_review_source.setObjectName("autoReviewTranslationStep")
-        auto_review_steps.addWidget(owner.settings_auto_review_source, 1)
-        auto_review_steps.addWidget(QLabel("ขั้นตอนตรวจ"))
-        owner.settings_auto_review_target = QComboBox()
-        owner.settings_auto_review_target.setObjectName("autoReviewTargetStep")
-        auto_review_steps.addWidget(owner.settings_auto_review_target, 1)
-        workflow_layout.addLayout(auto_review_steps)
         auto_review_hint = QLabel(
             "หลังวางต้นฉบับและ Auto Save ระบบอ่านบทล่าสุดจาก Translator ของนิยายนี้ (+1) "
             "เลือกได้ 2 โหมด: ทำเอง (มีตัวเตือนค้างจนกดยืนยันว่าตรวจแล้ว) "
@@ -248,8 +238,6 @@ class SettingsPage(QWidget):
         workflow_layout.addWidget(auto_review_hint)
         owner.settings_auto_review_enabled.toggled.connect(owner.save_settings_auto_chapter_review)
         owner.settings_auto_chapter_number_mode.currentIndexChanged.connect(owner.save_settings_auto_chapter_review)
-        owner.settings_auto_review_source.currentIndexChanged.connect(owner.save_settings_auto_chapter_review)
-        owner.settings_auto_review_target.currentIndexChanged.connect(owner.save_settings_auto_chapter_review)
         workflow_columns = QHBoxLayout()
         steps_panel = QWidget()
         steps_column = QVBoxLayout(steps_panel)

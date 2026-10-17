@@ -93,6 +93,16 @@ class ChapterNumberDialog(QDialog):
             or saved_start
             or (self.headings[0].number if self.headings else 1)
         )
+        self.verified_prefix_count = 0
+        if self.translator_reference.start is not None:
+            from .incremental_chapter_numbering import verified_prefix_from_history
+            checkpoint = verified_prefix_from_history(
+                self.profile_dir, workspace.profile_id, self.path,
+                self.original, self.translator_reference.start,
+            )
+            if checkpoint:
+                self.verified_prefix_count = len(scan_chapters(checkpoint[0]))
+                initial = self.translator_reference.start + self.verified_prefix_count
         self.start_number.setValue(initial)
         if self.translator_reference.start is None and saved_start:
             self.reference_label.setText(
@@ -166,7 +176,9 @@ class ChapterNumberDialog(QDialog):
         close.clicked.connect(self.reject)
         actions.addWidget(close)
         layout.addLayout(actions)
-        if should_auto_propose(self.headings, self.translator_reference.start):
+        if should_auto_propose(
+            self.headings[self.verified_prefix_count:], initial
+        ):
             self.propose_sequence()
             self.result.setText(
                 f"เสนอเลขจาก {self.translator_reference.path.name} แล้ว · "
@@ -187,12 +199,15 @@ class ChapterNumberDialog(QDialog):
 
     def propose_sequence(self):
         first = self.start_number.value()
-        if first + len(self.headings) - 1 > 2_147_483_647:
+        if first + len(self.headings) - self.verified_prefix_count - 1 > 2_147_483_647:
             QMessageBox.warning(self, "เลขบทไม่ถูกต้อง", "เลขบทใหม่เกินช่วงที่รองรับ")
             return
         changed = 0
         for i, (heading, spin, check) in enumerate(zip(self.headings, self.spins, self.checks)):
-            proposed = first + i
+            proposed = (
+                heading.number if i < self.verified_prefix_count
+                else first + i - self.verified_prefix_count
+            )
             spin.setValue(proposed)
             check.setChecked(proposed != heading.number)
             changed += proposed != heading.number
@@ -224,19 +239,22 @@ class ChapterNumberDialog(QDialog):
         """Reuse existing safe editor/backup path for a verified appended chapter."""
         from .incremental_chapter_numbering import automatic_append_plan
         try:
-            automatic_append_plan(
+            _planned, changes = automatic_append_plan(
                 self.original, start, verified_prefix, previous_original
             )
         except ValueError as exc:
             self.auto_error = str(exc)
             return False
-        self.start_number.blockSignals(True)
-        try:
-            self.start_number.setValue(start)
-        finally:
-            self.start_number.blockSignals(False)
-        self.propose_sequence()
-        return self._apply(True, automatic=True)
+        # Correct only chapter headers authorized by the validated append plan.
+        # Earlier checked chapters never get proposed again.
+        by_line = {heading.line: i for i, heading in enumerate(self.headings)}
+        for checkbox in self.checks:
+            checkbox.setChecked(False)
+        for line, _before, after in changes:
+            index = by_line[line]
+            self.spins[index].setValue(after)
+            self.checks[index].setChecked(True)
+        return self._apply(False, automatic=True)
 
     def _read_history(self):
         data = read_json(self.history_path, {"events": []})

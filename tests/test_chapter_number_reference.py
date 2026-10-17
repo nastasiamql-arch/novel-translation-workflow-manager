@@ -67,3 +67,19 @@ def test_does_not_resequence_old_chapters_or_existing_gaps():
     assert not should_auto_propose(scan_chapters("第566章\n第568章"), 546)
     assert not should_auto_propose(scan_chapters("第566章\n第566章"), 546)
     assert not should_auto_propose([], 546)
+
+def test_translator_current_progress_overrides_old_higher_export(tmp_path):
+    repo = ProjectRepository(tmp_path)
+    p, trans = _profile(repo, "SEG", "SEGTranslator.txt", 675)
+    p.translator_export_events = [{
+        "status": "committed", "profile_id": p.id, "translator_path": str(trans.resolve()),
+        "chapters": list(range(686, 691)), "event_id": "old-revision",
+    }]
+    repo.save_profile(p)
+    src = repo.profile_dir(p.id) / "SEG.txt"
+    src.write_text("第691章 新的原文", encoding="utf-8")
+    ref = resolve_translator_reference(repo, p.id, src)
+    assert ref.latest == 675 and ref.start == 676
+    assert "690" in ref.message and "ประวัติเดิม" in ref.message
+    trans.write_text("没有可识别的章节标题", encoding="utf-8")
+    assert resolve_translator_reference(repo, p.id, src).start is None

@@ -19,8 +19,9 @@ from PySide6.QtWidgets import (
 )
 
 from .models import LaunchTarget, StepFile, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
-from .auto_chapter_review import (suggested_review_step_ids, review_step_index,
-    is_original_source_document, scan_original_chapter_issues)
+from .auto_chapter_review import (
+    is_original_source_document, scan_original_chapter_issues,
+)
 from .translation_progress import (
     daily_chapter_count, goal_progress, latest_context_chapter, completion_label, completion_tooltip, completed_chapter_count,
     sync_profile_context, read_context_chapter,
@@ -1330,15 +1331,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def save_settings_auto_chapter_review(self, *_args):
         if not self.profile or not hasattr(self, "settings_auto_review_enabled"):
             return
-        source_id = self.settings_auto_review_source.currentData()
-        review_id = self.settings_auto_review_target.currentData()
         enabled = self.settings_auto_review_enabled.isChecked()
         self.profile.auto_review_enabled = enabled
         self.profile.auto_chapter_number_mode = (
             self.settings_auto_chapter_number_mode.currentData() if enabled else "off"
         )
-        self.profile.auto_review_translation_step_id = source_id
-        self.profile.auto_review_step_id = review_id
         self.save()
 
     def refresh_settings_launch_targets(self):
@@ -1346,24 +1343,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             return
         self.settings_main_folder.setText(self.profile.main_folder)
         if hasattr(self, "settings_auto_review_enabled"):
-            source_default, review_default = suggested_review_step_ids(self.profile)
-            source_id = self.profile.auto_review_translation_step_id or source_default
-            review_id = self.profile.auto_review_step_id or review_default
-            source = self.settings_auto_review_source
-            target = self.settings_auto_review_target
-            controls = (self.settings_auto_review_enabled, self.settings_auto_chapter_number_mode, source, target)
+            controls = (self.settings_auto_review_enabled, self.settings_auto_chapter_number_mode)
             for control in controls:
                 control.blockSignals(True)
             try:
-                source.clear()
-                target.clear()
-                source.addItem("เลือกขั้นตอนแปล", None)
-                target.addItem("เลือกขั้นตอนตรวจ", None)
-                for step in self.profile.workflow.steps:
-                    source.addItem(step.name, step.id)
-                    target.addItem(step.name, step.id)
-                source.setCurrentIndex(max(0, source.findData(source_id)))
-                target.setCurrentIndex(max(0, target.findData(review_id)))
                 self.settings_auto_review_enabled.setChecked(self.profile.auto_review_enabled)
                 self.settings_auto_chapter_number_mode.setCurrentIndex(
                     1 if self.profile.auto_chapter_number_mode == "fix" else 0
@@ -2994,16 +2977,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 or getattr(workspace, "auto_chapter_review_busy", False)):
             return
         path = Path(saved_path).expanduser().resolve()
-        is_source = self._auto_original_source_eligible(profile, workspace, path)
-        is_translator = (
-            not is_source and review_step_index(profile, workspace.step_index, path) is not None
-            and self._translator_profile_for_path(profile.id, path) is not None
-        )
-        if not is_source and not is_translator:
-            return  # In particular Novel.txt and other unpaired tabs are ignored.
-        if is_source and profile.auto_chapter_number_mode != "fix":
+        if not self._auto_original_source_eligible(profile, workspace, path):
+            return  # Translator saves NEVER trigger copy or navigation.
+        if profile.auto_chapter_number_mode != "fix":
             self._set_chapter_pending(profile, workspace, path, True)
-            return  # Manual mode never opens the inspector without a click.
+            return
         timer = getattr(workspace, "auto_chapter_review_timer", None)
         if timer is None:
             timer = QTimer(workspace)
@@ -3011,9 +2989,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             timer.timeout.connect(lambda pid=profile.id: self._run_auto_chapter_review(pid))
             workspace.auto_chapter_review_timer = timer
         workspace.auto_chapter_review_path = path
-        workspace.auto_chapter_review_mode = "source" if is_source else "translator"
-        # Autosave occurs after 1s of typing; another 2.5s without edits is sufficient.
-        timer.start(2500 if is_source else 12000)
+        timer.start(2500)
 
     def _run_auto_chapter_review(self, profile_id):
         profile = self.profile
@@ -3025,7 +3001,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         path = getattr(workspace, "auto_chapter_review_path", None)
         if path is None:
             return
-        mode = getattr(workspace, "auto_chapter_review_mode", "translator")
         editor = next(
             (tab for i in range(workspace.editor.tabs.count())
              if (tab := workspace.editor.tabs.widget(i)) is not None
@@ -3034,14 +3009,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         )
         if editor is None or workspace.editor._dirty(editor):
             return
-        if mode == "source":
-            if not self._auto_original_source_eligible(profile, workspace, path):
-                return
-        else:
-            review_index = review_step_index(profile, workspace.step_index, path)
-            if (review_index is None
-                    or self._translator_profile_for_path(profile_id, path) is None):
-                return
+        if not self._auto_original_source_eligible(profile, workspace, path):
+            return
         try:
             if not path.is_file() or path.stat().st_size == 0:
                 return
@@ -3053,7 +3022,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         fingerprint = (str(path), digest)
         if getattr(workspace, "auto_chapter_review_seen", None) == fingerprint:
             return
-        if mode == "source":
+        if True:
             from .chapter_number_reference import resolve_translator_reference
             from .incremental_chapter_numbering import (
                 automatic_append_plan, verified_prefix_from_history,
@@ -3151,10 +3120,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     12000,
                 )
             return
-        workspace.auto_chapter_review_seen = fingerprint
-        self.copy_named_stage(profile_id, review_index)
-        self.show_submit_toast("เตรียมขั้นตอนตรวจสอบบทอัตโนมัติแล้ว · โปรดตรวจคำแปลด้วยตัวเอง")
-
     def _update_context_button(self, workspace):
         path = Path(self.profile.context_path).expanduser() if self.profile and self.profile.context_path else None
         if path and path.is_file():
