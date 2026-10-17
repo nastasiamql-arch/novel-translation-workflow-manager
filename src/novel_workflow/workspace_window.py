@@ -3033,6 +3033,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 return
             reference = resolve_translator_reference(self.repo, profile_id, path)
             number_mode = getattr(profile, "auto_chapter_number_mode", "check")
+            if number_mode == "off" and profile.auto_review_enabled:
+                number_mode = "check"  # Keep old opt-in programs checking only.
             if number_mode == "fix":
                 if reference.start is None:
                     self.show_submit_toast("ไม่ได้แก้เลขบท · " + reference.message)
