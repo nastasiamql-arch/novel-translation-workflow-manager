@@ -26,7 +26,7 @@ def test_propose_from_matching_translator_and_other_novel_does_not_leak(tmp_path
     ref = resolve_translator_reference(repo, a.id, source)
     assert ref.latest == 545 and ref.start == 546 and ref.path == trans_a
     assert should_auto_propose(scan_chapters(source.read_text(encoding="utf-8")), ref.start)
-    assert resolve_translator_reference(repo, b.id, source).start == 900
+    assert resolve_translator_reference(repo, b.id, source).start is None
 
 
 def test_unsaved_translator_edits_take_precedence(tmp_path):

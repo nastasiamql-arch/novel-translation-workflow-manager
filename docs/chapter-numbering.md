@@ -9,7 +9,7 @@
 - Preserve existing editor undo stack by making all numeral replacements in one QTextCursor edit block.
 - Use current Editor's saving and external conflict detection; do not overwrite a file changed on disk since opened.
 - Store a full pre-edit snapshot per operation and a history event in `profiles/<profile_id>/chapter_numbering/` for audit and restoration. A restore is refused if file content differs from recorded result.
-- Do not auto-renumber on paste. No API, translation or external network calls are made.
+- Automatic numbering is OFF by default. In explicit per-novel auto-fix mode, pasting and saving a recognized, uniquely paired source (e.g. SEG.txt / SEGTranslator.txt) can renumber a contiguous incoming batch. Generic Novel.txt and unrelated tabs are never scanned. No API, translation or network calls are made.
 - If only one heading is detected, such as 第430章 大結局, no change is proposed or made by default.
 - Existing metadata, schema, manifest, exports, translation progress and statistics remain independent.
 

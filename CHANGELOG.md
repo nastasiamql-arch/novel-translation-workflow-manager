@@ -2,6 +2,14 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.18.4 - 2026-10-17
+
+- Restrict automatic source chapter numbering to a same-codename source and Translator pair (SEG.txt ⇄ SEGTranslator.txt) with unique ownership. Ignore generic Novel.txt and unrelated TXT/MD tabs completely.
+- Read the freshly saved Translator before calculating the next source chapter. If the paired Translator tab is still dirty, remember the pending source and automatically retry after Translator Auto Save, even if the user switches tabs.
+- Reject unsafe discrepancies between saved Translator and confirmed Export history rather than guess. No changes to Translator, Context, Export, Backup or unrelated files.
+- Add regression tests simulating actual editor paste and source/Translator autosave order.
+
+
 ## 3.18.3 - 2026-10-17
 
 - Fix auto chapter renumbering silently skipping source files manually opened outside the project's source folder: allow unique same-codename Translator binding and show an actionable status if the source is not associated with the novel.
