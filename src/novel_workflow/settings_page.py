@@ -210,7 +210,7 @@ class SettingsPage(QWidget):
         owner.settings_history_step.currentIndexChanged.connect(owner.save_settings_history_step)
         history_row.addWidget(owner.settings_history_step, 1)
         workflow_layout.addLayout(history_row)
-        owner.settings_auto_review_enabled = QCheckBox("ตรวจเลขบทต้นฉบับอัตโนมัติ (ปิดเป็นค่าเริ่มต้น)")
+        owner.settings_auto_review_enabled = QCheckBox("เปิดระบบตรวจเลขบทต้นฉบับ (แยกแต่ละนิยาย)")
         owner.settings_auto_review_enabled.setObjectName("autoChapterReviewEnabled")
         owner.settings_auto_review_enabled.setToolTip(
             "เมื่อบันทึกไฟล์ต้นฉบับที่เปิดอยู่ จะตรวจเลขหัวบทอัตโนมัติและแจ้งปัญหา"
@@ -220,8 +220,8 @@ class SettingsPage(QWidget):
         mode_row.addWidget(QLabel("เมื่อเปิดใช้"))
         owner.settings_auto_chapter_number_mode = QComboBox()
         owner.settings_auto_chapter_number_mode.setObjectName("autoChapterNumberMode")
-        owner.settings_auto_chapter_number_mode.addItem("ตรวจเลขบทอย่างเดียว", "check")
-        owner.settings_auto_chapter_number_mode.addItem("ตรวจและแก้เลขบทให้อัตโนมัติ", "fix")
+        owner.settings_auto_chapter_number_mode.addItem("ตรวจและแก้ด้วยตัวเอง · เตือนหลังวางบท", "check")
+        owner.settings_auto_chapter_number_mode.addItem("ตรวจและแก้เลขบทอัตโนมัติ · วางต่อท้ายทีละบท", "fix")
         mode_row.addWidget(owner.settings_auto_chapter_number_mode, 1)
         workflow_layout.addLayout(mode_row)
         auto_review_steps = QHBoxLayout()
@@ -236,9 +236,12 @@ class SettingsPage(QWidget):
         workflow_layout.addLayout(auto_review_steps)
         auto_review_hint = QLabel(
             "หลังวางต้นฉบับและ Auto Save ระบบอ่านบทล่าสุดจาก Translator ของนิยายนี้ (+1) "
-            "โหมดตรวจและแก้เปลี่ยนเฉพาะเลขหัวบท รักษาตัวเลขจีน/อารบิก ชื่อบทและเนื้อหาเดิม "
-            "หาก Translator ไม่ชัดเจนหรือเลขต้นฉบับซ้ำ/กระโดด จะไม่เดาแก้ "
-            "มีประวัติย้อนคืน ไม่เกี่ยวกับ Export/Backup หรือการตรวจคำแปลด้วย AI"
+            "เลือกได้ 2 โหมด: ทำเอง (มีตัวเตือนค้างจนกดยืนยันว่าตรวจแล้ว) "
+            "หรือแก้อัตโนมัติ (แก้เฉพาะบทที่เพิ่งต่อท้าย แม้วางทีละบท) "
+            "ระบบอ่านเลขเริ่มจาก Translator รักษาตัวเลขจีน ชื่อบทและข้อความทุกบรรทัด "
+            "ตรวจสอบประวัติการแก้เดิมก่อนเปลี่ยนเลขบทใหม่ "
+            "หากไม่มีหลักฐานว่าบทเก่าแก้แล้วหรือพบเลขกระโดดจริง จะเตือนให้ตรวจเอง "
+            "ไม่เกี่ยวกับ Export/Backup หรือการตรวจคำแปลด้วย AI"
         )
         auto_review_hint.setObjectName("mutedLabel")
         auto_review_hint.setWordWrap(True)

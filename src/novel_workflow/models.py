@@ -182,6 +182,7 @@ class NovelProfile:
     # Opt-in source editing is separate from legacy check-only preference.
     auto_chapter_number_mode: str = "off"
     chapter_manual_start: int | None = None
+    chapter_number_pending_files: dict[str, str] = field(default_factory=dict)
     auto_review_translation_step_id: str | None = None
     auto_review_step_id: str | None = None
     order: int = 0
@@ -236,6 +237,11 @@ class NovelProfile:
                 and 0 < d.get("chapter_manual_start") <= 2_147_483_647
                 else None
             ),
+            chapter_number_pending_files={
+                str(k): str(v) for k, v in
+                (d.get("chapter_number_pending_files") or {}).items()
+                if isinstance(k, str) and isinstance(v, str)
+            } if isinstance(d.get("chapter_number_pending_files"), dict) else {},
             auto_chapter_number_mode=(
                 d.get("auto_chapter_number_mode")
                 if d.get("auto_chapter_number_mode") in {"off", "check", "fix"}

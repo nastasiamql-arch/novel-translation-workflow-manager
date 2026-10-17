@@ -577,7 +577,8 @@ class WorkspacePage(QWidget):
                 "ไฟล์นี้ไม่มีหัวบทที่รองรับ เช่น 第430章, 第四百三十章, Chapter 430"
             )
             return
-        dialog.exec()
+        if dialog.exec() == QDialog.Accepted and self.owner.profile and self.owner.profile.id == self.profile_id:
+            self.owner._set_chapter_pending(self.owner.profile, self, Path(path), False)
 
     def refresh_context_update_button(self):
         editor = self.editor._current_editor()
@@ -591,7 +592,22 @@ class WorkspacePage(QWidget):
         if allowed and not getattr(editor, "_export_status_changed_bound", False):
             editor.textChanged.connect(lambda e=editor: self.refresh_export_status(e, verified=True))
             editor._export_status_changed_bound = True
-        self.chapter_number_button.setVisible(self._source_file_eligible(path))
+        chapter_allowed = bool(
+            path and self.owner.profile and self.owner.profile.id == self.profile_id
+            and self.owner._auto_original_source_eligible(self.owner.profile, self, path)
+        )
+        self.chapter_number_button.setVisible(chapter_allowed)
+        pending = bool(
+            chapter_allowed and
+            str(Path(path).resolve()) in self.owner.profile.chapter_number_pending_files
+        )
+        self.chapter_number_button.setText(
+            "ตรวจเลขบท • รอตรวจ" if pending else "ตรวจเลขบท"
+        )
+        self.chapter_number_button.setToolTip(
+            "มีบทใหม่รอตรวจ · กดเพื่อตรวจเลขบทเอง" if pending
+            else "ตรวจและแก้เลขหัวบทในต้นฉบับ · ไม่มี Export"
+        )
         self.update_context_button.setVisible(allowed)
         self.export_status_label.setVisible(allowed)
         self._export_binding_editor = editor
@@ -2946,6 +2962,19 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         translator, _ = matched_translator_path(self.repo, profile.id, path)
         return translator is not None
 
+    def _set_chapter_pending(self, profile, workspace, path, pending: bool):
+        """Persist manual-review reminders per source file and novel."""
+        key = str(Path(path).expanduser().resolve())
+        existing = profile.chapter_number_pending_files
+        if pending:
+            if key not in existing:
+                existing[key] = "needs-review"
+                self.repo.save_profile(profile)
+        elif key in existing:
+            del existing[key]
+            self.repo.save_profile(profile)
+        workspace.refresh_context_update_button()
+
     def _schedule_auto_chapter_review(self, saved_path):
         """Inspect a saved source, or keep the older Translator handoff behavior."""
         profile = self.profile
@@ -2964,6 +2993,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         )
         if not is_source and not is_translator:
             return  # In particular Novel.txt and other unpaired tabs are ignored.
+        if is_source and profile.auto_chapter_number_mode != "fix":
+            self._set_chapter_pending(profile, workspace, path, True)
+            return  # Manual mode never opens the inspector without a click.
         timer = getattr(workspace, "auto_chapter_review_timer", None)
         if timer is None:
             timer = QTimer(workspace)
@@ -3015,7 +3047,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             return
         if mode == "source":
             from .chapter_number_reference import resolve_translator_reference
-            from .chapter_numbering import automatic_renumber_plan
+            from .incremental_chapter_numbering import (
+                automatic_append_plan, verified_prefix_from_history,
+            )
             text = editor.toPlainText()
             headings, issues = scan_original_chapter_issues(text)
             attention = [issue for issue in issues if issue != "ปกติ"]
@@ -3046,8 +3080,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     self.show_submit_toast("ไม่ได้แก้เลขบท · " + reference.message)
                     self.statusBar().showMessage("ไม่ได้แก้เลขบท · " + reference.message, 16000)
                     return
+                verified_prefix = verified_prefix_from_history(
+                    self.repo.profile_dir(profile_id), profile_id, path, text, reference.start
+                )
                 try:
-                    _expected, changes = automatic_renumber_plan(text, reference.start)
+                    _expected, changes = automatic_append_plan(
+                        text, reference.start, verified_prefix
+                    )
                 except ValueError as exc:
                     workspace.auto_chapter_review_seen = fingerprint
                     self.show_submit_toast(f"ไม่ได้แก้เลขบท · {exc}")
@@ -3069,7 +3108,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                             "ไม่ได้แก้เลขบท · ข้อมูล Translator เปลี่ยนระหว่างตรวจ"
                         )
                         return
-                    if not dialog.apply_automatic(reference.start):
+                    if not dialog.apply_automatic(
+                        reference.start, verified_prefix=verified_prefix
+                    ):
                         self.show_submit_toast(
                             "ไม่ได้แก้เลขบท · " + getattr(dialog, "auto_error", "บันทึกไม่สำเร็จ")
                         )
@@ -3079,6 +3120,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     workspace.auto_chapter_review_seen = (
                         str(path), hashlib.sha256(path.read_bytes()).hexdigest()
                     )
+                    self._set_chapter_pending(profile, workspace, path, False)
                 except (OSError, ValueError) as exc:
                     self.show_submit_toast(f"แก้เลขบทอัตโนมัติไม่สำเร็จ · {exc}")
                     return
@@ -3091,28 +3133,12 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 self.show_submit_toast(message)
                 self.statusBar().showMessage(message, 15000)
                 return
-            if number_mode not in ("check", "fix"):
-                return
-            workspace.auto_chapter_review_seen = fingerprint
-            if reference.start is not None and headings[0].number != reference.start:
-                self.show_submit_toast(
-                    f"เลขบทไม่ตรง Translator · ต้นฉบับ {headings[0].number} "
-                    f"แต่ควรเริ่ม {reference.start} · ตรวจเลขบทเพื่อแก้"
-                )
-                workspace.inspect_chapter_numbers()
-            elif attention:
-                self.show_submit_toast(
-                    f"ตรวจต้นฉบับ {len(headings)} บท · พบปัญหาเลขบท {len(attention)} จุด"
-                )
-                workspace.inspect_chapter_numbers()
-            elif reference.start is None:
-                self.show_submit_toast(
-                    f"ตรวจเลขบทต้นฉบับแล้ว · {len(headings)} บท ลำดับปกติ ✓ "
-                    f"· ยังเทียบ Translator ไม่ได้: {reference.message}"
-                )
-            else:
-                self.show_submit_toast(
-                    f"ตรวจเลขบทต้นฉบับแล้ว · {len(headings)} บท ลำดับปกติ ✓"
+            if number_mode == "check":
+                workspace.auto_chapter_review_seen = fingerprint
+                self._set_chapter_pending(profile, workspace, path, True)
+                self.statusBar().showMessage(
+                    f"{path.name}: มีบทใหม่รอตรวจ · กดปุ่ม 'ตรวจเลขบท' ในแท็บต้นฉบับ",
+                    12000,
                 )
             return
         workspace.auto_chapter_review_seen = fingerprint

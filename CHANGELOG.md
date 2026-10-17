@@ -2,6 +2,13 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.19.0 - 2026-10-17
+
+- Add incremental source chapter numbering for one-chapter-at-a-time append workflows: newly pasted chapters continue after the last verified corrected source chapter, rather than rejecting the saved prefix as a gap. Only previously verified history snapshots can authorize preserving a prefix; never change earlier chapter numbers or story text.
+- Clarify two per-novel modes: manual check and correction (sticky "needs review" indicator) or opt-in automatic renumbering. Manual review acknowledgement clears the indicator; pending state survives reopening the novel.
+- Keep the existing Translator-based starting number, matching-file restrictions, multi-chapter safety checks, backup/undo history and Export/Context isolation. Regression tests cover repeated paste, Chinese numerals, noncontiguous appended chapters, tampered histories and reminder persistence.
+
+
 ## 3.18.4 - 2026-10-17
 
 - Restrict automatic source chapter numbering to a same-codename source and Translator pair (SEG.txt ⇄ SEGTranslator.txt) with unique ownership. Ignore generic Novel.txt and unrelated TXT/MD tabs completely.

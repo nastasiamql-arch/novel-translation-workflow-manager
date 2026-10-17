@@ -148,6 +148,10 @@ class ChapterNumberDialog(QDialog):
         layout.addWidget(self.result)
 
         actions = QHBoxLayout()
+        reviewed = QPushButton("ตรวจแล้ว")
+        reviewed.setToolTip("ยืนยันว่าได้ตรวจเลขบทแล้ว โดยไม่แก้เนื้อหา")
+        reviewed.clicked.connect(self.accept)
+        actions.addWidget(reviewed)
         self.selected_button = QPushButton("แก้ที่เลือก")
         self.selected_button.clicked.connect(self.apply_selected)
         actions.addWidget(self.selected_button)
@@ -213,11 +217,11 @@ class ChapterNumberDialog(QDialog):
     def apply_selected(self):
         self._apply(False)
 
-    def apply_automatic(self, start: int) -> bool:
-        """Reuse original file guards and snapshot history without confirmation."""
-        from .chapter_numbering import automatic_renumber_plan
+    def apply_automatic(self, start: int, *, verified_prefix: str | None = None) -> bool:
+        """Reuse existing safe editor/backup path for a verified appended chapter."""
+        from .incremental_chapter_numbering import automatic_append_plan
         try:
-            automatic_renumber_plan(self.original, start)
+            automatic_append_plan(self.original, start, verified_prefix)
         except ValueError as exc:
             self.auto_error = str(exc)
             return False
