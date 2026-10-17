@@ -216,6 +216,14 @@ class SettingsPage(QWidget):
             "เมื่อบันทึกไฟล์ต้นฉบับที่เปิดอยู่ จะตรวจเลขหัวบทอัตโนมัติและแจ้งปัญหา"
         )
         workflow_layout.addWidget(owner.settings_auto_review_enabled)
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("เมื่อเปิดใช้"))
+        owner.settings_auto_chapter_number_mode = QComboBox()
+        owner.settings_auto_chapter_number_mode.setObjectName("autoChapterNumberMode")
+        owner.settings_auto_chapter_number_mode.addItem("ตรวจเลขบทอย่างเดียว", "check")
+        owner.settings_auto_chapter_number_mode.addItem("ตรวจและแก้เลขบทให้อัตโนมัติ", "fix")
+        mode_row.addWidget(owner.settings_auto_chapter_number_mode, 1)
+        workflow_layout.addLayout(mode_row)
         auto_review_steps = QHBoxLayout()
         auto_review_steps.addWidget(QLabel("ขั้นตอนแปล"))
         owner.settings_auto_review_source = QComboBox()
@@ -227,16 +235,16 @@ class SettingsPage(QWidget):
         auto_review_steps.addWidget(owner.settings_auto_review_target, 1)
         workflow_layout.addLayout(auto_review_steps)
         auto_review_hint = QLabel(
-            "เมื่อเปิด: วางหรือแก้ไขไฟล์ต้นฉบับของนิยายแล้วรอบันทึก "
-            "ระบบจะตรวจเลขบทซ้ำ เลขย้อนกลับ และเลขกระโดดโดยอัตโนมัติ "
-            "ถ้าพบปัญหาจะเปิดหน้าตรวจเลขบทให้แก้ด้วยตนเอง (ไม่แก้อัตโนมัติ) "
-            "ช่องเลือกขั้นตอนด้านบนใช้เฉพาะการเตรียมไฟล์ตรวจจาก Translator; "
-            "ไม่ใช่การตรวจคำแปลด้วย AI และไม่แตะ Export หรือ Backup"
+            "หลังวางต้นฉบับและ Auto Save ระบบอ่านบทล่าสุดจาก Translator ของนิยายนี้ (+1) "
+            "โหมดตรวจและแก้เปลี่ยนเฉพาะเลขหัวบท รักษาตัวเลขจีน/อารบิก ชื่อบทและเนื้อหาเดิม "
+            "หาก Translator ไม่ชัดเจนหรือเลขต้นฉบับซ้ำ/กระโดด จะไม่เดาแก้ "
+            "มีประวัติย้อนคืน ไม่เกี่ยวกับ Export/Backup หรือการตรวจคำแปลด้วย AI"
         )
         auto_review_hint.setObjectName("mutedLabel")
         auto_review_hint.setWordWrap(True)
         workflow_layout.addWidget(auto_review_hint)
         owner.settings_auto_review_enabled.toggled.connect(owner.save_settings_auto_chapter_review)
+        owner.settings_auto_chapter_number_mode.currentIndexChanged.connect(owner.save_settings_auto_chapter_review)
         owner.settings_auto_review_source.currentIndexChanged.connect(owner.save_settings_auto_chapter_review)
         owner.settings_auto_review_target.currentIndexChanged.connect(owner.save_settings_auto_chapter_review)
         workflow_columns = QHBoxLayout()
