@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.18.0 - 2026-10-17
+
+- Add a per-novel, opt-in automatic handoff to an existing chapter-review workflow stage. Defaults to off; manual review-stage selection and copying remain unchanged.
+- Choose translation and review steps explicitly, including custom names. After a bound Translator file is safely saved and idle for 12 seconds, prepare/copy the review stage once per saved content fingerprint.
+- Never mark chapters reviewed automatically, judge translation quality, or alter Export, Backup, Context or translation files. Add settings and stage-guard regression tests.
+
 ## 3.17.0 - 2026-10-15
 
 - Separate History clipboard ZIP from Workflow ZIP: History now has its own immediately saved checkbox directly on the History page. Only the clicked record is archived.
