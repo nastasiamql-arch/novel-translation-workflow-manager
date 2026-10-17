@@ -105,7 +105,7 @@ def test_save_translator_after_source_paste_resumes_without_second_paste(tmp_pat
     finish(window)
 
 
-def test_translator_mismatch_still_does_not_guess(tmp_path):
+def test_old_export_does_not_override_current_translator(tmp_path):
     window, repo, profile, work, source, novel, translator, toast = prepared(
         tmp_path, translator_number=625, confirmed_export=630
     )
@@ -114,8 +114,8 @@ def test_translator_mismatch_still_does_not_guess(tmp_path):
     assert work.editor.save_editor(editor, quiet=True)
     work.auto_chapter_review_timer.stop()
     window._run_auto_chapter_review(profile.id)
-    assert source.read_text(encoding="utf-8").startswith("第646章")
-    assert any("ไม่ได้แก้เลขบท" in s for s in toast)
+    assert source.read_text(encoding="utf-8").startswith("第626章")
+    assert any("แก้เลขบทจาก" in s for s in toast)
     finish(window)
 
 

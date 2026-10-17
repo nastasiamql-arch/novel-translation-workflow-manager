@@ -176,7 +176,7 @@ class ChapterNumberDialog(QDialog):
         close.clicked.connect(self.reject)
         actions.addWidget(close)
         layout.addLayout(actions)
-        if should_auto_propose(
+        if self.translator_reference.path is not None and should_auto_propose(
             self.headings[self.verified_prefix_count:], initial
         ):
             self.propose_sequence()
