@@ -1317,9 +1317,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         source_id = self.settings_auto_review_source.currentData()
         review_id = self.settings_auto_review_target.currentData()
         enabled = self.settings_auto_review_enabled.isChecked()
-        # A source chapter can be inspected without selecting either workflow
-        # step. Optional step selection is only for the older Translator handoff.
         self.profile.auto_review_enabled = enabled
+        self.profile.auto_chapter_number_mode = (
+            self.settings_auto_chapter_number_mode.currentData() if enabled else "off"
+        )
         self.profile.auto_review_translation_step_id = source_id
         self.profile.auto_review_step_id = review_id
         self.save()
@@ -1334,7 +1335,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             review_id = self.profile.auto_review_step_id or review_default
             source = self.settings_auto_review_source
             target = self.settings_auto_review_target
-            controls = (self.settings_auto_review_enabled, source, target)
+            controls = (self.settings_auto_review_enabled, self.settings_auto_chapter_number_mode, source, target)
             for control in controls:
                 control.blockSignals(True)
             try:
@@ -1348,6 +1349,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 source.setCurrentIndex(max(0, source.findData(source_id)))
                 target.setCurrentIndex(max(0, target.findData(review_id)))
                 self.settings_auto_review_enabled.setChecked(self.profile.auto_review_enabled)
+                self.settings_auto_chapter_number_mode.setCurrentIndex(
+                    1 if self.profile.auto_chapter_number_mode == "fix" else 0
+                )
             finally:
                 for control in controls:
                     control.blockSignals(False)
@@ -2959,10 +2963,12 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def _schedule_auto_chapter_review(self, saved_path):
         """Inspect a saved source, or keep the older Translator handoff behavior."""
         profile = self.profile
-        if not profile or not profile.auto_review_enabled or getattr(self, "_settings_open", False):
+        if (not profile or not profile.auto_review_enabled
+                or getattr(self, "_settings_open", False)):
             return
         workspace = self.workspaces.get(profile.id)
-        if not workspace or workspace.vocabulary_mode:
+        if (not workspace or workspace.vocabulary_mode
+                or getattr(workspace, "auto_chapter_review_busy", False)):
             return
         path = Path(saved_path).expanduser().resolve()
         is_source = self._auto_original_source_eligible(profile, workspace, path)
@@ -3018,21 +3024,90 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if getattr(workspace, "auto_chapter_review_seen", None) == fingerprint:
             return
         if mode == "source":
-            headings, issues = scan_original_chapter_issues(editor.toPlainText())
-            attention = [value for value in issues if value != "ปกติ"]
+            from .chapter_number_reference import resolve_translator_reference
+            from .chapter_numbering import automatic_renumber_plan
+            text = editor.toPlainText()
+            headings, issues = scan_original_chapter_issues(text)
+            attention = [issue for issue in issues if issue != "ปกติ"]
             workspace.auto_chapter_review_seen = fingerprint
             if not headings:
                 self.show_submit_toast(
                     "ตรวจต้นฉบับแล้ว · ไม่พบหัวบทที่รองรับ กรุณาตรวจรูปแบบหัวบท"
                 )
                 return
-            if attention:
+            reference = resolve_translator_reference(self.repo, profile_id, path)
+            number_mode = getattr(profile, "auto_chapter_number_mode", "check")
+            if number_mode == "off" and profile.auto_review_enabled:
+                number_mode = "check"  # Keep old opt-in programs checking only.
+            if number_mode == "fix":
+                if reference.start is None:
+                    self.show_submit_toast("ไม่ได้แก้เลขบท · " + reference.message)
+                    return
+                # A dirty Translator tab may disagree with its saved bytes.
+                for i in range(workspace.editor.tabs.count()):
+                    other = workspace.editor.tabs.widget(i)
+                    if (workspace.editor._path(other) == reference.path
+                            and workspace.editor._dirty(other)):
+                        self.show_submit_toast("ไม่ได้แก้เลขบท · Translator ยังไม่ได้บันทึก")
+                        return
+                try:
+                    _expected, changes = automatic_renumber_plan(text, reference.start)
+                except ValueError as exc:
+                    self.show_submit_toast(f"ไม่ได้แก้เลขบท · {exc}")
+                    return
+                if not changes:
+                    self.show_submit_toast(
+                        f"ตรวจแล้ว · {len(headings)} บท เรียงต่อจาก Translator ถูกต้อง ✓"
+                    )
+                    return
+                from .chapter_numbering_dialog import ChapterNumberDialog
+                workspace.auto_chapter_review_busy = True
+                try:
+                    dialog = ChapterNumberDialog(workspace, editor, path)
+                    if (dialog.translator_reference.start != reference.start
+                            or dialog.translator_reference.path != reference.path):
+                        self.show_submit_toast(
+                            "ไม่ได้แก้เลขบท · ข้อมูล Translator เปลี่ยนระหว่างตรวจ"
+                        )
+                        return
+                    if not dialog.apply_automatic(reference.start):
+                        self.show_submit_toast(
+                            "ไม่ได้แก้เลขบท · " + getattr(dialog, "auto_error", "บันทึกไม่สำเร็จ")
+                        )
+                        return
+                    # Saving emits documentSaved; suppress a recursive auto-check,
+                    # and remember the final content digest to avoid renumber loops.
+                    workspace.auto_chapter_review_seen = (
+                        str(path), hashlib.sha256(path.read_bytes()).hexdigest()
+                    )
+                except (OSError, ValueError) as exc:
+                    self.show_submit_toast(f"แก้เลขบทอัตโนมัติไม่สำเร็จ · {exc}")
+                    return
+                finally:
+                    workspace.auto_chapter_review_busy = False
+                self.show_submit_toast(
+                    f"แก้เลขบทจาก {reference.path.name} สำเร็จ {len(changes)} บท "
+                    f"· เริ่มที่บท {reference.start} · ย้อนคืนได้ที่ ตรวจเลขบท"
+                )
+                return
+            if number_mode not in ("check", "fix"):
+                return
+            if reference.start is not None and headings[0].number != reference.start:
+                self.show_submit_toast(
+                    f"เลขบทไม่ตรง Translator · ต้นฉบับ {headings[0].number} "
+                    f"แต่ควรเริ่ม {reference.start} · ตรวจเลขบทเพื่อแก้"
+                )
+                workspace.inspect_chapter_numbers()
+            elif attention:
                 self.show_submit_toast(
                     f"ตรวจต้นฉบับ {len(headings)} บท · พบปัญหาเลขบท {len(attention)} จุด"
                 )
-                # Reuse the existing source-only review dialog. No numbers are
-                # rewritten unless the user explicitly confirms corrections.
                 workspace.inspect_chapter_numbers()
+            elif reference.start is None:
+                self.show_submit_toast(
+                    f"ตรวจเลขบทต้นฉบับแล้ว · {len(headings)} บท ลำดับปกติ ✓ "
+                    f"· ยังเทียบ Translator ไม่ได้: {reference.message}"
+                )
             else:
                 self.show_submit_toast(
                     f"ตรวจเลขบทต้นฉบับแล้ว · {len(headings)} บท ลำดับปกติ ✓"

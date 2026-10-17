@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .chapter_numbering import chapter_issues, preview_renumber, scan_chapters
+from .chapter_numbering import chapter_issues, preview_renumber, scan_chapters, format_heading_number
 from .chapter_number_reference import resolve_translator_reference, should_auto_propose
 from .storage import read_json, write_json
 
@@ -38,7 +38,9 @@ def _replace_headings(editor, original, headings, changes):
                 continue
             cursor.setPosition(_qt_position(original, heading.number_start))
             cursor.setPosition(_qt_position(original, heading.number_end), QTextCursor.KeepAnchor)
-            cursor.insertText(str(changes[index]))
+            cursor.insertText(format_heading_number(
+                changes[index], original[heading.number_start:heading.number_end]
+            ))
     finally:
         cursor.endEditBlock()
 
@@ -184,6 +186,18 @@ class ChapterNumberDialog(QDialog):
     def apply_selected(self):
         self._apply(False)
 
+    def apply_automatic(self, start: int) -> bool:
+        """Reuse original file guards and snapshot history without confirmation."""
+        from .chapter_numbering import automatic_renumber_plan
+        try:
+            automatic_renumber_plan(self.original, start)
+        except ValueError as exc:
+            self.auto_error = str(exc)
+            return False
+        self.start_number.setValue(start)
+        self.propose_sequence()
+        return self._apply(True, automatic=True)
+
     def _read_history(self):
         data = read_json(self.history_path, {"events": []})
         if not isinstance(data, dict) or not isinstance(data.get("events"), list):
@@ -209,18 +223,19 @@ class ChapterNumberDialog(QDialog):
     def _file_unchanged(self):
         return self.path.is_file() and hashlib.sha256(self.path.read_bytes()).digest() == self.editor.disk_digest
 
-    def _apply(self, all_rows):
+    def _apply(self, all_rows, *, automatic=False):
         try:
             requested, expected, changes = self._proposal(all_rows)
             if not changes:
-                QMessageBox.information(self, "ไม่พบรายการที่ต้องแก้", "ไม่มีเลขบทที่เลือกให้เปลี่ยน")
-                return
+                if not automatic:
+                    QMessageBox.information(self, "ไม่พบรายการที่ต้องแก้", "ไม่มีเลขบทที่เลือกให้เปลี่ยน")
+                return True
             if not self._file_unchanged():
                 raise ValueError("ไฟล์ถูกแก้จากภายนอก · กรุณาตรวจความต่างก่อน")
             preview = "\n".join(f"บรรทัด {line}: {a} → {b}" for line, a, b in changes[:15])
             if len(changes) > 15:
                 preview += f"\n…และอีก {len(changes) - 15} บท"
-            if QMessageBox.question(
+            if not automatic and QMessageBox.question(
                 self, "ยืนยันแก้เลขบทต้นฉบับ",
                 f"ไฟล์: {self.path.name}\nเปลี่ยน {len(changes)} หัวบท\n\n{preview}\n\n"
                 "ตรวจว่าบทไม่ได้หายจริงก่อนยืนยัน · เปลี่ยนเฉพาะเลขหัวบท",
@@ -238,15 +253,21 @@ class ChapterNumberDialog(QDialog):
                 raise ValueError("ไม่สามารถบันทึกไฟล์ได้ · คืนข้อความใน Editor แล้ว")
             history["events"].append(event)
             write_json(self.history_path, history)
-            QMessageBox.information(
-                self, "แก้เลขบทสำเร็จ",
-                f"แก้ {len(changes)} หัวบทใน {self.path.name} แล้ว\n"
-                "สำรองข้อความก่อนแก้ไว้สำหรับย้อนคืน\n"
-                "ไม่มีการ Export หรือแก้ไฟล์ Translator/Context"
-            )
-            self.accept()
+            if not automatic:
+                QMessageBox.information(
+                    self, "แก้เลขบทสำเร็จ",
+                    f"แก้ {len(changes)} หัวบทใน {self.path.name} แล้ว\n"
+                    "สำรองข้อความก่อนแก้ไว้สำหรับย้อนคืน\n"
+                    "ไม่มีการ Export หรือแก้ไฟล์ Translator/Context"
+                )
+                self.accept()
+            return True
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "ไม่สามารถแก้เลขบท", str(exc))
+            if automatic:
+                self.auto_error = str(exc)
+            else:
+                QMessageBox.warning(self, "ไม่สามารถแก้เลขบท", str(exc))
+            return False
 
     def restore_latest(self):
         try:

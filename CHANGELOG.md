@@ -2,6 +2,13 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.18.2 - 2026-10-17
+
+- Add explicit per-novel check-only and opt-in auto-fix modes. Existing enabled profiles stay check-only on upgrade.
+- Read the uniquely bound Translator chapter to find the next number. Safely renumber contiguous original-source chapters after Auto Save while preserving Chinese/Arabic/full-width script and story text.
+- Refuse uncertain Translator, older chapters, duplicates, skipped or unsupported headings; provide backup and manual rollback. Never edit Translator/Context or Export/Backup.
+
+
 ## 3.18.1 - 2026-10-17
 
 - Fix opt-in auto chapter checking not reacting to pasted original source: after the source editor saves, scan with the existing Chinese/Thai/English chapter heading validator after 2.5 seconds of idle time.

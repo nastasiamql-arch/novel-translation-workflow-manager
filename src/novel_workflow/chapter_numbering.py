@@ -100,6 +100,90 @@ def chapter_issues(headings: list[ChapterHeading]) -> list[str]:
     return issues
 
 
+
+_CHINESE_DIGITS = "零一二三四五六七八九"
+_CHINESE_UNITS = ((1000, "千"), (100, "百"), (10, "十"), (1, ""))
+_SUSPECT_HEADING = re.compile(
+    r"(?im)^[ \t]*(?:#{1,6}[ \t]+)?(?:第[^\r\n]{1,24}?章|chapter[ \t]+\S+|(?:บทที่|ตอนที่)[ \t]*\S+)"
+)
+
+
+def format_heading_number(number: int, template: str) -> str:
+    """Keep the chapter heading's Arabic, full-width or Chinese numeral style."""
+    if type(number) is not int or not 0 < number <= _MAX:
+        raise ValueError("Invalid chapter number")
+    if template.isascii() and template.isdecimal():
+        return str(number)
+    fullwidth = "０１２３４５６７８９"
+    if template and all(c in fullwidth for c in template):
+        return str(number).translate(str.maketrans("0123456789", fullwidth))
+    if template and all(c in "0123456789" + fullwidth for c in template):
+        return str(number)
+    if not template or any(c not in "零〇○一二两兩三四五六七八九十百千万萬亿億" for c in template):
+        raise ValueError("Unsupported Chinese chapter numeral")
+    parse_number(template)
+    zero = next((c for c in template if c in "零〇○"), "零")
+    two = "兩" if "兩" in template else ("两" if "两" in template else "二")
+    wan = "萬" if "萬" in template else "万"
+    yi = "億" if "億" in template else "亿"
+
+    def group_text(value: int) -> str:
+        parts = []
+        need_zero = False
+        for unit, suffix in _CHINESE_UNITS:
+            digit, value = divmod(value, unit)
+            if digit:
+                if parts and need_zero:
+                    parts.append(zero)
+                if not (unit == 10 and digit == 1 and not parts):
+                    parts.append(two if digit == 2 and unit in (100, 1000) else _CHINESE_DIGITS[digit])
+                parts.append(suffix)
+                need_zero = False
+            elif parts and value:
+                need_zero = True
+        return "".join(parts)
+
+    groups = [number % 10000, (number // 10000) % 10000, number // 100000000]
+    result = ""
+    gap = False
+    for i in (2, 1, 0):
+        section = groups[i]
+        if not section:
+            if result:
+                gap = True
+            continue
+        if result and (gap or section < 1000):
+            result += zero
+        result += group_text(section) + (yi if i == 2 else wan if i == 1 else "")
+        gap = False
+    return result
+
+
+def automatic_renumber_plan(text: str, start: int) -> tuple[str, list[tuple[int, int, int]]]:
+    """Plan only a contiguous source batch; never infer missing chapters."""
+    if type(start) is not int or not 0 < start <= _MAX:
+        raise ValueError("ไม่มีเลขบทอ้างอิงจาก Translator")
+    headings = scan_chapters(text)
+    if not headings:
+        raise ValueError("ไม่พบหัวบทที่รองรับ จึงไม่เปลี่ยนต้นฉบับ")
+    known_lines = {h.line for h in headings}
+    fenced = False
+    for i, line in enumerate(text.splitlines(), 1):
+        if line.lstrip().startswith((chr(96) * 3, "~~~")):
+            fenced = not fenced
+            continue
+        if not fenced and _SUSPECT_HEADING.match(line) and i not in known_lines:
+            raise ValueError("พบหัวบทที่อ่านเลขไม่ได้ กรุณาตรวจเองก่อนแก้")
+    nums = [h.number for h in headings]
+    if any(n != nums[0] + i for i, n in enumerate(nums)):
+        raise ValueError("ต้นฉบับมีเลขซ้ำหรือไม่ต่อเนื่อง อาจมีบทขาดจริง")
+    if nums[0] < start:
+        raise ValueError("บทต้นฉบับย้อนกลับไปก่อนบทถัดไปของ Translator")
+    if start + len(headings) - 1 > _MAX:
+        raise ValueError("หมายเลขบทใหม่เกินขีดจำกัด")
+    return preview_renumber(text, {i: start + i for i in range(len(headings))})
+
+
 def preview_renumber(text: str, changes: dict[int, int]) -> tuple[str, list[tuple[int, int, int]]]:
     """Return exact proposed text. Keys are zero-based heading indices."""
     headings = scan_chapters(text)
@@ -117,6 +201,7 @@ def preview_renumber(text: str, changes: dict[int, int]) -> tuple[str, list[tupl
         new = changes[i]
         if new == heading.number:
             continue
-        result = result[:heading.number_start] + str(new) + result[heading.number_end:]
+        old_number = text[heading.number_start:heading.number_end]
+        result = result[:heading.number_start] + format_heading_number(new, old_number) + result[heading.number_end:]
         applied.append((heading.line, heading.number, new))
     return result, sorted(applied)

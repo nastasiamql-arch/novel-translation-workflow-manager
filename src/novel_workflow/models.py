@@ -179,6 +179,8 @@ class NovelProfile:
     open_working_tabs_on_open: bool = False
     # Optional handoff to the existing review workflow after a saved Translator chapter.
     auto_review_enabled: bool = False
+    # Opt-in source editing is separate from legacy check-only preference.
+    auto_chapter_number_mode: str = "off"
     auto_review_translation_step_id: str | None = None
     auto_review_step_id: str | None = None
     order: int = 0
@@ -227,6 +229,11 @@ class NovelProfile:
             working_files=[StepFile.from_dict(item) for item in d.get("working_files", [])],
             open_working_tabs_on_open=bool(d.get("open_working_tabs_on_open", False)),
             auto_review_enabled=bool(d.get("auto_review_enabled", False)),
+            auto_chapter_number_mode=(
+                d.get("auto_chapter_number_mode")
+                if d.get("auto_chapter_number_mode") in {"off", "check", "fix"}
+                else ("check" if d.get("auto_review_enabled", False) else "off")
+            ),
             auto_review_translation_step_id=d.get("auto_review_translation_step_id"),
             auto_review_step_id=d.get("auto_review_step_id"),
             txt_export_draft=str(d.get("txt_export_draft", "")),
