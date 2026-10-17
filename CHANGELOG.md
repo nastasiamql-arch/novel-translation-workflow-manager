@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.18.1 - 2026-10-17
+
+- Fix opt-in auto chapter checking not reacting to pasted original source: after the source editor saves, scan with the existing Chinese/Thai/English chapter heading validator after 2.5 seconds of idle time.
+- Announce the checked chapter count and duplicates, descending or skipped chapter numbers. Open the existing original-source numbering dialog for issues, but never modify text or numbering without confirmation.
+- Restrict automatic scanning to files owned by the current novel; ignore Translator, Context and unrelated documents. Source checking no longer requires configuring an unrelated translation workflow stage. Keep previous Translator workflow handoff and manual operation unchanged.
+
 ## 3.18.0 - 2026-10-17
 
 - Add a per-novel, opt-in automatic handoff to an existing chapter-review workflow stage. Defaults to off; manual review-stage selection and copying remain unchanged.

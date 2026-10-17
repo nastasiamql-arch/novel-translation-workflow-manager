@@ -210,10 +210,10 @@ class SettingsPage(QWidget):
         owner.settings_history_step.currentIndexChanged.connect(owner.save_settings_history_step)
         history_row.addWidget(owner.settings_history_step, 1)
         workflow_layout.addLayout(history_row)
-        owner.settings_auto_review_enabled = QCheckBox("ตรวจสอบบทอัตโนมัติ (ปิดเป็นค่าเริ่มต้น)")
+        owner.settings_auto_review_enabled = QCheckBox("ตรวจเลขบทต้นฉบับอัตโนมัติ (ปิดเป็นค่าเริ่มต้น)")
         owner.settings_auto_review_enabled.setObjectName("autoChapterReviewEnabled")
         owner.settings_auto_review_enabled.setToolTip(
-            "หลังบันทึกไฟล์ Translator และหยุดพิมพ์ชั่วครู่ จะเลือกและคัดลอกไฟล์ของขั้นตอนตรวจสอบบท"
+            "เมื่อบันทึกไฟล์ต้นฉบับที่เปิดอยู่ จะตรวจเลขหัวบทอัตโนมัติและแจ้งปัญหา"
         )
         workflow_layout.addWidget(owner.settings_auto_review_enabled)
         auto_review_steps = QHBoxLayout()
@@ -227,9 +227,11 @@ class SettingsPage(QWidget):
         auto_review_steps.addWidget(owner.settings_auto_review_target, 1)
         workflow_layout.addLayout(auto_review_steps)
         auto_review_hint = QLabel(
-            "เมื่อเปิด: รอไฟล์ Translator บันทึกเสร็จและไม่มีการแก้ไข 12 วินาที "
-            "จากนั้นเตรียม/คัดลอกไฟล์ของขั้นตอนตรวจให้อัตโนมัติ "
-            "ไม่ได้ตรวจคุณภาพคำแปลด้วย AI และไม่แตะ Export หรือ Backup"
+            "เมื่อเปิด: วางหรือแก้ไขไฟล์ต้นฉบับของนิยายแล้วรอบันทึก "
+            "ระบบจะตรวจเลขบทซ้ำ เลขย้อนกลับ และเลขกระโดดโดยอัตโนมัติ "
+            "ถ้าพบปัญหาจะเปิดหน้าตรวจเลขบทให้แก้ด้วยตนเอง (ไม่แก้อัตโนมัติ) "
+            "ช่องเลือกขั้นตอนด้านบนใช้เฉพาะการเตรียมไฟล์ตรวจจาก Translator; "
+            "ไม่ใช่การตรวจคำแปลด้วย AI และไม่แตะ Export หรือ Backup"
         )
         auto_review_hint.setObjectName("mutedLabel")
         auto_review_hint.setWordWrap(True)

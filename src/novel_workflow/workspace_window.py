@@ -19,7 +19,8 @@ from PySide6.QtWidgets import (
 )
 
 from .models import LaunchTarget, StepFile, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
-from .auto_chapter_review import suggested_review_step_ids, review_step_index
+from .auto_chapter_review import (suggested_review_step_ids, review_step_index,
+    is_original_source_document, scan_original_chapter_issues)
 from .translation_progress import (
     daily_chapter_count, goal_progress, latest_context_chapter, completion_label, completion_tooltip, completed_chapter_count,
     sync_profile_context, read_context_chapter,
@@ -1316,14 +1317,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         source_id = self.settings_auto_review_source.currentData()
         review_id = self.settings_auto_review_target.currentData()
         enabled = self.settings_auto_review_enabled.isChecked()
-        if enabled and (not source_id or not review_id or source_id == review_id):
-            self.settings_auto_review_enabled.blockSignals(True)
-            self.settings_auto_review_enabled.setChecked(False)
-            self.settings_auto_review_enabled.blockSignals(False)
-            enabled = False
-            self.statusBar().showMessage(
-                "เลือกขั้นตอนแปลและขั้นตอนตรวจสอบบทให้ต่างกันก่อนเปิดอัตโนมัติ", 6000
-            )
+        # A source chapter can be inspected without selecting either workflow
+        # step. Optional step selection is only for the older Translator handoff.
         self.profile.auto_review_enabled = enabled
         self.profile.auto_review_translation_step_id = source_id
         self.profile.auto_review_step_id = review_id
@@ -2933,19 +2928,50 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 pass
         self._schedule_auto_chapter_review(saved_path)
 
+    def _auto_original_source_eligible(self, profile, workspace, path):
+        """Check only source text owned by the selected novel, not arbitrary open tabs."""
+        if not workspace._source_file_eligible(path):
+            return False
+        resolved = Path(path).expanduser().resolve()
+        profiles = self.repo.list_profiles()
+        bindings = {item.id: self._profile_file_paths(item) for item in profiles}
+        other_owners = any(
+            resolved in paths for pid, paths in bindings.items() if pid != profile.id
+        )
+        if other_owners:
+            return False
+        # A shared main folder must never authorize the wrong novel's files.
+        main_folder = profile.main_folder
+        if main_folder:
+            root = Path(main_folder).expanduser().resolve()
+            shared = any(
+                item.id != profile.id and item.main_folder
+                and Path(item.main_folder).expanduser().resolve() == root
+                for item in profiles
+            )
+            if shared:
+                main_folder = None
+        return is_original_source_document(
+            resolved, bindings.get(profile.id, set()),
+            self.repo.profile_dir(profile.id) / "source", main_folder,
+        )
+
     def _schedule_auto_chapter_review(self, saved_path):
-        """Schedule an opt-in review-stage handoff, never an AI quality verdict."""
+        """Inspect a saved source, or keep the older Translator handoff behavior."""
         profile = self.profile
         if not profile or not profile.auto_review_enabled or getattr(self, "_settings_open", False):
             return
         workspace = self.workspaces.get(profile.id)
         if not workspace or workspace.vocabulary_mode:
             return
-        if review_step_index(profile, workspace.step_index, saved_path) is None:
-            return
-        if self._translator_profile_for_path(profile.id, saved_path) is None:
-            return
         path = Path(saved_path).expanduser().resolve()
+        is_source = self._auto_original_source_eligible(profile, workspace, path)
+        is_translator = (
+            not is_source and review_step_index(profile, workspace.step_index, path) is not None
+            and self._translator_profile_for_path(profile.id, path) is not None
+        )
+        if not is_source and not is_translator:
+            return
         timer = getattr(workspace, "auto_chapter_review_timer", None)
         if timer is None:
             timer = QTimer(workspace)
@@ -2953,34 +2979,64 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             timer.timeout.connect(lambda pid=profile.id: self._run_auto_chapter_review(pid))
             workspace.auto_chapter_review_timer = timer
         workspace.auto_chapter_review_path = path
-        timer.start(12000)
+        workspace.auto_chapter_review_mode = "source" if is_source else "translator"
+        # Autosave occurs after 1s of typing; another 2.5s without edits is sufficient.
+        timer.start(2500 if is_source else 12000)
 
     def _run_auto_chapter_review(self, profile_id):
         profile = self.profile
         workspace = self.workspaces.get(profile_id)
-        if (not profile or profile.id != profile_id or not workspace
-                or workspace.vocabulary_mode or getattr(self, "_settings_open", False)):
+        if (not profile or profile.id != profile_id or not profile.auto_review_enabled
+                or not workspace or workspace.vocabulary_mode
+                or getattr(self, "_settings_open", False)):
             return
         path = getattr(workspace, "auto_chapter_review_path", None)
         if path is None:
             return
-        review_index = review_step_index(profile, workspace.step_index, path)
-        if review_index is None:
-            return
+        mode = getattr(workspace, "auto_chapter_review_mode", "translator")
         editor = workspace.editor._current_editor()
         if (editor is None or workspace.editor._path(editor) != path
                 or workspace.editor._dirty(editor)):
             return
-        if self._translator_profile_for_path(profile_id, path) is None:
-            return
+        if mode == "source":
+            if not self._auto_original_source_eligible(profile, workspace, path):
+                return
+        else:
+            review_index = review_step_index(profile, workspace.step_index, path)
+            if (review_index is None
+                    or self._translator_profile_for_path(profile_id, path) is None):
+                return
         try:
             if not path.is_file() or path.stat().st_size == 0:
                 return
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if digest != editor.disk_digest.hex():
+                return  # File changed externally since our successful save.
         except OSError:
             return
         fingerprint = (str(path), digest)
         if getattr(workspace, "auto_chapter_review_seen", None) == fingerprint:
+            return
+        if mode == "source":
+            headings, issues = scan_original_chapter_issues(editor.toPlainText())
+            attention = [value for value in issues if value != "ปกติ"]
+            workspace.auto_chapter_review_seen = fingerprint
+            if not headings:
+                self.show_submit_toast(
+                    "ตรวจต้นฉบับแล้ว · ไม่พบหัวบทที่รองรับ กรุณาตรวจรูปแบบหัวบท"
+                )
+                return
+            if attention:
+                self.show_submit_toast(
+                    f"ตรวจต้นฉบับ {len(headings)} บท · พบปัญหาเลขบท {len(attention)} จุด"
+                )
+                # Reuse the existing source-only review dialog. No numbers are
+                # rewritten unless the user explicitly confirms corrections.
+                workspace.inspect_chapter_numbers()
+            else:
+                self.show_submit_toast(
+                    f"ตรวจเลขบทต้นฉบับแล้ว · {len(headings)} บท ลำดับปกติ ✓"
+                )
             return
         workspace.auto_chapter_review_seen = fingerprint
         self.copy_named_stage(profile_id, review_index)
