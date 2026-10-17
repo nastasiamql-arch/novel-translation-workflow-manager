@@ -2965,14 +2965,22 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def _set_chapter_pending(self, profile, workspace, path, pending: bool):
         """Persist manual-review reminders per source file and novel."""
         key = str(Path(path).expanduser().resolve())
-        existing = profile.chapter_number_pending_files
+        # Dialogs also persist profile preferences; use a fresh persisted
+        # profile to avoid a stale in-memory object reintroducing the marker.
+        stored = next(
+            (p for p in self.repo.list_profiles() if p.id == profile.id), None
+        )
+        if stored is None:
+            return
+        existing = dict(stored.chapter_number_pending_files)
         if pending:
-            if key not in existing:
-                existing[key] = "needs-review"
-                self.repo.save_profile(profile)
-        elif key in existing:
-            del existing[key]
-            self.repo.save_profile(profile)
+            existing[key] = "needs-review"
+        else:
+            existing.pop(key, None)
+        if existing != stored.chapter_number_pending_files:
+            stored.chapter_number_pending_files = existing
+            self.repo.save_profile(stored)
+        profile.chapter_number_pending_files = existing
         workspace.refresh_context_update_button()
 
     def _schedule_auto_chapter_review(self, saved_path):

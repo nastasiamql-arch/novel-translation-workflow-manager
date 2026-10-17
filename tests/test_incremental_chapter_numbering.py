@@ -46,7 +46,7 @@ def test_incremental_renumber_requires_exact_previous_story_and_original_number(
     with pytest.raises(ValueError):
         automatic_append_plan(prior.replace("正文", "改动") + "\n第647章 第二", 631, prior, 646)
     with pytest.raises(ValueError):
-        automatic_append_plan(prior + "第647章 第二", 631, prior, 646)
+        automatic_append_plan(prior.rstrip("\n") + "第647章 第二", 631, prior, 646)
     with pytest.raises(ValueError):
         automatic_append_plan(prior + "\n第647章 第二", 631, prior, 645)
 
