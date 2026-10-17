@@ -79,10 +79,11 @@ def test_save_translator_after_source_paste_resumes_without_second_paste(tmp_pat
         tmp_path, translator_number=625, confirmed_export=630
     )
     trans_tab = work.editor.open_file(translator)
-    trans_tab.setPlainText("บทที่ 630\nแปลไทยเสร็จ")
-    # Translator remains dirty during the source paste.
-    assert work.editor._dirty(trans_tab)
     seg_editor = work.editor.open_file(source)
+    # Simulate the Translator being edited in another tab while the source is saved.
+    # Switching files normally performs an immediate Auto Save on the old tab.
+    trans_tab.setPlainText("บทที่ 630\nแปลไทยเสร็จ")
+    assert work.editor._dirty(trans_tab)
     seg_editor.setPlainText("第646章 第一\n原文\n第647章 第二\n原文")
     assert work.editor.save_editor(seg_editor, quiet=True)
     work.auto_chapter_review_timer.stop()

@@ -547,8 +547,7 @@ class WorkspacePage(QWidget):
             path = Path(path).expanduser().resolve()
             if not path.is_file() or path.suffix.casefold() not in {".txt", ".md", ".markdown"}:
                 return False
-            if (path.name.casefold() == "novel.txt"
-                    or path.name.casefold().endswith("translator.txt")):
+            if path.name.casefold().endswith("translator.txt"):
                 return False
             profile = next(
                 (item for item in self.owner.repo.list_profiles() if item.id == self.profile_id),
@@ -2932,45 +2931,20 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             except OSError:
                 pass
         self._schedule_auto_chapter_review(saved_path)
+        # Resume source checks when its paired Translator has finished Auto Save.
+        workspace = self.workspaces.get(self.profile.id)
+        waiting = getattr(workspace, "auto_chapter_review_waiting_for", None) if workspace else None
+        if waiting is not None and waiting[1] == Path(saved_path).expanduser().resolve():
+            workspace.auto_chapter_review_waiting_for = None
+            self._schedule_auto_chapter_review(str(waiting[0]))
 
     def _auto_original_source_eligible(self, profile, workspace, path):
-        """Check only source text owned by the selected novel, not arbitrary open tabs."""
+        """Allow only a same-codename novel source, never other TXT tabs."""
         if not workspace._source_file_eligible(path):
             return False
-        resolved = Path(path).expanduser().resolve()
-        profiles = self.repo.list_profiles()
-        bindings = {item.id: self._profile_file_paths(item) for item in profiles}
-        other_owners = any(
-            resolved in paths for pid, paths in bindings.items() if pid != profile.id
-        )
-        if other_owners:
-            return False
-        # A shared main folder must never authorize the wrong novel's files.
-        main_folder = profile.main_folder
-        if main_folder:
-            root = Path(main_folder).expanduser().resolve()
-            shared = any(
-                item.id != profile.id and item.main_folder
-                and Path(item.main_folder).expanduser().resolve() == root
-                for item in profiles
-            )
-            if shared:
-                main_folder = None
-        if is_original_source_document(
-            resolved, bindings.get(profile.id, set()),
-            self.repo.profile_dir(profile.id) / "source", main_folder,
-        ):
-            return True
-        # Source manually opened in this novel's Editor need not be separately
-        # bound when its uniquely owned Translator has the same codename.
-        from .chapter_number_reference import resolve_translator_reference
-        reference = resolve_translator_reference(self.repo, profile.id, resolved)
-        return bool(
-            reference.path is not None
-            and reference.path != resolved
-            and reference.path.stem.casefold().endswith("translator")
-            and resolved.stem.casefold() == reference.path.stem[:-len("translator")].casefold()
-        )
+        from .chapter_number_reference import matched_translator_path
+        translator, _ = matched_translator_path(self.repo, profile.id, path)
+        return translator is not None
 
     def _schedule_auto_chapter_review(self, saved_path):
         """Inspect a saved source, or keep the older Translator handoff behavior."""
@@ -2989,14 +2963,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             and self._translator_profile_for_path(profile.id, path) is not None
         )
         if not is_source and not is_translator:
-            if (path.is_file() and path.suffix.casefold() in {".txt", ".md"}
-                    and not path.name.casefold().endswith(("translator.txt", "context.txt"))
-                    and workspace.editor._path(workspace.editor._current_editor()) == path):
-                self.statusBar().showMessage(
-                    "ไม่ได้ตรวจเลขบท: ไฟล์ต้นฉบับไม่ได้ผูกกับนิยายที่เลือก "
-                    "· เพิ่มไฟล์นี้ในไฟล์ทำงาน หรือใช้ชื่อเดียวกับ Translator", 14000
-                )
-            return
+            return  # In particular Novel.txt and other unpaired tabs are ignored.
         timer = getattr(workspace, "auto_chapter_review_timer", None)
         if timer is None:
             timer = QTimer(workspace)
@@ -3019,12 +2986,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if path is None:
             return
         mode = getattr(workspace, "auto_chapter_review_mode", "translator")
-        editor = workspace.editor._current_editor()
-        if (editor is None or workspace.editor._path(editor) != path
-                or workspace.editor._dirty(editor)):
-            self.statusBar().showMessage(
-                "รอตรวจเลขบท: บันทึกไฟล์ต้นฉบับให้เสร็จและเปิดแท็บนั้นค้างไว้", 12000
-            )
+        editor = next(
+            (tab for i in range(workspace.editor.tabs.count())
+             if (tab := workspace.editor.tabs.widget(i)) is not None
+             and workspace.editor._path(tab) == path),
+            None,
+        )
+        if editor is None or workspace.editor._dirty(editor):
             return
         if mode == "source":
             if not self._auto_original_source_eligible(profile, workspace, path):
@@ -3051,7 +3019,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             text = editor.toPlainText()
             headings, issues = scan_original_chapter_issues(text)
             attention = [issue for issue in issues if issue != "ปกติ"]
-            workspace.auto_chapter_review_seen = fingerprint
             if not headings:
                 self.show_submit_toast(
                     "ตรวจต้นฉบับแล้ว · ไม่พบหัวบทที่รองรับ กรุณาตรวจรูปแบบหัวบท"
@@ -3062,24 +3029,32 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if number_mode == "off" and profile.auto_review_enabled:
                 number_mode = "check"  # Keep old opt-in programs checking only.
             if number_mode == "fix":
+                from .chapter_number_reference import matched_translator_path
+                translator_path, _ = matched_translator_path(self.repo, profile_id, path)
+                if translator_path is not None:
+                    for i in range(workspace.editor.tabs.count()):
+                        other = workspace.editor.tabs.widget(i)
+                        if (workspace.editor._path(other) == translator_path
+                                and workspace.editor._dirty(other)):
+                            workspace.auto_chapter_review_waiting_for = (path, translator_path)
+                            self.statusBar().showMessage(
+                                f"รอ Auto Save {translator_path.name} แล้วจะตรวจเลขบท {path.name}", 18000
+                            )
+                            return
                 if reference.start is None:
+                    workspace.auto_chapter_review_seen = fingerprint
                     self.show_submit_toast("ไม่ได้แก้เลขบท · " + reference.message)
                     self.statusBar().showMessage("ไม่ได้แก้เลขบท · " + reference.message, 16000)
                     return
-                # A dirty Translator tab may disagree with its saved bytes.
-                for i in range(workspace.editor.tabs.count()):
-                    other = workspace.editor.tabs.widget(i)
-                    if (workspace.editor._path(other) == reference.path
-                            and workspace.editor._dirty(other)):
-                        self.show_submit_toast("ไม่ได้แก้เลขบท · Translator ยังไม่ได้บันทึก")
-                        return
                 try:
                     _expected, changes = automatic_renumber_plan(text, reference.start)
                 except ValueError as exc:
+                    workspace.auto_chapter_review_seen = fingerprint
                     self.show_submit_toast(f"ไม่ได้แก้เลขบท · {exc}")
                     self.statusBar().showMessage(f"ไม่ได้แก้เลขบท · {exc}", 16000)
                     return
                 if not changes:
+                    workspace.auto_chapter_review_seen = fingerprint
                     self.show_submit_toast(
                         f"ตรวจแล้ว · {len(headings)} บท เรียงต่อจาก Translator ถูกต้อง ✓"
                     )
@@ -3118,6 +3093,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 return
             if number_mode not in ("check", "fix"):
                 return
+            workspace.auto_chapter_review_seen = fingerprint
             if reference.start is not None and headings[0].number != reference.start:
                 self.show_submit_toast(
                     f"เลขบทไม่ตรง Translator · ต้นฉบับ {headings[0].number} "
