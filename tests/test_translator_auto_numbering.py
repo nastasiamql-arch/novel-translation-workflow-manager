@@ -85,8 +85,12 @@ def make_window(tmp_path, *, source_text="第641章 开端\n原文正文", trans
     window.show_submit_toast = messages.append
     editor.setPlainText(source_text)
     assert workspace.editor.save_editor(editor, quiet=True)
-    assert workspace.auto_chapter_review_timer.isActive()
-    workspace.auto_chapter_review_timer.stop()
+    if duplicate:
+        # Two possible Translator files must not silently schedule a correction.
+        assert not hasattr(workspace, "auto_chapter_review_timer")
+    else:
+        assert workspace.auto_chapter_review_timer.isActive()
+        workspace.auto_chapter_review_timer.stop()
     return window, repo, p, source, translator, workspace, editor, messages
 
 
@@ -129,7 +133,7 @@ def test_ambiguous_translator_never_edits_source(tmp_path):
     unchanged = hashlib.sha256(source.read_bytes()).digest()
     window._run_auto_chapter_review(p.id)
     assert hashlib.sha256(source.read_bytes()).digest() == unchanged
-    assert any("ไม่ได้แก้เลขบท" in text for text in messages)
+    assert not messages  # Unrelated or ambiguous source never starts auto-review.
     assert not (repo.profile_dir(p.id) / "chapter_numbering" / "history.json").exists()
     close(window)
 
