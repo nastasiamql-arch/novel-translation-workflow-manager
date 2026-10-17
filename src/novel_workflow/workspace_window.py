@@ -2955,9 +2955,20 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             )
             if shared:
                 main_folder = None
-        return is_original_source_document(
+        if is_original_source_document(
             resolved, bindings.get(profile.id, set()),
             self.repo.profile_dir(profile.id) / "source", main_folder,
+        ):
+            return True
+        # Source manually opened in this novel's Editor need not be separately
+        # bound when its uniquely owned Translator has the same codename.
+        from .chapter_number_reference import resolve_translator_reference
+        reference = resolve_translator_reference(self.repo, profile.id, resolved)
+        return bool(
+            reference.path is not None
+            and reference.path != resolved
+            and reference.path.stem.casefold().endswith("translator")
+            and resolved.stem.casefold() == reference.path.stem[:-len("translator")].casefold()
         )
 
     def _schedule_auto_chapter_review(self, saved_path):
@@ -2977,6 +2988,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             and self._translator_profile_for_path(profile.id, path) is not None
         )
         if not is_source and not is_translator:
+            if (path.is_file() and path.suffix.casefold() in {".txt", ".md"}
+                    and not path.name.casefold().endswith(("translator.txt", "context.txt"))
+                    and workspace.editor._path(workspace.editor._current_editor()) == path):
+                self.statusBar().showMessage(
+                    "ไม่ได้ตรวจเลขบท: ไฟล์ต้นฉบับไม่ได้ผูกกับนิยายที่เลือก "
+                    "· เพิ่มไฟล์นี้ในไฟล์ทำงาน หรือใช้ชื่อเดียวกับ Translator", 14000
+                )
             return
         timer = getattr(workspace, "auto_chapter_review_timer", None)
         if timer is None:
@@ -3003,6 +3021,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         editor = workspace.editor._current_editor()
         if (editor is None or workspace.editor._path(editor) != path
                 or workspace.editor._dirty(editor)):
+            self.statusBar().showMessage(
+                "รอตรวจเลขบท: บันทึกไฟล์ต้นฉบับให้เสร็จและเปิดแท็บนั้นค้างไว้", 12000
+            )
             return
         if mode == "source":
             if not self._auto_original_source_eligible(profile, workspace, path):
@@ -3042,6 +3063,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if number_mode == "fix":
                 if reference.start is None:
                     self.show_submit_toast("ไม่ได้แก้เลขบท · " + reference.message)
+                    self.statusBar().showMessage("ไม่ได้แก้เลขบท · " + reference.message, 16000)
                     return
                 # A dirty Translator tab may disagree with its saved bytes.
                 for i in range(workspace.editor.tabs.count()):
@@ -3054,6 +3076,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     _expected, changes = automatic_renumber_plan(text, reference.start)
                 except ValueError as exc:
                     self.show_submit_toast(f"ไม่ได้แก้เลขบท · {exc}")
+                    self.statusBar().showMessage(f"ไม่ได้แก้เลขบท · {exc}", 16000)
                     return
                 if not changes:
                     self.show_submit_toast(
@@ -3085,10 +3108,12 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     return
                 finally:
                     workspace.auto_chapter_review_busy = False
-                self.show_submit_toast(
+                message = (
                     f"แก้เลขบทจาก {reference.path.name} สำเร็จ {len(changes)} บท "
                     f"· เริ่มที่บท {reference.start} · ย้อนคืนได้ที่ ตรวจเลขบท"
                 )
+                self.show_submit_toast(message)
+                self.statusBar().showMessage(message, 15000)
                 return
             if number_mode not in ("check", "fix"):
                 return

@@ -181,6 +181,7 @@ class NovelProfile:
     auto_review_enabled: bool = False
     # Opt-in source editing is separate from legacy check-only preference.
     auto_chapter_number_mode: str = "off"
+    chapter_manual_start: int | None = None
     auto_review_translation_step_id: str | None = None
     auto_review_step_id: str | None = None
     order: int = 0
@@ -229,6 +230,12 @@ class NovelProfile:
             working_files=[StepFile.from_dict(item) for item in d.get("working_files", [])],
             open_working_tabs_on_open=bool(d.get("open_working_tabs_on_open", False)),
             auto_review_enabled=bool(d.get("auto_review_enabled", False)),
+            chapter_manual_start=(
+                d.get("chapter_manual_start")
+                if type(d.get("chapter_manual_start")) is int
+                and 0 < d.get("chapter_manual_start") <= 2_147_483_647
+                else None
+            ),
             auto_chapter_number_mode=(
                 d.get("auto_chapter_number_mode")
                 if d.get("auto_chapter_number_mode") in {"off", "check", "fix"}
