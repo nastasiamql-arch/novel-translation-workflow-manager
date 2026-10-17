@@ -82,7 +82,6 @@ def _close(window):
 def test_three_separate_pastes_auto_renumber_and_persist_verified_history(tmp_path):
     repo, profile, window, ws, editor, source, translator, messages = _window(tmp_path)
     translator_before = translator.read_bytes()
-    assert ws.editor.save_editor(editor, quiet=True) is True or True
     # The first paste is deliberately edited so save triggers the hook.
     editor.setPlainText("第646章 起源\n汉字未修改\n")
     # Last saved text is identical, so emulate a genuine paste by changing the body.
