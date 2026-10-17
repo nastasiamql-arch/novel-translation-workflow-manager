@@ -2,6 +2,14 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.18.3 - 2026-10-17
+
+- Fix auto chapter renumbering silently skipping source files manually opened outside the project's source folder: allow unique same-codename Translator binding and show an actionable status if the source is not associated with the novel.
+- Resolve a same-name Translator sibling in a verified novel folder, even without an extra file-binding step; never borrow Translator from another novel or an ambiguous shared directory.
+- Prefill the manual chapter inspector from Translator on every open, with a separately persisted fallback for the last manually entered starting number when Translator is unavailable. Never use that fallback for automatic edits.
+- Make check/fix diagnostics visible in the status bar, and add end-to-end tests for external Editor files and persistence. No changes to Export or Backup.
+
+
 ## 3.18.2 - 2026-10-17
 
 - Add explicit per-novel check-only and opt-in auto-fix modes. Existing enabled profiles stay check-only on upgrade.

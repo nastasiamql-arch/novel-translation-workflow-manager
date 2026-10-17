@@ -83,7 +83,25 @@ class ChapterNumberDialog(QDialog):
         top.addWidget(QLabel("เริ่มเรียงจากบท"))
         self.start_number = QSpinBox()
         self.start_number.setRange(1, 2_147_483_647)
-        self.start_number.setValue(self.translator_reference.start or (self.headings[0].number if self.headings else 1))
+        profile = next(
+            (item for item in workspace.owner.repo.list_profiles()
+             if item.id == workspace.profile_id), None
+        )
+        saved_start = getattr(profile, "chapter_manual_start", None)
+        initial = (
+            self.translator_reference.start
+            or saved_start
+            or (self.headings[0].number if self.headings else 1)
+        )
+        self.start_number.setValue(initial)
+        if self.translator_reference.start is None and saved_start:
+            self.reference_label.setText(
+                self.translator_reference.message
+                + f" · เลขเริ่มต้นที่จำไว้ครั้งก่อน: {saved_start} (ไม่ใช้แก้อัตโนมัติ)"
+            )
+        # Connect after initialization: a Translator-derived suggestion is not
+        # the user's manual preference and must not overwrite it.
+        self.start_number.valueChanged.connect(self._remember_manual_start)
         top.addWidget(self.start_number)
         self.sequence_button = QPushButton("เรียงเลขต่อเนื่อง (เสนอ)")
         self.sequence_button.clicked.connect(self.propose_sequence)
@@ -154,6 +172,15 @@ class ChapterNumberDialog(QDialog):
         self.selected_button.setEnabled(bool(self.headings))
         self.all_button.setEnabled(bool(self.headings))
 
+    def _remember_manual_start(self, value):
+        profile = next(
+            (p for p in self.workspace.owner.repo.list_profiles()
+             if p.id == self.workspace.profile_id), None
+        )
+        if profile is not None:
+            profile.chapter_manual_start = value
+            self.workspace.owner.repo.save_profile(profile)
+
     def propose_sequence(self):
         first = self.start_number.value()
         if first + len(self.headings) - 1 > 2_147_483_647:
@@ -194,7 +221,11 @@ class ChapterNumberDialog(QDialog):
         except ValueError as exc:
             self.auto_error = str(exc)
             return False
-        self.start_number.setValue(start)
+        self.start_number.blockSignals(True)
+        try:
+            self.start_number.setValue(start)
+        finally:
+            self.start_number.blockSignals(False)
         self.propose_sequence()
         return self._apply(True, automatic=True)
 

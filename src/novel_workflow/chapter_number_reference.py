@@ -103,7 +103,30 @@ def resolve_translator_reference(
         key=lambda p: str(p).casefold(),
     )
     if not candidates:
-        return missing("ไม่พบไฟล์ Translator ที่ผูกเฉพาะนิยายเรื่องนี้ · กรุณาระบุเลขเริ่มต้นเอง")
+        # If the user opens a source in its novel folder, find an exact
+        # stem-matched Translator sibling without requiring an extra settings step.
+        # Reject siblings bound to other novels and any ambiguous matches.
+        novel_root = repo.profile_dir(profile_id).resolve()
+        main_root = Path(profile.main_folder).expanduser().resolve() if profile.main_folder else None
+        authorized = source_path.is_relative_to(novel_root)
+        if main_root is not None:
+            main_shared = any(
+                other.id != profile_id and other.main_folder
+                and Path(other.main_folder).expanduser().resolve() == main_root
+                for other in profiles
+            )
+            if not main_shared and source_path.is_relative_to(main_root):
+                authorized = True
+        if authorized:
+            sibling = source_path.with_name(source_path.stem + "Translator.txt")
+            owners = [pid for pid, owned in bindings.items() if sibling in owned]
+            if sibling.is_file() and not any(pid != profile_id for pid in owners):
+                candidates = [sibling.resolve()]
+        if not candidates:
+            return missing(
+                "ไม่พบ Translator ของนิยายนี้ · ผูกไฟล์ *Translator.txt ในไฟล์ทำงาน "
+                "หรือวางไว้คู่กับต้นฉบับในโฟลเดอร์นิยาย"
+            )
     if len(candidates) > 1:
         source_stem = _normal_stem(source_path.stem)
         matching = [
