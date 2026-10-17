@@ -2,6 +2,15 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.19.1 - 2026-10-17
+
+- Disconnect chapter numbering entirely from automatic Translator-to-review workflow stage handoffs, copying, and clipboard actions.
+- Use the actual Translator document as current progress; keep higher Export history informational only, never a blocking or fallback chapter reference.
+- Propose the next source chapter after previously verified corrections, keeping corrected source chapters untouched when inspecting or auto-fixing appended chapters.
+- Reuse identical review snapshots across the full history without resetting "ตรวจแล้ว". Capture changed-content versions in the same chapter range as revisions, preserving earlier history.
+- Regression coverage for clipboard/stage isolation, stale Export events, append-only corrections and review history deduplication.
+
+
 ## 3.19.0 - 2026-10-17
 
 - Add incremental source chapter numbering for one-chapter-at-a-time append workflows: newly pasted chapters continue after the last verified corrected source chapter, rather than rejecting the saved prefix as a gap. Only previously verified history snapshots can authorize preserving a prefix; never change earlier chapter numbers or story text.

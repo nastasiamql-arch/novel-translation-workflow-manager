@@ -161,21 +161,20 @@ def resolve_translator_reference(
         chapters = translator_chapters(data)
     except (OSError, UnicodeError, ValueError) as exc:
         return missing(f"อ่านเลขบทจาก {path.name} ไม่สำเร็จ ({type(exc).__name__})")
-    latest_in_file = max(chapters, default=None)
-    latest_exported = _latest_confirmed_export(profile, path)
-    if (latest_in_file is not None and latest_exported is not None
-            and latest_exported > latest_in_file):
-        return missing(
-            f"{path.name} มีบทสูงสุด {latest_in_file} แต่ประวัติ Export ยืนยันถึง "
-            f"{latest_exported} · ข้อมูลไม่ตรงกัน กรุณาตรวจเลขเริ่มต้นเอง"
-        )
-    latest = latest_in_file if latest_in_file is not None else latest_exported
+    latest = max(chapters, default=None)
     if latest is None:
-        return missing(f"{path.name} ไม่มีหัวบทที่อ่านได้ และไม่มีประวัติ Export ที่ยืนยัน")
+        return missing(
+            f"{path.name} ไม่มีหัวบทที่อ่านได้ · ไม่ใช้ประวัติ Export เก่ากำหนดเลข"
+        )
     if latest >= 2_147_483_647:
         return missing("หมายเลขบทล่าสุดถึงขีดจำกัดที่รองรับ")
-    origin = "Translator" if latest_in_file is not None else "ประวัติ Export ของ Translator"
+    old_export = _latest_confirmed_export(profile, path)
+    note = (
+        f" · เคย Export ถึง {old_export} (ประวัติเดิม ไม่ใช่เลขอ้างอิง)"
+        if old_export is not None and old_export > latest else ""
+    )
     return TranslatorReference(
-        start=latest + 1, latest=latest, path=path, source=origin,
-        message=f"{origin}: {path.name} · บทล่าสุด {latest} · เสนอเริ่มบท {latest + 1}",
+        start=latest + 1, latest=latest, path=path, source="Translator",
+        message=f"Translator: {path.name} · บทล่าสุด {latest} · "
+                f"เสนอเริ่มบท {latest + 1}{note}",
     )

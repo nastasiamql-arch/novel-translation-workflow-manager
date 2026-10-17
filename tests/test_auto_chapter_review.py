@@ -78,8 +78,8 @@ def test_settings_switch_is_disabled_and_isolated_per_novel(tmp_path):
     window = MainWindow(repo)
     window.settings_dialog()
     assert not window.settings_auto_review_enabled.isChecked()
-    assert window.settings_auto_review_source.currentData() == first.workflow.steps[0].id
-    assert window.settings_auto_review_target.currentData() == first.workflow.steps[1].id
+    assert not hasattr(window, "settings_auto_review_source")
+    assert not hasattr(window, "settings_auto_review_target")
     window.settings_auto_review_enabled.setChecked(True)
     assert read_profile(repo, first.id).auto_review_enabled
     next_index = next(i for i, p in enumerate(window.ps_list) if p.id == second.id)
@@ -90,7 +90,7 @@ def test_settings_switch_is_disabled_and_isolated_per_novel(tmp_path):
     window.close()
 
 
-def test_saved_translator_handoff_once_with_no_export_or_modification(tmp_path, monkeypatch):
+def test_translator_save_never_copies_or_switches_workflow(tmp_path, monkeypatch):
     import hashlib
     from PySide6.QtWidgets import QApplication
     from novel_workflow.workspace_window import MainWindow
@@ -102,11 +102,9 @@ def test_saved_translator_handoff_once_with_no_export_or_modification(tmp_path, 
     folder.mkdir(exist_ok=True)
     translator = folder / "FATETranslator.txt"
     translator.write_text("บทที่ 3\nแปลเรียบร้อย", encoding="utf-8")
-    context = folder / "FATEContext.txt"
-    context.write_text("บทที่ 2", encoding="utf-8")
-    profile.context_path = str(context)
     profile.working_files = [StepFile(path="source/FATETranslator.txt")]
     profile.auto_review_enabled = True
+    profile.auto_chapter_number_mode = "fix"
     profile.auto_review_translation_step_id = profile.workflow.steps[0].id
     profile.auto_review_step_id = profile.workflow.steps[1].id
     repo.save_profile(profile)
@@ -117,18 +115,19 @@ def test_saved_translator_handoff_once_with_no_export_or_modification(tmp_path, 
     workspace.editor.tabs.setCurrentWidget(editor)
     workspace.step_index = 0
     copied = []
-    monkeypatch.setattr(window, "copy_named_stage", lambda pid, index: copied.append((pid, index)))
+    monkeypatch.setattr(window, "copy_named_stage", lambda *args: copied.append(args))
+    monkeypatch.setattr(window, "copy_step", lambda *args, **kw: copied.append((args, kw)))
     before = hashlib.sha256(translator.read_bytes()).hexdigest()
     window._schedule_auto_chapter_review(str(translator))
-    assert workspace.auto_chapter_review_timer.isActive()
-    workspace.auto_chapter_review_timer.stop()
+    assert not hasattr(workspace, "auto_chapter_review_timer")
     window._run_auto_chapter_review(profile.id)
-    window._run_auto_chapter_review(profile.id)
-    assert copied == [(profile.id, 1)]
+    assert copied == []
+    assert workspace.step_index == 0
+    assert window.si == 0
     assert hashlib.sha256(translator.read_bytes()).hexdigest() == before
-    assert context.read_text(encoding="utf-8") == "บทที่ 2"
     window._close_export_reminder_accepted = True
     window.close()
+
 
 
 def test_original_source_detection_rejects_context_and_unbound_files(tmp_path):
