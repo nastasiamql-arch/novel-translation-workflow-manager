@@ -1,8 +1,8 @@
 """Run the complete pytest module set in bounded Windows Qt processes.
 
-PySide6 keeps native QApplication widgets alive across test modules. In a
-single long Windows run all 604 tests can pass but native Qt shutdown may
-return exit code 1 after pytest has printed its summary. Isolate groups
+PySide6 keeps native QApplication widgets alive across test modules. A
+single long Windows run can report every test passed yet return exit code 1
+from native Qt shutdown. Avoid shared Qt lifetime across all test modules. Isolate groups
 without suppressing pytest failures or exit codes.
 """
 from __future__ import annotations

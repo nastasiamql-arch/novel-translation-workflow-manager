@@ -33,7 +33,7 @@ jobs:
           Remove-Item Env:QT_SCALE_FACTOR
       - name: Run test suite
         timeout-minutes: 25
-        run: python tests/run_pytest_group.py -q --durations=10 -o faulthandler_timeout=60
+        run: python tests/run_suite_groups.py
 
   windows-build:
     needs: test

@@ -20,6 +20,7 @@ def main():
         sys.stdout.flush()
         sys.stderr.flush()
         raise
+    print(f"Pytest completed; exit status: {status}", flush=True)
     sys.stdout.flush()
     sys.stderr.flush()
     os._exit(status)
