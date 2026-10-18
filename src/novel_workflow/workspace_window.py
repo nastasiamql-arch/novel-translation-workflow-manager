@@ -1177,9 +1177,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                         else 'คัดลอกไฟล์ทั้งหมดของรายการนี้ · วางด้วย Ctrl+V')
 
     def _history_clipboard(self, paths, count, zipped):
-        from PySide6.QtCore import QMimeData, QUrl
-        mime = QMimeData(); mime.setUrls([QUrl.fromLocalFile(str(p)) for p in paths])
-        QApplication.clipboard().setMimeData(mime)
+        from .clipboard_files import copy_file_paths
+        copy_file_paths(paths)
         message = f'คัดลอก ZIP 1 ไฟล์ · ภายใน {count} ไฟล์' if zipped else f'คัดลอก {count} ไฟล์แล้ว'
         self.statusBar().showMessage(message + ' · วางด้วย Ctrl+V', 7000)
 

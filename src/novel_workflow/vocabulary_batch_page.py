@@ -7,17 +7,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox,
-    QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QTabWidget, QTableWidget,
+    QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QTabWidget, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from .clipboard_files import copy_file_paths
 from .vocabulary_batches import (
-    batch_clipboard_text, existing_chapter_targets, make_chapter_batches,
-    parse_pasted_chapters, read_utf8_text, scan_chapter_files,
-    split_missing_numbers, write_split_chapters,
+    existing_chapter_targets, make_chapter_batches, parse_pasted_chapters,
+    scan_chapter_files, split_missing_numbers, write_split_chapters,
 )
 
 
@@ -37,6 +37,10 @@ class TxtVocabularyPage(QWidget):
         self.state.setdefault("glossary_2", "")
         self._segments = ()
         self._preview_input = None
+        self._groups = ()
+        self._rendered_count = 0
+        self._batch_widgets = []
+        self._loading = False
         self.setObjectName("txtVocabularyPage")
 
         root = QVBoxLayout(self)
@@ -111,15 +115,32 @@ class TxtVocabularyPage(QWidget):
         self.summary.setObjectName("mutedLabel")
         self.summary.setWordWrap(True)
         batch_layout.addWidget(self.summary)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
+        jump = QHBoxLayout()
+        self.chapter_search = QLineEdit()
+        self.chapter_search.setObjectName("txtVocabularyChapterSearch")
+        self.chapter_search.setPlaceholderText("ไปยังเลขบท เช่น 0500")
+        self.chapter_search.setClearButtonEnabled(True)
+        self.chapter_search.returnPressed.connect(self.jump_to_chapter)
+        jump.addWidget(self.chapter_search, 1)
+        jump_button = QPushButton("ไปยังบท")
+        jump_button.setObjectName("txtVocabularyJump")
+        jump_button.clicked.connect(self.jump_to_chapter)
+        jump.addWidget(jump_button)
+        batch_layout.addLayout(jump)
+        self.scroll = QScrollArea()
+        self.scroll.setObjectName("txtVocabularyBatchScroll")
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.verticalScrollBar().setSingleStep(38)
         self.cards = QWidget()
         self.cards_layout = QVBoxLayout(self.cards)
-        self.cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.cards_layout.setContentsMargins(2, 2, 8, 2)
         self.cards_layout.setSpacing(8)
-        scroll.setWidget(self.cards)
-        batch_layout.addWidget(scroll, 1)
+        self.scroll.setWidget(self.cards)
+        self.scroll.verticalScrollBar().valueChanged.connect(self._load_on_scroll)
+        batch_layout.addWidget(self.scroll, 1)
         self.tabs.addTab(batch_page, "คัดลอกเป็นชุด")
 
         paste_page = QWidget()
@@ -243,19 +264,25 @@ class TxtVocabularyPage(QWidget):
             self.refresh()
 
     def _clear_cards(self):
+        self._groups = ()
         while self.cards_layout.count():
             item = self.cards_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.hide()
                 widget.deleteLater()
+        self._batch_widgets = []
+        self._rendered_count = 0
 
     def refresh(self):
+        """Rebuild only the first visible page; preserve the scroll offset on refresh."""
+        old_scroll = self.scroll.verticalScrollBar().value()
         self._clear_cards()
+        self._groups = ()
         try:
             chapters = scan_chapter_files(self.state.get("folder") or self.default_folder)
             if not chapters:
-                self.summary.setText("ยังไม่มีไฟล์ TXT ที่ขึ้นต้นด้วยเลขบท เช่น 0001.txt หรือ 0001 ชื่อตอน.txt")
+                self.summary.setText("ไม่พบไฟล์ TXT ที่ขึ้นต้นด้วยเลขบท เช่น 0001.txt")
                 return
             groups = make_chapter_batches(
                 chapters, self.batch_size.value(),
@@ -264,84 +291,168 @@ class TxtVocabularyPage(QWidget):
         except (OSError, ValueError) as exc:
             self.summary.setText(str(exc))
             return
-        missing_count = sum(len(b.missing) for b in groups)
+        self._groups = groups
+        missing_count = sum(len(group.missing) for group in groups)
         self.summary.setText(
             f"พบ {len(chapters)} ไฟล์บท · {len(groups)} ชุด · บท {groups[0].start:04d}–{groups[-1].end:04d}"
-            + (f" · ขาด {missing_count} บท (จะแจ้งก่อนคัดลอก)" if missing_count else "")
+            + (f" · ขาด {missing_count} บท (แจ้งก่อนคัดลอก)" if missing_count else "")
         )
-        for group in groups[:250]:
-            card = QFrame()
-            card.setObjectName("txtVocabularyCard")
-            card.setFrameShape(QFrame.StyledPanel)
-            layout = QVBoxLayout(card)
-            line = QHBoxLayout()
-            line.addWidget(QLabel(f"ชุดที่ {group.index}  ·  บท {group.start:04d}–{group.end:04d}"), 1)
-            count = QLabel(f"{len(group.chapters)} บท")
-            count.setObjectName("mutedLabel")
-            line.addWidget(count)
-            layout.addLayout(line)
-            files = QLabel(" · ".join(item.path.name for item in group.chapters) or "ไม่มีไฟล์ในช่วงนี้")
-            files.setObjectName("mutedLabel")
-            files.setWordWrap(True)
-            layout.addWidget(files)
-            if group.missing:
-                warning = QLabel("บทที่ขาด: " + ", ".join(f"{i:04d}" for i in group.missing[:20])
-                                 + ("…" if len(group.missing) > 20 else ""))
-                warning.setWordWrap(True)
-                warning.setObjectName("mutedLabel")
-                layout.addWidget(warning)
-            buttons = QHBoxLayout()
-            copy = QPushButton("คัดลอกต้นฉบับ")
-            copy.setObjectName(f"txtVocabularyCopyBatch{group.index}")
-            copy.setEnabled(bool(group.chapters))
-            copy.clicked.connect(lambda checked=False, b=group, button=copy: self.copy_batch(b, button))
-            buttons.addWidget(copy)
-            for index in (1, 2):
-                reference = QPushButton(f"คัดลอกคำศัพท์ {index}")
-                reference.setObjectName(f"txtVocabularyCopyGlossary{index}Batch{group.index}")
-                reference.setEnabled(bool(self.state.get(f"glossary_{index}")))
-                reference.clicked.connect(
-                    lambda checked=False, i=index, button=reference: self.copy_glossary(i, button)
-                )
-                buttons.addWidget(reference)
-            buttons.addStretch(1)
-            layout.addLayout(buttons)
-            self.cards_layout.addWidget(card)
-        if len(groups) > 250:
-            self.cards_layout.addWidget(QLabel("แสดง 250 ชุดแรก กรุณากำหนดช่วงบทเพื่อดูชุดถัดไป"))
-        self.cards_layout.addStretch()
+        self._append_next()
+        if old_scroll:
+            QTimer.singleShot(0, lambda: self.scroll.verticalScrollBar().setValue(old_scroll))
 
-    def _copy(self, contents: str, button: QPushButton):
-        QApplication.clipboard().setText(contents)
-        button.setText("✓ คัดลอกแล้ว")
+    def _append_next(self, limit=36):
+        """Incremental cards: only create more as the user scrolls or searches."""
+        if self._loading or self._rendered_count >= len(self._groups):
+            return
+        self._loading = True
+        try:
+            until = min(len(self._groups), self._rendered_count + limit)
+            while self._rendered_count < until:
+                batch = self._groups[self._rendered_count]
+                self._batch_widgets.append(self._make_card(batch))
+                self._rendered_count += 1
+        finally:
+            self._loading = False
+
+    def _load_on_scroll(self, position):
+        bar = self.scroll.verticalScrollBar()
+        if bar.maximum() and position >= bar.maximum() - max(80, bar.pageStep() // 2):
+            self._append_next()
+
+    def _make_card(self, group):
+        card = QFrame()
+        card.setObjectName("txtVocabularyCard")
+        card.setFrameShape(QFrame.StyledPanel)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(12, 10, 12, 9)
+        layout.setSpacing(7)
+        top = QHBoxLayout()
+        top.setSpacing(12)
+        number = QLabel(f"{group.index:02d}")
+        number.setObjectName("txtVocabularyBatchNumber")
+        number.setMinimumWidth(36)
+        number.setAlignment(Qt.AlignCenter)
+        top.addWidget(number)
+        labels = QVBoxLayout()
+        labels.setSpacing(2)
+        heading = QLabel(f"บท {group.start:04d}–{group.end:04d}")
+        heading.setObjectName("txtVocabularyBatchRange")
+        labels.addWidget(heading)
+        references = [self.state.get(f"glossary_{n}") for n in (1, 2)]
+        configured = [str(path) for path in references if path]
+        paths = [ch.path for ch in group.chapters] + [Path(p) for p in configured]
+        unique_count = len({str(p.expanduser().resolve()).casefold() for p in paths})
+        missing_references = [p for p in configured if not Path(p).expanduser().is_file()]
+        status = f"{len(group.chapters)} บท · {len(configured)} ไฟล์คำศัพท์ · รวม {unique_count} ไฟล์"
+        if missing_references:
+            status += " · ⚠ ไฟล์คำศัพท์หาย"
+        if group.missing:
+            status += f" · ⚠ ขาด {len(group.missing)} บท"
+        info = QLabel(status)
+        info.setObjectName("mutedLabel")
+        info.setWordWrap(True)
+        labels.addWidget(info)
+        top.addLayout(labels, 1)
+
+        copy = QPushButton(f"คัดลอก {unique_count} ไฟล์")
+        copy.setObjectName(f"txtVocabularyCopyBatch{group.index}")
+        copy.setProperty("batchCopyPrimary", True)
+        copy.setMinimumHeight(36)
+        copy.setCursor(Qt.PointingHandCursor)
+        copy.setToolTip("คัดลอกไฟล์ต้นฉบับและคำศัพท์อ้างอิงทั้งหมดเป็นไฟล์จริง · Ctrl+V")
+        copy.setEnabled(bool(group.chapters))
+        copy.clicked.connect(lambda checked=False, batch=group, button=copy: self.copy_batch(batch, button))
+        top.addWidget(copy)
+        layout.addLayout(top)
+
+        detail = QWidget()
+        detail.setObjectName("txtVocabularyDetail")
+        detail_layout = QVBoxLayout(detail)
+        detail_layout.setContentsMargins(3, 3, 3, 3)
+        detail_layout.setSpacing(5)
+        for chapter in group.chapters:
+            line = QLabel(f"{chapter.number:04d}  {chapter.path.name}")
+            line.setObjectName("mutedLabel")
+            line.setWordWrap(True)
+            line.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            detail_layout.addWidget(line)
+        for n, reference in enumerate(references, 1):
+            line = QLabel(f"คำศัพท์ {n}  ·  {Path(reference).name if reference else 'ยังไม่ได้เลือก'}")
+            line.setObjectName("mutedLabel")
+            line.setWordWrap(True)
+            detail_layout.addWidget(line)
+        if group.missing:
+            warning = QLabel("บทที่ขาด: " + ", ".join(f"{n:04d}" for n in group.missing[:30]))
+            warning.setObjectName("mutedLabel")
+            warning.setWordWrap(True)
+            detail_layout.addWidget(warning)
+        detail.setVisible(False)
+
+        detail_button = QPushButton("ดูรายชื่อไฟล์  ▾")
+        detail_button.setObjectName(f"txtVocabularyDetails{group.index}")
+        detail_button.setProperty("batchDetails", True)
+        detail_button.setFlat(True)
+        detail_button.setCursor(Qt.PointingHandCursor)
+        detail_button.setToolTip("ขยายหรือซ่อนรายชื่อไฟล์ของชุดนี้")
+        def toggle_details():
+            scroll = self.scroll.verticalScrollBar()
+            before = scroll.value()
+            showing = not detail.isVisible()
+            detail.setVisible(showing)
+            detail_button.setText("ซ่อนรายชื่อไฟล์  ▴" if showing else "ดูรายชื่อไฟล์  ▾")
+            QTimer.singleShot(0, lambda: scroll.setValue(before))
+        detail_button.clicked.connect(toggle_details)
+        layout.addWidget(detail_button, 0, Qt.AlignLeft)
+        layout.addWidget(detail)
+
+        self.cards_layout.addWidget(card)
+        return card
+
+    def jump_to_chapter(self):
+        value = self.chapter_search.text().strip()
+        if not value.isdecimal() or not self._groups:
+            self.summary.setText("กรุณากรอกเลขบทที่ต้องการค้นหา เช่น 0500")
+            return
+        number = int(value)
+        index = next((i for i, group in enumerate(self._groups)
+                      if group.start <= number <= group.end), -1)
+        if index < 0:
+            QMessageBox.information(self, "ไม่พบเลขบท", f"ไม่มีบท {number:04d} ในช่วงที่เลือก")
+            return
+        while self._rendered_count <= index:
+            self._append_next()
+        card = self._batch_widgets[index]
+        QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(card, 4, 12))
 
     def copy_batch(self, group, button: QPushButton):
+        """Same file-URL clipboard semantics as the existing workflow copy."""
         if group.missing:
             response = QMessageBox.question(
                 self, "มีเลขบทขาด",
                 "บทที่ขาด: " + ", ".join(f"{n:04d}" for n in group.missing[:30])
-                + "\nคัดลอกเฉพาะบทที่มีไฟล์อยู่ใช่หรือไม่?",
+                + "\nคัดลอกเฉพาะบทที่มีอยู่หรือไม่?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
             )
             if response != QMessageBox.Yes:
                 return
+        references = [self.state.get(f"glossary_{n}") for n in (1, 2)]
+        paths = [chapter.path for chapter in group.chapters]
+        paths.extend(Path(reference).expanduser() for reference in references if reference)
         try:
-            text = batch_clipboard_text(group)
+            copied = copy_file_paths(paths)
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "คัดลอกไม่สำเร็จ", str(exc))
+            QMessageBox.warning(self, "คัดลอกไฟล์ไม่สำเร็จ", str(exc))
             return
-        self._copy(text, button)
-
-    def copy_glossary(self, number: int, button: QPushButton):
-        path = self.state.get(f"glossary_{number}")
-        if not path:
-            return
-        try:
-            contents = read_utf8_text(path)
-        except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "คัดลอกคำศัพท์ไม่สำเร็จ", str(exc))
-            return
-        self._copy(contents, button)
+        preserved_scroll = self.scroll.verticalScrollBar().value()
+        button.setText(f"✓ คัดลอกแล้ว {len(copied)} ไฟล์")
+        self.summary.setText(
+            f"คัดลอกชุดที่ {group.index} ({group.start:04d}–{group.end:04d}) "
+            f"จำนวน {len(copied)} ไฟล์แล้ว · วางไฟล์ด้วย Ctrl+V"
+        )
+        QTimer.singleShot(
+            0, lambda: self.scroll.verticalScrollBar().setValue(preserved_scroll)
+        )
 
     def invalidate_preview(self):
         self._segments = ()

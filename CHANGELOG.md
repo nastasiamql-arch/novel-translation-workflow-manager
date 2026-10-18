@@ -2,6 +2,15 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 4.1.1 - 2026-10-18
+
+- Fix TXT vocabulary batch copying to place the actual separate chapter and glossary files on the Windows Explorer clipboard (CF_HDROP), in one click per batch. No text merging, ZIP, Export or workflow advancement.
+- Simplify each batch card to chapter range, counts and a single copy button. Long Chinese filenames and reference details stay collapsed until requested.
+- Add an independently scrollable, always-visible scrollbar, load batch cards progressively for large novels, and jump to a chapter number without paging through previous batches.
+- Keep the scroll position after copying, validate every attached file before touching the clipboard, preserve missing-chapter warnings and deduplicate repeated reference paths.
+- Reuse the existing workflow file clipboard helper and add Windows CF_HDROP integration tests, 1,000-chapter scroll tests, clipboard-preservation and regression coverage.
+
+
 ## 4.1.0 - 2026-10-18
 
 - Add TXT vocabulary preparation inside each novel workspace with a manual/TXT switch, numeric chapter batches (five by default), two independently copied glossary references and per-novel saved settings.

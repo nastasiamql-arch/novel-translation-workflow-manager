@@ -5,7 +5,8 @@ from pathlib import Path
 import tempfile
 import time
 import zipfile
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPushButton
+from novel_workflow.vocabulary_batch_page import TxtVocabularyPage
 from PySide6.QtCore import QMimeData, QUrl
 from novel_workflow.models import NovelProfile, WorkflowStep, StepFile
 from novel_workflow.services import AssemblyService
@@ -85,6 +86,47 @@ def main():
                     assert Path(buffer.value).resolve() == path.resolve()
             finally: user32.CloseClipboard()
         print('Polish History CF_HDROP PASS: verified snapshots and persistent ZIP delivery.')
+        # Exercise the actual new TXT vocabulary card, not a handcrafted mimic.
+        vocabulary_folder = Path(directory) / 'vocabulary_source'
+        vocabulary_folder.mkdir()
+        for chapter_number in range(111, 116):
+            (vocabulary_folder / f'{chapter_number:04d} 中文标题.txt').write_text(
+                f'第{chapter_number}章 正文', encoding='utf-8'
+            )
+        references = []
+        for idx in (1, 2):
+            path = Path(directory) / f'词汇{idx}.txt'
+            path.write_text(f'人物{idx}\n', encoding='utf-8')
+            references.append(path)
+        page = TxtVocabularyPage(
+            {'folder': str(vocabulary_folder), 'glossary_1': str(references[0]),
+             'glossary_2': str(references[1]), 'batch_size': 5},
+            lambda _state: None, vocabulary_folder,
+        )
+        copy_button = page.findChild(QPushButton, 'txtVocabularyCopyBatch1')
+        assert copy_button is not None
+        copy_button.click()
+        app.processEvents()
+        expected = {p.resolve() for p in vocabulary_folder.glob('*.txt')} | {p.resolve() for p in references}
+        assert len(expected) == 7
+        assert open_clipboard()
+        try:
+            handle = user32.GetClipboardData(15)  # Windows Explorer CF_HDROP
+            assert handle
+            file_count = shell32.DragQueryFileW(handle, 0xFFFFFFFF, None, 0)
+            assert file_count == 7, f'Expected 7 individual files, got {file_count}'
+            actual = set()
+            for index in range(file_count):
+                length = shell32.DragQueryFileW(handle, index, None, 0)
+                buffer = ctypes.create_unicode_buffer(length + 1)
+                shell32.DragQueryFileW(handle, index, buffer, length + 1)
+                actual.add(Path(buffer.value).resolve())
+            assert actual == expected
+        finally:
+            user32.CloseClipboard()
+        assert all(p.exists() for p in expected)
+        page.close()
+        print('TXT vocabulary CF_HDROP PASS: 5 Chinese source files + 2 references in one click.')
         vocabulary = '康斯坦丁\tคอนสแตนติน\tชาย\tชื่อเรียกคอนสแตนติน ฟอน นอยรัทในวงประชุมผู้นำนาซี'
         vocabulary += '\n李秀\tซิ่ว\t\t\n\t\t\t'
         glossary = Path(directory) / 'glossary.txt'

@@ -133,11 +133,15 @@ def test_gui_copy_only_when_clicked_and_split_only_after_explicit_confirmation(t
     copy = page.findChild(QPushButton, "txtVocabularyCopyBatch1")
     assert copy is not None
     copy.click()
-    assert "第1章正文" in QApplication.clipboard().text()
-    assert "第6章正文" not in QApplication.clipboard().text()
-    glossary_button = page.findChild(QPushButton, "txtVocabularyCopyGlossary1Batch1")
-    glossary_button.click()
-    assert QApplication.clipboard().text() == "人物：小明"
+    mime = QApplication.clipboard().mimeData()
+    assert mime.hasUrls()
+    pasted_files = [Path(url.toLocalFile()).resolve() for url in mime.urls()]
+    assert len(pasted_files) == 6  # five originals + one configured glossary
+    assert {p.name for p in pasted_files} == {
+        *(f"{n:04d}.txt" for n in range(1, 6)), "术语.txt"
+    }
+    assert pasted_files[-1].read_text(encoding="utf-8") == "人物：小明"
+    assert "คัดลอกแล้ว 6 ไฟล์" in copy.text()
     page.batch_size.setValue(3)
     assert persisted[-1]["batch_size"] == 3
     settings.vocabulary_txt_profiles["novel-one"] = persisted[-1]
@@ -166,4 +170,83 @@ def test_gui_copy_only_when_clicked_and_split_only_after_explicit_confirmation(t
     assert page.tabs.currentIndex() == 0
     page.pasted_text.setPlainText(paste + "\n第三章 新章\n第三节")
     assert not page.save_button.isEnabled()
+    page.close()
+
+
+def test_bulk_1000_chapters_lazy_scroll_search_and_copy_without_jump(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    source = tmp_path / "source"
+    source.mkdir()
+    for number in range(1, 1001):
+        (source / f"{number:04d} 章节.txt").write_text(
+            f"第{number}章 中文", encoding="utf-8"
+        )
+    page = TxtVocabularyPage({"folder": str(source), "batch_size": 5},
+                             lambda _state: None, source)
+    page.resize(1000, 620)
+    page.show()
+    app.processEvents()
+    assert len(page._groups) == 200
+    assert len(page._batch_widgets) == 36  # bounded initial allocation
+    assert page.scroll.verticalScrollBar().maximum() > 0
+    page.chapter_search.setText("0963")
+    page.jump_to_chapter()
+    app.processEvents()
+    assert len(page._batch_widgets) == 200  # access to late groups on demand
+    position = page.scroll.verticalScrollBar().value()
+    assert position > 0
+    button = page.findChild(QPushButton, "txtVocabularyCopyBatch193")
+    assert button is not None
+    assert "คัดลอก 5 ไฟล์" in button.text()
+    button.click()
+    app.processEvents()
+    assert page.scroll.verticalScrollBar().value() == position
+    urls = QApplication.clipboard().mimeData().urls()
+    assert len(urls) == 5
+    assert [Path(url.toLocalFile()).stem[:4] for url in urls] == [
+        "0961", "0962", "0963", "0964", "0965"
+    ]
+    detail = page.findChild(QPushButton, "txtVocabularyDetails193")
+    assert detail is not None
+    assert "ดูรายชื่อไฟล์" in detail.text()
+    detail.click()
+    app.processEvents()
+    assert "ซ่อนรายชื่อไฟล์" in detail.text()
+    page.close()
+
+
+def test_missing_reference_does_not_replace_clipboard(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    (tmp_path / "0001.txt").write_text("中文", encoding="utf-8")
+    page = TxtVocabularyPage(
+        {"folder": str(tmp_path), "glossary_1": str(tmp_path / "missing.txt")},
+        lambda _state: None, tmp_path,
+    )
+    failures = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kw: failures.append(args[2]))
+    QApplication.clipboard().setText("original clipboard")
+    button = page.findChild(QPushButton, "txtVocabularyCopyBatch1")
+    assert button is not None
+    button.click()
+    assert failures
+    assert QApplication.clipboard().text() == "original clipboard"
+    page.close()
+
+
+def test_duplicate_reference_paths_are_copied_only_once(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    first = tmp_path / "0001.txt"
+    first.write_text("中文", encoding="utf-8")
+    glossary = tmp_path / "术语.txt"
+    glossary.write_text("字典", encoding="utf-8")
+    page = TxtVocabularyPage(
+        {"folder": str(tmp_path), "glossary_1": str(glossary),
+         "glossary_2": str(glossary)},
+        lambda _state: None, tmp_path,
+    )
+    button = page.findChild(QPushButton, "txtVocabularyCopyBatch1")
+    assert button is not None
+    assert "คัดลอก 2 ไฟล์" in button.text()
+    button.click()
+    assert len(QApplication.clipboard().mimeData().urls()) == 2
     page.close()
