@@ -135,6 +135,42 @@ class TomatoMTLBrowserSource(NovelSource):
         self._challenge(page)
         return page
 
+    @staticmethod
+    def _session_is_signed_in(page) -> bool:
+        """Check the normal TomatoMTL account navigation, never read cookies."""
+        if page.is_closed():
+            return False
+        return bool(page.locator('a[href*="/user/logout"]').count()
+                    or page.locator('a[href*="/user/profile"]').count())
+
+    def prepare_login(self, confirmed, cancel=None, on_ready=None, on_waiting=None):
+        """Leave a real browser window open until the user confirms login.
+
+        All browser calls stay on the worker thread. The Qt UI communicates using
+        a threading.Event, and only the dedicated persistent profile is used.
+        """
+        try:
+            page = self._visit("https://tomatomtl.com/")
+            if on_ready:
+                on_ready()
+            while True:
+                if cancel and cancel.is_set():
+                    raise InterruptedError("Downloader sign-in cancelled")
+                if page.is_closed():
+                    raise RuntimeError("The Downloader browser was closed before sign-in completed")
+                if not confirmed.wait(0.2):
+                    continue
+                confirmed.clear()
+                if self._session_is_signed_in(page):
+                    return True
+                if on_waiting:
+                    on_waiting("ยังไม่พบการเข้าสู่ระบบ TomatoMTL กรุณา Login ใน Chrome "
+                               "ให้เสร็จ แล้วกดปุ่มยืนยันอีกครั้ง")
+        finally:
+            # Closing the persistent context flushes session storage to the same
+            # on-disk Downloader profile, without touching the main browser.
+            self.close()
+
     def get_book(self, url: str):
         book_id = self.extract_book_id(url)
         if book_id is None:

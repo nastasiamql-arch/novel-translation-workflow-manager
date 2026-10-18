@@ -1,5 +1,13 @@
 # Palantir: Novel
 
+## Persistent Chrome Downloader sign-in (v3.20.2)
+
+Open **Novel Downloader**, then click **เข้าสู่ระบบ Chrome Downloader** to open a visible, isolated Chrome or Edge window. Sign in to TomatoMTL manually; the application will wait without an arbitrary login timeout. Click **เข้าสู่ระบบเสร็จแล้ว** only after the TomatoMTL account navigation appears. If sign-in is incomplete, the app keeps the window open and allows you to confirm again. **ยกเลิกเข้าสู่ระบบ** safely cancels setup.
+
+The dedicated browser profile under `NovelWorkflow/downloader/browser_profile` saves browser cookies/session across runs until they expire or the site revokes them. This profile does not read or overwrite your personal Chrome credentials. The downloader's chapter inspection and downloads can reuse the same profile without signing in again while the session is valid.
+
+
+
 ## Visible Chrome/Edge downloader (v3.20.1)
 
 Novel Downloader now uses a **visible** Chrome or Edge window for TomatoMTL. It reads the rendered chapter list, opens each chapter, and clicks the normal **Raw** button. Its independent browser profile is located in `NovelWorkflow/downloader/browser_profile`; it does not read your Chrome cookies, passwords or Windows Clipboard. Chrome or Edge must already be installed, and sign-in may be necessary in that separate profile.

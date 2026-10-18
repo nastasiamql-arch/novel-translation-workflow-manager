@@ -1,7 +1,8 @@
 """Independent Novel Downloader page; no NovelProfile or translation workflow access."""
 from pathlib import Path
+from threading import Event
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout,
@@ -19,6 +20,9 @@ from ..downloader.worker import DownloaderWorker
 class StandaloneDownloaderPage(QWidget):
     """Downloader owns its books, jobs and outputs; only the UI shell is shared."""
 
+    login_browser_ready = Signal()
+    login_more_time = Signal(str)
+
     def __init__(self, owner):
         super().__init__(owner)
         self.store = DownloaderRepository(owner.repo.root / "downloader")
@@ -31,12 +35,16 @@ class StandaloneDownloaderPage(QWidget):
         self.book_id = None
         self.pending = ""
         self._chapters = []
+        self._login_confirmed = None
+        self.login_browser_ready.connect(self.on_login_browser_ready)
+        self.login_more_time.connect(self.on_login_more_time)
         root = QVBoxLayout(self)
         title = QLabel("Novel Downloader · Chinese Raw")
         title.setObjectName("sectionHeading")
         root.addWidget(title)
-        note = QLabel("เปิด Chrome/Edge ให้เห็นหน้าต่างจริง กด Raw ทีละบท · "
-                      "เบราว์เซอร์ใช้โปรไฟล์แยกจากโปรแกรมแปล และอาจต้องเข้าสู่ระบบเอง")
+        note = QLabel("Chrome/Edge ของ Downloader ใช้โปรไฟล์แยกและจำ Session ไว้ "
+                      "จนกว่าเว็บจะให้เข้าสู่ระบบอีกครั้ง · หากใช้ครั้งแรก "
+                      "ให้กด 'เข้าสู่ระบบ Chrome' ก่อนตรวจรายการตอน")
         note.setWordWrap(True)
         root.addWidget(note)
 
@@ -86,6 +94,16 @@ class StandaloneDownloaderPage(QWidget):
         self.summary = QLabel("ตรวจสอบ URL ก่อนเริ่มงาน · โหลดทีละบทและหยุดเมื่อเว็บไซต์จำกัดการเข้าถึง")
         self.summary.setWordWrap(True)
         root.addWidget(self.summary)
+        browser_actions = QHBoxLayout()
+        self.login_button = QPushButton("เข้าสู่ระบบ Chrome Downloader")
+        self.login_button.clicked.connect(self.open_login)
+        self.login_done_button = QPushButton("เข้าสู่ระบบเสร็จแล้ว")
+        self.login_done_button.clicked.connect(self.confirm_login)
+        self.login_done_button.setEnabled(False)
+        self.login_done_button.setVisible(False)
+        browser_actions.addWidget(self.login_button)
+        browser_actions.addWidget(self.login_done_button)
+        root.addLayout(browser_actions)
         buttons = QHBoxLayout()
         self.inspect_button = QPushButton("ตรวจสอบรายการตอน")
         self.inspect_button.clicked.connect(self.inspect)
@@ -156,7 +174,9 @@ class StandaloneDownloaderPage(QWidget):
         self.pending = purpose
         self.inspect_button.setEnabled(False)
         self.download_button.setEnabled(False)
+        self.login_button.setEnabled(False)
         self.pause_button.setEnabled(True)
+        self.pause_button.setText("ยกเลิกเข้าสู่ระบบ" if purpose == "login" else "หยุดชั่วคราว")
         self.worker = DownloaderWorker(operation, self)
         self.worker.progress.connect(self.on_progress)
         self.worker.completed.connect(self.on_completed)
@@ -164,6 +184,39 @@ class StandaloneDownloaderPage(QWidget):
         self.worker.cancelled.connect(self.on_paused)
         self.worker.finished.connect(self.on_finished)
         self.worker.start()
+
+    def open_login(self):
+        if self.worker and self.worker.isRunning():
+            return
+        self._login_confirmed = Event()
+        self.login_done_button.setVisible(True)
+        self.login_done_button.setEnabled(False)
+        source = self.registry.get("tomatomtl")
+        confirmation = self._login_confirmed
+        self.summary.setText("กำลังเปิด Chrome/Edge เฉพาะ Downloader... "
+                             "ระบบจะรอคุณ Login โดยไม่กำหนดเวลาหมดอายุ")
+        self._start("login", lambda cancel, progress: source.prepare_login(
+            confirmed=confirmation, cancel=cancel,
+            on_ready=self.login_browser_ready.emit,
+            on_waiting=lambda message: self.login_more_time.emit(message)))
+
+    def on_login_browser_ready(self):
+        self.login_done_button.setVisible(True)
+        self.login_done_button.setEnabled(True)
+        self.summary.setText("Chrome/Edge เปิดแล้ว: เข้าสู่ระบบ TomatoMTL "
+                             "ในหน้าต่างนั้นให้เสร็จก่อน แล้วกด 'เข้าสู่ระบบเสร็จแล้ว' "
+                             "ไม่จำกัดเวลาในการกรอกรหัสผ่าน")
+
+    def confirm_login(self):
+        if self.pending != "login" or self._login_confirmed is None:
+            return
+        self.login_done_button.setEnabled(False)
+        self.summary.setText("กำลังตรวจว่า Chrome Downloader เข้าสู่ระบบแล้ว...")
+        self._login_confirmed.set()
+
+    def on_login_more_time(self, message):
+        self.summary.setText(message)
+        self.login_done_button.setEnabled(True)
 
     def inspect(self):
         url = self.url.text().strip()
@@ -215,7 +268,10 @@ class StandaloneDownloaderPage(QWidget):
         )
 
     def on_completed(self, result):
-        if self.pending == "inspect":
+        if self.pending == "login":
+            self.summary.setText("เข้าสู่ระบบเรียบร้อย · บันทึก Session ในโปรไฟล์ Chrome "
+                                 "ของ Downloader แล้ว · ครั้งถัดไปใช้ Session เดิมได้")
+        elif self.pending == "inspect":
             book, chapters = result
             try:
                 entry = self.store.save_book(book, self.destination.text(),
@@ -246,7 +302,12 @@ class StandaloneDownloaderPage(QWidget):
     def on_finished(self):
         self.inspect_button.setEnabled(True)
         self.download_button.setEnabled(bool(self.book_id))
+        self.login_button.setEnabled(True)
+        self.login_done_button.setEnabled(False)
+        self.login_done_button.setVisible(False)
+        self._login_confirmed = None
         self.pause_button.setEnabled(False)
+        self.pause_button.setText("หยุดชั่วคราว")
         worker, self.worker = self.worker, None
         if worker:
             worker.deleteLater()

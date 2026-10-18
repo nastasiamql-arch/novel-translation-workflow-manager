@@ -101,3 +101,83 @@ def test_browser_challenge_stops_without_bypass(tmp_path):
     page.title = lambda: "Just a moment..."
     with pytest.raises(RuntimeError, match="stopped"):
         adapter._challenge(page)
+
+
+def test_login_waits_for_user_confirmation_without_deadline(tmp_path, monkeypatch):
+    from threading import Event, Thread
+    import time
+    source = TomatoMTLBrowserSource(tmp_path / "browser")
+    page = _Page()
+    page.closed = False
+    page.is_closed = lambda: page.closed
+    page.logged_in = False
+    page.locator = lambda selector: _SessionLocator(page) if selector.startswith("a[href") else (
+        page if selector == "body" else _Button(page))
+    monkeypatch.setattr(source, "_visit", lambda url: page)
+    closed = []
+    monkeypatch.setattr(source, "close", lambda: closed.append(True))
+    confirmed, cancel = Event(), Event()
+    ready, waiting, results = [], [], []
+
+    def do_login():
+        try:
+            results.append(source.prepare_login(
+                confirmed, cancel, on_ready=lambda: ready.append(True),
+                on_waiting=waiting.append))
+        except Exception as exc:
+            results.append(exc)
+
+    worker = Thread(target=do_login)
+    worker.start()
+    try:
+        time.sleep(0.4)
+        assert ready and worker.is_alive() and not closed
+        confirmed.set()
+        time.sleep(0.3)
+        assert waiting and worker.is_alive()
+        page.logged_in = True
+        confirmed.set()
+        worker.join(3)
+        assert results == [True] and closed == [True]
+    finally:
+        cancel.set()
+        worker.join(3)
+
+
+class _SessionLocator:
+    def __init__(self, page):
+        self.page = page
+
+    def count(self):
+        return int(self.page.logged_in)
+
+
+def test_login_cancel_closes_context(tmp_path, monkeypatch):
+    from threading import Event, Thread
+    import time
+    adapter = TomatoMTLBrowserSource(tmp_path / "browser")
+    page = _Page()
+    page.is_closed = lambda: False
+    monkeypatch.setattr(adapter, "_visit", lambda url: page)
+    closed = []
+    monkeypatch.setattr(adapter, "close", lambda: closed.append(True))
+    cancel = Event()
+    caught = []
+
+    def runner():
+        try:
+            adapter.prepare_login(Event(), cancel)
+        except InterruptedError:
+            caught.append(True)
+
+    worker = Thread(target=runner)
+    worker.start()
+    try:
+        time.sleep(0.25)
+        assert worker.is_alive()
+        cancel.set()
+        worker.join(3)
+        assert caught == [True] and closed == [True]
+    finally:
+        cancel.set()
+        worker.join(3)

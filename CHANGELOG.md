@@ -2,6 +2,13 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.20.2 - 2026-10-18
+
+- Add a dedicated, cancellable "Chrome Downloader sign-in" workflow. Keep the browser visibly open without a login timeout until the user confirms they have signed in, then verify TomatoMTL account navigation before closing the browser.
+- Retain login cookies in Downloader's dedicated persistent Chrome/Edge profile across application restarts; never import the user's personal Chrome credentials or access the Windows clipboard.
+- Show actionable Thai messages for waiting, failed confirmation, saved session and cancellation; maintain the existing isolated downloader and translation workflows.
+- Add tests covering waiting without deadline, retrying the confirmation, and cancellation with browser cleanup.
+
 ## 3.20.1 - 2026-10-18
 
 - Add a visible Chrome/Edge Playwright adapter to the standalone TomatoMTL Downloader, using the rendered chapter list and the real "Copy Raw Text" button rather than the direct HTTP source adapter.
