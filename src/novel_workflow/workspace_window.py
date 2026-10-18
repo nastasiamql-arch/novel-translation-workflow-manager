@@ -24,7 +24,7 @@ from .auto_chapter_review import (
 )
 from .translation_progress import (
     daily_chapter_count, goal_progress, latest_context_chapter, completion_label, completion_tooltip, completed_chapter_count,
-    sync_profile_context, read_context_chapter,
+    sync_profile_context, read_context_chapter, reset_goal_progress,
 )
 from .ui import ManagementActionsMixin
 from .shell_components import NovelHeader, NavigationSidebar, ElidingLabel, EditorToolbar, MainPageStack
@@ -479,6 +479,12 @@ class WorkspacePage(QWidget):
         editor_layout.setSpacing(3)
         self.novel_header = NovelHeader(owner.repo)
         self.novel_header.refresh(profile)
+        self.novel_header.goal_edit.clicked.connect(
+            lambda checked=False: owner.edit_workspace_goal(self.profile_id)
+        )
+        self.novel_header.goal_reset.clicked.connect(
+            lambda checked=False: owner.reset_workspace_goal(self.profile_id)
+        )
         self.novel_header.close_button.clicked.connect(
             lambda: self.owner._close_novel_tab(self.profile_id))
         editor_layout.addWidget(self.novel_header)
@@ -1337,6 +1343,55 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         """Compatibility entry point into the single preferences page."""
         self.settings_dialog()
         self._settings_page_state["page"].select_category("General")
+
+    def edit_workspace_goal(self, profile_id):
+        """Edit this novel's goal in its own workspace, not in global settings."""
+        profile = next((p for p in self.repo.list_profiles() if p.id == profile_id), None)
+        if profile is None:
+            return
+        target, accepted = QInputDialog.getInt(
+            self, f"เป้าหมายการแปล · {profile.name}",
+            "จำนวนบทต่อรอบ (0 = ยกเลิกเป้าหมาย):",
+            profile.translation_goal_target or 10, 0, 100000, 1,
+        )
+        if not accepted:
+            return
+        if profile.translation_goal_target is None or profile.translator_goal_baseline is None:
+            profile.translator_goal_baseline = completed_chapter_count(profile)
+        profile.translation_goal_target = target or None
+        try:
+            self.repo.save_profile(profile)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "บันทึกเป้าหมายไม่สำเร็จ", str(exc))
+            return
+        self.refresh_translation_progress()
+        if self.profile and self.profile.id == profile_id and hasattr(self, "settings_goal_target"):
+            self.settings_goal_target.setValue(target)
+        self.statusBar().showMessage(
+            "บันทึกเป้าหมายการแปลแล้ว" if target else "ยกเลิกเป้าหมายการแปลแล้ว", 3500
+        )
+
+    def reset_workspace_goal(self, profile_id):
+        """Reset only this novel's goal baseline; keep its Export history intact."""
+        profile = next((p for p in self.repo.list_profiles() if p.id == profile_id), None)
+        if profile is None or goal_progress(profile) is None:
+            return
+        answer = QMessageBox.question(
+            self, "รีเซ็ตเป้าหมายการแปล",
+            f"เริ่มนับเป้าหมาย {profile.translation_goal_target} บทของ {profile.name} ใหม่จาก Translator Export ถัดไปใช่ไหม?\n\n"
+            "ประวัติ Export และจำนวนบทที่แปลรายวันจะยังอยู่",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        reset_goal_progress(profile)
+        try:
+            self.repo.save_profile(profile)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "รีเซ็ตเป้าหมายไม่สำเร็จ", str(exc))
+            return
+        self.refresh_translation_progress()
+        self.statusBar().showMessage("รีเซ็ตความคืบหน้าเป้าหมายแล้ว", 3500)
 
     def save_settings_goal_target(self):
         if not self.profile:

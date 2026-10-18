@@ -1,6 +1,6 @@
 """Reusable shell components with content-driven geometry."""
 from PySide6.QtCore import Qt, Signal, QSize
-from PySide6.QtWidgets import QWidget, QFrame, QVBoxLayout, QHBoxLayout, QLabel, QToolButton, QSizePolicy, QStackedWidget
+from PySide6.QtWidgets import QWidget, QFrame, QVBoxLayout, QHBoxLayout, QLabel, QToolButton, QSizePolicy, QStackedWidget, QProgressBar
 from PySide6.QtGui import QFontMetrics, QPixmap
 from pathlib import Path
 from .navigation_icons import navigation_icon
@@ -37,6 +37,34 @@ class NovelHeader(QFrame):
         self.progress.setObjectName('completedTranslationSummary')
         self.progress.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         text.addWidget(self.title); text.addWidget(self.progress)
+        # Keep the per-novel translation goal visible without consuming editor space.
+        goal_row = QHBoxLayout()
+        goal_row.setContentsMargins(0, 0, 0, 0)
+        goal_row.setSpacing(7)
+        self.goal_label = QLabel("ยังไม่ได้ตั้งเป้าหมาย")
+        self.goal_label.setObjectName("novelGoalLabel")
+        self.goal_label.setMinimumWidth(0)
+        self.goal_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.goal_bar = QProgressBar()
+        self.goal_bar.setObjectName("novelGoalProgress")
+        self.goal_bar.setRange(0, 100)
+        self.goal_bar.setTextVisible(False)
+        self.goal_bar.setFixedSize(88, 7)
+        self.goal_edit = QToolButton()
+        self.goal_edit.setObjectName("novelGoalEdit")
+        self.goal_edit.setText("ตั้งเป้า")
+        self.goal_edit.setCursor(Qt.PointingHandCursor)
+        self.goal_edit.setAccessibleName("ตั้งหรือแก้เป้าหมายการแปลของนิยายเรื่องนี้")
+        self.goal_reset = QToolButton()
+        self.goal_reset.setObjectName("novelGoalReset")
+        self.goal_reset.setText("รีเซ็ต")
+        self.goal_reset.setCursor(Qt.PointingHandCursor)
+        self.goal_reset.setAccessibleName("รีเซ็ตความคืบหน้าเป้าหมายของนิยายเรื่องนี้")
+        goal_row.addWidget(self.goal_label, 1)
+        goal_row.addWidget(self.goal_bar)
+        goal_row.addWidget(self.goal_edit)
+        goal_row.addWidget(self.goal_reset)
+        text.addLayout(goal_row)
         layout.addLayout(text, 1)
         self.close_button = QToolButton(); self.close_button.setText('×')
         self.close_button.setAccessibleName('ปิดเรื่องที่กำลังทำงาน')
@@ -67,6 +95,26 @@ class NovelHeader(QFrame):
         today_text = f'วันนี้ +{today:,} บท' if today else 'วันนี้ 0 บท'
         self.progress.setText(f'{completion_label(profile)}  ·  {today_text}')
         self.progress.setToolTip(completion_tooltip(profile))
+        from .translation_progress import goal_progress
+        goal = goal_progress(profile)
+        self.goal_bar.setVisible(goal is not None)
+        self.goal_reset.setVisible(goal is not None)
+        self.goal_edit.setText("แก้เป้า" if goal else "ตั้งเป้า")
+        if goal:
+            completed, target, percentage = goal
+            extra = completed - target
+            suffix = f" ✓ · เกิน +{extra} บท" if extra > 0 else (" ✓" if completed == target else "")
+            self.goal_label.setText(f"เป้าหมาย {completed}/{target} บท · {percentage}%{suffix}")
+            self.goal_label.setToolTip(f"{profile.name}: แปลสำเร็จ {completed} จากเป้าหมาย {target} บท{suffix}")
+            self.goal_bar.setValue(percentage)
+            finished = completed >= target
+            if self.goal_bar.property("goalComplete") != finished:
+                self.goal_bar.setProperty("goalComplete", finished)
+                self.goal_bar.style().unpolish(self.goal_bar)
+                self.goal_bar.style().polish(self.goal_bar)
+        else:
+            self.goal_label.setText("ยังไม่ได้ตั้งเป้าหมายการแปล")
+            self.goal_label.setToolTip("กด ตั้งเป้า เพื่อกำหนดจำนวนบทของนิยายเรื่องนี้")
 
 
 class NavigationSidebar(QFrame):

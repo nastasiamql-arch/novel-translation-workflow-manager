@@ -132,6 +132,13 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QMainWindow, QDialog, QWidget#appShell, QWidget#novelLibraryPage {{ background: {c['app']}; }}
     QWidget#polishHistoryCards {{ background: {c['app']}; }}
     QLabel#completedTranslationSummary {{ color: {c['text']}; font-family: "Segoe UI"; font-size: 10pt; }}
+    QLabel#novelGoalLabel {{ color: {c['secondary']}; font-size: 10pt; }}
+    QProgressBar#novelGoalProgress {{ background: {c['surface2']}; min-height: 7px; max-height: 7px; border-radius: 3px; }}
+    QProgressBar#novelGoalProgress::chunk {{ background: {c['accent']}; border-radius: 3px; }}
+    QProgressBar#novelGoalProgress[goalComplete="true"]::chunk {{ background: {c['success']}; }}
+    QToolButton#novelGoalEdit, QToolButton#novelGoalReset {{ color: {c['accent']}; border: 0; border-radius: 5px; min-width: 0; min-height: 24px; padding: 2px 6px; font-size: 9pt; }}
+    QToolButton#novelGoalEdit:hover, QToolButton#novelGoalReset:hover {{ background: {c['item_selection']}; }}
+    QToolButton#novelGoalEdit:focus, QToolButton#novelGoalReset:focus {{ border-bottom: 2px solid {c['focus']}; }}
     QLabel#historyRangeTitle {{ color: {c['text']}; font-size: 11pt; font-weight: 600; }}
     QLabel#historySequenceNumber {{ color: {c['text']}; background: {c['surface2']}; border: 1px solid {c['border']}; border-radius: 7px; padding: 2px 3px; font-size: 12pt; font-weight: 700; }}
     QFrame#polishHistoryRow {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 6px; }}

@@ -2,6 +2,13 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 4.2.0 - 2026-10-19
+
+- Show each novel's independent Translator Export goal and compact progress bar directly beneath its title in the workspace editor header, including completed and over-target counts.
+- Add per-novel Edit/Set Goal and confirmed Reset actions in the same header; setting 0 disables only that goal. Keep chapter Export events, history, daily totals and Verified goals untouched.
+- Refresh the active novel header after a completed Translator Export, goal edits, reset and switching novels; retain the goal across app restarts.
+- Style the new controls with light/dark contrast tokens and add focused header, persistence, switch and reset regression tests.
+
 ## 4.1.1 - 2026-10-18
 
 - Fix TXT vocabulary batch copying to place the actual separate chapter and glossary files on the Windows Explorer clipboard (CF_HDROP), in one click per batch. No text merging, ZIP, Export or workflow advancement.
