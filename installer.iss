@@ -36,6 +36,17 @@ Source: "dist\NovelWorkflow\*"; DestDir: "{app}"; Flags: ignoreversion recursesu
 ; Only application package metadata, never user documents/settings or all app files.
 Type: filesandordirs; Name: "{app}\_internal\novelworkflow-*.dist-info"
 Type: filesandordirs; Name: "{app}\novelworkflow-*.dist-info"
+; Purge third-party web-downloader/browser packages left by older bundled builds.
+; All targets are within the application install directory, never user data.
+Type: filesandordirs; Name: "{app}\_internal\playwright"
+Type: filesandordirs; Name: "{app}\_internal\playwright-*.dist-info"
+Type: filesandordirs; Name: "{app}\_internal\selectolax"
+Type: filesandordirs; Name: "{app}\_internal\httpx"
+Type: filesandordirs; Name: "{app}\_internal\httpcore"
+Type: filesandordirs; Name: "{app}\_internal\pyee"
+Type: filesandordirs; Name: "{app}\_internal\greenlet"
+Type: filesandordirs; Name: "{app}\_internal\novel_workflow\downloader"
+Type: filesandordirs; Name: "{app}\_internal\novel_workflow\downloader_ui"
 ; Remove Qt files from older flat-layout builds before installing the isolated bundle.
 Type: files; Name: "{app}\Qt6*.dll"
 Type: files; Name: "{app}\shiboken6*.dll"

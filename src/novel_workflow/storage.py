@@ -92,6 +92,10 @@ class ProjectRepository:
                 changed=True
             if migrate_profile_schema(profile):
                 changed=True
+            # Old profiles must not retain a live website binding; save_profile
+            # makes a lossless backup before removing only the obsolete field.
+            if "source_binding" in data:
+                changed=True
             if changed:
                 self.save_profile(profile)
             profiles.append(profile)
@@ -121,7 +125,7 @@ class ProjectRepository:
                 self.save_profile(profile)
         return destination
     @profile_guard
-    def save_profile(self,p, *, update_source_binding=False, destination=None):
+    def save_profile(self,p, *, destination=None):
         if p.id in self.export_recovery_errors:
             raise OSError(self.export_recovery_errors[p.id])
         folder=self.profile_dir(p.id); folder.mkdir(parents=True,exist_ok=True)
@@ -131,10 +135,21 @@ class ProjectRepository:
         # Preserve fields written by newer schema versions or extensions that this
         # version does not understand; known model fields remain authoritative.
         existing=read_json(path,{})
-        # Downloader metadata has an independent owner. Saving a workspace
-        # snapshot must not overwrite a binding updated by a background job.
-        if isinstance(existing, dict) and 'source_binding' in existing and not update_source_binding:
-            serialized['source_binding'] = existing['source_binding']
+        # One-time cleanup of obsolete pre-v4 profile metadata. Preserve the
+        # complete original file outside the active profile.json before dropping
+        # that field; never touch source files, Translator, Context or Export.
+        if isinstance(existing, dict) and "source_binding" in existing:
+            backup = folder / "profile.json.pre-v4-upgrade.bak"
+            if not backup.exists() and path.is_file():
+                try:
+                    with backup.open("xb") as saved:
+                        saved.write(path.read_bytes())
+                        saved.flush()
+                        os.fsync(saved.fileno())
+                except FileExistsError:
+                    pass
+            existing = {key: value for key, value in existing.items()
+                        if key != "source_binding"}
         if isinstance(existing,dict):
             known=NovelProfile.__dataclass_fields__
             serialized={**{key:value for key,value in existing.items() if key not in known},**serialized}

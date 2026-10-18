@@ -15,7 +15,7 @@ function Install-TestBuild([bool]$First, [string]$SetupPath) {
     if ($process.ExitCode -ne 0) { throw "Setup failed: $($process.ExitCode)" }
 }
 
-$previousVersion = '3.13.4'
+$previousVersion = '3.20.2'
 $previousName = "NovelWorkflow-Setup-$previousVersion.exe"
 gh release download "v$previousVersion" --repo nastasiamql-arch/novel-translation-workflow-manager --pattern $previousName --dir $taskRoot
 if ($LASTEXITCODE -ne 0) { throw 'Could not download previous published installer.' }
@@ -26,6 +26,11 @@ $expectedHash = $previousAsset.digest -replace '^sha256:', ''
 if (-not $expectedHash -or (Get-FileHash -LiteralPath $previousInstaller -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) { throw 'Previous installer SHA-256 verification failed.' }
 Install-TestBuild $true $previousInstaller
 $executable = Join-Path $installDir 'NovelWorkflow.exe'
+# Ensure install-over cleanup removes the old browser-driver payload even if
+# the previous installer produced a different on-disk package layout.
+$legacyDriverDir = Join-Path $installDir '_internal/playwright'
+New-Item -ItemType Directory -Path $legacyDriverDir -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $legacyDriverDir 'old-browser-driver.test') -Value 'stale playwright' -Encoding UTF8
 $oldMetadata = @(
     (Join-Path $installDir '_internal/novelworkflow-1.12.0.dist-info'),
     (Join-Path $installDir '_internal/novelworkflow-99.9.9.dist-info'),
@@ -99,6 +104,11 @@ foreach ($path in $preservedFiles) {
 }
 if (-not (Test-Path -LiteralPath $unrelated)) { throw 'Unrelated install file was deleted.' }
 foreach ($folder in $oldMetadata) { if (Test-Path -LiteralPath $folder) { throw "Stale metadata remains: $folder" } }
+foreach ($module in @('playwright','selectolax','httpx','httpcore','pyee','greenlet','novel_workflow/downloader','novel_workflow/downloader_ui')) {
+    if (Test-Path -LiteralPath (Join-Path $installDir "_internal/$module")) {
+        throw "Obsolete web downloader module remains: $module"
+    }
+}
 $metadata = @(Get-ChildItem -LiteralPath (Join-Path $installDir '_internal') -Directory -Filter 'novelworkflow-*.dist-info')
 if ($metadata.Count -ne 1 -or $metadata[0].Name -ne "novelworkflow-$Version.dist-info") { throw 'Incorrect installed metadata.' }
 if ((New-Object -ComObject WScript.Shell).CreateShortcut($shortcut).TargetPath -ne $shortcutBefore) { throw 'Shortcut target changed.' }

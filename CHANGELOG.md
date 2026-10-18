@@ -2,6 +2,14 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 4.0.0 - 2026-10-18
+
+- **BREAKING:** Remove the Novel Downloader feature entirely, including both per-profile and standalone implementations, TomatoMTL, automatic Raw copy, visible Chrome/Edge control, login/Session UI, manifests, download jobs, settings and navigation links.
+- Remove downloader-only HTTP, HTML parsing and browser automation dependencies from the application and Windows installer. Remove old bundled browser-driver files on in-place upgrades from v3.20.2.
+- Remove obsolete website binding from the active novel profile data model and profile JSON, first creating a lossless one-time local backup. Do not delete user documents, saved Chinese source TXT, Translator/Context/Export or application update history.
+- Keep `source/`, `CURRENT_SOURCE_CHAPTER`, chapter numbering, all translation/export operations, clipboard/ZIP and GitHub in-app updates intact. Remove downloader-only test fixtures and add feature-removal regression coverage.
+- The prior standalone Downloader's private `%LOCALAPPDATA%\\NovelWorkflow\\downloader` directory is left untouched on upgrade to protect user data. It may be deleted manually after backing up any needed files; no downloader code is shipped.
+
 ## 3.20.2 - 2026-10-18
 
 - Add a dedicated, cancellable "Chrome Downloader sign-in" workflow. Keep the browser visibly open without a login timeout until the user confirms they have signed in, then verify TomatoMTL account navigation before closing the browser.

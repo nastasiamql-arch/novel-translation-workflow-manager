@@ -80,23 +80,6 @@ def test_recovery_order_is_stable_when_windows_clock_repeats(tmp_path, monkeypat
     assert path.read_text(encoding='utf-8') == 'Chapter 1'
 
 
-def test_downloader_worker_does_not_overwrite_draft_and_workspace_preserves_binding(tmp_path):
-    from test_downloader_service import setup
-    repo, stale, source, service = setup(tmp_path)
-    current = repo.list_profiles()[0]
-    current.txt_export_draft = 'ไทย 中文 draft'
-    current.verified_goal_count = 12
-    repo.save_profile(current)
-    service.download_range(stale, 1, 1)
-    latest = repo.list_profiles()[0]
-    assert latest.txt_export_draft == 'ไทย 中文 draft'
-    assert latest.verified_goal_count == 12
-    assert latest.source_binding.last_downloaded_chapter == 1
-    current.name = 'Renamed during download'
-    repo.save_profile(current)
-    assert repo.list_profiles()[0].source_binding.last_downloaded_chapter == 1
-
-
 def test_vocabulary_session_is_restored_without_translation_accounting(tmp_path):
     app()
     from novel_workflow.workspace_window import MainWindow

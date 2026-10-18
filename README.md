@@ -1,26 +1,22 @@
 # Palantir: Novel
 
-## Persistent Chrome Downloader sign-in (v3.20.2)
+## Version 4.0.0 — Translation workflow only
 
-Open **Novel Downloader**, then click **เข้าสู่ระบบ Chrome Downloader** to open a visible, isolated Chrome or Edge window. Sign in to TomatoMTL manually; the application will wait without an arbitrary login timeout. Click **เข้าสู่ระบบเสร็จแล้ว** only after the TomatoMTL account navigation appears. If sign-in is incomplete, the app keeps the window open and allows you to confirm again. **ยกเลิกเข้าสู่ระบบ** safely cancels setup.
+The website/Novel Downloader feature has been removed completely, including the
+older per-profile downloader, TomatoMTL, Playwright browser control and login.
+Original source files in `source/`, the `CURRENT_SOURCE_CHAPTER` dynamic reference,
+chapter numbering, Translator, Context, TXT Export, ZIP copy, Polish History and the
+GitHub application updater remain available.
 
-The dedicated browser profile under `NovelWorkflow/downloader/browser_profile` saves browser cookies/session across runs until they expire or the site revokes them. This profile does not read or overwrite your personal Chrome credentials. The downloader's chapter inspection and downloads can reuse the same profile without signing in again while the session is valid.
-
-
-
-## Visible Chrome/Edge downloader (v3.20.1)
-
-Novel Downloader now uses a **visible** Chrome or Edge window for TomatoMTL. It reads the rendered chapter list, opens each chapter, and clicks the normal **Raw** button. Its independent browser profile is located in `NovelWorkflow/downloader/browser_profile`; it does not read your Chrome cookies, passwords or Windows Clipboard. Chrome or Edge must already be installed, and sign-in may be necessary in that separate profile.
-
-Automation is still subject to TomatoMTL permissions and access limits. If the site requests verification or blocks automatic use, the downloader stops and does not circumvent protections. TXT A/B/C, chapter validation and the translation workflow are otherwise unchanged.
-
-
-## Independent Novel Downloader (v3.20.0)
-
-Open **Novel Downloader** from the main navigation without opening a translation profile. Its book library, manifests, chapter cache and request budget live in `NovelWorkflow/downloader/`, separate from Translator, Context and Export. Choose an output directory and a chapter range; A saves numbered per-chapter TXT files, B creates `Novel_All.txt`, and C creates both from one verified cached copy. Outputs are UTF-8. Existing different TXT files are never overwritten automatically; incomplete combined output is not published.
-
-The default per-chapter interval is at least 10 seconds, subject to separate hourly/daily limits. Automated access requires the user's confirmation of permission from the source website and content rights. The existing TomatoMTL HTTP parser is not proof that the site's **Raw** button works; dynamic Raw/Playwright behavior and live access remain unverified. If a source blocks access, stop rather than bypass anti-bot measures.
-
+**Existing user data is never erased by an application update.** If you previously
+used Novel Downloader, quit Palantir: Novel and back up anything you need from
+`%LOCALAPPDATA%\\NovelWorkflow\\downloader\\`, then remove that one obsolete
+directory manually if you want its browser login session, cache and private book
+library erased. Do not delete `profiles/`, `source/`, your chosen TXT output
+directories, or the rest of `NovelWorkflow/`. Profile documents that contain
+an old website binding are backed up once as `profile.json.pre-v4-upgrade.bak`
+before the obsolete binding is removed on first profile load. Historic GitHub
+tags/releases remain available for audit; v4 does not ship website downloading.
 
 ## Translator-based chapter start (v3.15.1)
 
@@ -28,7 +24,7 @@ The default per-chapter interval is at least 10 seconds, subject to separate hou
 
 ## Smart Chapter Numbering (v3.15.0)
 
-เปิดไฟล์ต้นฉบับภาษาจีน เช่น `FATE.txt` (ชื่อไฟล์ของแต่ละเรื่องไม่จำกัด) ใน Editor แล้วกด **ตรวจเลขบท** บนแถบเครื่องมือ ระบบตรวจเฉพาะไฟล์ที่เปิดอยู่ ไม่อ่าน/แก้ Translator, Context หรือ TXT Export และไม่เรียก Downloader
+เปิดไฟล์ต้นฉบับภาษาจีน เช่น `FATE.txt` (ชื่อไฟล์ของแต่ละเรื่องไม่จำกัด) ใน Editor แล้วกด **ตรวจเลขบท** บนแถบเครื่องมือ ระบบตรวจเฉพาะไฟล์ที่เปิดอยู่ ไม่อ่าน/แก้ Translator, Context หรือ TXT Export
 
 หน้าต่างตรวจเลขบทแสดงเลขจากหัวบททุกบทและเตือนเลขกระโดด ซ้ำ หรือย้อนกลับ; **เรียงเลขต่อเนื่อง (เสนอ)** ใส่เลขเริ่มต้นเพื่อจัดลำดับเป็นชุด หรือแก้เลขทีละรายการได้ เมื่อกด **แก้ที่เลือก**/**แก้ทั้งหมด** ต้องยืนยัน Preview ก่อนเขียน โปรแกรมแก้เฉพาะอักขระที่เป็นหมายเลขหัวบท ไม่เปลี่ยนข้อความจีนของเนื้อเรื่อง โปรดตรวจว่าบทขาดจริงหรือเว็บพิมพ์เลขผิดก่อนกดยืนยัน เพราะข้อมูลภายในไฟล์เพียงอย่างเดียวไม่สามารถพิสูจน์ได้
 
@@ -229,10 +225,6 @@ Context ที่ไม่เปลี่ยนใช้ผลบทล่าส
 General → **คัดลอกไฟล์เป็น ZIP** เริ่มต้นปิด เมื่อเปิด COPY STEP และการคลิกขั้นตอนจะสร้าง ZIP เดียว รวมไฟล์ Enabled/Disabled โดยรักษา Binary, Unicode และโฟลเดอร์ย่อย คลิกขวาที่ขั้นตอนเพื่อเลือกหลายขั้นตอนใน ZIP เดียว ไม่มีปุ่ม ZIP เพิ่มบน Workspace โหมดปิดยังคัดลอกไฟล์ Enabled ตามเดิม TXT Export คัดลอกข้อความเสมอ
 
 ZIP ที่เผยแพร่เข้า Clipboard เก็บใน `%LOCALAPPDATA%/NovelWorkflow/cache/clipboard` และไม่ลบอัตโนมัติ เพื่อให้ Paste ได้หลังปิดโปรแกรม ผู้ใช้ลบแคชด้วยตัวเองเมื่อเลิกใช้อ้างอิงเหล่านั้น ZIP ที่สร้างไม่สำเร็จถูกลบทิ้ง และ Missing Files, Collision, Symbolic Link/Junction หรือไฟล์ที่เปลี่ยนระหว่างสร้างจะเป็นข้อผิดพลาด
-
-**ต้นฉบับเว็บ** เชื่อม Downloader แบบ Novel Profile เดิม รองรับ TomatoMTL: จำ URL/Book ID, ตรวจ Catalog, ช่วงตอน, ตอนใหม่, Resume, Skip Existing และ Manifest แยกเรื่อง ไฟล์ลง `source/0001 ชื่อตอน.txt` แบบ UTF-8 และใช้ CURRENT_SOURCE_CHAPTER ได้ การดาวน์โหลดไม่สร้างโปรแกรมแยก และไม่เพิ่มระบบ AI Translation
-
-ข้อจำกัดเว็บไซต์: ทดสอบเว็บจริงวันที่ 2026-10-09 อ่าน Catalog ได้ แต่หน้าตอนที่ทดลองไม่ส่งข้อความจีนต้นฉบับที่ตรวจยืนยันได้ จึงยังยืนยันการดาวน์โหลด Raw จากเว็บจริงไม่ได้ โปรแกรมจะไม่บันทึก HTML/ข้อความภาษาอื่นเป็นบทจีน และไม่ข้าม CAPTCHA, Login หรือข้อจำกัดเข้าถึง ระบบ Resume/Retry/Timeout ทดสอบด้วย Fixtures; การดาวน์โหลดจริงขึ้นกับสิ่งที่เว็บไซต์อนุญาตให้เข้าถึง
 
 Context ใช้ Chapter Progress/ความคืบหน้าส่วนท้ายเมื่อมีหมวดชัดเจน และหยุดที่หมวดถัดไป ในเอกสารเก่าใช้หัวข้อบทที่ถูกต้องรายการสุดท้ายแทนเลขสูงสุดจากตัวอย่าง รองรับไทย/อังกฤษ/จีนและช่วงบท ยอด Verified เกินเป้าหมายและประวัติรอบส่งยังคงใช้ระบบเดิม
 

@@ -78,7 +78,7 @@ class NavigationSidebar(QFrame):
         self.collapsed = True
         self.setMinimumWidth(60); self.setMaximumWidth(60)
         layout = QVBoxLayout(self); layout.setContentsMargins(6,8,6,8)
-        for key, icon, title in [('library','▦','คลังนิยาย'),('workspace','▤','กำลังทำงาน'),('progress','◷','สถิติ'),('groups','▧','กลุ่ม'),('downloader','↓','Novel Downloader'),('settings','⚙','ตั้งค่า')]:
+        for key, icon, title in [('library','▦','คลังนิยาย'),('workspace','▤','กำลังทำงาน'),('progress','◷','สถิติ'),('groups','▧','กลุ่ม'),('settings','⚙','ตั้งค่า')]:
             if key == 'settings': layout.addStretch(1)
             button = QToolButton(); button.setCheckable(True); button.setObjectName('navigationItem')
             button.setIconSize(QSize(20, 20))

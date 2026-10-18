@@ -327,10 +327,6 @@ class SettingsPage(QWidget):
         work_layout.addLayout(work_actions)
         detail.addWidget(work_frame)
 
-        downloader = QPushButton("ต้นฉบับเว็บ · TomatoMTL")
-        downloader.clicked.connect(owner.open_downloader)
-        detail.addWidget(downloader, alignment=Qt.AlignRight)
-
         general = QFrame()
         general.setObjectName("settingsCard")
         general_layout = QVBoxLayout(general)
@@ -406,7 +402,7 @@ class SettingsPage(QWidget):
         detail.addWidget(updates)
         novel_settings = [
             info_frame, story_frame, launcher_frame, workflow_frame,
-            work_frame, export_preferences, downloader,
+            work_frame, export_preferences,
         ]
         sections = {
             "General": [general],
