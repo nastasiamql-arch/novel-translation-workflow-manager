@@ -1,4 +1,4 @@
-from PyInstaller.utils.hooks import collect_submodules, copy_metadata
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata, collect_all
 from pathlib import Path
 import tomllib
 
@@ -9,19 +9,21 @@ version_file = project_root / 'build' / 'app-version.txt'
 version_file.parent.mkdir(parents=True, exist_ok=True)
 version_file.write_text(build_version, encoding='utf-8')
 
-hiddenimports = collect_submodules('novel_workflow') + collect_submodules('send2trash')
+playwright_datas, playwright_binaries, playwright_imports = collect_all('playwright')
+hiddenimports = collect_submodules('novel_workflow') + collect_submodules('send2trash') + playwright_imports
 datas = [
     (str(version_file), 'novel_workflow/resources'),
     ('src/novel_workflow/resources/novelworkflow.png', 'novel_workflow/resources'),
     ('src/novel_workflow/resources/palantir_novel.png', 'novel_workflow/resources'),
     *[(str(path), 'novel_workflow/resources') for path in (project_root / 'src/novel_workflow/resources').glob('*.svg')],
     *copy_metadata('novelworkflow'),
+    *playwright_datas,
 ]
 
 a = Analysis(
     ['run_app.py'],
     pathex=['src'],
-    binaries=[],
+    binaries=playwright_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

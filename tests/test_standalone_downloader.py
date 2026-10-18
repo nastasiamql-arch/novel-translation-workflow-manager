@@ -117,3 +117,22 @@ def test_heading_number_mismatch_is_rejected_without_mutation():
         cleaned_raw("第29章 时间飞逝\n\n这是一段足够长的原文内容，可以检测到章节编号错误。", chapter)
     with pytest.raises(ValueError, match="heading is missing"):
         cleaned_raw("这是一段足够长的原文内容，但缺少正确的章节标题。", chapter)
+
+def test_inspect_closes_adapter_even_if_catalog_fails(tmp_path):
+    store, source, service, entry = prepare(tmp_path)
+    source.closed = 0
+    source.close = lambda: setattr(source, "closed", source.closed + 1)
+    source.get_chapters = lambda book: (_ for _ in ()).throw(ValueError("catalog failed"))
+    with pytest.raises(ValueError, match="catalog failed"):
+        service.inspect(entry["url"])
+    assert source.closed == 1
+
+
+def test_download_closes_adapter_after_failure(tmp_path):
+    store, source, service, entry = prepare(tmp_path)
+    source.closed = 0
+    source.close = lambda: setattr(source, "closed", source.closed + 1)
+    source.get_book = lambda url: (_ for _ in ()).throw(ValueError("blocked"))
+    with pytest.raises(ValueError, match="blocked"):
+        service.download_range(entry["id"], 1, 2)
+    assert source.closed == 1

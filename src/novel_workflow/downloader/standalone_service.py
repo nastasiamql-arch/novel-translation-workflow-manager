@@ -81,14 +81,35 @@ class StandaloneDownloadService:
 
     def inspect(self, url: str):
         source = self.registry.match(url)
-        book = source.get_book(url)
-        chapters = source.get_chapters(book)
-        return book, chapters
+        try:
+            book = source.get_book(url)
+            chapters = source.get_chapters(book)
+            return book, chapters
+        finally:
+            closer = getattr(source, "close", None)
+            if callable(closer):
+                closer()
 
     def download_range(self, book_id: str, start: int, end: int, *,
                        mode="both", digits=4, include_title=False,
                        delay=10, hourly=90, daily=500,
                        cancel=None, progress=None):
+        entry = self.store.get_book(book_id)
+        source = self.registry.get(entry["source_id"])
+        try:
+            return self._download_range(book_id, start, end, mode=mode, digits=digits,
+                                        include_title=include_title, delay=delay,
+                                        hourly=hourly, daily=daily, cancel=cancel,
+                                        progress=progress)
+        finally:
+            closer = getattr(source, "close", None)
+            if callable(closer):
+                closer()
+
+    def _download_range(self, book_id: str, start: int, end: int, *,
+                        mode="both", digits=4, include_title=False,
+                        delay=10, hourly=90, daily=500,
+                        cancel=None, progress=None):
         if start < 1 or end < start or mode not in {"separate", "combined", "both"}:
             raise ValueError("Invalid chapter range or output mode")
         if not 1 <= int(digits) <= 8:

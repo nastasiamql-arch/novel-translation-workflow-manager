@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..downloader.registry import SourceRegistry
+from ..downloader.sources.tomatomtl_browser import TomatoMTLBrowserSource
 from ..downloader.standalone_service import StandaloneDownloadService
 from ..downloader.standalone_storage import DownloaderRepository
 from ..downloader.worker import DownloaderWorker
@@ -21,7 +22,10 @@ class StandaloneDownloaderPage(QWidget):
     def __init__(self, owner):
         super().__init__(owner)
         self.store = DownloaderRepository(owner.repo.root / "downloader")
-        self.registry = SourceRegistry.builtins(self.store.root / "sources")
+        current = SourceRegistry.builtins(self.store.root / "sources")
+        adapters = [TomatoMTLBrowserSource(self.store.root / "browser_profile")]
+        adapters.extend(source for source in current.list_sources() if source.id != "tomatomtl")
+        self.registry = SourceRegistry(adapters)
         self.service = StandaloneDownloadService(self.store, self.registry)
         self.worker = None
         self.book_id = None
@@ -31,7 +35,8 @@ class StandaloneDownloaderPage(QWidget):
         title = QLabel("Novel Downloader · Chinese Raw")
         title.setObjectName("sectionHeading")
         root.addWidget(title)
-        note = QLabel("ดาวน์โหลดและเก็บ TXT แยกจากโปรไฟล์/ขั้นตอนแปลทั้งหมด")
+        note = QLabel("เปิด Chrome/Edge ให้เห็นหน้าต่างจริง กด Raw ทีละบท · "
+                      "เบราว์เซอร์ใช้โปรไฟล์แยกจากโปรแกรมแปล และอาจต้องเข้าสู่ระบบเอง")
         note.setWordWrap(True)
         root.addWidget(note)
 
@@ -167,7 +172,7 @@ class StandaloneDownloaderPage(QWidget):
         except ValueError as exc:
             QMessageBox.warning(self, "URL", str(exc))
             return
-        self.summary.setText("กำลังตรวจข้อมูลและรายการตอน...")
+        self.summary.setText("กำลังเปิด Chrome/Edge และตรวจสอบรายการตอนในหน้าเว็บ...")
         self._start("inspect", lambda cancel, progress: self.service.inspect(url))
 
     def download(self):

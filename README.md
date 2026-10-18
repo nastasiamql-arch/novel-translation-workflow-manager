@@ -1,5 +1,12 @@
 # Palantir: Novel
 
+## Visible Chrome/Edge downloader (v3.20.1)
+
+Novel Downloader now uses a **visible** Chrome or Edge window for TomatoMTL. It reads the rendered chapter list, opens each chapter, and clicks the normal **Raw** button. Its independent browser profile is located in `NovelWorkflow/downloader/browser_profile`; it does not read your Chrome cookies, passwords or Windows Clipboard. Chrome or Edge must already be installed, and sign-in may be necessary in that separate profile.
+
+Automation is still subject to TomatoMTL permissions and access limits. If the site requests verification or blocks automatic use, the downloader stops and does not circumvent protections. TXT A/B/C, chapter validation and the translation workflow are otherwise unchanged.
+
+
 ## Independent Novel Downloader (v3.20.0)
 
 Open **Novel Downloader** from the main navigation without opening a translation profile. Its book library, manifests, chapter cache and request budget live in `NovelWorkflow/downloader/`, separate from Translator, Context and Export. Choose an output directory and a chapter range; A saves numbered per-chapter TXT files, B creates `Novel_All.txt`, and C creates both from one verified cached copy. Outputs are UTF-8. Existing different TXT files are never overwritten automatically; incomplete combined output is not published.

@@ -2,6 +2,13 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.20.1 - 2026-10-18
+
+- Add a visible Chrome/Edge Playwright adapter to the standalone TomatoMTL Downloader, using the rendered chapter list and the real "Copy Raw Text" button rather than the direct HTTP source adapter.
+- Keep browser profile data isolated from translation projects and normal Chrome profiles, and capture the page copy internally without replacing the user's system clipboard.
+- Stop safely on authentication/access challenges, source changes, and missing raw text. Close the browser after inspect/download, including cancellation and failures.
+- Include the Playwright driver in the Windows installer and add browser adapter tests. This requires an installed Chrome or Edge.
+
 ## 3.20.0 - 2026-10-18
 
 - Add the independent Novel Downloader navigation page, accessible without selecting or changing any translation novel profile. Keep Downloader book settings, cache, request history, and manifest under a separate data namespace.
