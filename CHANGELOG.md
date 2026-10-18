@@ -2,6 +2,13 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 4.1.0 - 2026-10-18
+
+- Add TXT vocabulary preparation inside each novel workspace with a manual/TXT switch, numeric chapter batches (five by default), two independently copied glossary references and per-novel saved settings.
+- Add a paste-and-preview workflow for multiple Chinese, Thai and English numbered chapters, preserving all pasted text and creating separate UTF-8 TXT files only after confirmation.
+- Detect chapter gaps, duplicates, invalid encodings and existing chapter numbers; skip conflicts by default or explicitly back up and replace them. Do not create ZIPs, auto-copy or advance translation stages.
+- Add dedicated batching, splitting, safety and UI regression tests.
+
 ## 4.0.0 - 2026-10-18
 
 - **BREAKING:** Remove the Novel Downloader feature entirely, including both per-profile and standalone implementations, TomatoMTL, automatic Raw copy, visible Chrome/Edge control, login/Session UI, manifests, download jobs, settings and navigation links.

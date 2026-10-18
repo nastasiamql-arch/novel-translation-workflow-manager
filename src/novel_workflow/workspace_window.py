@@ -40,6 +40,7 @@ from . import __version__
 from .update_bootstrap import launch_update, read_update_result
 from .updater import UpdateError, UpdateInfo, check_for_update, download_update
 from .file_import import import_files_into_directory
+from .vocabulary_batch_page import TxtVocabularyPage
 from .polish_history import PolishHistory, RangeRequired
 from .polish_history_page import PolishHistoryPage, HistoryWorker
 
@@ -320,6 +321,12 @@ class WorkspacePage(QWidget):
         history_row.addWidget(self.history_range, 1)
         sidebar_layout.addLayout(history_row)
         sidebar_layout.addWidget(self.vocabulary_button)
+        self.txt_vocabulary_shortcut = QPushButton("จากไฟล์ TXT · แบ่งชุด / แยกบท")
+        self.txt_vocabulary_shortcut.setObjectName("txtVocabularyShortcut")
+        self.txt_vocabulary_shortcut.clicked.connect(
+            lambda checked=False: self.owner.open_txt_vocabulary(self.profile_id)
+        )
+        sidebar_layout.addWidget(self.txt_vocabulary_shortcut)
         sidebar_layout.addWidget(self.steps, 2)
         files_heading = QLabel("ไฟล์ของขั้นตอนปัจจุบัน")
         files_heading.setObjectName("sectionHeading")
@@ -476,7 +483,43 @@ class WorkspacePage(QWidget):
             lambda: self.owner._close_novel_tab(self.profile_id))
         editor_layout.addWidget(self.novel_header)
         editor_layout.addWidget(self.editor_header)
-        editor_layout.addWidget(self.editor, 1)
+        self.vocabulary_source_bar = QWidget()
+        source_row = QHBoxLayout(self.vocabulary_source_bar)
+        source_row.setContentsMargins(12, 3, 12, 3)
+        source_row.addWidget(QLabel("หาคำศัพท์ · เลือกวิธีเตรียมเนื้อหา"))
+        self.manual_source_button = QPushButton("วางเนื้อหาเอง")
+        self.manual_source_button.setObjectName("manualVocabularySource")
+        self.manual_source_button.setCheckable(True)
+        self.manual_source_button.clicked.connect(
+            lambda checked=False: self.set_vocabulary_source("manual")
+        )
+        source_row.addWidget(self.manual_source_button)
+        self.txt_source_button = QPushButton("จากไฟล์ TXT")
+        self.txt_source_button.setObjectName("txtVocabularySource")
+        self.txt_source_button.setCheckable(True)
+        self.txt_source_button.clicked.connect(
+            lambda checked=False: self.set_vocabulary_source("files")
+        )
+        source_row.addWidget(self.txt_source_button)
+        source_row.addStretch(1)
+        editor_layout.addWidget(self.vocabulary_source_bar)
+        self.vocabulary_source_mode = str(
+            owner.settings.vocabulary_txt_profiles.get(profile.id, {}).get("mode", "manual")
+        )
+        default_source = (
+            Path(profile.main_folder).expanduser() / "source"
+            if profile.main_folder.strip() else owner.repo.profile_dir(profile.id) / "source"
+        )
+        self.txt_vocabulary_page = TxtVocabularyPage(
+            owner.settings.vocabulary_txt_profiles.get(profile.id, {}),
+            lambda state: owner.save_txt_vocabulary_state(profile.id, state),
+            default_source,
+        )
+        self.editor_content_stack = QStackedWidget()
+        self.editor_content_stack.addWidget(self.editor)
+        self.editor_content_stack.addWidget(self.txt_vocabulary_page)
+        editor_layout.addWidget(self.editor_content_stack, 1)
+        self.sync_vocabulary_source()
         editor_host = QWidget()
         editor_host.setLayout(editor_layout)
 
@@ -767,6 +810,24 @@ class WorkspacePage(QWidget):
 
     def set_mode(self, index):
         self.content_stack.setCurrentIndex(0)
+
+    def set_vocabulary_source(self, mode):
+        if mode not in ("manual", "files"):
+            return
+        self.vocabulary_source_mode = mode
+        self.txt_vocabulary_page.state["mode"] = mode
+        self.owner.save_txt_vocabulary_state(self.profile_id, self.txt_vocabulary_page.state)
+        self.sync_vocabulary_source()
+        if mode == "files":
+            self.txt_vocabulary_page.refresh()
+
+    def sync_vocabulary_source(self):
+        self.vocabulary_source_bar.setVisible(self.vocabulary_mode)
+        self.manual_source_button.setChecked(self.vocabulary_source_mode != "files")
+        self.txt_source_button.setChecked(self.vocabulary_source_mode == "files")
+        self.editor_content_stack.setCurrentIndex(
+            1 if self.vocabulary_mode and self.vocabulary_source_mode == "files" else 0
+        )
 
     def filter_files(self, query):
         query = query.strip().casefold()
@@ -2351,6 +2412,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             )
             workspace.step_index = int(self.settings.workspace_step_indices.get(profile.id, 0))
             workspace.vocabulary_mode = bool(self.settings.workspace_vocabulary_modes.get(profile.id, False))
+            workspace.sync_vocabulary_source()
             if self.settings.sidebar_visible:
                 workspace.workspace_splitter.setSizes([
                     max(220, int(self.settings.sidebar_width or 290)), 1000,
@@ -2654,6 +2716,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             )
             button.setWorkflowActive(active)
         workspace.vocabulary_button.setWorkflowActive(workspace.vocabulary_mode)
+        workspace.sync_vocabulary_source()
 
     def _workflow_copy_menu(self, button, position):
         if not self.profile or not self.settings.copy_files_as_zip:
@@ -2704,8 +2767,21 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.steps.blockSignals(False)
         self._sync_stage_buttons(workspace)
         self.refresh_files()
-        self.copy_step(advance=False)
+        if not (stage == "vocabulary" and workspace.vocabulary_source_mode == "files"):
+            self.copy_step(advance=False)
         self._schedule_workspace_session_save()
+
+    def save_txt_vocabulary_state(self, profile_id, state):
+        self.settings.vocabulary_txt_profiles[profile_id] = dict(state)
+        self._schedule_workspace_session_save()
+
+    def open_txt_vocabulary(self, profile_id):
+        if not self.profile or self.profile.id != profile_id:
+            return
+        self.set_vocabulary_mode(profile_id, True)
+        workspace = self.workspaces.get(profile_id)
+        if workspace and workspace.vocabulary_mode:
+            workspace.set_vocabulary_source("files")
 
     def step(self):
         """Return the currently active vocabulary or translation step."""
