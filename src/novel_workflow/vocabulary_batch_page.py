@@ -491,6 +491,7 @@ class TxtVocabularyPage(QWidget):
         row = QFrame()
         row.setObjectName("txtVocabularyRow")
         row.setFrameShape(QFrame.NoFrame)
+        row.setMaximumHeight(68)  # A single row must never fill the entire scroll viewport.
         layout = QVBoxLayout(row)
         layout.setContentsMargins(8, 3, 8, 3)
         layout.setSpacing(0)
@@ -604,6 +605,7 @@ class TxtVocabularyPage(QWidget):
         def toggle_details():
             before = self.scroll.verticalScrollBar().value()
             showing = not detail.isVisible()
+            row.setMaximumHeight(16777215 if showing else 68)
             detail.setVisible(showing)
             detail_button.setText("ซ่อนรายชื่อไฟล์ ▴" if showing else "ดูรายชื่อไฟล์ ▾")
             QTimer.singleShot(0, lambda: self.scroll.verticalScrollBar().setValue(before))
