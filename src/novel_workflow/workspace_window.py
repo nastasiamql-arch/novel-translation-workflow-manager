@@ -2939,6 +2939,62 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             workspace.breadcrumb.setText(f"{profile.name}  ›  {step.name}  ›  {path.name}")
 
 
+
+    def _ensure_chapter_numbers_for_copy(self, workspace, profile, steps, *, zipped):
+        """Synchronously finalize eligible source files before freezing the clipboard."""
+        if (not workspace or not profile.auto_review_enabled
+                or profile.auto_chapter_number_mode != "fix"):
+            return
+        from .polish_history import _files
+        from .workflow_archive import resolve_attachment
+        attached = set()
+        for step in steps:
+            for item in step.files:
+                if not zipped and step.id != profile.polish_history_step_id and not item.enabled:
+                    continue
+                attached.update(_files(resolve_attachment(self.repo, self.assembler, profile, item)))
+
+        pending = getattr(workspace, "auto_chapter_review_paths", set())
+        blocked = getattr(workspace, "auto_chapter_review_failed_paths", set())
+        candidates = set(pending) | set(blocked)
+        editors = {}
+        for index in range(workspace.editor.tabs.count()):
+            editor = workspace.editor.tabs.widget(index)
+            path = workspace.editor._path(editor)
+            if path is None:
+                continue
+            path = Path(path).expanduser().resolve()
+            editors[path] = editor
+            needs_review = workspace.editor._dirty(editor) or path in pending or path in blocked
+            if needs_review and self._auto_original_source_eligible(profile, workspace, path):
+                candidates.add(path)
+            elif (path in attached and workspace._source_file_eligible(path)
+                    and path.name.casefold() != "novel.txt"
+                    and scan_original_chapter_issues(editor.toPlainText())[0]
+                    and not self._auto_original_source_eligible(profile, workspace, path)):
+                raise ValueError(
+                    f"{path.name}: ไม่พบ Translator ที่จับคู่ได้แน่ชัด "
+                    "จึงไม่คัดลอกต้นฉบับที่ยังตรวจเลขบทไม่ได้"
+                )
+        for path in sorted(candidates):
+            editor = editors.get(path)
+            if editor is None:
+                raise ValueError(f"{path.name}: ปิดแท็บต้นฉบับก่อนตรวจเลขบทเสร็จ")
+            if workspace.editor._dirty(editor) and not workspace.editor.save_editor(
+                    editor, quiet=True, normalize=False):
+                raise ValueError(f"{path.name}: บันทึกต้นฉบับไม่สำเร็จ")
+            self.statusBar().showMessage(f"กำลังตรวจเลขบท {path.name} ก่อนคัดลอก…")
+            if not self._run_auto_chapter_review(profile.id, path=path, for_copy=True):
+                raise ValueError(
+                    f"{path.name}: ยังตรวจหรือแก้เลขบทอัตโนมัติไม่สำเร็จ "
+                    "กรุณาตรวจเลขบทในแท็บต้นฉบับก่อนคัดลอก"
+                )
+            pending.discard(path)
+            blocked.discard(path)
+        timer = getattr(workspace, "auto_chapter_review_timer", None)
+        if timer is not None and not pending:
+            timer.stop()
+
     def copy_step(self, advance=True, selected_steps=None):
         if not self.profile or not self.step(): return
         if self.history_busy():
@@ -2957,6 +3013,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         try:
             # All Qt/editor access stays on the GUI thread. Worker receives only
             # frozen files and value objects, never live widgets.
+            self._ensure_chapter_numbers_for_copy(workspace, profile, selected, zipped=zipped)
             bundle = prepare_bundle(self.repo, self.assembler, profile, selected,
                                     workspace.editor if workspace else None,
                                     all_files=zipped)
@@ -3092,18 +3149,16 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         workspace.refresh_context_update_button()
 
     def _schedule_auto_chapter_review(self, saved_path):
-        """Inspect a saved source, or keep the older Translator handoff behavior."""
+        """Queue every saved source; do not impose a second 2.5-second delay."""
         profile = self.profile
-        if (not profile or not profile.auto_review_enabled
-                or getattr(self, "_settings_open", False)):
+        if not profile or not profile.auto_review_enabled or getattr(self, "_settings_open", False):
             return
         workspace = self.workspaces.get(profile.id)
-        if (not workspace or workspace.vocabulary_mode
-                or getattr(workspace, "auto_chapter_review_busy", False)):
+        if not workspace or getattr(workspace, "auto_chapter_review_busy", False):
             return
         path = Path(saved_path).expanduser().resolve()
         if not self._auto_original_source_eligible(profile, workspace, path):
-            return  # Translator saves NEVER trigger copy or navigation.
+            return
         if profile.auto_chapter_number_mode != "fix":
             self._set_chapter_pending(profile, workspace, path, True)
             return
@@ -3111,21 +3166,44 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if timer is None:
             timer = QTimer(workspace)
             timer.setSingleShot(True)
-            timer.timeout.connect(lambda pid=profile.id: self._run_auto_chapter_review(pid))
+            timer.timeout.connect(lambda pid=profile.id: self._drain_auto_chapter_reviews(pid))
             workspace.auto_chapter_review_timer = timer
         workspace.auto_chapter_review_path = path
-        timer.start(2500)
+        pending = getattr(workspace, "auto_chapter_review_paths", None)
+        if pending is None:
+            pending = set()
+            workspace.auto_chapter_review_paths = pending
+        pending.add(path)
+        timer.start(0)
 
-    def _run_auto_chapter_review(self, profile_id):
+    def _drain_auto_chapter_reviews(self, profile_id):
+        workspace = self.workspaces.get(profile_id)
+        if workspace is None:
+            return
+        pending = getattr(workspace, "auto_chapter_review_paths", set())
+        while pending:
+            path = sorted(pending)[0]
+            pending.discard(path)
+            if self._run_auto_chapter_review(profile_id, path=path):
+                getattr(workspace, "auto_chapter_review_failed_paths", set()).discard(path)
+            else:
+                failed = getattr(workspace, "auto_chapter_review_failed_paths", None)
+                if failed is None:
+                    failed = set()
+                    workspace.auto_chapter_review_failed_paths = failed
+                failed.add(path)
+
+    def _run_auto_chapter_review(self, profile_id, path=None, *, for_copy=False):
         profile = self.profile
         workspace = self.workspaces.get(profile_id)
         if (not profile or profile.id != profile_id or not profile.auto_review_enabled
-                or not workspace or workspace.vocabulary_mode
+                or not workspace
                 or getattr(self, "_settings_open", False)):
-            return
-        path = getattr(workspace, "auto_chapter_review_path", None)
+            return False
+        path = path if path is not None else getattr(workspace, "auto_chapter_review_path", None)
         if path is None:
-            return
+            return False
+        path = Path(path).expanduser().resolve()
         editor = next(
             (tab for i in range(workspace.editor.tabs.count())
              if (tab := workspace.editor.tabs.widget(i)) is not None
@@ -3133,20 +3211,26 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             None,
         )
         if editor is None or workspace.editor._dirty(editor):
-            return
+            return False
         if not self._auto_original_source_eligible(profile, workspace, path):
-            return
+            return False
         try:
             if not path.is_file() or path.stat().st_size == 0:
-                return
+                return False
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             if digest != editor.disk_digest.hex():
-                return  # File changed externally since our successful save.
+                return False  # File changed externally since our successful save.
         except OSError:
-            return
+            return False
         fingerprint = (str(path), digest)
-        if getattr(workspace, "auto_chapter_review_seen", None) == fingerprint:
-            return
+        verified = getattr(workspace, "auto_chapter_review_verified", None)
+        if verified is None:
+            verified = {}
+            workspace.auto_chapter_review_verified = verified
+        if verified.get(str(path)) == digest:
+            return True
+        if getattr(workspace, "auto_chapter_review_seen", None) == fingerprint and not for_copy:
+            return False
         if True:
             from .chapter_number_reference import resolve_translator_reference
             from .incremental_chapter_numbering import (
@@ -3159,8 +3243,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 self.show_submit_toast(
                     "ตรวจต้นฉบับแล้ว · ไม่พบหัวบทที่รองรับ กรุณาตรวจรูปแบบหัวบท"
                 )
-                return
-            reference = resolve_translator_reference(self.repo, profile_id, path)
+                return False
             number_mode = getattr(profile, "auto_chapter_number_mode", "check")
             if number_mode == "off" and profile.auto_review_enabled:
                 number_mode = "check"  # Keep old opt-in programs checking only.
@@ -3172,16 +3255,24 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                         other = workspace.editor.tabs.widget(i)
                         if (workspace.editor._path(other) == translator_path
                                 and workspace.editor._dirty(other)):
+                            if for_copy:
+                                if not workspace.editor.save_editor(other, quiet=True, normalize=False):
+                                    self.show_submit_toast(
+                                        f"ไม่ได้แก้เลขบท · บันทึก {translator_path.name} ไม่สำเร็จ"
+                                    )
+                                    return False
+                                continue
                             workspace.auto_chapter_review_waiting_for = (path, translator_path)
                             self.statusBar().showMessage(
                                 f"รอ Auto Save {translator_path.name} แล้วจะตรวจเลขบท {path.name}", 18000
                             )
-                            return
+                            return False
+                reference = resolve_translator_reference(self.repo, profile_id, path)
                 if reference.start is None:
                     workspace.auto_chapter_review_seen = fingerprint
                     self.show_submit_toast("ไม่ได้แก้เลขบท · " + reference.message)
                     self.statusBar().showMessage("ไม่ได้แก้เลขบท · " + reference.message, 16000)
-                    return
+                    return False
                 checkpoint = verified_prefix_from_history(
                     self.repo.profile_dir(profile_id), profile_id, path, text, reference.start
                 )
@@ -3194,40 +3285,35 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     workspace.auto_chapter_review_seen = fingerprint
                     self.show_submit_toast(f"ไม่ได้แก้เลขบท · {exc}")
                     self.statusBar().showMessage(f"ไม่ได้แก้เลขบท · {exc}", 16000)
-                    return
+                    return False
                 if not changes:
                     workspace.auto_chapter_review_seen = fingerprint
+                    verified[str(path)] = digest
                     self.show_submit_toast(
                         f"ตรวจแล้ว · {len(headings)} บท เรียงต่อจาก Translator ถูกต้อง ✓"
                     )
-                    return
-                from .chapter_numbering_dialog import ChapterNumberDialog
+                    return True
+                from .chapter_numbering_dialog import apply_automatic_without_dialog
                 workspace.auto_chapter_review_busy = True
                 try:
-                    dialog = ChapterNumberDialog(workspace, editor, path)
-                    if (dialog.translator_reference.start != reference.start
-                            or dialog.translator_reference.path != reference.path):
+                    # Recheck the same-novel Translator immediately before writing.
+                    current_reference = resolve_translator_reference(self.repo, profile_id, path)
+                    if (current_reference.start != reference.start
+                            or current_reference.path != reference.path):
                         self.show_submit_toast(
                             "ไม่ได้แก้เลขบท · ข้อมูล Translator เปลี่ยนระหว่างตรวจ"
                         )
-                        return
-                    if not dialog.apply_automatic(
-                        reference.start, verified_prefix=verified_prefix,
-                        previous_original=last_original,
-                    ):
-                        self.show_submit_toast(
-                            "ไม่ได้แก้เลขบท · " + getattr(dialog, "auto_error", "บันทึกไม่สำเร็จ")
-                        )
-                        return
+                        return False
+                    apply_automatic_without_dialog(workspace, editor, path, _expected, changes)
                     # Saving emits documentSaved; suppress a recursive auto-check,
                     # and remember the final content digest to avoid renumber loops.
-                    workspace.auto_chapter_review_seen = (
-                        str(path), hashlib.sha256(path.read_bytes()).hexdigest()
-                    )
+                    corrected_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                    workspace.auto_chapter_review_seen = (str(path), corrected_digest)
+                    verified[str(path)] = corrected_digest
                     self._set_chapter_pending(profile, workspace, path, False)
                 except (OSError, ValueError) as exc:
                     self.show_submit_toast(f"แก้เลขบทอัตโนมัติไม่สำเร็จ · {exc}")
-                    return
+                    return False
                 finally:
                     workspace.auto_chapter_review_busy = False
                 message = (
@@ -3236,7 +3322,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 )
                 self.show_submit_toast(message)
                 self.statusBar().showMessage(message, 15000)
-                return
+                return True
             if number_mode == "check":
                 workspace.auto_chapter_review_seen = fingerprint
                 self._set_chapter_pending(profile, workspace, path, True)
@@ -3244,8 +3330,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     f"{path.name}: มีบทใหม่รอตรวจ · กดปุ่ม 'ตรวจเลขบท' ในแท็บต้นฉบับ",
                     12000,
                 )
-            return
-    def _update_context_button(self, workspace):
+            return False    def _update_context_button(self, workspace):
         path = Path(self.profile.context_path).expanduser() if self.profile and self.profile.context_path else None
         if path and path.is_file():
             workspace.context_button.setText(path.name)

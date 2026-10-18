@@ -2,6 +2,13 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 4.4.1 - 2026-10-19
+
+- Correct eligible Chinese source chapter headings as soon as Auto Save completes, without the additional 2.5-second review delay.
+- Treat COPY STEP / COPY ZIP as a synchronous chapter-numbering checkpoint: save pasted source, finish auto correction and audit snapshot, then copy the corrected bytes. If the reference is missing or a correction fails, keep the existing clipboard untouched and show a clear warning.
+- Process separately saved source files in a per-workspace queue rather than replacing the last queued path; keep Translator/Context unchanged and avoid building large manual-review tables during automatic correction.
+- Cover immediate ordinary/ZIP copying, unsafe numbers and multiple queued source files with regression tests.
+
 ## 4.4.0 - 2026-10-19
 
 - Add an optional per-novel "คัดลอกเป็น ZIP" setting only for vocabulary TXT batches; the existing copy button delivers a persistent, validated single ZIP instead of ordinary independent files when enabled. Default remains ordinary files and the general Workflow ZIP preference is unchanged.

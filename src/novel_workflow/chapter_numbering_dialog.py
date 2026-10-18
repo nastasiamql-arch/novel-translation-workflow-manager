@@ -45,6 +45,53 @@ def _replace_headings(editor, original, headings, changes):
         cursor.endEditBlock()
 
 
+
+def apply_automatic_without_dialog(workspace, editor, path, expected, changes):
+    """Apply a prevalidated contiguous plan without building a QTableWidget.
+
+    Keep the identical undoable numeral-only edit, safety checks and audit event
+    used by the manual dialog, but avoid one widget row per historical chapter.
+    """
+    original = editor.toPlainText()
+    headings = scan_chapters(original)
+    by_line = {heading.line: index for index, heading in enumerate(headings)}
+    requested = {by_line[line]: corrected for line, _before, corrected in changes}
+    planned, actual = preview_renumber(original, requested)
+    if planned != expected or actual != changes:
+        raise ValueError("เลขบทเปลี่ยนระหว่างตรวจ · ไม่แก้ต้นฉบับ")
+    if not path.is_file() or hashlib.sha256(path.read_bytes()).digest() != editor.disk_digest:
+        raise ValueError("ไฟล์ถูกแก้จากภายนอก · กรุณาตรวจความต่างก่อน")
+    history_path = workspace.owner.repo.profile_dir(workspace.profile_id) / "chapter_numbering" / "history.json"
+    history = read_json(history_path, {"events": []})
+    if not isinstance(history, dict) or not isinstance(history.get("events"), list):
+        raise ValueError("ประวัติแก้เลขบทมีโครงสร้างไม่ถูกต้อง")
+
+    event_id = uuid.uuid4().hex
+    snapshot = history_path.parent / (event_id + ".json")
+    write_json(snapshot, {
+        "profile_id": workspace.profile_id, "path": str(path), "text": original
+    })
+    event = {
+        "id": event_id, "profile_id": workspace.profile_id,
+        "path": str(path), "snapshot": snapshot.name,
+        "before_sha256": _digest(original), "after_sha256": _digest(expected),
+        "changes": [
+            {"line": line, "original": before, "corrected": after}
+            for line, before, after in changes
+        ],
+        "time": datetime.now(timezone.utc).isoformat(), "reverted": False,
+    }
+    _replace_headings(editor, original, headings, requested)
+    if editor.toPlainText() != expected:
+        editor.undo()
+        raise ValueError("ข้อความหลังแก้ไม่ตรงกับ Preview · ย้อนการแก้แล้ว")
+    if not workspace.editor.save_editor(editor, quiet=True, normalize=False):
+        editor.undo()
+        raise ValueError("บันทึกเลขบทใหม่ไม่สำเร็จ · คืนข้อความใน Editor แล้ว")
+    history["events"].append(event)
+    write_json(history_path, history)
+
+
 class ChapterNumberDialog(QDialog):
     def __init__(self, workspace, editor, path: Path):
         super().__init__(workspace)
