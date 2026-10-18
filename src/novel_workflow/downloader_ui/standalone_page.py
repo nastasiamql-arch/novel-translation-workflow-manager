@@ -1,0 +1,248 @@
+"""Independent Novel Downloader page; no NovelProfile or translation workflow access."""
+from pathlib import Path
+
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import (
+    QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout,
+    QLabel, QLineEdit, QListWidget, QMessageBox, QProgressBar, QPushButton,
+    QSpinBox, QVBoxLayout, QWidget,
+)
+
+from ..downloader.registry import SourceRegistry
+from ..downloader.standalone_service import StandaloneDownloadService
+from ..downloader.standalone_storage import DownloaderRepository
+from ..downloader.worker import DownloaderWorker
+
+
+class StandaloneDownloaderPage(QWidget):
+    """Downloader owns its books, jobs and outputs; only the UI shell is shared."""
+
+    def __init__(self, owner):
+        super().__init__(owner)
+        self.store = DownloaderRepository(owner.repo.root / "downloader")
+        self.registry = SourceRegistry.builtins(self.store.root / "sources")
+        self.service = StandaloneDownloadService(self.store, self.registry)
+        self.worker = None
+        self.book_id = None
+        self.pending = ""
+        self._chapters = []
+        root = QVBoxLayout(self)
+        title = QLabel("Novel Downloader · Chinese Raw")
+        title.setObjectName("sectionHeading")
+        root.addWidget(title)
+        note = QLabel("ดาวน์โหลดและเก็บ TXT แยกจากโปรไฟล์/ขั้นตอนแปลทั้งหมด")
+        note.setWordWrap(True)
+        root.addWidget(note)
+
+        form = QFormLayout()
+        self.url = QLineEdit()
+        self.url.setPlaceholderText("https://tomatomtl.com/book/...")
+        self.url.textEdited.connect(self._invalidate)
+        form.addRow("URL นิยาย", self.url)
+        location = QHBoxLayout()
+        self.destination = QLineEdit(str(Path.home() / "Documents" / "NovelDownloads"))
+        choose = QPushButton("เลือกโฟลเดอร์")
+        choose.clicked.connect(self.choose_folder)
+        location.addWidget(self.destination, 1)
+        location.addWidget(choose)
+        form.addRow("โฟลเดอร์บันทึก", location)
+        chapters = QHBoxLayout()
+        self.start = QSpinBox()
+        self.end = QSpinBox()
+        for field in (self.start, self.end):
+            field.setRange(1, 999999)
+        self.end.setValue(10)
+        chapters.addWidget(self.start)
+        chapters.addWidget(QLabel("ถึง"))
+        chapters.addWidget(self.end)
+        form.addRow("ช่วงตอน", chapters)
+        self.mode = QComboBox()
+        self.mode.addItem("C · แยกตอนและรวมไฟล์", "both")
+        self.mode.addItem("A · แยกไฟล์รายตอน", "separate")
+        self.mode.addItem("B · รวมไฟล์เดียว", "combined")
+        form.addRow("รูปแบบ TXT", self.mode)
+        self.digits = QSpinBox()
+        self.digits.setRange(1, 8)
+        self.digits.setValue(4)
+        form.addRow("จำนวนหลักชื่อไฟล์", self.digits)
+        self.delay = QSpinBox()
+        self.delay.setRange(10, 3600)
+        self.delay.setSuffix(" วินาที")
+        self.delay.setValue(10)
+        form.addRow("หน่วงขั้นต่ำระหว่างบท", self.delay)
+        root.addLayout(form)
+
+        self.with_title = QCheckBox("เพิ่มชื่อตอนในชื่อไฟล์")
+        self.permission = QCheckBox("ยืนยันว่ามีสิทธิ์เก็บเนื้อหาและเว็บไซต์อนุญาตให้ดาวน์โหลดอัตโนมัติ")
+        self.permission.setObjectName("downloaderPermission")
+        root.addWidget(self.with_title)
+        root.addWidget(self.permission)
+        self.summary = QLabel("ตรวจสอบ URL ก่อนเริ่มงาน · โหลดทีละบทและหยุดเมื่อเว็บไซต์จำกัดการเข้าถึง")
+        self.summary.setWordWrap(True)
+        root.addWidget(self.summary)
+        buttons = QHBoxLayout()
+        self.inspect_button = QPushButton("ตรวจสอบรายการตอน")
+        self.inspect_button.clicked.connect(self.inspect)
+        self.download_button = QPushButton("เริ่มดาวน์โหลด")
+        self.download_button.clicked.connect(self.download)
+        self.download_button.setEnabled(False)
+        self.pause_button = QPushButton("หยุดชั่วคราว")
+        self.pause_button.clicked.connect(self.pause)
+        self.pause_button.setEnabled(False)
+        self.open_button = QPushButton("เปิดหน้าเว็บ")
+        self.open_button.clicked.connect(self.open_website)
+        for item in (self.inspect_button, self.download_button, self.pause_button, self.open_button):
+            buttons.addWidget(item)
+        root.addLayout(buttons)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        root.addWidget(self.progress_bar)
+        self.book_list = QListWidget()
+        self.book_list.setMaximumHeight(110)
+        self.book_list.itemClicked.connect(self.select_book)
+        root.addWidget(QLabel("นิยายที่เคยตรวจสอบ"))
+        root.addWidget(self.book_list)
+        self.refresh_books()
+        app = QApplication.instance()
+        if app:
+            app.aboutToQuit.connect(self.stop_worker)
+
+    def _invalidate(self, _text):
+        self.book_id = None
+        self.download_button.setEnabled(False)
+
+    def choose_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์สำหรับ TXT", self.destination.text())
+        if folder:
+            self.destination.setText(folder)
+
+    def refresh_books(self):
+        self.book_list.clear()
+        for item in self.store.list_books():
+            from PySide6.QtWidgets import QListWidgetItem
+            row = QListWidgetItem(item["title"] + " · " + item["source_id"])
+            row.setData(0x0100, item["id"])
+            self.book_list.addItem(row)
+
+    def select_book(self, selected):
+        entry = self.store.get_book(selected.data(0x0100))
+        self.url.setText(entry["url"])
+        self.destination.setText(entry["output_dir"])
+        self.book_id = entry["id"]
+        self.mode.setCurrentIndex({"both": 0, "separate": 1, "combined": 2}.get(entry["mode"], 0))
+        self.digits.setValue(entry["digits"])
+        self.with_title.setChecked(entry.get("include_title", False))
+        self.download_button.setEnabled(True)
+        self.summary.setText("เลือกนิยายที่บันทึกไว้ · ตรวจสอบรายการอีกครั้งก่อนเริ่ม")
+
+    def open_website(self):
+        value = self.url.text().strip()
+        try:
+            self.registry.match(value)
+        except ValueError:
+            QMessageBox.warning(self, "URL", "URL ต้องเป็นเว็บไซต์ Source ที่รองรับ")
+            return
+        QDesktopServices.openUrl(QUrl(value))
+
+    def _start(self, purpose, operation):
+        if self.worker and self.worker.isRunning():
+            return
+        self.pending = purpose
+        self.inspect_button.setEnabled(False)
+        self.download_button.setEnabled(False)
+        self.pause_button.setEnabled(True)
+        self.worker = DownloaderWorker(operation, self)
+        self.worker.progress.connect(self.on_progress)
+        self.worker.completed.connect(self.on_completed)
+        self.worker.failed.connect(self.on_failed)
+        self.worker.cancelled.connect(self.on_paused)
+        self.worker.finished.connect(self.on_finished)
+        self.worker.start()
+
+    def inspect(self):
+        url = self.url.text().strip()
+        try:
+            self.registry.match(url)
+        except ValueError as exc:
+            QMessageBox.warning(self, "URL", str(exc))
+            return
+        self.summary.setText("กำลังตรวจข้อมูลและรายการตอน...")
+        self._start("inspect", lambda cancel, progress: self.service.inspect(url))
+
+    def download(self):
+        if not self.book_id:
+            return
+        if not self.permission.isChecked():
+            QMessageBox.warning(self, "สิทธิ์การใช้งาน", "โปรดยืนยันสิทธิ์และข้อตกลงการดาวน์โหลดก่อน")
+            return
+        entry = self.store.get_book(self.book_id)
+        if Path(self.destination.text()).expanduser().resolve() != Path(entry["output_dir"]):
+            QMessageBox.warning(self, "โฟลเดอร์", "เปลี่ยนโฟลเดอร์แล้ว กรุณาตรวจสอบ URL อีกครั้ง")
+            return
+        self.store.save_book(
+            type("Book", (), {"source_id": entry["source_id"], "book_id": entry["book_id"],
+                               "url": entry["url"], "title": entry["title"]})(),
+            self.destination.text(), mode=self.mode.currentData(),
+            digits=self.digits.value(), include_title=self.with_title.isChecked()
+        )
+        self.progress_bar.setValue(0)
+        self._start("download", lambda cancel, progress: self.service.download_range(
+            self.book_id, self.start.value(), self.end.value(),
+            mode=self.mode.currentData(), digits=self.digits.value(),
+            include_title=self.with_title.isChecked(), delay=self.delay.value(),
+            cancel=cancel, progress=progress))
+        self.summary.setText("เริ่มงาน · ตรวจสอบแต่ละบทก่อนบันทึก TXT")
+
+    def pause(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.requestInterruption()
+            self.summary.setText("กำลังหยุดอย่างปลอดภัยหลังคำขอปัจจุบัน...")
+
+    def on_progress(self, position, total, title, downloaded, skipped, failed):
+        self.progress_bar.setValue(round(100 * position / total) if total else 0)
+        self.summary.setText(
+            f"{position}/{total} · รับใหม่ {downloaded} · ใช้ Cache {skipped} · ล้มเหลว {failed} · {title}"
+        )
+
+    def on_completed(self, result):
+        if self.pending == "inspect":
+            book, chapters = result
+            try:
+                entry = self.store.save_book(book, self.destination.text(),
+                                             mode=self.mode.currentData(), digits=self.digits.value(),
+                                             include_title=self.with_title.isChecked())
+            except Exception as exc:
+                self.on_failed(str(exc))
+                return
+            self.book_id = entry["id"]
+            self._chapters = chapters
+            self.end.setValue(max(1, len(chapters)))
+            self.summary.setText(f"ตรวจสอบได้ {len(chapters)} ตอน · {book.title} · พร้อมเลือกช่วง")
+            self.refresh_books()
+        else:
+            self.summary.setText(
+                f"เสร็จสิ้น · รับใหม่ {result.downloaded} · Cache {result.skipped} · ผิดพลาด {result.failed}"
+            )
+            if result.errors:
+                QMessageBox.warning(self, "ผลการดาวน์โหลด", "\n".join(result.errors[:12]))
+
+    def on_failed(self, message):
+        self.summary.setText("งานไม่สำเร็จ · " + str(message))
+        QMessageBox.warning(self, "Novel Downloader", str(message))
+
+    def on_paused(self):
+        self.summary.setText("หยุดแล้ว · สั่งเริ่มอีกครั้งเพื่อทำต่อจาก Manifest")
+
+    def on_finished(self):
+        self.inspect_button.setEnabled(True)
+        self.download_button.setEnabled(bool(self.book_id))
+        self.pause_button.setEnabled(False)
+        worker, self.worker = self.worker, None
+        if worker:
+            worker.deleteLater()
+
+    def stop_worker(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.requestInterruption()
+            self.worker.wait(30000)

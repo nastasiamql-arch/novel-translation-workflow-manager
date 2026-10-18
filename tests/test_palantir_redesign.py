@@ -364,7 +364,7 @@ def test_navigation_is_always_icon_only(legacy_collapsed):
     app.processEvents()
     assert sidebar.width() == 60
     assert sidebar.collapsed
-    assert len(sidebar.findChildren(QToolButton)) == 5
+    assert len(sidebar.findChildren(QToolButton)) == 6
     for key, button in sidebar.buttons.items():
         assert button.toolButtonStyle() == Qt.ToolButtonIconOnly
         assert button.toolTip() and button.accessibleName()

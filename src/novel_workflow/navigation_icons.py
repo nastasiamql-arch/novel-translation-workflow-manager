@@ -40,6 +40,10 @@ class LineIconEngine(QIconEngine):
             for x, y in ((3, 7), (8, 4), (13, 1)):
                 path.moveTo(x+7, y); path.lineTo(x, y); path.lineTo(x, y+15)
                 path.lineTo(x+7, y+15); path.lineTo(x+7, y+3)
+        elif self.name == 'downloader':
+            path.moveTo(12, 3); path.lineTo(12, 15)
+            path.moveTo(7, 10); path.lineTo(12, 15); path.lineTo(17, 10)
+            path.moveTo(4, 18); path.lineTo(4, 21); path.lineTo(20, 21); path.lineTo(20, 18)
         elif self.name == 'settings':
             for index in range(32):
                 angle = index * math.pi / 16

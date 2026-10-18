@@ -1,5 +1,12 @@
 # Palantir: Novel
 
+## Independent Novel Downloader (v3.20.0)
+
+Open **Novel Downloader** from the main navigation without opening a translation profile. Its book library, manifests, chapter cache and request budget live in `NovelWorkflow/downloader/`, separate from Translator, Context and Export. Choose an output directory and a chapter range; A saves numbered per-chapter TXT files, B creates `Novel_All.txt`, and C creates both from one verified cached copy. Outputs are UTF-8. Existing different TXT files are never overwritten automatically; incomplete combined output is not published.
+
+The default per-chapter interval is at least 10 seconds, subject to separate hourly/daily limits. Automated access requires the user's confirmation of permission from the source website and content rights. The existing TomatoMTL HTTP parser is not proof that the site's **Raw** button works; dynamic Raw/Playwright behavior and live access remain unverified. If a source blocks access, stop rather than bypass anti-bot measures.
+
+
 ## Translator-based chapter start (v3.15.1)
 
 เมื่อเปิดไฟล์ต้นฉบับจีนและกด **ตรวจเลขบท** โปรแกรมจะอ่านหัวบทล่าสุดจากไฟล์ Translator ที่ผูกกับนิยายเรื่องเดียวกัน แล้วเสนอเลขเริ่มต้นเป็น `บทล่าสุด + 1` ให้โดยอัตโนมัติ แสดงชื่อไฟล์อ้างอิงและเลขล่าสุดอย่างชัดเจน รองรับข้อความ Translator ที่แก้แล้วแต่ยังไม่บันทึก ถ้าไฟล์กำกวมหรือไม่พบข้อมูล ระบบจะไม่เดาและเปิดให้ใส่เลขเอง ทุกการแก้ต้นฉบับต้องยืนยันเช่นเดิม ไม่แก้ Translator/Context/Export

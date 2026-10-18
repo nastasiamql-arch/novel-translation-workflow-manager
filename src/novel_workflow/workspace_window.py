@@ -1251,11 +1251,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._show_utility_page("groups", "กลุ่มนิยาย", lambda: NovelGroupsPage(self))
 
     def open_downloader(self):
-        if not self.profile:
-            return
-        from .downloader_ui.panel import DownloaderPage
-        key = f"downloader:{self.profile.id}"
-        self._show_utility_page(key, "ต้นฉบับเว็บ", lambda: DownloaderPage(self))
+        from .downloader_ui.standalone_page import StandaloneDownloaderPage
+        self._show_utility_page("downloader", "Novel Downloader", lambda: StandaloneDownloaderPage(self))
 
     def translation_dashboard(self):
         profiles = self.refresh_translation_progress()
@@ -2043,6 +2040,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.return_from_utility_page()
         elif key == "progress": self.translation_dashboard()
         elif key == "groups": self.groups_dialog()
+        elif key == "downloader": self.open_downloader()
         elif key == "settings": self.settings_dialog()
         self._sync_navigation()
 
@@ -2050,7 +2048,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         page = self.main_pages.currentWidget()
         key = "library" if page is self.library_page else "workspace"
         if page is self.utility_page:
-            key = {"progress":"progress", "groups":"groups", "settings":"settings"}.get(self._active_utility_page, "workspace")
+            key = {"progress":"progress", "groups":"groups", "downloader":"downloader", "settings":"settings"}.get(self._active_utility_page, "workspace")
         self.navigation.select(key)
         # Keep the native window titlebar and menu, without a custom title strip.
         self.brand_toolbar.hide()
@@ -3944,7 +3942,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         workers.extend(self._history_workers)
         workers.extend(getattr(page, "worker", None)
                        for key, page in self._utility_pages.items()
-                       if key.startswith("downloader:"))
+                       if key == "downloader" or key.startswith("downloader:"))
         for worker in workers:
             if worker and worker.isRunning():
                 worker.requestInterruption()
