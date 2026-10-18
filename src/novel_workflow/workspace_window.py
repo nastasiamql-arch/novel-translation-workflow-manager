@@ -41,6 +41,7 @@ from .update_bootstrap import launch_update, read_update_result
 from .updater import UpdateError, UpdateInfo, check_for_update, download_update
 from .file_import import import_files_into_directory
 from .vocabulary_batch_page import TxtVocabularyPage
+from .vocabulary_source_binding import enabled_vocabulary_attachments
 from .polish_history import PolishHistory, RangeRequired
 from .polish_history_page import PolishHistoryPage, HistoryWorker
 
@@ -520,6 +521,10 @@ class WorkspacePage(QWidget):
             owner.settings.vocabulary_txt_profiles.get(profile.id, {}),
             lambda state: owner.save_txt_vocabulary_state(profile.id, state),
             default_source,
+            stage_reader=lambda pid=profile.id, fallback=profile: enabled_vocabulary_attachments(
+                owner.repo, owner.assembler,
+                owner.profile if owner.profile and owner.profile.id == pid else fallback,
+            ),
         )
         self.editor_content_stack = QStackedWidget()
         self.editor_content_stack.addWidget(self.editor)

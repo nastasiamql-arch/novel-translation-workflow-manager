@@ -2,6 +2,14 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 4.3.0 - 2026-10-19
+
+- Connect the TXT vocabulary mode to enabled attachments of the existing novel-specific vocabulary step only. Prompt and vocabulary files no longer require separate configuration, and unrelated stages are never included.
+- Select the source from the vocabulary-stage file list, suggest it when unambiguous, and read linked combined TXT novels for chapter preview without manual paste. Preserve the manual paste fallback.
+- Copy the current numbered batch with the non-source vocabulary attachments as real independent files in one click, preserving chapter gaps, missing-file warnings, source selection, scroll position, and no ZIP or workflow advancement.
+- Add integration tests for enabled/disabled attachments, linked combined 100-chapter source, file copying and novel-specific source selection.
+
+
 ## 4.2.0 - 2026-10-19
 
 - Show each novel's independent Translator Export goal and compact progress bar directly beneath its title in the workspace editor header, including completed and over-target counts.
