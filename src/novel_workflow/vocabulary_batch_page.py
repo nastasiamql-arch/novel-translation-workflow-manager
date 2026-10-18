@@ -5,16 +5,19 @@ records, translation steps, or the clipboard. Clipboard copy is user initiated.
 """
 from __future__ import annotations
 
+import tempfile
+import zipfile
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox,
+    QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox,
     QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QTabWidget, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .clipboard_files import copy_file_paths
+from .vocabulary_zip import create_txt_batch_zip
 from .vocabulary_source_binding import (
     batch_stage_files, chapter_source_directory, source_by_id, suggest_source_id,
 )
@@ -27,10 +30,14 @@ from .vocabulary_batches import (
 class TxtVocabularyPage(QWidget):
     """Read-only TXT batch copying and explicit preview-then-save splitting."""
 
-    def __init__(self, state: dict, changed, default_folder: Path, parent=None, *, stage_reader=None):
+    def __init__(self, state: dict, changed, default_folder: Path, parent=None, *,
+                 stage_reader=None, archive_cache_dir=None):
         super().__init__(parent)
         self.changed = changed
         self.default_folder = Path(default_folder)
+        self.archive_cache_dir = Path(archive_cache_dir) if archive_cache_dir is not None else (
+            Path(tempfile.gettempdir()) / "NovelWorkflow" / "txt-vocabulary"
+        )
         self.stage_reader = stage_reader
         self.bound_mode = stage_reader is not None
         self._stage_entries = ()
@@ -45,6 +52,8 @@ class TxtVocabularyPage(QWidget):
         self.state.setdefault("end", 0)
         self.state.setdefault("glossary_1", "")
         self.state.setdefault("glossary_2", "")
+        self.state.setdefault("copy_as_zip", False)
+        self._copy_buttons = []
         self._segments = ()
         self._preview_input = None
         self._groups = ()
@@ -111,6 +120,12 @@ class TxtVocabularyPage(QWidget):
         reload_button.setObjectName("txtVocabularyRefresh")
         reload_button.clicked.connect(self.refresh)
         controls.addWidget(reload_button)
+        self.zip_toggle = QCheckBox("คัดลอกเป็น ZIP")
+        self.zip_toggle.setObjectName("txtVocabularyCopyAsZip")
+        self.zip_toggle.setToolTip("เฉพาะหาศัพท์จาก TXT · ZIP หนึ่งไฟล์ต่อชุด · ไม่กระทบ ZIP ของ Workflow เดิม")
+        self.zip_toggle.setChecked(bool(self.state.get("copy_as_zip", False)))
+        self.zip_toggle.toggled.connect(self._copy_mode_changed)
+        controls.addWidget(self.zip_toggle)
         controls.addStretch(1)
         batch_layout.addLayout(controls)
 
@@ -157,8 +172,8 @@ class TxtVocabularyPage(QWidget):
         self.scroll.verticalScrollBar().setSingleStep(38)
         self.cards = QWidget()
         self.cards_layout = QVBoxLayout(self.cards)
-        self.cards_layout.setContentsMargins(2, 2, 8, 2)
-        self.cards_layout.setSpacing(8)
+        self.cards_layout.setContentsMargins(0, 0, 8, 0)
+        self.cards_layout.setSpacing(0)
         self.scroll.setWidget(self.cards)
         self.scroll.verticalScrollBar().valueChanged.connect(self._load_on_scroll)
         batch_layout.addWidget(self.scroll, 1)
@@ -247,6 +262,13 @@ class TxtVocabularyPage(QWidget):
     def _configuration_changed(self, _value):
         self._save()
         self.refresh()
+
+    def _copy_mode_changed(self, enabled):
+        self.state["copy_as_zip"] = bool(enabled)
+        self._save()
+        for button, count in self._copy_buttons:
+            button.setText("คัดลอก ZIP" if enabled else f"คัดลอก {count} ไฟล์")
+        # No refresh, no scroll movement and no clipboard replacement.
 
     def _update_labels(self):
         if self.bound_mode:
@@ -398,6 +420,7 @@ class TxtVocabularyPage(QWidget):
                 widget.hide()
                 widget.deleteLater()
         self._batch_widgets = []
+        self._copy_buttons = []
         self._rendered_count = 0
 
     def refresh(self):
@@ -464,31 +487,32 @@ class TxtVocabularyPage(QWidget):
             self._append_next()
 
     def _make_card(self, group):
-        card = QFrame()
-        card.setObjectName("txtVocabularyCard")
-        card.setFrameShape(QFrame.StyledPanel)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 10, 12, 9)
-        layout.setSpacing(7)
+        """One compact, single-column Explorer-like row; details start collapsed."""
+        row = QFrame()
+        row.setObjectName("txtVocabularyRow")
+        row.setFrameShape(QFrame.NoFrame)
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(8, 3, 8, 3)
+        layout.setSpacing(0)
         top = QHBoxLayout()
-        top.setSpacing(12)
+        top.setSpacing(9)
+
         number = QLabel(f"{group.index:02d}")
         number.setObjectName("txtVocabularyBatchNumber")
-        number.setMinimumWidth(36)
+        number.setFixedWidth(30)
         number.setAlignment(Qt.AlignCenter)
         top.addWidget(number)
-        labels = QVBoxLayout()
-        labels.setSpacing(2)
         heading = QLabel(f"บท {group.start:04d}–{group.end:04d}")
         heading.setObjectName("txtVocabularyBatchRange")
-        labels.addWidget(heading)
+        heading.setMinimumWidth(105)
+        top.addWidget(heading)
+
         if self.bound_mode:
             references = [
                 entry for entry in self._stage_entries
                 if entry.id != self._selected_source_id
                 and entry.dynamic_reference != "CURRENT_SOURCE_CHAPTER"
             ]
-            configured = [entry.label for entry in references]
             try:
                 paths = batch_stage_files(
                     group, self._stage_entries, self._selected_source_id,
@@ -497,87 +521,97 @@ class TxtVocabularyPage(QWidget):
                 unique_count = len(paths)
                 missing_references = []
             except (OSError, ValueError) as exc:
-                paths = [ch.path for ch in group.chapters]
-                unique_count = len(paths)
+                unique_count = len(group.chapters)
                 missing_references = [str(exc)]
-            status = f"{len(group.chapters)} บท · {len(references)} รายการจากหาศัพท์ · รวม {unique_count} ไฟล์"
         else:
             references = [self.state.get(f"glossary_{n}") for n in (1, 2)]
-            configured = [str(path) for path in references if path]
-            paths = [ch.path for ch in group.chapters] + [Path(p) for p in configured]
+            paths = [ch.path for ch in group.chapters] + [
+                Path(p) for p in references if p
+            ]
             unique_count = len({str(p.expanduser().resolve()).casefold() for p in paths})
-            missing_references = [p for p in configured if not Path(p).expanduser().is_file()]
-            status = f"{len(group.chapters)} บท · {len(configured)} ไฟล์คำศัพท์ · รวม {unique_count} ไฟล์"
+            missing_references = [
+                str(p) for p in references if p and not Path(p).expanduser().is_file()
+            ]
+        status = f"{unique_count} ไฟล์"
         if missing_references:
-            status += " · ⚠ ไฟล์ในขั้นตอนหาศัพท์ไม่พร้อม"
+            status += " · ⚠ ไฟล์หาศัพท์หาย"
         if group.missing:
             status += f" · ⚠ ขาด {len(group.missing)} บท"
-        info = QLabel(status)
-        info.setObjectName("mutedLabel")
-        info.setWordWrap(True)
-        labels.addWidget(info)
-        top.addLayout(labels, 1)
+        count = QLabel(status)
+        count.setObjectName("txtVocabularyBatchCount")
+        count.setMinimumWidth(75)
+        count.setToolTip("จำนวนไฟล์ต้นฉบับและไฟล์ที่เปิดใช้งานในขั้นตอนหาศัพท์เดิม")
+        top.addWidget(count, 1)
 
-        copy = QPushButton(f"คัดลอก {unique_count} ไฟล์")
+        detail_button = QPushButton("ดูรายชื่อไฟล์ ▾")
+        detail_button.setObjectName(f"txtVocabularyDetails{group.index}")
+        detail_button.setProperty("batchDetails", True)
+        detail_button.setFlat(True)
+        detail_button.setCursor(Qt.PointingHandCursor)
+        detail_button.setToolTip("ขยายหรือซ่อนรายชื่อไฟล์")
+        top.addWidget(detail_button)
+
+        copy = QPushButton(
+            "คัดลอก ZIP" if self.zip_toggle.isChecked()
+            else f"คัดลอก {unique_count} ไฟล์"
+        )
         copy.setObjectName(f"txtVocabularyCopyBatch{group.index}")
         copy.setProperty("batchCopyPrimary", True)
-        copy.setMinimumHeight(36)
+        copy.setMinimumHeight(34)
+        copy.setMinimumWidth(115)
         copy.setCursor(Qt.PointingHandCursor)
-        copy.setToolTip("คัดลอกไฟล์บทพร้อมไฟล์ที่เปิดใช้งานในขั้นตอนหาศัพท์เดิม · Ctrl+V")
+        copy.setToolTip("คัดลอกเป็น ZIP หนึ่งไฟล์" if self.zip_toggle.isChecked()
+                        else "คัดลอกไฟล์จริงทั้งหมด · Ctrl+V")
         copy.setEnabled(bool(group.chapters) and (not self.bound_mode or not missing_references))
         copy.clicked.connect(lambda checked=False, batch=group, button=copy: self.copy_batch(batch, button))
+        self._copy_buttons.append((copy, unique_count))
         top.addWidget(copy)
         layout.addLayout(top)
 
         detail = QWidget()
         detail.setObjectName("txtVocabularyDetail")
-        detail_layout = QVBoxLayout(detail)
-        detail_layout.setContentsMargins(3, 3, 3, 3)
-        detail_layout.setSpacing(5)
+        details = QVBoxLayout(detail)
+        details.setContentsMargins(38, 4, 4, 8)
+        details.setSpacing(4)
         for chapter in group.chapters:
-            line = QLabel(f"{chapter.number:04d}  {chapter.path.name}")
-            line.setObjectName("mutedLabel")
-            line.setWordWrap(True)
-            line.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            detail_layout.addWidget(line)
+            label = QLabel(f"{chapter.number:04d}  {chapter.path.name}")
+            label.setObjectName("mutedLabel")
+            label.setWordWrap(True)
+            label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            details.addWidget(label)
         if self.bound_mode:
-            detail_names = [f"{entry.label}  ·  {entry.path.name if entry.path else 'ไฟล์หาย'}" for entry in references]
+            reference_labels = [
+                f"{entry.label} · {entry.path.name if entry.path else 'ไฟล์หาย'}"
+                for entry in references
+            ]
         else:
-            detail_names = [
-                f"คำศัพท์ {n}  ·  {Path(path).name if path else 'ยังไม่ได้เลือก'}"
+            reference_labels = [
+                f"คำศัพท์ {n} · {Path(path).name if path else 'ยังไม่ได้เลือก'}"
                 for n, path in enumerate(references, 1)
             ]
-        for label in detail_names:
-            line = QLabel(label)
-            line.setObjectName("mutedLabel")
-            line.setWordWrap(True)
-            detail_layout.addWidget(line)
+        for text in reference_labels:
+            label = QLabel(text)
+            label.setObjectName("mutedLabel")
+            label.setWordWrap(True)
+            details.addWidget(label)
         if group.missing:
             warning = QLabel("บทที่ขาด: " + ", ".join(f"{n:04d}" for n in group.missing[:30]))
             warning.setObjectName("mutedLabel")
             warning.setWordWrap(True)
-            detail_layout.addWidget(warning)
+            details.addWidget(warning)
         detail.setVisible(False)
 
-        detail_button = QPushButton("ดูรายชื่อไฟล์  ▾")
-        detail_button.setObjectName(f"txtVocabularyDetails{group.index}")
-        detail_button.setProperty("batchDetails", True)
-        detail_button.setFlat(True)
-        detail_button.setCursor(Qt.PointingHandCursor)
-        detail_button.setToolTip("ขยายหรือซ่อนรายชื่อไฟล์ของชุดนี้")
         def toggle_details():
-            scroll = self.scroll.verticalScrollBar()
-            before = scroll.value()
+            before = self.scroll.verticalScrollBar().value()
             showing = not detail.isVisible()
             detail.setVisible(showing)
-            detail_button.setText("ซ่อนรายชื่อไฟล์  ▴" if showing else "ดูรายชื่อไฟล์  ▾")
-            QTimer.singleShot(0, lambda: scroll.setValue(before))
+            detail_button.setText("ซ่อนรายชื่อไฟล์ ▴" if showing else "ดูรายชื่อไฟล์ ▾")
+            QTimer.singleShot(0, lambda: self.scroll.verticalScrollBar().setValue(before))
         detail_button.clicked.connect(toggle_details)
-        layout.addWidget(detail_button, 0, Qt.AlignLeft)
         layout.addWidget(detail)
 
-        self.cards_layout.addWidget(card)
-        return card
+        self.cards_layout.addWidget(row)
+        return row
 
     def jump_to_chapter(self):
         value = self.chapter_search.text().strip()
@@ -617,15 +651,30 @@ class TxtVocabularyPage(QWidget):
                 references = [self.state.get(f"glossary_{n}") for n in (1, 2)]
                 paths = [chapter.path for chapter in group.chapters]
                 paths.extend(Path(reference).expanduser() for reference in references if reference)
-            copied = copy_file_paths(paths)
-        except (OSError, ValueError) as exc:
+            if self.zip_toggle.isChecked():
+                archive = create_txt_batch_zip(
+                    paths, len(group.chapters), group.start, group.end,
+                    self.archive_cache_dir,
+                )
+                try:
+                    copied = copy_file_paths((archive,))
+                except BaseException:
+                    archive.unlink(missing_ok=True)
+                    raise
+                label = f"ZIP 1 ไฟล์ · ภายใน {len(paths)} ไฟล์"
+                button_text = "✓ คัดลอก ZIP แล้ว"
+            else:
+                copied = copy_file_paths(paths)
+                label = f"{len(copied)} ไฟล์"
+                button_text = f"✓ คัดลอกแล้ว {len(copied)} ไฟล์"
+        except (OSError, ValueError, zipfile.BadZipFile) as exc:
             QMessageBox.warning(self, "คัดลอกไฟล์ไม่สำเร็จ", str(exc))
             return
         preserved_scroll = self.scroll.verticalScrollBar().value()
-        button.setText(f"✓ คัดลอกแล้ว {len(copied)} ไฟล์")
+        button.setText(button_text)
         self.summary.setText(
             f"คัดลอกชุดที่ {group.index} ({group.start:04d}–{group.end:04d}) "
-            f"จำนวน {len(copied)} ไฟล์แล้ว · วางไฟล์ด้วย Ctrl+V"
+            f"จำนวน {label} · วางไฟล์ด้วย Ctrl+V"
         )
         QTimer.singleShot(
             0, lambda: self.scroll.verticalScrollBar().setValue(preserved_scroll)

@@ -131,3 +131,100 @@ def test_source_selector_no_cross_stage_or_ambiguous_auto_selection(tmp_path):
     profile.workflow.steps = [WorkflowStep(name="แปล",
         files=[StepFile(path="source/0001.txt", enabled=True)])]
     assert len(enabled_vocabulary_attachments(repo, AssemblyService(repo), profile)) == 1
+
+
+def test_compact_rows_and_zip_toggle_persist_per_novel(tmp_path):
+    import zipfile
+    app = QApplication.instance() or QApplication([])
+    repo, profile, root = _profile(tmp_path)
+    _, prompt = _add(profile, root, "prompts/查找术语.md", "指令")
+    _, glossary = _add(profile, root, "glossary/术语表.txt", "术语\n中文")
+    _add(profile, root, "source/0001 开始.txt", "第1章")
+    for n in range(2, 6):
+        (root / "source" / f"{n:04d} 中文.txt").write_text(f"第{n}章", encoding="utf-8")
+    saved = []
+    cache = tmp_path / "cache"
+    page = TxtVocabularyPage(
+        {}, lambda value: saved.append(value), root / "source",
+        stage_reader=lambda: enabled_vocabulary_attachments(repo, AssemblyService(repo), profile),
+        archive_cache_dir=cache,
+    )
+    page.resize(1050, 650)
+    page.show()
+    app.processEvents()
+    card = page.findChild(__import__("PySide6.QtWidgets", fromlist=["QFrame"]).QFrame, "txtVocabularyRow")
+    assert card is not None
+    assert card.height() < 90, card.height()
+    button = page.findChild(QPushButton, "txtVocabularyCopyBatch1")
+    assert "7 ไฟล์" in button.text()
+    page.zip_toggle.setChecked(True)
+    assert saved[-1]["copy_as_zip"] is True
+    assert "ZIP" in button.text()
+    page.scroll.verticalScrollBar().setValue(0)
+    button.click()
+    data = app.clipboard().mimeData()
+    paths = [Path(url.toLocalFile()) for url in data.urls()]
+    assert len(paths) == 1 and paths[0].is_file()
+    assert paths[0].parent == cache
+    with zipfile.ZipFile(paths[0]) as archive:
+        assert archive.testzip() is None
+        names = archive.namelist()
+        assert len(names) == 7
+        assert sum(name.startswith("chapters/") for name in names) == 5
+        assert "vocabulary/查找术语.md" in names
+        assert "vocabulary/术语表.txt" in names
+        assert archive.read("vocabulary/术语表.txt") == glossary.read_bytes()
+    page.zip_toggle.setChecked(False)
+    assert saved[-1]["copy_as_zip"] is False
+    button.click()
+    assert len(app.clipboard().mimeData().urls()) == 7
+    assert paths[0].exists()  # ZIP remains available even after switching mode.
+    page.close()
+
+
+def test_zip_naming_collisions_and_failure_leave_clipboard_untouched(tmp_path, monkeypatch):
+    import zipfile
+    from novel_workflow.vocabulary_zip import create_txt_batch_zip
+    app = QApplication.instance() or QApplication([])
+    chapters = tmp_path / "source"
+    chapters.mkdir()
+    reference1 = tmp_path / "ref1"
+    reference2 = tmp_path / "ref2"
+    reference1.mkdir()
+    reference2.mkdir()
+    source = chapters / "0001 中国.txt"
+    a = reference1 / "words.txt"
+    b = reference2 / "words.txt"
+    for path, content in [(source, "正文"), (a, "第一"), (b, "第二")]:
+        path.write_text(content, encoding="utf-8")
+    archive = create_txt_batch_zip([source, a, b], 1, 1, 1, tmp_path / "cache")
+    with zipfile.ZipFile(archive) as zip_in:
+        assert set(zip_in.namelist()) == {
+            "chapters/0001 中国.txt", "vocabulary/words.txt",
+            "vocabulary/words (2).txt",
+        }
+        assert zip_in.read("vocabulary/words.txt") == a.read_bytes()
+        assert zip_in.read("vocabulary/words (2).txt") == b.read_bytes()
+    before = set((tmp_path / "cache").iterdir())
+    with __import__("pytest").raises(FileNotFoundError):
+        create_txt_batch_zip([source, tmp_path / "missing.txt"], 1, 1, 1, tmp_path / "cache")
+    assert set((tmp_path / "cache").iterdir()) == before
+    app.clipboard().setText("keep original clipboard")
+    with __import__("pytest").raises(ValueError):
+        create_txt_batch_zip([source], 0, 1, 1, tmp_path / "cache")
+    assert app.clipboard().text() == "keep original clipboard"
+
+
+def test_zip_preference_isolated_from_global_workflow_settings(tmp_path):
+    from novel_workflow.models import AppSettings
+    from novel_workflow.storage import ProjectRepository
+    repo = ProjectRepository(tmp_path / "data")
+    settings = AppSettings()
+    settings.copy_files_as_zip = False
+    settings.vocabulary_txt_profiles["one"] = {"copy_as_zip": True}
+    settings.vocabulary_txt_profiles["two"] = {"copy_as_zip": False}
+    repo.save_settings(settings)
+    saved = repo.load_settings()
+    assert saved.vocabulary_txt_profiles["one"]["copy_as_zip"] is True
+    assert saved.vocabulary_txt_profiles["two"]["copy_as_zip"] is False
+    assert saved.copy_files_as_zip is False

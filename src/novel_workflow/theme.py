@@ -209,11 +209,13 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QListWidget::item:focus, QTreeWidget::item:focus, QTreeView::item:focus, QTableView::item:focus {{ outline: 0; border: 0; }}
     QHeaderView::section {{ color: {c['secondary']}; background: {c['sidebar']}; border: 0; border-bottom: 1px solid {c['border']}; padding: 7px; }}
     QScrollArea#txtVocabularyBatchScroll {{ background: transparent; border: 0; }}
-    QFrame#txtVocabularyCard {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 10px; }}
-    QLabel#txtVocabularyBatchNumber {{ background: {c['surface2']}; color: {c['text']}; font-size: 12pt; font-weight: 600; border-radius: 7px; padding: 6px; }}
-    QLabel#txtVocabularyBatchRange {{ color: {c['text']}; font-size: 12pt; font-weight: 600; }}
-    QFrame#txtVocabularyCard QPushButton[batchDetails="true"] {{ background: transparent; border: 0; color: {c['secondary']}; text-align: left; padding: 3px 6px; }}
-    QFrame#txtVocabularyCard QPushButton[batchDetails="true"]:hover {{ color: {c['text']}; background: {c['hover']}; }}
+    QFrame#txtVocabularyRow {{ background: transparent; border: 0; border-bottom: 1px solid {c['border']}; border-radius: 0; }}
+    QFrame#txtVocabularyRow:hover {{ background: {c['hover']}; }}
+    QLabel#txtVocabularyBatchNumber {{ color: {c['secondary']}; font-size: 10pt; font-weight: 600; }}
+    QLabel#txtVocabularyBatchRange {{ color: {c['text']}; font-size: 10pt; font-weight: 600; }}
+    QLabel#txtVocabularyBatchCount {{ color: {c['muted']}; font-size: 9pt; }}
+    QFrame#txtVocabularyRow QPushButton[batchDetails="true"] {{ background: transparent; border: 0; color: {c['secondary']}; padding: 2px 6px; min-height: 28px; }}
+    QFrame#txtVocabularyRow QPushButton[batchDetails="true"]:hover {{ color: {c['text']}; background: {c['hover']}; }}
     QPushButton[batchCopyPrimary="true"] {{ background: {c['primary']}; color: {c['primary_text']}; border-color: {c['primary']}; font-weight: 600; }}
     QPushButton[batchCopyPrimary="true"]:hover {{ background: {c['primary_hover']}; }}
     QPushButton {{ min-height: 34px; background: {c['surface2']}; color: {c['text']}; border: 1px solid {c['control_border']}; border-radius: 8px; padding: 6px 12px; }}

@@ -2,6 +2,14 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 4.4.0 - 2026-10-19
+
+- Add an optional per-novel "คัดลอกเป็น ZIP" setting only for vocabulary TXT batches; the existing copy button delivers a persistent, validated single ZIP instead of ordinary independent files when enabled. Default remains ordinary files and the general Workflow ZIP preference is unchanged.
+- Keep chapter and enabled vocabulary-step attachment files byte-perfect inside separate archive directories; preserve Unicode names, resolve filename collisions, and verify CRC and source hashes before publishing.
+- Replace oversized batch cards with one-column compact rows, thin dividers, aligned copy buttons and collapsed per-row file details. Preserve lazy loading, chapter search, missing chapter warnings, and scroll position.
+- Add regression coverage for Unicode archives, duplicate attachment names, failure safety, per-novel persistence, ordinary copy and compact row geometry.
+
+
 ## 4.3.0 - 2026-10-19
 
 - Connect the TXT vocabulary mode to enabled attachments of the existing novel-specific vocabulary step only. Prompt and vocabulary files no longer require separate configuration, and unrelated stages are never included.

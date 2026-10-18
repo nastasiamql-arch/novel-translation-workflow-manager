@@ -525,6 +525,7 @@ class WorkspacePage(QWidget):
                 owner.repo, owner.assembler,
                 owner.profile if owner.profile and owner.profile.id == pid else fallback,
             ),
+            archive_cache_dir=owner.repo.root / "cache" / "clipboard" / "txt-vocabulary" / profile.id,
         )
         self.editor_content_stack = QStackedWidget()
         self.editor_content_stack.addWidget(self.editor)
