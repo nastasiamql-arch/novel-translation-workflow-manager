@@ -186,11 +186,15 @@ class StandaloneDownloaderPage(QWidget):
             self.destination.text(), mode=self.mode.currentData(),
             digits=self.digits.value(), include_title=self.with_title.isChecked()
         )
+        # Capture widget values on the UI thread; a QThread must not read Qt widgets.
+        job = {"book_id": self.book_id, "start": self.start.value(),
+               "end": self.end.value(), "mode": self.mode.currentData(),
+               "digits": self.digits.value(), "include_title": self.with_title.isChecked(),
+               "delay": self.delay.value()}
         self.progress_bar.setValue(0)
         self._start("download", lambda cancel, progress: self.service.download_range(
-            self.book_id, self.start.value(), self.end.value(),
-            mode=self.mode.currentData(), digits=self.digits.value(),
-            include_title=self.with_title.isChecked(), delay=self.delay.value(),
+            job["book_id"], job["start"], job["end"], mode=job["mode"],
+            digits=job["digits"], include_title=job["include_title"], delay=job["delay"],
             cancel=cancel, progress=progress))
         self.summary.setText("เริ่มงาน · ตรวจสอบแต่ละบทก่อนบันทึก TXT")
 

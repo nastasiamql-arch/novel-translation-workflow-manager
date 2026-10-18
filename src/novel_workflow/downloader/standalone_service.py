@@ -66,10 +66,12 @@ def cleaned_raw(text: str, chapter) -> str:
     count = len(re.findall(r"[\u3400-\u9fff]", raw))
     if count < 8 or count / max(1, len(raw)) < 0.12:
         raise ValueError("Raw chapter is not verifiable Chinese text")
-    if not re.match(r"^第.{1,14}[章节回卷]", raw.splitlines()[0].strip()):
-        # Catalog titles are website metadata; never synthesize or renumber a Chinese heading.
-        if chapter.title.strip():
-            raw = chapter.title.strip() + "\n\n" + raw
+    heading = raw.splitlines()[0].strip()
+    if not re.match(r"^第.{1,14}[章节回卷]", heading):
+        raise ValueError("Raw chapter heading is missing; refusing to invent source text")
+    numbered = re.match(r"^第([0-9]{1,8})[章节回]", heading)
+    if numbered and int(numbered.group(1)) != chapter.index:
+        raise ValueError(f"Raw chapter number {numbered.group(1)} differs from catalog {chapter.index}")
     return raw + "\n"
 
 
@@ -135,8 +137,12 @@ class StandaloneDownloadService:
                     result.skipped += 1
                 ready.append((chapter, content))
                 if mode in ("separate", "both"):
-                    filename = (f"{chapter.index:0{int(digits)}d} " + format_chapter_filename(
-                        chapter.index, chapter.title)[5:]) if include_title else f"{chapter.index:0{int(digits)}d}.txt"
+                    if include_title:
+                        source_prefix = f"{chapter.index:04d} "
+                        safe_title = format_chapter_filename(chapter.index, chapter.title)
+                        filename = f"{chapter.index:0{int(digits)}d} " + safe_title[len(source_prefix):]
+                    else:
+                        filename = f"{chapter.index:0{int(digits)}d}.txt"
                     target = output / "Chapters" / filename
                     if not target.exists():
                         _atomic_bytes(target, content)

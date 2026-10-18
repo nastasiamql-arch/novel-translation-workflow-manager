@@ -109,3 +109,11 @@ def test_request_budget_persists_across_instances(tmp_path):
     attempts = json.loads(store.limits_path.read_text())["attempts"]
     assert attempts == [10000]
     assert store.root.joinpath("books").exists() is False
+
+
+def test_heading_number_mismatch_is_rejected_without_mutation():
+    chapter = ChapterInfo("30", 30, "第30章 时间飞逝")
+    with pytest.raises(ValueError, match="differs from catalog"):
+        cleaned_raw("第29章 时间飞逝\n\n这是一段足够长的原文内容，可以检测到章节编号错误。", chapter)
+    with pytest.raises(ValueError, match="heading is missing"):
+        cleaned_raw("这是一段足够长的原文内容，但缺少正确的章节标题。", chapter)
