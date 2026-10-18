@@ -2,6 +2,15 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 3.20.0 - 2026-10-18
+
+- Add the independent Novel Downloader navigation page, accessible without selecting or changing any translation novel profile. Keep Downloader book settings, cache, request history, and manifest under a separate data namespace.
+- Support selecting chapter ranges and UTF-8 TXT outputs: separate files (A), combined `Novel_All.txt` (B), or both from one cached content copy (C). Include configurable filename padding and safe title handling.
+- Add per-chapter resume and validation, atomic file writes, explicit refusal to overwrite differing user files, and abort on challenge or rate-limit errors. Minimum chapter interval is 10 seconds, with conservative persisted hourly/daily request budgets.
+- Validate chapter headings and reject Arabic-number mismatches instead of silently changing source text; safely capture UI settings before background QThread operations.
+- Source access is conditional: TomatoMTL's live Raw clipboard-button behavior and rights for automated retrieval are not yet verified; the existing HTML source adapter remains subject to access and content validation. No CAPTCHA or access-control bypass is included.
+- Extend Downloader tests and update navigation regression expectations.
+
 ## 3.19.1 - 2026-10-17
 
 - Disconnect chapter numbering entirely from automatic Translator-to-review workflow stage handoffs, copying, and clipboard actions.
