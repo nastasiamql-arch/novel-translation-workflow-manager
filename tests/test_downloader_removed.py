@@ -40,6 +40,8 @@ def test_profile_removal_preserves_source_and_translation_files(tmp_path):
 
 
 def test_deprecated_downloader_not_in_ui_or_dependencies():
+    from PySide6.QtWidgets import QApplication
+    application = QApplication.instance() or QApplication([])
     root = Path(__file__).resolve().parents[1]
     assert not (root / "src/novel_workflow/downloader").exists()
     assert not (root / "src/novel_workflow/downloader_ui").exists()
