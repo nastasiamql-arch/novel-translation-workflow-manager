@@ -392,6 +392,9 @@ class TxtVocabularyPage(QWidget):
             item = self.cards_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                # Prevent findChild from resolving a stale card while Qt is
+                # waiting for deferred deletion after a refresh.
+                widget.setParent(None)
                 widget.hide()
                 widget.deleteLater()
         self._batch_widgets = []
@@ -521,7 +524,7 @@ class TxtVocabularyPage(QWidget):
         copy.setMinimumHeight(36)
         copy.setCursor(Qt.PointingHandCursor)
         copy.setToolTip("คัดลอกไฟล์บทพร้อมไฟล์ที่เปิดใช้งานในขั้นตอนหาศัพท์เดิม · Ctrl+V")
-        copy.setEnabled(bool(group.chapters) and not missing_references)
+        copy.setEnabled(bool(group.chapters) and (not self.bound_mode or not missing_references))
         copy.clicked.connect(lambda checked=False, batch=group, button=copy: self.copy_batch(batch, button))
         top.addWidget(copy)
         layout.addLayout(top)
