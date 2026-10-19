@@ -1084,6 +1084,7 @@ class EditorTabs(QWidget):
         editor.setProperty("documentSavedText", editor.toPlainText())
         editor._cached_character_count = len(text)
         editor._cached_word_count = len(text.split())
+        editor._cached_vocabulary_warnings = vocabulary_warnings(text) if editor.vocabulary_mode else ()
 
         editor.autosave_timer = QTimer(editor)
         editor.autosave_timer.setSingleShot(True)
