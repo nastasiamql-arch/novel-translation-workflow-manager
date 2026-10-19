@@ -158,10 +158,12 @@ def test_dashboard_library_header_and_goal_agree(translator):
     saved=w.repo.list_profiles()[0]
     page=StatisticsPage(w,[saved],w.repo,w.repo.list_profiles)
     labels=[label.text() for label in page.findChildren(QLabel)]
-    assert 'วันนี้แปลเพิ่ม 5 บท' in labels
+    assert 'วันนี้แปลเพิ่ม 5 บท' not in labels
+    assert any(label == '5 บท' for label in labels)
+    assert all('verified' not in label.casefold() for label in labels)
     assert 'แปลสำเร็จ 5/5 บท ✓' in labels
     card=next(w.profile_cards.item(i) for i in range(w.profile_cards.count()) if w.profile_cards.item(i).data(256)==p.id)
-    assert 'วันนี้ +5' in card.text()
+    assert card.text() == saved.name
     assert 'วันนี้ +5 บท' in ws.novel_header.progress.text()
 
 
