@@ -25,8 +25,8 @@ def test_cursor_status_has_no_disk_or_export_work():
 
 def test_winged_brand_assets_are_packaged():
     root = ROOT / "src/novel_workflow/resources"
-    assert (root / "valhalla-logo.png").read_bytes().startswith(b"\\x89PNG")
-    assert (root / "valhalla-icon.png").read_bytes().startswith(b"\\x89PNG")
+    assert (root / "valhalla-logo.png").read_bytes().startswith(b"\x89PNG")
+    assert (root / "valhalla-icon.png").read_bytes().startswith(b"\x89PNG")
     spec = (ROOT / "NovelWorkflow.spec").read_text(encoding="utf-8")
     assert "valhalla-icon.png" in spec
     assert "valhalla.ico" in spec
