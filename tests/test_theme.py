@@ -72,7 +72,7 @@ def test_theme_styles_disabled_controls_and_keyboard_focus_explicitly():
         assert 'QToolButton[keyboardFocus="true"]' in stylesheet
         assert "font-size: 11pt" in stylesheet
         assert "font-size: 16pt" in stylesheet
-        assert "font-size: 18pt" in stylesheet
+        assert "font-size: 21pt" in stylesheet
         assert "font-size: 25pt" in stylesheet
         assert "font-size: 9pt" in stylesheet
 
