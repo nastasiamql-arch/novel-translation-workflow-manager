@@ -325,7 +325,7 @@ class StatisticsPage(QWidget):
         goal = goal_progress(profile)
         if goal:
             completed, target, percentage = goal
-            count = QLabel(f"{completed}/{target} บท{' ✓' if completed >= target else ''} · {percentage}%")
+            count = QLabel(f"แปลสำเร็จ {completed}/{target} บท{' ✓' if completed >= target else ''}")
             count.setObjectName("progressGoalCount")
             content.addWidget(count)
             bar = QProgressBar()
