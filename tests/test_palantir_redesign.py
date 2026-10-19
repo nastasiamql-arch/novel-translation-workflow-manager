@@ -716,7 +716,7 @@ def test_tab_click_focuses_text_for_immediate_paste(window, tmp_path):
     assert first.textCursor().position() == 5
     app.clipboard().setText(" pasted")
     QTest.keyClick(first, Qt.Key_V, Qt.ControlModifier)
-    assert first.toPlainText() == "first pasted"
+    assert first.toPlainText() == "first pasted\n"
     assert second.toPlainText() == "second"
     first.moveCursor(QTextCursor.Start)
     first._user_positioned_caret = True

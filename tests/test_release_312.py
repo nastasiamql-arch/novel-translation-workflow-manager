@@ -200,7 +200,7 @@ def test_copy_multiple_edited_tabs(window):
     first = ws.editor.open_file(folder / 'a.txt')
     other = ws.editor.open_file(second)
     first.insertPlainText('latest first'); other.insertPlainText('latest second')
-    ws.stage_buttons[0].click()
+    ws.stage_buttons[0].click(); ws.copy_step_button.click()
     paths = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
     assert len(paths) == 2
     assert all(b'latest' in path.read_bytes() for path in paths)
