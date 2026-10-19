@@ -102,7 +102,7 @@ def test_references_translation_only(tmp_path):
     glossary = tmp_path / "Glossary.md"
     glossary.write_text("prompt")
     source = tmp_path / "FATE.txt"
-    source.write_text(novel_text(1, 4))
+    source.write_text(novel_text(1, 4), encoding="utf-8")
     entries = (TranslationAttachment("source", "Source", source),
                TranslationAttachment("ref", "Glossary", glossary))
     assert translation_reference_files(entries, source, "source") == (glossary.resolve(),)
@@ -110,9 +110,9 @@ def test_references_translation_only(tmp_path):
 
 def test_source_changed_before_copy_preserves_clipboard(tmp_path):
     src_file = tmp_path / "FATE.txt"
-    src_file.write_text(novel_text(1, 5))
+    src_file.write_text(novel_text(1, 5), encoding="utf-8")
     source = load_translation_source("file", path=src_file)
-    src_file.write_text(novel_text(1, 6))
+    src_file.write_text(novel_text(1, 6), encoding="utf-8")
     with pytest.raises(ValueError, match="รีเฟรช"):
         prepare_translation_batch(source, translation_groups(source)[0], (), tmp_path / "cache")
     assert not list((tmp_path / "cache").rglob("*.zip"))
