@@ -87,6 +87,7 @@ foreach ($path in $preservedFiles) { $preservedHashes[$path] = (Get-FileHash -Li
 $unrelated = Join-Path $installDir 'user-note.txt'
 Set-Content -LiteralPath $unrelated -Value 'retain unrelated files' -Encoding UTF8
 $shortcut = Join-Path $env:APPDATA 'Microsoft/Windows/Start Menu/Programs/Palantir Novel.lnk'
+$newShortcut = Join-Path $env:APPDATA 'Microsoft/Windows/Start Menu/Programs/Valhalla.lnk'
 $shortcutBefore = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut).TargetPath
 if ($shortcutBefore -ne $executable) { throw 'Shortcut points to another installation.' }
 $exeBefore = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot '../dist/NovelWorkflow/NovelWorkflow.exe') -Algorithm SHA256).Hash
@@ -111,7 +112,9 @@ foreach ($module in @('playwright','selectolax','httpx','httpcore','pyee','green
 }
 $metadata = @(Get-ChildItem -LiteralPath (Join-Path $installDir '_internal') -Directory -Filter 'novelworkflow-*.dist-info')
 if ($metadata.Count -ne 1 -or $metadata[0].Name -ne "novelworkflow-$Version.dist-info") { throw 'Incorrect installed metadata.' }
-if ((New-Object -ComObject WScript.Shell).CreateShortcut($shortcut).TargetPath -ne $shortcutBefore) { throw 'Shortcut target changed.' }
+if (Test-Path -LiteralPath $shortcut) { throw 'Legacy Palantir shortcut was not removed.' }
+if (-not (Test-Path -LiteralPath $newShortcut)) { throw 'Valhalla shortcut was not created.' }
+if ((New-Object -ComObject WScript.Shell).CreateShortcut($newShortcut).TargetPath -ne $shortcutBefore) { throw 'Valhalla shortcut target changed.' }
 $probe = Start-Process -FilePath $executable -ArgumentList @('--check-runtime', '--expected-version', $Version, '--history-profile', ('"' + $profilePath + '"')) -WindowStyle Hidden -PassThru -Wait
 if ($probe.ExitCode -ne 0) { throw 'Upgraded executable version/runtime verification failed.' }
 $migratedSnapshot = Join-Path $taskRoot 'Polish History/Polish บท 6-10'

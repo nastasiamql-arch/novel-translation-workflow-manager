@@ -678,7 +678,7 @@ def test_profile_reorder_lists_have_no_hover_instruction():
     assert listing.toolTip() == ''
 
 
-def test_application_suppresses_all_floating_tooltips(window):
+def test_application_allows_navigation_tooltips(window):
     from PySide6.QtCore import QEvent, QPoint
     from PySide6.QtGui import QHelpEvent
     from PySide6.QtWidgets import QToolTip
@@ -687,4 +687,4 @@ def test_application_suppresses_all_floating_tooltips(window):
     point=target.rect().center()
     event=QHelpEvent(QEvent.ToolTip,point,target.mapToGlobal(point))
     assert QApplication.sendEvent(target,event)
-    assert not QToolTip.isVisible()
+    assert target.toolTip() == 'temporary tooltip'
