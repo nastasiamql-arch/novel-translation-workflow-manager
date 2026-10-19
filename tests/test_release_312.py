@@ -68,7 +68,7 @@ def test_copy_normal_files_are_frozen_and_latest(window):
     editor = ws.editor.open_file(path)
     editor.insertPlainText('latest')
     ws.stage_buttons[0].click()
-    wait_until(lambda: not w.history_busy())
+    ws.copy_step_button.click()
     payload = Path(QApplication.clipboard().mimeData().urls()[0].toLocalFile())
     expected = path.read_bytes()
     path.write_bytes(b'changed later')
@@ -122,7 +122,7 @@ def test_native_recycle_bin_receives_snapshot(history):
 
 def test_compact_history_delete_has_no_confirmation(window, monkeypatch):
     w, p, ws, errors = window
-    ws.history_range.setText('6-10'); ws.stage_buttons[1].click()
+    ws.history_range.setText('6-10'); ws.stage_buttons[1].click(); ws.save_for_review_button.click()
     wait_until(lambda: not w.history_busy())
     w.open_polish_history(); wait_until(lambda: not w.history_busy())
     page = w._utility_pages['polish-history:' + p.id]
@@ -151,7 +151,9 @@ def test_copy_every_entry_point_latest_bytes(window, zipped, stage):
     ws.history_range.setText('6-10')
     w.settings.copy_files_as_zip = zipped
     if stage == 'multiple': w.copy_step(advance=False, selected_steps=p.workflow.steps)
-    else: w.copy_named_stage(p.id, stage)
+    else:
+        w.copy_named_stage(p.id, stage)
+        ws.copy_step_button.click()
     wait_until(lambda: not w.history_busy())
     payloads = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
     expected = path.read_bytes()
@@ -170,7 +172,7 @@ def test_copy_untouched_normalization_preserves_bom_crlf(window):
     path = w.repo.profile_dir(p.id) / 'a.txt'
     raw = b'\xef\xbb\xbfline\r\n\r\nnext\r\n'
     path.write_bytes(raw); ws.editor.open_file(path)
-    ws.stage_buttons[0].click()
+    ws.stage_buttons[0].click(); ws.copy_step_button.click()
     payload = Path(QApplication.clipboard().mimeData().urls()[0].toLocalFile())
     assert payload.read_bytes() == path.read_bytes() == raw
 
@@ -183,7 +185,7 @@ def test_copy_external_and_dynamic_reference(window, tmp_path, monkeypatch):
     p.workflow.steps[0].files = [StepFile(reference_type='external_file', path=str(external)),
                                StepFile(reference_type='dynamic', dynamic_reference='latest')]
     monkeypatch.setattr(w.assembler, 'resolve', lambda *args: dynamic)
-    ws.stage_buttons[0].click()
+    ws.stage_buttons[0].click(); ws.copy_step_button.click()
     paths = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
     assert {path.read_bytes() for path in paths} == {b'chapter 1-5', b'chapter 6-10'}
     assert not errors

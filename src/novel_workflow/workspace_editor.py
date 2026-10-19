@@ -562,7 +562,6 @@ class CodeEditor(QPlainTextEdit):
         self._user_positioned_caret = False
         # Tracking user input avoids moving an explicitly positioned caret to
         # the document end merely because the file tab is clicked again.
-        self.textChanged.connect(self._mark_user_caret_positioned)
         self.line_number_area = LineNumberArea(self)
         self.line_number_area.setObjectName("lineNumberArea")
         self.blockCountChanged.connect(self.update_line_number_area_width)
@@ -606,14 +605,15 @@ class CodeEditor(QPlainTextEdit):
         super().mousePressEvent(event)
 
     def keyPressEvent(self, event):
-        if event.key() in (
+        if (event.key() in (
             Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down,
             Qt.Key_Home, Qt.Key_End, Qt.Key_PageUp, Qt.Key_PageDown,
-        ):
+        ) or (event.text() and not (event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)))):
             self._user_positioned_caret = True
         super().keyPressEvent(event)
 
     def insertFromMimeData(self, source):
+        self._user_positioned_caret = True
         if source.hasText():
             cursor = self.textCursor()
             selected = cursor.selectionEnd() - cursor.selectionStart()

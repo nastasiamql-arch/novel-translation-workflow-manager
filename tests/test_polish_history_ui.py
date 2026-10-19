@@ -219,10 +219,10 @@ def test_multistage_zip_keeps_all_stages_and_snapshot_context(window):
     wait_until(lambda: not w.history_busy())
     archive = Path(QApplication.clipboard().mimeData().urls()[0].toLocalFile())
     with zipfile.ZipFile(archive) as content:
-        assert len(content.namelist()) == 3
+        assert len(content.namelist()) == 4
         assert any(name.startswith('01_Translate/') for name in content.namelist())
         assert any(name.startswith('02_Polish/') for name in content.namelist())
-    assert '3 ไฟล์' in w.statusBar().currentMessage()
+    assert '4 ไฟล์' in w.statusBar().currentMessage()
     assert not errors
 
 
@@ -257,7 +257,6 @@ def test_history_opened_during_snapshot_loads_after_job_finishes(window, monkeyp
         return create(*args, **kwargs)
     monkeypatch.setattr(w.polish_history, 'create', pending)
     workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
-    wait_until(lambda: not w.history_busy())
     w.open_polish_history(); ready.set()
     page = w._utility_pages['polish-history:' + p.id]
     wait_until(lambda: not w.history_busy() and len(page.snapshots) == 1)

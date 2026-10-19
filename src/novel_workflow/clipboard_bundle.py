@@ -16,7 +16,7 @@ def prepare_bundle(repo, assembler, profile, steps, editor_tabs=None, *, all_fil
     plan = {}
     for step in steps:
         for item in sorted(step.files, key=lambda x: x.order):
-            if not all_files and step.id != profile.polish_history_step_id and not item.enabled: continue
+            if not all_files and not item.enabled: continue
             source = resolve_attachment(repo, assembler, profile, item)
             files = _files(source)
             attachments.append((item, source, files))
