@@ -166,7 +166,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QProgressBar#progressGoalBar::chunk {{ background: {c['accent']}; border-radius: 4px; }}
     QFrame#progressRow {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 12px; }}
     QFrame#storyStrip, QFrame#modeStrip, QFrame#bottomBar, QFrame#goalPanel,
-    QFrame#metricCard, QFrame#progressRow, QFrame#editorPanel,
+    QFrame#metricCard, QFrame#editorPanel,
     QFrame#settingsCard, QFrame#libraryEmptyState {{ background: transparent; border: 0; border-radius: 0; }}
     QFrame#settingsCard, QFrame#metricCard {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 10px; }}
     QFrame#explorerPanel, QFrame#workflowSidebar, QFrame#editorHeader,
