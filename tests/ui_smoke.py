@@ -587,6 +587,9 @@ def main() -> int:
         result = 0 if smoke_passed else (event_result or 1)
         # Release QFileSystemModel/watchers before deleting the temporary tree.
         # Single-novel switching also schedules retired workspaces for deletion.
+        # No user is present to answer the intentional unexported-translation warning.
+        # This only affects smoke teardown, not application close protection.
+        window._close_export_reminder_accepted = True
         assert window.close(), 'Smoke window did not close safely'
         window.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
