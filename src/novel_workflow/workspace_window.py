@@ -41,6 +41,7 @@ from .update_bootstrap import launch_update, read_update_result
 from .updater import UpdateError, UpdateInfo, check_for_update, download_update
 from .file_import import import_files_into_directory
 from .vocabulary_batch_page import TxtVocabularyPage
+from .translation_batch_page import TranslationBatchPage
 from .vocabulary_source_binding import enabled_vocabulary_attachments
 from .polish_history import PolishHistory, RangeRequired
 from .polish_history_page import PolishHistoryPage, HistoryWorker
@@ -328,6 +329,12 @@ class WorkspacePage(QWidget):
             lambda checked=False: self.owner.open_txt_vocabulary(self.profile_id)
         )
         sidebar_layout.addWidget(self.txt_vocabulary_shortcut)
+        self.translation_batch_shortcut = QPushButton("แปลหลายบท")
+        self.translation_batch_shortcut.setObjectName("translationBatchShortcut")
+        self.translation_batch_shortcut.clicked.connect(
+            lambda checked=False: self.owner.open_translation_batches(self.profile_id)
+        )
+        sidebar_layout.addWidget(self.translation_batch_shortcut)
         sidebar_layout.addWidget(self.steps, 2)
         files_heading = QLabel("ไฟล์ของขั้นตอนปัจจุบัน")
         files_heading.setObjectName("sectionHeading")
@@ -518,6 +525,7 @@ class WorkspacePage(QWidget):
             if profile.main_folder.strip() else owner.repo.profile_dir(profile.id) / "source"
         )
         self.txt_vocabulary_page = None
+        self.translation_batch_page = None
         self.editor_content_stack = QStackedWidget()
         self.editor_content_stack.addWidget(self.editor)
         editor_layout.addWidget(self.editor_content_stack, 1)
@@ -837,6 +845,23 @@ class WorkspacePage(QWidget):
             self.editor_content_stack.addWidget(page)
         return self.txt_vocabulary_page
 
+    def open_translation_batches(self):
+        """Open the independent view; stage buttons and COPY STEP stay unchanged."""
+        if self.translation_batch_page is None:
+            pid = self.profile_id
+            self.translation_batch_page = TranslationBatchPage(
+                self.owner.repo,
+                lambda: next((p for p in self.owner.ps_list if p.id == pid), None),
+                self.owner.assembler,
+                self.owner.settings.translation_batch_profiles.get(pid, {}),
+                lambda state: self.owner.save_translation_batch_state(pid, state),
+                lambda: self.sync_vocabulary_source(),
+                self,
+            )
+            self.editor_content_stack.addWidget(self.translation_batch_page)
+        self.editor_content_stack.setCurrentWidget(self.translation_batch_page)
+        return self.translation_batch_page
+
     def set_vocabulary_source(self, mode):
         if mode not in ("manual", "files"):
             return
@@ -857,7 +882,7 @@ class WorkspacePage(QWidget):
         show_files = self.vocabulary_mode and self.vocabulary_source_mode == "files"
         if show_files:
             self._ensure_txt_vocabulary_page()
-        self.editor_content_stack.setCurrentIndex(1 if show_files else 0)
+        self.editor_content_stack.setCurrentWidget(self.txt_vocabulary_page if show_files else self.editor)
 
     def filter_files(self, query):
         query = query.strip().casefold()
@@ -2902,6 +2927,17 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.refresh_files()
         self._schedule_workspace_session_save()
         self.copy_step(advance=False)
+
+    def save_translation_batch_state(self, profile_id, state):
+        self.settings.translation_batch_profiles[profile_id] = dict(state)
+        self._schedule_workspace_session_save()
+
+    def open_translation_batches(self, profile_id):
+        if not self.profile or self.profile.id != profile_id:
+            return
+        workspace = self.workspaces.get(profile_id)
+        if workspace is not None:
+            workspace.open_translation_batches()
 
     def save_txt_vocabulary_state(self, profile_id, state):
         self.settings.vocabulary_txt_profiles[profile_id] = dict(state)

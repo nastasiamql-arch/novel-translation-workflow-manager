@@ -275,6 +275,7 @@ class AppSettings:
     workspace_step_indices: dict[str, int] = field(default_factory=dict)
     workspace_vocabulary_modes: dict[str, bool] = field(default_factory=dict)
     vocabulary_txt_profiles: dict[str, dict] = field(default_factory=dict)
+    translation_batch_profiles: dict[str, dict] = field(default_factory=dict)
     history_sort_modes: dict[str, str] = field(default_factory=dict)
     history_manual_order: dict[str, list[str]] = field(default_factory=dict)
     workspace_open_profile_ids: list[str] = field(default_factory=list)
