@@ -33,8 +33,9 @@ def test_export_tab_stays_last(tmp_path):
 
 def test_library_covers_and_card_spacing_are_slightly_smaller(window):
     from PySide6.QtCore import QSize
-    assert window.profile_cards.iconSize() == QSize(136, 172)
-    assert window.profile_cards.gridSize() == QSize(224, 344)
+    assert window.profile_cards.iconSize() == QSize(156, 208)
+    assert window.profile_cards.gridSize() == QSize(210, 292)
+    assert window.profile_cards.wordWrap()
 
 
 def test_settings_launch_target_text_uses_smaller_ui_size(window):

@@ -1977,8 +1977,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             card = self.profile_cards.item(index)
             profile = by_id.get(card.data(Qt.UserRole))
             if profile:
-                card.setText(f"{profile.name}\n{completion_label(profile)} · วันนี้ +{daily_chapter_count(profile)}\nวันนี้ส่ง {daily_export_count(profile)} ไฟล์ · {verified_goal_text(profile)}\n{_profile_status_label(_profile_status(profile))}")
-                card.setToolTip(f"{profile.name}\n{completion_label(profile)}\nverified {verified_goal_text(profile)}")
+                # Library cards are strictly visual book shelves: title + cover.
+                # Progress and verified information remain stored in profile data.
+                card.setText(profile.name)
+                card.setToolTip(profile.name)
         if self.profile:
             fresh = next((item for item in profiles if item.id == self.profile.id), None)
             if fresh:
@@ -2332,15 +2334,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 except ValueError:
                     pass
             if not pixmap.isNull():
-                pixmap = pixmap.scaled(148, 188, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                pixmap = pixmap.copy((pixmap.width()-148)//2, (pixmap.height()-188)//2, 148, 188)
+                pixmap = pixmap.scaled(156, 208, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                pixmap = pixmap.copy((pixmap.width()-156)//2, (pixmap.height()-208)//2, 156, 208)
             status = _profile_status(profile)
-            card = QListWidgetItem(
-                QIcon(pixmap), f"{profile.name}\n{completion_label(profile)} · วันนี้ +{daily_chapter_count(profile)}\nวันนี้ส่ง {daily_export_count(profile)} ไฟล์ · {verified_goal_text(profile)}\n{_profile_status_label(status)}"
-            )
+            card = QListWidgetItem(QIcon(pixmap), profile.name)
             card.setData(Qt.UserRole, profile.id)
             card.setData(Qt.UserRole + 1, status)
-            card.setToolTip(f"{profile.name}\n{completion_label(profile)}\nverified {verified_goal_text(profile)}")
+            card.setToolTip(profile.name)
             self.profile_cards.addItem(card)
 
         target_id = pid or (

@@ -3,14 +3,14 @@ from __future__ import annotations
 from datetime import date, timedelta
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QMessageBox,
     QPushButton, QProgressBar, QScrollArea, QSpinBox, QVBoxLayout, QWidget, QGridLayout, QLayout,
 )
 
 from .models import NovelProfile
-from .export_service import daily_export_count, verified_goal_text
 from .storage import ProjectRepository
 from .translation_progress import daily_chapter_count, goal_progress, profile_week_count, reset_goal_progress, completed_chapter_count, completion_label, completion_tooltip
 
@@ -94,7 +94,7 @@ class StatisticsPage(QWidget):
             elif item.layout():
                 self._clear(item.layout())
 
-    def _metric(self, title: str, value: int, note: str, unit="บท"):
+    def _metric(self, title: str, value: int, unit="บท"):
         card = QFrame()
         card.setObjectName("metricCard")
         layout = QVBoxLayout(card)
@@ -102,11 +102,8 @@ class StatisticsPage(QWidget):
         title_label.setObjectName("metricLabel")
         number = QLabel(f"{value:,} {unit}")
         number.setObjectName("metricValue")
-        note_label = QLabel(note)
-        note_label.setObjectName("mutedLabel")
         layout.addWidget(title_label)
         layout.addWidget(number)
-        layout.addWidget(note_label)
         self.summary.addWidget(card)
 
     def refresh(self):
@@ -126,10 +123,8 @@ class StatisticsPage(QWidget):
         ))
         today_total = sum(daily_chapter_count(profile, today_key) for profile in self.profiles)
         week_total = sum(profile_week_count(profile, today) for profile in self.profiles)
-        active = sum(1 for profile in self.profiles if daily_chapter_count(profile, today_key) > 0)
-        self._metric("วันนี้", today_total, f"จาก {active} เรื่อง")
-        self._metric("สัปดาห์นี้", week_total, "นับตั้งแต่วันจันทร์")
-        self._metric("วันนี้ส่ง verified", sum(daily_export_count(p, today_key) for p in self.profiles), f"ทั้งหมด {len(self.profiles)} เรื่อง", "ไฟล์")
+        self._metric("วันนี้", today_total)
+        self._metric("สัปดาห์นี้", week_total)
 
         recent = [today - timedelta(days=offset) for offset in range(6, -1, -1)]
         max_count = max((sum(daily_chapter_count(profile, day.isoformat()) for profile in self.profiles) for day in recent), default=0)
@@ -216,67 +211,77 @@ class StatisticsPage(QWidget):
         self.profiles = self.refresh_callback()
         self.refresh()
 
+    def _cover(self, profile: NovelProfile) -> QLabel:
+        """Use the same saved, validated profile cover as the library."""
+        cover = QLabel()
+        cover.setObjectName("progressCover")
+        cover.setFixedSize(108, 148)
+        cover.setAlignment(Qt.AlignCenter)
+        path = Path(__file__).resolve().parent / "resources" / "novelworkflow.png"
+        if profile.cover_image_path:
+            try:
+                candidate = self.repo.resolve_project_path(profile.id, profile.cover_image_path)
+                if candidate.is_file():
+                    path = candidate
+            except (OSError, ValueError, TypeError):
+                pass
+        image = QPixmap(str(path)) if path.is_file() else QPixmap()
+        if not image.isNull():
+            scaled = image.scaled(108, 148, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            cover.setPixmap(scaled.copy((scaled.width() - 108) // 2,
+                                        (scaled.height() - 148) // 2, 108, 148))
+        return cover
+
     def _profile_row(self, profile: NovelProfile, today_key: str) -> QFrame:
         row = QFrame()
         row.setObjectName("progressRow")
-        layout = QVBoxLayout(row)
-        header = QHBoxLayout()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(16)
+        layout.addWidget(self._cover(profile), 0, Qt.AlignTop)
+        content = QVBoxLayout()
+        content.setSpacing(8)
         title = QLabel(profile.name)
-        title.setObjectName("metricLabel")
+        title.setObjectName("progressStoryTitle")
         title.setWordWrap(True)
-        latest = QLabel(completion_label(profile))
-        latest.setObjectName("mutedLabel"); latest.setWordWrap(True)
-        latest.setToolTip(completion_tooltip(profile))
-        header.addWidget(title, 1)
-        header.addWidget(latest)
-        layout.addLayout(header)
+        title.setToolTip(profile.name)
+        content.addWidget(title)
 
-        if profile.translation_daily_activity:
-            legacy = QPushButton('สถิติ Context เดิม (ไม่นับเป็น Export ที่ยืนยัน) ▾')
-            legacy.setCheckable(True)
-            legacy_text = QLabel('\n'.join(f'{day} · {len(chapters)} บท (Context)' for day, chapters in sorted(profile.translation_daily_activity.items())))
-            legacy_text.setWordWrap(True); legacy_text.hide()
-            legacy.toggled.connect(legacy_text.setVisible)
-            layout.addWidget(legacy); layout.addWidget(legacy_text)
-        count = daily_chapter_count(profile, today_key)
-        today_label = QLabel(f"วันนี้แปลเพิ่ม {count} บท")
-        today_label.setObjectName("bodyLabel")
-        layout.addWidget(today_label)
-        verified = QLabel(f"วันนี้ส่ง verified {daily_export_count(profile, today_key)} ไฟล์ · รอบส่ง {verified_goal_text(profile)}")
-        verified.setWordWrap(True); layout.addWidget(verified)
-        if profile.verified_goal_cycles:
-            details = QPushButton(f"รอบส่งก่อนหน้า ({len(profile.verified_goal_cycles)}) ▾")
-            details.setCheckable(True)
-            history = QLabel("\n".join(f"{cycle.get('reset_at', '')[:10]} · {cycle['count']}/{cycle.get('target') or '—'}" for cycle in profile.verified_goal_cycles))
-            history.setWordWrap(True); history.hide()
-            details.toggled.connect(history.setVisible)
-            layout.addWidget(details); layout.addWidget(history)
+        latest = QLabel(completion_label(profile))
+        latest.setObjectName("progressExport")
+        latest.setWordWrap(True)
+        latest.setToolTip(completion_tooltip(profile))
+        content.addWidget(latest)
 
         goal = goal_progress(profile)
-        controls = QHBoxLayout()
         if goal:
             completed, target, percentage = goal
-            goal_label = QLabel(f"แปลสำเร็จ {completed}/{target} บท{' ✓' if completed >= target else ''}")
-            goal_label.setObjectName("bodyLabel")
-            goal_bar = QProgressBar()
-            goal_bar.setRange(0, 100)
-            goal_bar.setValue(percentage)
-            goal_bar.setTextVisible(False)
-            controls.addWidget(goal_label)
-            controls.addWidget(goal_bar, 1)
-            percentage_label = QLabel(f"{percentage}%")
-            percentage_label.setObjectName("bodyLabel")
-            percentage_label.setMinimumWidth(42)
-            percentage_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            controls.addWidget(percentage_label)
+            goal_line = QHBoxLayout()
+            count = QLabel(f"แปลสำเร็จ {completed}/{target} บท{' ✓' if completed >= target else ''}")
+            count.setObjectName("progressGoalCount")
+            goal_line.addWidget(count, 1)
+            percent = QLabel(f"{percentage}%")
+            percent.setObjectName("bodyLabel")
+            goal_line.addWidget(percent)
+            content.addLayout(goal_line)
+            bar = QProgressBar()
+            bar.setObjectName("progressGoalBar")
+            bar.setRange(0, 100)
+            bar.setValue(min(100, percentage))
+            bar.setTextVisible(False)
+            content.addWidget(bar)
         else:
             hint = QLabel("ยังไม่ได้ตั้งเป้าหมาย")
             hint.setObjectName("mutedLabel")
-            controls.addWidget(hint, 1)
+            content.addWidget(hint)
+
+        actions = QHBoxLayout()
+        actions.addStretch(1)
         set_goal = QPushButton("แก้เป้าหมาย" if goal else "ตั้งเป้าหมาย")
         has_context = bool(profile.context_path and Path(profile.context_path).expanduser().is_file())
         set_goal.setEnabled(has_context)
-        if not has_context:set_goal.setToolTip("เลือกไฟล์ Context ของนิยายก่อน จึงจะติดตามเป้าหมายได้")
+        if not has_context:
+            set_goal.setToolTip("เลือกไฟล์ Context ของนิยายก่อน จึงจะติดตามเป้าหมายได้")
         target_input = QSpinBox()
         target_input.setRange(1, 100000)
         target_input.setValue(profile.translation_goal_target or 10)
@@ -293,15 +298,31 @@ class StatisticsPage(QWidget):
             lambda checked=False, item=profile, field=target_input:
                 self._save_goal(item, field.value())
         )
-        controls.addWidget(set_goal)
-        controls.addWidget(target_input)
-        controls.addWidget(save_goal)
+        actions.addWidget(set_goal)
+        actions.addWidget(target_input)
+        actions.addWidget(save_goal)
         if goal:
             reset = QPushButton("รีเซ็ตความคืบหน้า")
-            reset.setToolTip("เริ่มนับบทใหม่จาก Translator Export ถัดไป โดยเก็บประวัติ Export เดิมไว้")
+            reset.setToolTip("เริ่มนับบทใหม่จาก Translator Export ถัดไป โดยเก็บประวัติเดิมไว้")
             reset.clicked.connect(lambda checked=False, item=profile: self._reset_goal(item))
-            controls.addWidget(reset)
-        layout.addLayout(controls)
+            actions.addWidget(reset)
+        content.addLayout(actions)
+
+        # Context history remains accessible; verified metrics are intentionally absent.
+        if profile.translation_daily_activity:
+            details = QPushButton("รายละเอียด Context เดิม ▾")
+            details.setCheckable(True)
+            details_text = QLabel("\n".join(
+                f"{day} · {len(chapters)} บท (Context)"
+                for day, chapters in sorted(profile.translation_daily_activity.items())
+            ))
+            details_text.setObjectName("mutedLabel")
+            details_text.setWordWrap(True)
+            details_text.hide()
+            details.toggled.connect(details_text.setVisible)
+            content.addWidget(details)
+            content.addWidget(details_text)
+        layout.addLayout(content, 1)
         return row
 
     def _reset_goal(self, profile: NovelProfile):

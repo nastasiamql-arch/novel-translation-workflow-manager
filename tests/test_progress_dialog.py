@@ -64,3 +64,33 @@ def test_clear_all_goals_can_be_cancelled_without_changing_profiles(tmp_path, mo
     restored = repo.list_profiles()[0]
     assert restored.translation_goal_target == 12
     assert restored.translation_goal_baseline == 50
+
+
+def test_progress_cards_keep_covers_and_hide_verified_and_summary_notes(tmp_path):
+    from PySide6.QtWidgets import QLabel
+    from PySide6.QtGui import QImage
+    app()
+    repo = ProjectRepository(tmp_path / "data")
+    profile = NovelProfile(name="นิยายตัวอย่าง", translation_goal_target=5,
+                           translator_goal_baseline=0)
+    folder = repo.profile_dir(profile.id)
+    folder.mkdir(parents=True, exist_ok=True)
+    cover = folder / "cover.png"
+    assert QImage(60, 90, QImage.Format_RGB32).save(str(cover))
+    profile.cover_image_path = "cover.png"
+    profile.verified_goal_target = 10
+    profile.verified_goal_count = 2
+    repo.save_profile(profile)
+    dashboard = TranslationDashboardDialog(None, repo.list_profiles(), repo, repo.list_profiles)
+    assert dashboard.summary.count() == 2
+    cards = dashboard.rows_host.findChildren(QLabel)
+    visible_text = " ".join(label.text() for label in cards if not label.isHidden())
+    assert "verified" not in visible_text.casefold()
+    assert "วันนี้แปลเพิ่ม" not in visible_text
+    assert "จาก 1 เรื่อง" not in visible_text
+    assert "นับตั้งแต่วันจันทร์" not in visible_text
+    cover_widget = dashboard.rows_host.findChild(QLabel, "progressCover")
+    assert cover_widget is not None and not cover_widget.pixmap().isNull()
+    assert any(label.text() == profile.name for label in cards)
+    dashboard.refresh()
+    assert dashboard.summary.count() == 2

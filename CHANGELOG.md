@@ -2,6 +2,13 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 4.6.0 - 2026-10-19
+
+- Reduce Library cards to the saved novel cover and the novel title only, including after background progress refresh; preserve category tabs, search, reordering and opening novels.
+- Redesign the translation progress page with real novel covers, titles, the last Translator Export, goals, progress bars and existing goal-edit/reset actions.
+- Display only today's and this week's chapter totals in the top metrics. Hide all Verified counts, per-story daily counts, and explanatory footer notes from the progress page without altering saved records.
+- Add UI regression checks for covers, text visibility and persistent goal controls.
+
 ## 4.5.0 - 2026-10-19
 
 - Allow selecting an existing directory of individually numbered TXT chapters directly from the vocabulary TXT batch screen, including when no source file has been linked to the vocabulary step.

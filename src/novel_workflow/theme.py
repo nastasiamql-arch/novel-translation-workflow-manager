@@ -156,8 +156,15 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QLabel#toolbarStory {{ color: {c['muted']}; padding-left: 12px; border-left: 1px solid {c['border']}; }}
     QLabel#sectionHeading {{ color: {c['secondary']}; font-size: 11pt; font-weight: 600; padding: 4px 0 7px; }}
     QLabel#mutedLabel, QLabel[class="muted"], QLabel#librarySubtitle, QLabel#emptyStateDescription {{ color: {c['muted']}; }}
-    QLabel#metricValue {{ color: {c['text']}; font-size: 18pt; font-weight: 600; }}
+    QLabel#metricValue {{ color: {c['text']}; font-size: 21pt; font-weight: 650; }}
     QLabel#metricLabel, QLabel#bodyLabel {{ color: {c['secondary']}; }}
+    QLabel#progressStoryTitle {{ color: {c['text']}; font-size: 12pt; font-weight: 600; }}
+    QLabel#progressExport {{ color: {c['secondary']}; font-size: 10pt; }}
+    QLabel#progressGoalCount {{ color: {c['text']}; font-weight: 600; }}
+    QLabel#progressCover {{ background: {c['surface2']}; border-radius: 7px; }}
+    QProgressBar#progressGoalBar {{ border: 0; background: {c['surface2']}; min-height: 8px; max-height: 8px; border-radius: 4px; text-align: center; }}
+    QProgressBar#progressGoalBar::chunk {{ background: {c['accent']}; border-radius: 4px; }}
+    QFrame#progressRow {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 12px; }}
     QFrame#storyStrip, QFrame#modeStrip, QFrame#bottomBar, QFrame#goalPanel,
     QFrame#metricCard, QFrame#progressRow, QFrame#editorPanel,
     QFrame#settingsCard, QFrame#libraryEmptyState {{ background: transparent; border: 0; border-radius: 0; }}
@@ -176,7 +183,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QToolButton[keyboardFocus="true"] {{ border-bottom: 3px solid {c['focus']}; }}
     QListWidget, QTreeWidget, QTreeView, QTableWidget, QTableView {{ background: {c['surface']}; color: {c['text']}; border: 0; outline: none; selection-background-color: {c['selection']}; selection-color: {c['selection_text']}; }}
     QListWidget#novelLibrary {{ background: {c['sidebar']}; border: 0; padding: 5px 0; }}
-    QListWidget#novelLibrary::item {{ background: transparent; border: 0; padding: 9px 10px; min-height: 44px; }}
+    QListWidget#novelLibrary::item {{ background: transparent; border: 0; padding: 8px 8px; }}
     QListWidget#novelLibrary::item:hover {{ background: {c['hover']}; }}
     QListWidget#novelLibrary::item:selected {{ background: {c['item_selection']}; border: 2px solid {c['secondary']}; color: {c['selection_text']}; }}
     QLabel#emptyStateIcon {{ color: {c['accent']}; font-size: 25pt; }}
