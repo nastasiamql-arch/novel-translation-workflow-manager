@@ -228,3 +228,160 @@ def test_zip_preference_isolated_from_global_workflow_settings(tmp_path):
     assert saved.vocabulary_txt_profiles["one"]["copy_as_zip"] is True
     assert saved.vocabulary_txt_profiles["two"]["copy_as_zip"] is False
     assert saved.copy_files_as_zip is False
+
+
+
+def test_select_folder_of_numbered_txt_uses_existing_vocabulary_step_files(tmp_path, monkeypatch):
+    """0601.txt..0629.txt can be batched without linking a chapter one by one."""
+    import zipfile
+    from PySide6.QtWidgets import QFileDialog
+    from novel_workflow.models import AppSettings
+
+    app = QApplication.instance() or QApplication([])
+    repo, profile, root = _profile(tmp_path)
+    _, prompt = _add(profile, root, "prompts/Find Words.md", "หาศัพท์")
+    _, glossary = _add(profile, root, "glossary/术语.md", "人物：小明")
+    _, combined = _add(profile, root, "old/FATE.txt", "第一章 头\n正文\n第二章 头\n内容")
+    _, disabled = _add(profile, root, "private/disabled.txt", "not selected", enabled=False)
+    folder = tmp_path / "chapter_source"
+    folder.mkdir()
+    for n in range(601, 630):
+        (folder / f"{n:04d}.txt").write_text(f"第{n}章\n中文 ไทย", encoding="utf-8")
+    saved = []
+    page = TxtVocabularyPage(
+        {}, lambda state: saved.append(dict(state)), root / "source",
+        stage_reader=lambda: enabled_vocabulary_attachments(repo, AssemblyService(repo), profile),
+        archive_cache_dir=tmp_path / "archives",
+    )
+    page.show()
+    app.processEvents()
+    chooser = page.findChild(QPushButton, "txtVocabularyChooseFolder")
+    assert chooser is not None and chooser.isVisible()
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(folder))
+    chooser.click()
+    assert saved[-1]["source_mode"] == "folder"
+    assert Path(saved[-1]["source_folder"]) == folder
+    assert page.source_picker.currentData() is None
+    assert "chapter_source" in page.folder_label.text()
+    assert len(page._groups) == 6
+    assert [(b.start, b.end, len(b.chapters)) for b in page._groups] == [
+        (601, 605, 5), (606, 610, 5), (611, 615, 5),
+        (616, 620, 5), (621, 625, 5), (626, 629, 4)
+    ]
+    copy1 = page.findChild(QPushButton, "txtVocabularyCopyBatch1")
+    assert copy1 is not None and "7 ไฟล์" in copy1.text()
+    copy1.click()
+    contents = {Path(url.toLocalFile()) for url in app.clipboard().mimeData().urls()}
+    assert prompt in contents and glossary in contents
+    assert combined not in contents and disabled not in contents
+    assert len(contents) == 7
+    assert sorted(p.name for p in contents if p.parent == folder) == [
+        f"{n:04d}.txt" for n in range(601, 606)
+    ]
+
+    page.zip_toggle.setChecked(True)
+    copy6 = page.findChild(QPushButton, "txtVocabularyCopyBatch6")
+    assert copy6 is not None
+    copy6.click()
+    archives = [Path(url.toLocalFile()) for url in app.clipboard().mimeData().urls()]
+    assert len(archives) == 1
+    with zipfile.ZipFile(archives[0]) as packed:
+        assert packed.testzip() is None
+        assert len(packed.namelist()) == 6
+        assert "chapters/0629.txt" in packed.namelist()
+        assert "vocabulary/术语.md" in packed.namelist()
+        assert packed.read("chapters/0629.txt") == (folder / "0629.txt").read_bytes()
+    assert len(list(folder.iterdir())) == 29  # No source renaming or writing.
+    settings = AppSettings()
+    settings.vocabulary_txt_profiles[profile.id] = saved[-1]
+    repo.save_settings(settings)
+    assert repo.load_settings().vocabulary_txt_profiles[profile.id]["source_folder"] == str(folder)
+
+    reopened = TxtVocabularyPage(
+        repo.load_settings().vocabulary_txt_profiles[profile.id], lambda _: None, root / "source",
+        stage_reader=lambda: enabled_vocabulary_attachments(repo, AssemblyService(repo), profile),
+    )
+    assert reopened._using_folder()
+    assert reopened._groups[0].start == 601
+    assert reopened.zip_toggle.isChecked()
+    reopened.close()
+    page.close()
+
+
+def test_folder_chooser_cancel_empty_or_duplicate_does_not_change_selection(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+    app = QApplication.instance() or QApplication([])
+    repo, profile, root = _profile(tmp_path)
+    _add(profile, root, "prompts/find.md", "Find Terms")
+    valid = tmp_path / "valid"
+    valid.mkdir()
+    (valid / "0601.txt").write_text("内容", encoding="utf-8")
+    invalid = tmp_path / "empty"
+    invalid.mkdir()
+    duplicate = tmp_path / "duplicate"
+    duplicate.mkdir()
+    (duplicate / "0601.txt").write_text("1", encoding="utf-8")
+    (duplicate / "0601 another.txt").write_text("1", encoding="utf-8")
+    selected = [str(valid), "", str(invalid), str(duplicate)]
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: selected.pop(0))
+    alerts = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: alerts.append(args[2]))
+    changes = []
+    page = TxtVocabularyPage({}, lambda value: changes.append(value),
+                             root / "source", stage_reader=lambda: enabled_vocabulary_attachments(
+                                 repo, AssemblyService(repo), profile))
+    chooser = page.findChild(QPushButton, "txtVocabularyChooseFolder")
+    chooser.click()
+    assert len(page._groups) == 1
+    snapshot = dict(page.state)
+    chooser.click()  # Cancel: no changes
+    chooser.click()  # Empty: warning, no changes
+    chooser.click()  # Duplicate chapter: warning, no changes
+    assert page.state == snapshot
+    assert len(changes) == 1
+    assert len(alerts) == 2
+    assert page._groups[0].start == 601
+    page.close()
+
+
+def test_folder_without_stage_source_and_switch_back_to_stage(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+    app = QApplication.instance() or QApplication([])
+    repo, profile, root = _profile(tmp_path)
+    selected_source, linked = _add(
+        profile, root, "old/FATE.txt",
+        "第一章 标题\n正文\n第二章 标题\n内容"
+    )
+    direct = tmp_path / "numbered"
+    direct.mkdir()
+    for n in range(601, 606):
+        (direct / f"{n:04d}.txt").write_text(str(n), encoding="utf-8")
+    page = TxtVocabularyPage(
+        {}, lambda _: None, root / "old",
+        stage_reader=lambda: enabled_vocabulary_attachments(repo, AssemblyService(repo), profile),
+    )
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(direct))
+    page.choose_folder()
+    assert len(page._groups) == 1
+    assert page.source_picker.currentData() is None
+    page.source_picker.setCurrentIndex(page.source_picker.findData(selected_source.id))
+    assert not page._using_folder()
+    assert page.source_picker.currentData() == selected_source.id
+    page.tabs.setCurrentIndex(1)
+    app.processEvents()
+    assert page.preview_table.rowCount() == 2
+    page.close()
+
+    # Another novel with zero stage files may still use its chosen chapter folder;
+    # there is no dependency on a linked file for the chapter source itself.
+    other = NovelProfile()
+    standalone = TxtVocabularyPage(
+        {"source_mode": "folder", "source_folder": str(direct)},
+        lambda _: None, direct,
+        stage_reader=lambda: enabled_vocabulary_attachments(repo, AssemblyService(repo), other),
+    )
+    copy = standalone.findChild(QPushButton, "txtVocabularyCopyBatch1")
+    assert copy is not None and copy.isEnabled()
+    copy.click()
+    assert len(app.clipboard().mimeData().urls()) == 5
+    standalone.close()

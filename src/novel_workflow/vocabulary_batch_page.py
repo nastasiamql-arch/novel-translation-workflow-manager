@@ -19,7 +19,8 @@ from PySide6.QtWidgets import (
 from .clipboard_files import copy_file_paths
 from .vocabulary_zip import create_txt_batch_zip
 from .vocabulary_source_binding import (
-    batch_stage_files, chapter_source_directory, source_by_id, suggest_source_id,
+    batch_folder_files, batch_stage_files, chapter_source_directory,
+    source_by_id, source_score, suggest_source_id,
 )
 from .vocabulary_batches import (
     existing_chapter_targets, make_chapter_batches, parse_pasted_chapters,
@@ -53,6 +54,8 @@ class TxtVocabularyPage(QWidget):
         self.state.setdefault("glossary_1", "")
         self.state.setdefault("glossary_2", "")
         self.state.setdefault("copy_as_zip", False)
+        self.state.setdefault("source_mode", "stage")
+        self.state.setdefault("source_folder", "")
         self._copy_buttons = []
         self._segments = ()
         self._preview_input = None
@@ -88,10 +91,11 @@ class TxtVocabularyPage(QWidget):
         self.source_picker.currentIndexChanged.connect(self._source_changed)
         folder_row.addWidget(self.source_picker, 1)
         self.source_picker.setVisible(self.bound_mode)
-        select_folder = QPushButton("เลือกโฟลเดอร์")
+        select_folder = QPushButton("เลือกโฟลเดอร์ TXT")
         select_folder.setObjectName("txtVocabularyChooseFolder")
         select_folder.clicked.connect(self.choose_folder)
-        select_folder.setVisible(not self.bound_mode)
+        select_folder.setToolTip("เลือกโฟลเดอร์ที่มีไฟล์รายบท เช่น 0601.txt – 0629.txt")
+        select_folder.setVisible(True)
         folder_row.addWidget(select_folder)
         batch_layout.addLayout(folder_row)
 
@@ -270,8 +274,18 @@ class TxtVocabularyPage(QWidget):
             button.setText("คัดลอก ZIP" if enabled else f"คัดลอก {count} ไฟล์")
         # No refresh, no scroll movement and no clipboard replacement.
 
+    def _using_folder(self):
+        return bool(
+            self.bound_mode
+            and self.state.get("source_mode") == "folder"
+            and self.state.get("source_folder")
+        )
+
     def _update_labels(self):
-        if self.bound_mode:
+        if self._using_folder():
+            folder = str(self.state["source_folder"])
+            self.read_stage_button.setEnabled(False)
+        elif self.bound_mode:
             selected = source_by_id(self._stage_entries, self._selected_source_id)
             path = selected.path if selected else None
             folder = str(chapter_source_directory(selected) or "ยังไม่เลือกต้นฉบับจากขั้นตอนหาศัพท์")
@@ -289,17 +303,42 @@ class TxtVocabularyPage(QWidget):
             label.setToolTip(file)
 
     def choose_folder(self):
-        if self.bound_mode:
-            return
-        folder = QFileDialog.getExistingDirectory(
-            self, "เลือกโฟลเดอร์ TXT", str(self.state.get("folder") or self.default_folder)
+        current = (
+            self.state.get("source_folder") or self.state.get("folder")
+            or str(self.default_folder)
         )
-        if folder:
+        if self.bound_mode and not self._using_folder():
+            selected = source_by_id(self._stage_entries, self._selected_source_id)
+            current = str(chapter_source_directory(selected) or current)
+        if not Path(current).is_dir():
+            current = str(self.default_folder if self.default_folder.is_dir() else Path.home())
+        folder = QFileDialog.getExistingDirectory(
+            self, "เลือกโฟลเดอร์ต้นฉบับ TXT รายบท", current
+        )
+        if not folder:
+            return
+        try:
+            chapters = scan_chapter_files(folder)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "อ่านโฟลเดอร์ TXT ไม่สำเร็จ", str(exc))
+            return
+        if not chapters:
+            QMessageBox.warning(
+                self, "ไม่พบไฟล์บท",
+                "ไม่พบไฟล์ TXT ที่ขึ้นต้นด้วยเลขบท เช่น 0601.txt หรือ 0601 ชื่อตอน.txt"
+            )
+            return
+        if self.bound_mode:
+            self.state["source_mode"] = "folder"
+            self.state["source_folder"] = str(Path(folder).resolve())
+            self._split_source_folder = None
+            # Keep the existing stage source selection in settings, but display
+            # the stage picker as inactive until the user explicitly switches.
+        else:
             self.state["folder"] = folder
-            self.state["destination"] = folder
-            self._update_labels()
-            self._save()
-            self.refresh()
+        self.state["destination"] = folder
+        self._save()
+        self.refresh()
 
     def choose_destination(self):
         folder = QFileDialog.getExistingDirectory(
@@ -353,7 +392,7 @@ class TxtVocabularyPage(QWidget):
                 Qt.ToolTipRole,
             )
         index = self.source_picker.findData(selected_id)
-        self.source_picker.setCurrentIndex(max(0, index))
+        self.source_picker.setCurrentIndex(0 if self._using_folder() else max(0, index))
         self.source_picker.blockSignals(False)
         self._update_labels()
 
@@ -362,6 +401,7 @@ class TxtVocabularyPage(QWidget):
             return
         self._selected_source_id = self.source_picker.currentData()
         self._split_source_folder = None
+        self.state["source_mode"] = "stage"
         self.state["source_id"] = self._selected_source_id or ""
         self._save()
         self._update_labels()
@@ -374,6 +414,10 @@ class TxtVocabularyPage(QWidget):
 
     def load_from_stage(self):
         if not self.bound_mode:
+            return
+        if self._using_folder():
+            self.tabs.setCurrentIndex(0)
+            self.summary.setText("เลือกโฟลเดอร์รายบทอยู่แล้ว ไม่ต้องแยกเนื้อหาอีก ใช้ปุ่มคัดลอกเป็นชุดได้เลย")
             return
         self._refresh_stage_sources()
         source = source_by_id(self._stage_entries, self._selected_source_id)
@@ -431,12 +475,13 @@ class TxtVocabularyPage(QWidget):
         if self.bound_mode:
             self._refresh_stage_sources()
         try:
-            if self.bound_mode:
+            if self._using_folder():
+                folder = self.state["source_folder"]
+            elif self.bound_mode:
                 source = source_by_id(self._stage_entries, self._selected_source_id)
                 if source is None or source.path is None:
                     self.summary.setText(
-                        "กรุณาเลือกไฟล์ต้นฉบับที่เปิดใช้งานในขั้นตอนหาศัพท์ "
-                        "หากไม่พบไฟล์ ให้เพิ่มหรือเปิดใช้งานไฟล์ในขั้นตอนหาศัพท์เดิม"
+                        "เลือกโฟลเดอร์ TXT ได้โดยตรง หรือเลือกไฟล์ต้นฉบับจากขั้นตอนหาศัพท์"
                     )
                     return
                 folder = self._split_source_folder or chapter_source_directory(source)
@@ -511,14 +556,20 @@ class TxtVocabularyPage(QWidget):
         if self.bound_mode:
             references = [
                 entry for entry in self._stage_entries
-                if entry.id != self._selected_source_id
-                and entry.dynamic_reference != "CURRENT_SOURCE_CHAPTER"
+                if entry.dynamic_reference != "CURRENT_SOURCE_CHAPTER"
+                and (self._using_folder() and (entry.path is None or source_score(entry) < 70)
+                     or not self._using_folder() and entry.id != self._selected_source_id)
             ]
             try:
-                paths = batch_stage_files(
-                    group, self._stage_entries, self._selected_source_id,
-                    chapter_folder=self._split_source_folder,
-                )
+                if self._using_folder():
+                    paths = batch_folder_files(
+                        group, self._stage_entries, self.state["source_folder"]
+                    )
+                else:
+                    paths = batch_stage_files(
+                        group, self._stage_entries, self._selected_source_id,
+                        chapter_folder=self._split_source_folder,
+                    )
                 unique_count = len(paths)
                 missing_references = []
             except (OSError, ValueError) as exc:
@@ -645,10 +696,15 @@ class TxtVocabularyPage(QWidget):
         try:
             if self.bound_mode:
                 entries = tuple(self.stage_reader())
-                paths = batch_stage_files(
-                    group, entries, self._selected_source_id,
-                    chapter_folder=self._split_source_folder,
-                )
+                if self._using_folder():
+                    paths = batch_folder_files(
+                        group, entries, self.state["source_folder"]
+                    )
+                else:
+                    paths = batch_stage_files(
+                        group, entries, self._selected_source_id,
+                        chapter_folder=self._split_source_folder,
+                    )
             else:
                 references = [self.state.get(f"glossary_{n}") for n in (1, 2)]
                 paths = [chapter.path for chapter in group.chapters]

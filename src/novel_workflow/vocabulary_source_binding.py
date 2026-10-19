@@ -136,3 +136,46 @@ def batch_stage_files(batch, entries: tuple[VocabularyAttachment, ...],
             seen.add(key)
             result.append(path)
     return tuple(result)
+
+
+def batch_folder_files(batch, entries: tuple[VocabularyAttachment, ...],
+                       folder: str | Path) -> tuple[Path, ...]:
+    """Copy chapter TXT files from a user-chosen folder with vocabulary-step assets.
+
+    Only enabled vocabulary-stage attachments are considered. Other source novels
+    (including CURRENT_SOURCE_CHAPTER), chapters from the selected directory,
+    and repeated paths are never appended to a batch.
+    """
+    chapter_folder = Path(folder).expanduser()
+    current = {entry.number: entry.path.resolve()
+               for entry in scan_chapter_files(chapter_folder)}
+    for chapter in batch.chapters:
+        if current.get(chapter.number) != chapter.path.resolve():
+            raise ValueError("ไฟล์บทเปลี่ยนแปลง กรุณากดรีเฟรชก่อนคัดลอก")
+
+    numbered = set(current.values())
+    originals = [chapter.path.resolve() for chapter in batch.chapters]
+    attachments = []
+    for entry in entries:
+        if entry.dynamic_reference == "CURRENT_SOURCE_CHAPTER":
+            continue
+        if entry.path is None:
+            raise ValueError(
+                f"ไฟล์ที่เปิดใช้งานในขั้นตอนหาศัพท์ไม่พร้อม: {entry.label}: {entry.error}"
+            )
+        # Linked source chapters, combined novels, or source folders are
+        # alternatives to the chosen directory, not extra reference files.
+        if source_score(entry) >= 70:
+            continue
+        for attached in _files(entry.path):
+            resolved = attached.resolve()
+            if resolved in numbered:
+                continue
+            attachments.append(resolved)
+    ordered, seen = [], set()
+    for path in originals + attachments:
+        key = str(path).casefold()
+        if key not in seen:
+            seen.add(key)
+            ordered.append(path)
+    return tuple(ordered)

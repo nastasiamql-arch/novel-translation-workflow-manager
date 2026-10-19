@@ -2,6 +2,15 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 4.5.0 - 2026-10-19
+
+- Allow selecting an existing directory of individually numbered TXT chapters directly from the vocabulary TXT batch screen, including when no source file has been linked to the vocabulary step.
+- Remember the selected TXT source folder independently per novel and automatically scan numeric files like 0601.txt through 0629.txt into five-chapter batches, without a manual paste, splitting, rewriting or renaming operation.
+- Continue to include only enabled vocabulary-stage prompts and reference files alongside selected chapter files for normal clipboard and ZIP copying; skip linked source-novel files instead of adding them to the batch.
+- Retain the existing linked-source selector and combined-text splitting workflow, safe empty/duplicate directory warnings, compact rows and independent per-novel ZIP choice.
+- Add regression tests covering 29 Chinese TXT chapters, seven-file clipboard, six-file last batch ZIP, preference persistence, cancel/error safety, and switching between folder and linked-source modes.
+
+
 ## 4.4.1 - 2026-10-19
 
 - Correct eligible Chinese source chapter headings as soon as Auto Save completes, without the additional 2.5-second review delay.
