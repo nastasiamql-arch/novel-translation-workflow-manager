@@ -590,7 +590,11 @@ def main() -> int:
         # No user is present to answer the intentional unexported-translation warning.
         # This only affects smoke teardown, not application close protection.
         window._close_export_reminder_accepted = True
-        assert window.close(), 'Smoke window did not close safely'
+        # The smoke deliberately leaves an externally conflicted, dirty Context open.
+        # A real user close must refuse that unsafe overwrite; teardown must not force it.
+        window.hide()
+        for timer in window.findChildren(QTimer):
+            timer.stop()
         window.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         app.processEvents()
