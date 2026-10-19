@@ -169,6 +169,10 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QProgressBar#progressGoalBar {{ border: 0; background: {c['surface2']}; min-height: 8px; max-height: 8px; border-radius: 4px; text-align: center; }}
     QProgressBar#progressGoalBar::chunk {{ background: {c['accent']}; border-radius: 4px; }}
     QFrame#progressRow {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 12px; }}
+    QPushButton#statisticsDisclosure {{ border: 1px solid {c['border']}; background: {c['surface']}; min-height: 28px; padding: 4px 11px; border-radius: 8px; }}
+    QPushButton#statisticsDisclosure:checked {{ background: {c['item_selection']}; }}
+    QPushButton#progressAction {{ border: 1px solid {c['border']}; background: {c['surface2']}; min-height: 25px; padding: 3px 8px; border-radius: 7px; font-size: 9pt; }}
+    QPushButton#progressAction:hover {{ background: {c['hover']}; }}
     QFrame#storyStrip, QFrame#modeStrip, QFrame#bottomBar, QFrame#goalPanel,
     QFrame#metricCard, QFrame#editorPanel,
     QFrame#settingsCard, QFrame#libraryEmptyState {{ background: transparent; border: 0; border-radius: 0; }}

@@ -3,11 +3,11 @@ from __future__ import annotations
 from datetime import date, timedelta
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QEvent
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QMessageBox,
-    QPushButton, QProgressBar, QScrollArea, QSpinBox, QVBoxLayout, QWidget, QGridLayout, QLayout,
+    QPushButton, QProgressBar, QScrollArea, QSpinBox, QVBoxLayout, QWidget, QGridLayout, QLayout, QSizePolicy,
 )
 
 from .models import NovelProfile
@@ -23,15 +23,23 @@ class StatisticsPage(QWidget):
         self.profiles = profiles
         self.repo = repo
         self.refresh_callback = refresh_callback
+        self._cover_cache = {}
+        self._cards = []
+        self._columns = 0
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self.overview_scroll = QScrollArea(); self.overview_scroll.setWidgetResizable(True)
+        self.overview_scroll.setObjectName('statisticsScroll')
+        self.overview_scroll.setFrameShape(QFrame.NoFrame)
         self.body = QWidget()
         self.root = QVBoxLayout(self.body)
+        self.root.setContentsMargins(18, 14, 18, 20)
+        self.root.setSpacing(10)
         self.root.setSizeConstraint(QLayout.SetMinimumSize)
         self.overview_scroll.setWidget(self.body)
         outer.addWidget(self.overview_scroll)
         self.summary = QHBoxLayout()
+        self.summary.setSpacing(10)
         self.root.addLayout(self.summary)
         self.bulk_goal_panel = QFrame()
         self.bulk_goal_panel.setObjectName("settingsCard")
@@ -55,35 +63,75 @@ class StatisticsPage(QWidget):
         )
         self.clear_all_goals_button.clicked.connect(self._clear_all_goals)
         bulk_goal_layout.addWidget(self.clear_all_goals_button, 2, 1)
-        self.goal_disclosure = QPushButton("จัดการเป้าหมายแปล ▾"); self.goal_disclosure.setCheckable(True)
+        controls = QHBoxLayout()
+        controls.setSpacing(10)
+        self.goal_disclosure = QPushButton("จัดการเป้าหมาย ▾")
+        self.goal_disclosure.setObjectName("statisticsDisclosure")
+        self.goal_disclosure.setCheckable(True)
         self.goal_disclosure.toggled.connect(self.bulk_goal_panel.setVisible)
-        self.root.addWidget(self.goal_disclosure)
-        self.root.addWidget(self.bulk_goal_panel)
-        self.bulk_goal_panel.hide()
+        controls.addWidget(self.goal_disclosure)
         self.days_panel = QFrame()
         self.days_layout = QVBoxLayout(self.days_panel)
-        history_title = QPushButton("ผลงานย้อนหลัง 7 วัน ▾"); history_title.setCheckable(True)
+        history_title = QPushButton("ย้อนหลัง 7 วัน ▾")
+        history_title.setObjectName("statisticsDisclosure")
+        history_title.setCheckable(True)
         history_title.toggled.connect(self.days_panel.setVisible)
-        self.root.addWidget(history_title)
+        controls.addWidget(history_title)
+        controls.addStretch(1)
+        self.root.addLayout(controls)
+        self.root.addWidget(self.bulk_goal_panel)
+        self.bulk_goal_panel.hide()
         self.root.addWidget(self.days_panel)
         self.days_panel.hide()
 
-        progress_title=QLabel("ความคืบหน้ารายเรื่อง")
+        section = QHBoxLayout()
+        progress_title = QLabel("ความคืบหน้ารายเรื่อง")
         progress_title.setObjectName("sectionHeading")
-        self.root.addWidget(progress_title)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
+        section.addWidget(progress_title)
+        section.addStretch(1)
+        self.story_count = QLabel()
+        self.story_count.setObjectName("mutedLabel")
+        section.addWidget(self.story_count)
+        self.root.addLayout(section)
+        # Only the outer page scrolls: no nested scroll or oversized full-width rows.
         self.rows_host = QWidget()
-        self.rows = QVBoxLayout(self.rows_host)
+        self.rows_host.setObjectName("progressCardsHost")
+        self.rows = QGridLayout(self.rows_host)
+        self.rows.setContentsMargins(0, 0, 0, 0)
+        self.rows.setHorizontalSpacing(12)
+        self.rows.setVerticalSpacing(12)
         self.rows.setAlignment(Qt.AlignTop)
-        self.scroll.setWidget(self.rows_host)
-        self.root.addWidget(self.scroll, 1)
-
+        self.root.addWidget(self.rows_host)
+        self.root.addStretch(1)
+        self.scroll = self.overview_scroll  # compatibility for callers using scroll
+        self.overview_scroll.viewport().installEventFilter(self)
         self.refresh()
 
     def set_profiles(self, profiles: list[NovelProfile]):
         self.profiles = profiles
         self.refresh()
+
+    def eventFilter(self, watched, event):
+        if watched is self.overview_scroll.viewport() and event.type() == QEvent.Resize:
+            self._reflow_cards()
+        return super().eventFilter(watched, event)
+
+    def _reflow_cards(self):
+        """Relayout existing widgets; resizing never recreates cards or reads files."""
+        if not hasattr(self, "rows"):
+            return
+        margins = self.root.contentsMargins()
+        width = max(0, self.overview_scroll.viewport().width() - margins.left() - margins.right())
+        columns = max(1, min(4, (width + 12) // 352))
+        if columns == self._columns:
+            return
+        self._columns = columns
+        while self.rows.count():
+            self.rows.takeAt(0)
+        for index, card in enumerate(self._cards):
+            self.rows.addWidget(card, index // columns, index % columns)
+        for column in range(4):
+            self.rows.setColumnStretch(column, 1 if column < columns else 0)
 
     def _clear(self, layout):
         while layout.count():
@@ -110,6 +158,9 @@ class StatisticsPage(QWidget):
         self._clear(self.summary)
         self._clear(self.days_layout)
         self._clear(self.rows)
+        self._cards = []
+        self._columns = 0
+        self.story_count.setText(f"{len(self.profiles)} เรื่อง")
         today = date.today()
         today_key = today.isoformat()
         eligible = self._eligible_translating_profiles()
@@ -148,10 +199,10 @@ class StatisticsPage(QWidget):
             self.days_layout.addLayout(line)
 
         if not self.profiles:
-            self.rows.addWidget(QLabel("ยังไม่มีนิยาย"))
-            return
-        for profile in self.profiles:
-            self.rows.addWidget(self._profile_row(profile, today_key))
+            self._cards.append(QLabel("ยังไม่มีนิยาย"))
+        else:
+            self._cards = [self._profile_row(profile, today_key) for profile in self.profiles]
+        self._reflow_cards()
 
     def _eligible_translating_profiles(self) -> list[NovelProfile]:
         return [
@@ -212,10 +263,10 @@ class StatisticsPage(QWidget):
         self.refresh()
 
     def _cover(self, profile: NovelProfile) -> QLabel:
-        """Use the same saved, validated profile cover as the library."""
+        """Small cached covers: one image decode per unchanged source."""
         cover = QLabel()
         cover.setObjectName("progressCover")
-        cover.setFixedSize(108, 148)
+        cover.setFixedSize(64, 88)
         cover.setAlignment(Qt.AlignCenter)
         path = Path(__file__).resolve().parent / "resources" / "novelworkflow.png"
         if profile.cover_image_path:
@@ -225,45 +276,58 @@ class StatisticsPage(QWidget):
                     path = candidate
             except (OSError, ValueError, TypeError):
                 pass
-        image = QPixmap(str(path)) if path.is_file() else QPixmap()
-        if not image.isNull():
-            scaled = image.scaled(108, 148, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            cover.setPixmap(scaled.copy((scaled.width() - 108) // 2,
-                                        (scaled.height() - 148) // 2, 108, 148))
+        try:
+            stat = path.stat()
+            signature = (str(path), stat.st_mtime_ns, stat.st_size)
+            pixmap = self._cover_cache.get(signature)
+            if pixmap is None:
+                original = QPixmap(str(path))
+                if original.isNull():
+                    return cover
+                scaled = original.scaled(64, 88, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                pixmap = scaled.copy((scaled.width() - 64) // 2,
+                                     (scaled.height() - 88) // 2, 64, 88)
+                if len(self._cover_cache) >= 64:
+                    self._cover_cache.clear()
+                self._cover_cache[signature] = pixmap
+            cover.setPixmap(pixmap)
+        except (OSError, ValueError):
+            pass
         return cover
 
     def _profile_row(self, profile: NovelProfile, today_key: str) -> QFrame:
-        row = QFrame()
-        row.setObjectName("progressRow")
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(16)
+        card = QFrame()
+        card.setObjectName("progressRow")
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        root = QVBoxLayout(card)
+        root.setContentsMargins(12, 10, 12, 10)
+        root.setSpacing(6)
+        layout = QHBoxLayout()
+        layout.setSpacing(11)
         layout.addWidget(self._cover(profile), 0, Qt.AlignTop)
         content = QVBoxLayout()
-        content.setSpacing(8)
+        content.setSpacing(4)
+
         title = QLabel(profile.name)
         title.setObjectName("progressStoryTitle")
         title.setWordWrap(True)
+        title.setMaximumHeight(40)
         title.setToolTip(profile.name)
         content.addWidget(title)
 
         latest = QLabel(completion_label(profile))
         latest.setObjectName("progressExport")
         latest.setWordWrap(True)
+        latest.setMaximumHeight(32)
         latest.setToolTip(completion_tooltip(profile))
         content.addWidget(latest)
 
         goal = goal_progress(profile)
         if goal:
             completed, target, percentage = goal
-            goal_line = QHBoxLayout()
-            count = QLabel(f"แปลสำเร็จ {completed}/{target} บท{' ✓' if completed >= target else ''}")
+            count = QLabel(f"{completed}/{target} บท{' ✓' if completed >= target else ''} · {percentage}%")
             count.setObjectName("progressGoalCount")
-            goal_line.addWidget(count, 1)
-            percent = QLabel(f"{percentage}%")
-            percent.setObjectName("bodyLabel")
-            goal_line.addWidget(percent)
-            content.addLayout(goal_line)
+            content.addWidget(count)
             bar = QProgressBar()
             bar.setObjectName("progressGoalBar")
             bar.setRange(0, 100)
@@ -275,9 +339,11 @@ class StatisticsPage(QWidget):
             hint.setObjectName("mutedLabel")
             content.addWidget(hint)
 
+        content.addStretch(1)
         actions = QHBoxLayout()
-        actions.addStretch(1)
-        set_goal = QPushButton("แก้เป้าหมาย" if goal else "ตั้งเป้าหมาย")
+        actions.setSpacing(4)
+        set_goal = QPushButton("แก้เป้า" if goal else "ตั้งเป้า")
+        set_goal.setObjectName("progressAction")
         has_context = bool(profile.context_path and Path(profile.context_path).expanduser().is_file())
         set_goal.setEnabled(has_context)
         if not has_context:
@@ -285,9 +351,11 @@ class StatisticsPage(QWidget):
         target_input = QSpinBox()
         target_input.setRange(1, 100000)
         target_input.setValue(profile.translation_goal_target or 10)
-        target_input.setPrefix("เป้าหมาย ")
+        target_input.setPrefix("เป้า ")
         target_input.setSuffix(" บท")
+        target_input.setMaximumWidth(118)
         save_goal = QPushButton("บันทึก")
+        save_goal.setObjectName("progressAction")
         target_input.hide()
         save_goal.hide()
         set_goal.clicked.connect(
@@ -302,16 +370,18 @@ class StatisticsPage(QWidget):
         actions.addWidget(target_input)
         actions.addWidget(save_goal)
         if goal:
-            reset = QPushButton("รีเซ็ตความคืบหน้า")
+            reset = QPushButton("รีเซ็ต")
+            reset.setObjectName("progressAction")
             reset.setToolTip("เริ่มนับบทใหม่จาก Translator Export ถัดไป โดยเก็บประวัติเดิมไว้")
             reset.clicked.connect(lambda checked=False, item=profile: self._reset_goal(item))
             actions.addWidget(reset)
-        content.addLayout(actions)
 
-        # Context history remains accessible; verified metrics are intentionally absent.
+        details_text = None
         if profile.translation_daily_activity:
-            details = QPushButton("รายละเอียด Context เดิม ▾")
+            details = QPushButton("Context ▾")
+            details.setObjectName("progressAction")
             details.setCheckable(True)
+            details.setToolTip("แสดงหรือซ่อนรายละเอียด Context เดิม")
             details_text = QLabel("\n".join(
                 f"{day} · {len(chapters)} บท (Context)"
                 for day, chapters in sorted(profile.translation_daily_activity.items())
@@ -320,10 +390,16 @@ class StatisticsPage(QWidget):
             details_text.setWordWrap(True)
             details_text.hide()
             details.toggled.connect(details_text.setVisible)
-            content.addWidget(details)
-            content.addWidget(details_text)
+            details.toggled.connect(lambda shown, button=details:
+                                    button.setText("Context ▴" if shown else "Context ▾"))
+            actions.addWidget(details)
+        actions.addStretch(1)
+        content.addLayout(actions)
         layout.addLayout(content, 1)
-        return row
+        root.addLayout(layout)
+        if details_text is not None:
+            root.addWidget(details_text)
+        return card
 
     def _reset_goal(self, profile: NovelProfile):
         if not goal_progress(profile):
