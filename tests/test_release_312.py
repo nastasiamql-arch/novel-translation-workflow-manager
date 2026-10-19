@@ -153,7 +153,6 @@ def test_copy_every_entry_point_latest_bytes(window, zipped, stage):
     if stage == 'multiple': w.copy_step(advance=False, selected_steps=p.workflow.steps)
     else:
         w.copy_named_stage(p.id, stage)
-        ws.copy_step_button.click()
     wait_until(lambda: not w.history_busy())
     payloads = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
     expected = path.read_bytes()
@@ -200,7 +199,7 @@ def test_copy_multiple_edited_tabs(window):
     first = ws.editor.open_file(folder / 'a.txt')
     other = ws.editor.open_file(second)
     first.insertPlainText('latest first'); other.insertPlainText('latest second')
-    ws.stage_buttons[0].click(); ws.copy_step_button.click()
+    ws.stage_buttons[0].click()
     paths = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
     assert len(paths) == 2
     assert all(b'latest' in path.read_bytes() for path in paths)

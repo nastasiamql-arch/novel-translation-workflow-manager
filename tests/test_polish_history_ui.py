@@ -97,8 +97,8 @@ def test_vocabulary_custom_and_repeated_stage_clicks_copy_only_active_files(wind
 
     actions = [
         (workspace.vocabulary_button, 'หาศัพท์', b'disabled', None),
-        (workspace.stage_buttons[0], 'Translate', b'original\\t\\n\\n', 0),
-        (workspace.stage_buttons[1], 'Polish', b'original\\t\\n\\n', 1),
+        (workspace.stage_buttons[0], 'Translate', b'original\t\n\n', 0),
+        (workspace.stage_buttons[1], 'Polish', b'original\t\n\n', 1),
         (workspace.stage_buttons[2], 'ตรวจเพิ่ม', b'disabled', 2),
         (workspace.stage_buttons[2], 'ตรวจเพิ่ม', b'disabled', 2),
     ]
