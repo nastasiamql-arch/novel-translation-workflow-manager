@@ -273,7 +273,7 @@ class WorkspacePage(QWidget):
         self.vocabulary_button = WorkflowStageButton("หาศัพท์")
         self.vocabulary_button.setObjectName("vocabularyButton")
         self.vocabulary_button.setWorkflowActive(False)
-        self.vocabulary_button.setToolTip("คัดลอกไฟล์ของขั้นตอนหาศัพท์ไปยังคลิปบอร์ด")
+        self.vocabulary_button.setToolTip("เลือกขั้นตอนหาศัพท์ · คัดลอกด้วยปุ่ม COPY STEP หรือ Ctrl+Shift+C")
         self.vocabulary_button.clicked.connect(
             lambda checked=False: self.owner.copy_named_stage(self.profile_id, "vocabulary")
         )
@@ -2781,7 +2781,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     button.setWorkflowActive(False)
                     button.setMinimumHeight(38)
                     button.setCursor(Qt.PointingHandCursor)
-                    button.setToolTip(f"เลือกและคัดลอกไฟล์ของขั้นตอน{step.name}")
+                    button.setToolTip(f"เลือกขั้นตอน{step.name} · คัดลอกด้วยปุ่ม COPY STEP หรือ Ctrl+Shift+C")
                     button.clicked.connect(
                         lambda checked=False, row=index, pid=self.profile.id:
                             self.copy_named_stage(pid, row)
@@ -2877,7 +2877,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 self.copy_step(advance=False, selected_steps=selected)
 
     def copy_named_stage(self, profile_id, stage):
-        """Select a named stage and copy only its files without advancing."""
+        """Select a stage without copying, saving history, or advancing."""
         if not self.profile or self.profile.id != profile_id:
             return
         workspace = self.workspaces.get(profile_id)
@@ -2900,8 +2900,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.steps.blockSignals(False)
         self._sync_stage_buttons(workspace)
         self.refresh_files()
-        if not (stage == "vocabulary" and workspace.vocabulary_source_mode == "files"):
-            self.copy_step(advance=False)
+        self.statusBar().showMessage("เลือกขั้นตอนแล้ว · กด COPY STEP หรือ Ctrl+Shift+C เพื่อคัดลอก", 4000)
         self._schedule_workspace_session_save()
 
     def save_txt_vocabulary_state(self, profile_id, state):
@@ -3023,7 +3022,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         attached = set()
         for step in steps:
             for item in step.files:
-                if not zipped and step.id != profile.polish_history_step_id and not item.enabled:
+                if not zipped and not item.enabled:
                     continue
                 attached.update(_files(resolve_attachment(self.repo, self.assembler, profile, item)))
 
@@ -3068,90 +3067,48 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if timer is not None and not pending:
             timer.stop()
 
-    def copy_step(self, advance=True, selected_steps=None):
-        if not self.profile or not self.step(): return
+    def copy_step(self, advance=False, selected_steps=None):
+        """Copy current stage files only; history snapshots require an explicit action.
+
+        Keep source chapter validation and unsaved-editor preparation in place,
+        but never create a review snapshot or advance the selected stage here.
+        """
+        if not self.profile or not self.step():
+            return
         if self.history_busy():
             self.statusBar().showMessage('กำลังจัดการไฟล์ กรุณารอสักครู่', 3000)
             return
         from copy import deepcopy
         from .clipboard_bundle import prepare_bundle
         from .workflow_archive import create_workflow_archive
-        from .services import WorkflowService
         workspace = self.workspaces.get(self.profile.id)
         profile = deepcopy(self.profile)
         selected = deepcopy(selected_steps or [self.step()])
-        protected = next((s for s in selected if s.id == profile.polish_history_step_id), None)
         zipped = self.settings.copy_files_as_zip
-        span = workspace.history_range.text().strip() if workspace else ''
         try:
-            # All Qt/editor access stays on the GUI thread. Worker receives only
-            # frozen files and value objects, never live widgets.
+            # Qt/editor access stays on the GUI thread; clipboard is touched
+            # only after all input files have been validated and prepared.
             self._ensure_chapter_numbers_for_copy(workspace, profile, selected, zipped=zipped)
-            bundle = prepare_bundle(self.repo, self.assembler, profile, selected,
-                                    workspace.editor if workspace else None,
-                                    all_files=zipped)
+            bundle = prepare_bundle(
+                self.repo, self.assembler, profile, selected,
+                workspace.editor if workspace else None, all_files=zipped,
+            )
+            if zipped:
+                paths = [create_workflow_archive(
+                    self.repo, self.assembler, profile, selected, prepared=bundle,
+                )]
+                import zipfile
+                with zipfile.ZipFile(paths[0]) as archive:
+                    count = sum(not item.is_dir() for item in archive.infolist())
+            else:
+                paths = list(bundle.values())
+                count = len(paths)
+            self._history_clipboard(paths, count, zipped)
         except (OSError, ValueError, KeyError) as exc:
+            # Failed preparation must leave the previous clipboard untouched.
             QMessageBox.warning(self, 'คัดลอกไฟล์ไม่สำเร็จ', str(exc))
             self.statusBar().showMessage('คัดลอกไฟล์ไม่สำเร็จ: ' + str(exc), 6000)
             return
-        step_id = self.step().id
-        old_index = self.si
-        def operation():
-            snapshot = None
-            if protected:
-                snapshot = self.polish_history.create(
-                    profile, protected, span, prepared=bundle, prefer_pre_export=True
-                )
-            overrides = {}
-            if snapshot:
-                frozen = self.polish_history.validate(profile, snapshot.path)
-                overrides = {
-                    (protected.id, Path(entry['original_path'])): payload
-                    for entry, payload in zip(snapshot.manifest['files'], frozen)
-                }
-            if zipped:
-                # Historical review content only; other steps stay current.
-                paths = [create_workflow_archive(
-                    self.repo, self.assembler, profile, selected,
-                    prepared=bundle, prepared_overrides=overrides
-                )]
-            elif snapshot and len(selected) == 1:
-                paths = self.polish_history.clipboard_paths(profile, snapshot.path, zipped=False)
-            elif snapshot:
-                protected_sources = {Path(entry['original_path'])
-                                     for entry in snapshot.manifest['files']}
-                paths = [value for source, value in bundle.items()
-                         if source not in protected_sources] + frozen
-            else:
-                paths = list(bundle.values())
-            count = len(paths)
-            if zipped:
-                import zipfile
-                with zipfile.ZipFile(paths[0]) as archive: count = len(archive.infolist())
-            return paths, count
-        def copied(result):
-            self._history_clipboard(result[0], result[1], zipped)
-            live = self.workspaces.get(profile.id) is workspace and self.profile and self.profile.id == profile.id
-            if protected and live and workspace.history_range.text().strip() == span:
-                workspace.history_range.clear()
-            if (live and advance and not selected_steps and not workspace.vocabulary_mode
-                    and self.si == old_index and self.step().id == step_id):
-                self.si = WorkflowService.next_index(self.si, len(self.profile.workflow.steps))
-                workspace.step_index = self.si
-                self.steps.blockSignals(True); self.steps.setCurrentRow(self.si); self.steps.blockSignals(False)
-                self.refresh_files()
-            if live: self._sync_stage_buttons(workspace)
-            self._schedule_workspace_session_save()
-        def failed(error):
-            if isinstance(error, RangeRequired) and workspace:
-                workspace.history_range.setFocus()
-                workspace.history_range.setPlaceholderText('กรอกช่วงบท เช่น 6-10')
-            QMessageBox.warning(self, 'คัดลอกไฟล์ไม่สำเร็จ', str(error))
-        if protected:
-            self.run_history_job(operation, copied, failed)
-        else:
-            try: copied(operation())
-            except (OSError, ValueError, KeyError) as exc: failed(exc)
 
     def set_editor_font_size(self, size):
         size = max(8.0, min(28.0, float(size)))

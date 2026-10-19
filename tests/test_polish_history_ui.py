@@ -215,7 +215,7 @@ def test_multistage_zip_keeps_all_stages_and_snapshot_context(window):
     wait_until(lambda: not w.history_busy())
     archive = Path(QApplication.clipboard().mimeData().urls()[0].toLocalFile())
     with zipfile.ZipFile(archive) as content:
-        assert len(content.namelist()) == 4
+        assert len(content.namelist()) == 3
         assert any(name.startswith('01_Translate/') for name in content.namelist())
         assert any(name.startswith('02_Polish/') for name in content.namelist())
     assert '4 ไฟล์' in w.statusBar().currentMessage()

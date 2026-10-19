@@ -559,6 +559,10 @@ class CodeEditor(QPlainTextEdit):
         self.appearance = appearance
         self.colors = editor_colors(appearance)
         self.setObjectName("codeEditor")
+        self._user_positioned_caret = False
+        # Tracking user input avoids moving an explicitly positioned caret to
+        # the document end merely because the file tab is clicked again.
+        self.textChanged.connect(self._mark_user_caret_positioned)
         self.line_number_area = LineNumberArea(self)
         self.line_number_area.setObjectName("lineNumberArea")
         self.blockCountChanged.connect(self.update_line_number_area_width)
@@ -593,6 +597,21 @@ class CodeEditor(QPlainTextEdit):
         self.setTabStopDistance(metrics.horizontalAdvance(" ") * 4)
         self.update_line_number_area_width()
         self.highlight_current_line()
+
+    def _mark_user_caret_positioned(self):
+        self._user_positioned_caret = True
+
+    def mousePressEvent(self, event):
+        self._user_positioned_caret = True
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (
+            Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down,
+            Qt.Key_Home, Qt.Key_End, Qt.Key_PageUp, Qt.Key_PageDown,
+        ):
+            self._user_positioned_caret = True
+        super().keyPressEvent(event)
 
     def insertFromMimeData(self, source):
         if source.hasText():
@@ -845,6 +864,9 @@ class EditorTabs(QWidget):
         self.tabs.tabBar().setObjectName("editorFileTabBar")
         self.tabs.tabBar().setContextMenuPolicy(Qt.CustomContextMenu)
         self.tabs.tabBar().customContextMenuRequested.connect(self._file_tab_menu)
+        # Clicking either a new tab or the already-selected tab should place
+        # keyboard focus in its text editor, ready for Ctrl+V.
+        self.tabs.tabBarClicked.connect(self._focus_clicked_tab)
         self.tabs.setDocumentMode(True)
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
@@ -974,6 +996,29 @@ class EditorTabs(QWidget):
         if editor is None or isinstance(editor, TxtExportTab):
             return False
         return bool(editor.property("documentDirty"))
+
+    def _focus_clicked_tab(self, index):
+        # Tab clicks are delivered before Qt completes the selection change.
+        # Defer focus so no tab bar/button consumes the next paste shortcut.
+        QTimer.singleShot(0, lambda i=index: self._focus_tab_editor(i))
+
+    def _focus_tab_editor(self, index):
+        if (index < 0 or self.tabs.currentIndex() != index
+                or not self.isVisible() or QApplication.activeModalWidget() is not None):
+            return
+        editor = self._current_editor()
+        if editor is None:
+            return
+        # Preserve the user's selection and saved cursor position. For a file
+        # that has never had a cursor placed by the user, paste at its end.
+        if (not getattr(editor, "_user_positioned_caret", False)
+                and not editor.textCursor().hasSelection()
+                and editor.textCursor().position() == 0
+                and editor.document().characterCount() > 1):
+            cursor = editor.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            editor.setTextCursor(cursor)
+        editor.setFocus(Qt.MouseFocusReason)
 
     def _current_editor(self):
         widget = self.tabs.currentWidget()
