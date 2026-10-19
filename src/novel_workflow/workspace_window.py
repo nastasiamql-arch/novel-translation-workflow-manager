@@ -3330,7 +3330,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     f"{path.name}: มีบทใหม่รอตรวจ · กดปุ่ม 'ตรวจเลขบท' ในแท็บต้นฉบับ",
                     12000,
                 )
-            return False    def _update_context_button(self, workspace):
+            return False
+
+    def _update_context_button(self, workspace):
         path = Path(self.profile.context_path).expanduser() if self.profile and self.profile.context_path else None
         if path and path.is_file():
             workspace.context_button.setText(path.name)
