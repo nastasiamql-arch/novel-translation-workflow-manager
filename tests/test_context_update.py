@@ -867,6 +867,13 @@ def test_review_copy_and_post_txt_export_keep_pre_export_context(tmp_path, monke
     assert len(window.polish_history.list(window.profile)) == 1
     workspace.history_range.setText("6-10")
     workspace.stage_buttons[1].click()
+    # Stage selection does not touch the clipboard. Explicit stage copy uses
+    # current files, while a history-copy action returns the old Context.
+    window.copy_step(advance=False)
+    live_payloads = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
+    assert any(path.read_bytes() == context.read_bytes() for path in live_payloads)
+    snapshot = window.polish_history.list(window.profile)[0]
+    window.copy_history_snapshot(window.profile, snapshot)
     stop = time.monotonic() + 15
     while window.history_busy() and time.monotonic() < stop:
         QApplication.processEvents(); time.sleep(0.01)
