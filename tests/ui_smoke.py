@@ -179,7 +179,7 @@ def main() -> int:
                     if window.profile_cards.item(i).data(Qt.UserRole) == profile.id
                 )
                 assert not checking_card.isHidden()
-                assert "กำลังเช็กกับเว็บ" in checking_card.text()
+                assert checking_card.text() == saved_profile().name\n                assert checking_card.data(Qt.UserRole + 1) == "checking_web"
                 workspace.resume_profile_button.click()
                 app.processEvents()
                 assert saved_profile().status == "translating"
