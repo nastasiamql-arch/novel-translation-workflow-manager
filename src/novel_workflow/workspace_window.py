@@ -2015,6 +2015,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def build(self):
         self._settings_open = False
         self.workspaces = {}
+        # Keep two recently visited workspaces warm without opening multiple novels.
+        self._workspace_cache = {}
+        self._workspace_cache_host = QWidget(self)
+        self._workspace_cache_host.hide()
         # Old multi-novel sessions retain per-novel file state, not open tabs.
         self._open_workspace_ids = []
         self._session_save_timer = QTimer(self)
@@ -2321,6 +2325,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 self.repo.save_profile(profile)
 
         known_ids = {profile.id for profile in self.ps_list}
+        for profile_id in list(self._workspace_cache):
+            if profile_id not in known_ids:
+                self._discard_workspace(profile_id)
         for profile_id in list(self.workspaces):
             if profile_id not in known_ids:
                 workspace = self.workspaces.pop(profile_id)
@@ -2465,56 +2472,67 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._open_workspace_ids = [profile.id]
         workspace = self.workspaces.get(profile.id)
         if workspace is None:
-            workspace = WorkspacePage(self, profile)
-            workspace.files.itemChanged.connect(
-                lambda item, pid=profile.id: self._file_toggled(pid, item)
-            )
-            self.workspaces[profile.id] = workspace
-            self.workspace_stack.addWidget(workspace)
+            cached = self._workspace_cache.pop(profile.id, None)
+            if cached is not None:
+                candidate, signature = cached
+                if signature == self._workspace_signature(profile.id, candidate):
+                    workspace = candidate
+                    self.workspaces[profile.id] = workspace
+                    self.workspace_stack.addWidget(workspace)
+                    workspace.configure(profile)
+                else:
+                    candidate.deleteLater()
+            if workspace is None:
+                workspace = WorkspacePage(self, profile)
+                workspace.files.itemChanged.connect(
+                    lambda item, pid=profile.id: self._file_toggled(pid, item)
+                )
+                self.workspaces[profile.id] = workspace
+                self.workspace_stack.addWidget(workspace)
 
-            workspace.editor.statusChanged.connect(
-                lambda text, editor=workspace.editor:
-                    self._workspace_editor_status_changed(editor, text)
-            )
-            workspace.editor.fontSizeChanged.connect(self.set_editor_font_size)
-            workspace.editor.documentSaved.connect(self._document_saved)
-            workspace.editor.restore_paths(
-                self.settings.editor_tabs.get(profile.id, []),
-                self.settings.editor_active_tabs.get(profile.id, 0),
-                self.settings.editor_tab_order.get(profile.id),
-                self.settings.editor_active_tab_keys.get(profile.id),
-            )
-            if profile.open_working_tabs_on_open:
-                self._open_profile_working_tabs(profile, workspace)
-            workspace.editor.tabs.currentChanged.connect(self._schedule_workspace_session_save)
-            workspace.editor.tabs.tabBar().tabMoved.connect(
-                lambda _from, _to: self._schedule_workspace_session_save()
-            )
-            workspace.editor.tabs.tabCloseRequested.connect(
-                lambda _index: self._schedule_workspace_session_save()
-            )
-            workspace.step_index = int(self.settings.workspace_step_indices.get(profile.id, 0))
-            workspace.vocabulary_mode = bool(self.settings.workspace_vocabulary_modes.get(profile.id, False))
-            workspace.sync_vocabulary_source()
-            if self.settings.sidebar_visible:
-                workspace.workspace_splitter.setSizes([
-                    max(220, int(self.settings.sidebar_width or 290)), 1000,
-                ])
-            else:
-                workspace.workspace_splitter.setSizes([0, 1000])
-            positions = self.settings.editor_positions.get(profile.id, {})
-            for editor_index in range(workspace.editor.tabs.count()):
-                widget = workspace.editor.tabs.widget(editor_index)
-                editor = widget.editor if hasattr(widget, "editor") else widget
-                document_path = workspace.editor._path(editor)
-                if document_path is None:
-                    continue
-                path = str(document_path)
-                position = positions.get(path, {})
-                cursor = editor.textCursor()
-                cursor.setPosition(min(int(position.get("cursor", 0)), len(editor.toPlainText())))
-                editor.setTextCursor(cursor)
-                editor.verticalScrollBar().setValue(int(position.get("scroll", 0)))
+                workspace.editor.statusChanged.connect(
+                    lambda text, editor=workspace.editor:
+                        self._workspace_editor_status_changed(editor, text)
+                )
+                workspace.editor.fontSizeChanged.connect(self.set_editor_font_size)
+                workspace.editor.documentSaved.connect(self._document_saved)
+                workspace.editor.restore_paths(
+                    self.settings.editor_tabs.get(profile.id, []),
+                    self.settings.editor_active_tabs.get(profile.id, 0),
+                    self.settings.editor_tab_order.get(profile.id),
+                    self.settings.editor_active_tab_keys.get(profile.id),
+                )
+                if profile.open_working_tabs_on_open:
+                    self._open_profile_working_tabs(profile, workspace)
+                workspace.editor.tabs.currentChanged.connect(self._schedule_workspace_session_save)
+                workspace.editor.tabs.tabBar().tabMoved.connect(
+                    lambda _from, _to: self._schedule_workspace_session_save()
+                )
+                workspace.editor.tabs.tabCloseRequested.connect(
+                    lambda _index: self._schedule_workspace_session_save()
+                )
+                workspace.step_index = int(self.settings.workspace_step_indices.get(profile.id, 0))
+                workspace.vocabulary_mode = bool(self.settings.workspace_vocabulary_modes.get(profile.id, False))
+                workspace.sync_vocabulary_source()
+                if self.settings.sidebar_visible:
+                    workspace.workspace_splitter.setSizes([
+                        max(220, int(self.settings.sidebar_width or 290)), 1000,
+                    ])
+                else:
+                    workspace.workspace_splitter.setSizes([0, 1000])
+                positions = self.settings.editor_positions.get(profile.id, {})
+                for editor_index in range(workspace.editor.tabs.count()):
+                    widget = workspace.editor.tabs.widget(editor_index)
+                    editor = widget.editor if hasattr(widget, "editor") else widget
+                    document_path = workspace.editor._path(editor)
+                    if document_path is None:
+                        continue
+                    path = str(document_path)
+                    position = positions.get(path, {})
+                    cursor = editor.textCursor()
+                    cursor.setPosition(min(int(position.get("cursor", 0)), len(editor.toPlainText())))
+                    editor.setTextCursor(cursor)
+                    editor.verticalScrollBar().setValue(int(position.get("scroll", 0)))
         else:
             workspace.configure(profile)
             if was_closed and profile.open_working_tabs_on_open:
@@ -2534,9 +2552,42 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 continue
         workspace.editor.prioritize_paths(preferred)
 
+    def _workspace_signature(self, profile_id, workspace):
+        """Invalidate a warm workspace if its profile or editor files changed outside Valhalla."""
+        try:
+            paths = [self.repo.profile_dir(profile_id) / "profile.json"]
+            paths.extend(Path(path) for path in workspace.editor.open_paths())
+            return tuple(
+                (str(path.resolve()), path.stat().st_mtime_ns, path.stat().st_size)
+                for path in paths
+            )
+        except (OSError, ValueError):
+            return None
+
+    def _suspend_workspace(self, profile_id):
+        workspace = self.workspaces.pop(profile_id, None)
+        if workspace is None:
+            return
+        signature = self._workspace_signature(profile_id, workspace)
+        for timer in workspace.findChildren(QTimer):
+            timer.stop()
+        self.workspace_stack.removeWidget(workspace)
+        workspace.hide()
+        workspace.setParent(self._workspace_cache_host)
+        if signature is None:
+            workspace.deleteLater()
+            return
+        self._workspace_cache[profile_id] = (workspace, signature)
+        while len(self._workspace_cache) > 2:
+            _, (expired, _) = self._workspace_cache.popitem()
+            expired.deleteLater()
+
     def _discard_workspace(self, profile_id):
         """Dispose an already saved workspace without deleting its profile/session."""
         workspace = self.workspaces.pop(profile_id, None)
+        cached = self._workspace_cache.pop(profile_id, None)
+        if workspace is None and cached is not None:
+            workspace = cached[0]
         if workspace is not None:
             for timer in workspace.findChildren(QTimer):
                 timer.stop()
@@ -2573,7 +2624,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.statusBar().showMessage(f"บันทึกสถานะไม่สำเร็จ จึงยังเปลี่ยนนิยายไม่ได้: {exc}", 6000)
             return False
         for pid, _workspace in previous:
-            self._discard_workspace(pid)
+            self._suspend_workspace(pid)
         return True
 
     def _close_novel_tab(self, profile_id):

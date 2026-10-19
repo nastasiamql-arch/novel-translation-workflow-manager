@@ -156,3 +156,36 @@ def test_failed_settings_switch_restores_active_profile_binding(tmp_path, monkey
     window.return_from_utility_page()
     assert set(window.workspaces) == {first.id}
     assert window.profile.id == first.id
+
+
+def test_switch_reuses_recent_workspace_without_recreating_editor(tmp_path):
+    repo, first, _ = setup_profile(tmp_path)
+    second = NovelProfile(name='Second')
+    repo.save_profile(second)
+    window = MainWindow(repo)
+    select(window, first)
+    original = window.workspaces[first.id]
+    select(window, second)
+    assert set(window.workspaces) == {second.id}
+    assert first.id in window._workspace_cache
+    assert window.workspace_stack.count() == 2
+    select(window, first)
+    assert window.workspaces[first.id] is original
+    assert set(window.workspaces) == {first.id}
+
+
+def test_suspended_workspace_invalidated_after_external_file_change(tmp_path):
+    repo, first, _ = setup_profile(tmp_path)
+    second = NovelProfile(name='Second')
+    repo.save_profile(second)
+    source = repo.profile_dir(first.id) / 'source/Novel.txt'
+    source.write_text('before', encoding='utf-8')
+    window = MainWindow(repo)
+    select(window, first)
+    original = window.workspaces[first.id]
+    original.editor.open_file(source)
+    select(window, second)
+    source.write_text('after externally edited', encoding='utf-8')
+    select(window, first)
+    assert window.workspaces[first.id] is not original
+    assert 'after externally edited' in window.workspaces[first.id].editor._current_editor().toPlainText()
