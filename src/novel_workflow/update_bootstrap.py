@@ -29,7 +29,7 @@ $exitCode = -1
 $canRestart = $false
 try {
     $oldProcess = Get-Process -Id $task.pid -ErrorAction SilentlyContinue
-    if ($oldProcess -and -not $oldProcess.WaitForExit(120000)) { throw 'Palantir did not close within two minutes. Update cancelled.' }
+    if ($oldProcess -and -not $oldProcess.WaitForExit(120000)) { throw 'Valhalla did not close within two minutes. Update cancelled.' }
     $canRestart = $true
     $installer = Get-Item -LiteralPath $task.installer
     if ($installer.Length -ne $task.size) { throw 'Installer size changed after download.' }
@@ -57,7 +57,7 @@ try {
     else { throw $result.error }
 } catch {
     Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.MessageBox]::Show(('Palantir could not restart. ' + $result.error + ' See ' + $task.log), 'Palantir update')
+    [System.Windows.Forms.MessageBox]::Show(('Valhalla could not restart. ' + $result.error + ' See ' + $task.log), 'Valhalla update')
 }
 '''
 

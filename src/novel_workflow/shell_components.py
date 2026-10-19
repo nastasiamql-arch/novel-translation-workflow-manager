@@ -75,22 +75,10 @@ class NovelHeader(QFrame):
         from .translation_progress import daily_chapter_count, completion_label, completion_tooltip
         self.title.setText(profile.name)
         self.cover.setToolTip(profile.name)
-        self.cover.setProperty('coverPath', '')
-        image = QPixmap()
-        if self.repo and profile.cover_image_path:
-            try:
-                path = self.repo.resolve_project_path(profile.id, profile.cover_image_path)
-                image = QPixmap(str(path)) if path.is_file() else QPixmap()
-                if not image.isNull():
-                    self.cover.setProperty('coverPath', str(path.resolve()))
-            except (OSError, ValueError):
-                pass
-        if image.isNull():
-            image = QPixmap(str(Path(__file__).parent / 'resources' / 'novelworkflow.png'))
-        if image.isNull():
-            self.cover.setText('▤')
-        else:
-            self.cover.setPixmap(image.scaled(self.cover.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        cover_key = (profile.id, profile.cover_image_path)
+        if getattr(self, "_cover_key", None) != cover_key:
+            self._cover_key = cover_key
+            self._render_cover(profile)
         today = daily_chapter_count(profile)
         today_text = f'วันนี้ +{today:,} บท' if today else 'วันนี้ 0 บท'
         self.progress.setText(f'{completion_label(profile)}  ·  {today_text}')
@@ -115,6 +103,25 @@ class NovelHeader(QFrame):
         else:
             self.goal_label.setText("ยังไม่ได้ตั้งเป้าหมายการแปล")
             self.goal_label.setToolTip("กด ตั้งเป้า เพื่อกำหนดจำนวนบทของนิยายเรื่องนี้")
+
+    def _render_cover(self, profile):
+        """Cover decoding is keyed by profile, never by document cursor position."""
+        self.cover.setProperty('coverPath', '')
+        image = QPixmap()
+        if self.repo and profile.cover_image_path:
+            try:
+                path = self.repo.resolve_project_path(profile.id, profile.cover_image_path)
+                image = QPixmap(str(path)) if path.is_file() else QPixmap()
+                if not image.isNull():
+                    self.cover.setProperty('coverPath', str(path.resolve()))
+            except (OSError, ValueError):
+                pass
+        if image.isNull():
+            image = QPixmap(str(Path(__file__).parent / 'resources' / 'novelworkflow.png'))
+        if image.isNull():
+            self.cover.setText('▤')
+        else:
+            self.cover.setPixmap(image.scaled(self.cover.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
 
 class NavigationSidebar(QFrame):

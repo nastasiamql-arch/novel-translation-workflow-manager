@@ -45,6 +45,10 @@ if ($LASTEXITCODE -ne 0 -or -not $version) {
 }
 $version = $version.Trim()
 
+# Generate the multi-resolution Windows icon from the committed Valhalla mark.
+& $venvPython -c "from PIL import Image; Image.open('src/novel_workflow/resources/valhalla-icon.png').convert('RGBA').save('assets/valhalla.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+if ($LASTEXITCODE -ne 0) { throw "Could not generate Valhalla Windows icon." }
+
 $buildPath = $env:PATH
 try {
     # PyInstaller resolves Qt's ICU imports using PATH. Keep unrelated tools

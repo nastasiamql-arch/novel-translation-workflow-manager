@@ -1099,7 +1099,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._startup_pending_export_ids = {
             profile.id for profile, _path in self._pending_export_profiles()
         }
-        self.setWindowTitle("Palantir: Novel")
+        self.setWindowTitle("Valhalla")
         self.submit_toast = SubmitToast(self)
         result = read_update_result(self.repo.root)
         if result:
@@ -1108,7 +1108,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             else:
                 message = result.get("error") or f"เปิดโปรแกรม v{__version__} แต่คาดว่าจะเป็น v{result.get('version', 'unknown')}"
                 QTimer.singleShot(100, lambda: QMessageBox.warning(self, "อัปเดตไม่สำเร็จ", f"{message}\nLog: {result.get('log', '')}"))
-        logo = Path(__file__).resolve().parent / "resources" / "palantir_novel.png"
+        logo = Path(__file__).resolve().parent / "resources" / "valhalla-icon.png"
         if logo.is_file():
             self.setWindowIcon(QIcon(str(logo)))
         # Mark historical cosmetic migrations without changing saved preferences.
@@ -2012,7 +2012,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         bar.setMovable(False)
         bar.setIconSize(QSize(20, 20))
 
-        brand = QLabel("Palantir: Novel")
+        brand = QLabel("Valhalla")
         brand.setObjectName("brandTitle")
         bar.addWidget(brand)
 
@@ -2126,7 +2126,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.shortcut("Ctrl+0", lambda: self.set_editor_font_size(11.0))
 
         self.progress_timer = QTimer(self)
-        self.progress_timer.setInterval(10000)
+        self.progress_timer.setInterval(60000)
         self.progress_timer.timeout.connect(self.refresh_translation_progress)
         self.progress_timer.start()
 
@@ -3991,7 +3991,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if failures:
             QMessageBox.warning(
                 self,
-                "Palantir: Novel",
+                "Valhalla",
                 f"เปิดสำเร็จ {succeeded} รายการ\n\n" + "\n".join(failures),
             )
         else:
@@ -4071,25 +4071,12 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         super().save()
 
     def _workspace_editor_status_changed(self, editor, text):
+        """Cursor changes update only the status label, never files or covers."""
         if not self.profile:
             return
         workspace = self.workspaces.get(self.profile.id)
         if workspace is not None and workspace.editor is editor:
-            workspace.refresh_export_status()
-            context_path = Path(self.profile.context_path).expanduser().resolve() if self.profile.context_path else None
-            if context_path:
-                for index in range(editor.tabs.count()):
-                    widget = editor.tabs.widget(index)
-                    text_editor = widget.editor if hasattr(widget, "editor") else widget
-                    path = editor._path(text_editor)
-                    if path and path.expanduser().resolve() == context_path:
-                        latest = latest_context_chapter(text_editor.toPlainText())
-                        self._latest_context_chapter = latest
-                        self.context_status.setFullText(
-                            f"Context: บท {latest}" if latest is not None else "ไม่พบบทใน Context"
-                        )
-                        break
-            self._update_editor_status(text)
+            self.editor_status.setFullText(text)
 
     def _update_editor_status(self, text=None):
         workspace = self.workspaces.get(self.profile.id) if self.profile else None

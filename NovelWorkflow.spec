@@ -13,7 +13,7 @@ hiddenimports = collect_submodules('novel_workflow') + collect_submodules('send2
 datas = [
     (str(version_file), 'novel_workflow/resources'),
     ('src/novel_workflow/resources/novelworkflow.png', 'novel_workflow/resources'),
-    ('src/novel_workflow/resources/palantir_novel.png', 'novel_workflow/resources'),
+    ('src/novel_workflow/resources/valhalla-icon.png', 'novel_workflow/resources'),
     *[(str(path), 'novel_workflow/resources') for path in (project_root / 'src/novel_workflow/resources').glob('*.svg')],
     *copy_metadata('novelworkflow'),
 ]
@@ -41,7 +41,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
-    icon='assets/palantir_novel.ico',
+    icon='assets/valhalla.ico',
 )
 coll = COLLECT(
     exe,

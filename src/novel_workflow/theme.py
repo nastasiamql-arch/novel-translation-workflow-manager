@@ -1,4 +1,4 @@
-"""Accessible shared color tokens and component styles for Palantir: Novel."""
+"""Accessible shared color tokens and component styles for Valhalla."""
 
 from pathlib import Path
 from PySide6.QtCore import Qt

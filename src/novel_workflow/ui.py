@@ -42,10 +42,10 @@ class ManagementActionsMixin:
         self.profile=None
         self.si=-1
         self.dashboard_dialog=None
-        self.setWindowTitle("Palantir: Novel")
+        self.setWindowTitle("Valhalla")
         self.setMinimumSize(900,600)
         self.resize(1260,780)
-        logo=Path(__file__).resolve().parent/"resources"/"palantir_novel.png"
+        logo=Path(__file__).resolve().parent/"resources"/"valhalla-icon.png"
         if logo.is_file(): self.setWindowIcon(QIcon(str(logo)))
         self.apply_theme()
         self.build()
@@ -75,7 +75,7 @@ class ManagementActionsMixin:
         bar.setObjectName("mainToolbar")
         bar.setMovable(False)
         bar.setIconSize(QSize(30,30))
-        brand=QLabel("Palantir: Novel")
+        brand=QLabel("Valhalla")
         brand.setObjectName("brandTitle")
         bar.addWidget(brand)
         spacer=QWidget()
@@ -323,7 +323,7 @@ class ManagementActionsMixin:
         results=self.launcher.launch_profile(self.profile)
         failures=[message for success,message in results if not success]
         succeeded=sum(1 for success,_ in results if success)
-        if failures:QMessageBox.warning(self,"Palantir: Novel",f"เปิดสำเร็จ {succeeded} รายการ\n\n"+"\n".join(failures))
+        if failures:QMessageBox.warning(self,"Valhalla",f"เปิดสำเร็จ {succeeded} รายการ\n\n"+"\n".join(failures))
         else:self.statusBar().showMessage(f"เปิด {self.profile.name} แล้ว ({succeeded} รายการ)",4000)
 
     def launcher_dialog(self):

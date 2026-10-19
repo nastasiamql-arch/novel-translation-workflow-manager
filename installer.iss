@@ -1,8 +1,8 @@
-#define MyAppName "Palantir: Novel"
+#define MyAppName "Valhalla"
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
 #endif
-#define MyAppPublisher "Palantir Novel"
+#define MyAppPublisher "Valhalla"
 #define MyAppExeName "NovelWorkflow.exe"
 
 [Setup]
@@ -11,11 +11,11 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\NovelWorkflow
-DefaultGroupName=Palantir Novel
+DefaultGroupName=Valhalla
 DisableProgramGroupPage=yes
 OutputDir=dist
 OutputBaseFilename=NovelWorkflow-Setup-{#MyAppVersion}
-SetupIconFile=assets\palantir_novel.ico
+SetupIconFile=assets\valhalla.ico
 UninstallDisplayIcon={app}\NovelWorkflow.exe
 Compression=lzma2
 SolidCompression=yes
@@ -51,19 +51,22 @@ Type: filesandordirs; Name: "{app}\_internal\novel_workflow\downloader_ui"
 Type: files; Name: "{app}\Qt6*.dll"
 Type: files; Name: "{app}\shiboken6*.dll"
 Type: filesandordirs; Name: "{app}\PySide6"
+; Remove obsolete shortcuts only; preserve legacy install identity and executable.
+Type: files; Name: "{autoprograms}\Palantir Novel.lnk"
+Type: files; Name: "{autodesktop}\Palantir Novel.lnk"
 ; Remove shortcuts from the previous product name during an in-place upgrade.
 Type: files; Name: "{autoprograms}\NovelWorkflow.lnk"
 Type: files; Name: "{autodesktop}\NovelWorkflow.lnk"
 
 [Icons]
-Name: "{autoprograms}\Palantir Novel"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; IconIndex: 0
-Name: "{autodesktop}\Palantir Novel"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; IconIndex: 0; Tasks: desktopicon
+Name: "{autoprograms}\Valhalla"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; IconIndex: 0
+Name: "{autodesktop}\Valhalla"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; IconIndex: 0; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch Palantir: Novel"; Flags: nowait postinstall; Check: IsManualInteractiveInstall
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch Valhalla"; Flags: nowait postinstall; Check: IsManualInteractiveInstall
 
 
 [Code]

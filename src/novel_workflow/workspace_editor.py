@@ -1012,6 +1012,8 @@ class EditorTabs(QWidget):
         text = editor.toPlainText()
         editor._cached_character_count = len(text)
         editor._cached_word_count = len(text.split())
+        if getattr(editor, 'vocabulary_mode', False):
+            editor._cached_vocabulary_warnings = vocabulary_warnings(text)
         if editor is self._current_editor():
             self._update_status(self.tabs.currentIndex())
 
@@ -1440,7 +1442,7 @@ class EditorTabs(QWidget):
         suffix = path.suffix.lower().lstrip(".").upper() if path else "TEXT"
         state = str(editor.property("saveState") or "")
         if path and getattr(editor, 'vocabulary_mode', False):
-            warnings = vocabulary_warnings(editor.toPlainText())
+            warnings = getattr(editor, '_cached_vocabulary_warnings', ())
             if warnings:
                 state += f" · TSV: {len(warnings)} บรรทัดมีคอลัมน์ไม่ครบ 4"
         self.status.setText(
