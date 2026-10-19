@@ -52,10 +52,12 @@ def test_copy_zip_immediately_after_paste_contains_corrected_source(tmp_path):
         editor.setPlainText("第646章 复制ZIP前修复\n文字不能修改。\n")
         window.copy_step(advance=False)
         with zipfile.ZipFile(_copied_file()) as archive:
-            contents = [archive.read(name).decode("utf-8") for name in archive.namelist()]
+            contents = [archive.read(name) for name in archive.namelist()]
         assert len(contents) == 1
-        assert contents[0] == source.read_text(encoding="utf-8")
-        assert "第631章 复制ZIP前修复" in contents[0]
+        # Compare original bytes: Path.read_text() normalizes CRLF on Windows,
+        # while ZIP correctly stores the source's exact original bytes.
+        assert contents[0] == source.read_bytes()
+        assert "第631章 复制ZIP前修复" in contents[0].decode("utf-8")
     finally:
         close(window)
 
