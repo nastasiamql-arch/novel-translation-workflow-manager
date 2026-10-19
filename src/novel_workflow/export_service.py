@@ -39,7 +39,7 @@ class ExportService:
         self.repo, self.profile_id = repo, profile_id
 
     def profile(self):
-        return next(p for p in self.repo.list_profiles() if p.id == self.profile_id)
+        return self.repo.load_profile(self.profile_id)
 
     def commit(self, filename, prefix, sequence, next_sequence, settings):
         profile = self.profile()

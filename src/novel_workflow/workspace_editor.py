@@ -1313,6 +1313,7 @@ class EditorTabs(QWidget):
         if editor is None:
             return
         if editor is self.export_tab:
+            self._update_status(index)
             return
         if self._dirty(editor) and not editor.property('normalizationPending') and not self.save_editor(editor):
             return

@@ -109,6 +109,29 @@ class ProjectRepository:
                 self.save_profile(profile)
         return sorted(profiles,key=lambda profile:(profile.order,profile.name.casefold()))
 
+    @profile_guard
+    def load_profile(self, profile_id):
+        """Read a single profile without scanning unrelated novels.
+
+        Keep export recovery and schema migration on the same guarded path
+        as list_profiles; conflicts must never be silently overwritten.
+        """
+        folder = self.profile_dir(profile_id)
+        path = folder / "profile.json"
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        from .export_recovery import recover_export
+        recover_export(self, profile_id)
+        data = read_json(path, {})
+        if not isinstance(data, dict) or not data:
+            raise ValueError(f"Invalid profile data: {path}")
+        if data.get("schema_version", 1) < 5 or "source_binding" in data:
+            return next(item for item in self.list_profiles() if item.id == profile_id)
+        profile = NovelProfile.from_dict(data)
+        if migrate_profile_schema(profile):
+            self.save_profile(profile)
+        return profile
+
     def next_profile_order(self):
         return max((profile.order for profile in self.list_profiles()),default=-1)+1
 

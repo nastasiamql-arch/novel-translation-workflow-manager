@@ -517,19 +517,9 @@ class WorkspacePage(QWidget):
             Path(profile.main_folder).expanduser() / "source"
             if profile.main_folder.strip() else owner.repo.profile_dir(profile.id) / "source"
         )
-        self.txt_vocabulary_page = TxtVocabularyPage(
-            owner.settings.vocabulary_txt_profiles.get(profile.id, {}),
-            lambda state: owner.save_txt_vocabulary_state(profile.id, state),
-            default_source,
-            stage_reader=lambda pid=profile.id, fallback=profile: enabled_vocabulary_attachments(
-                owner.repo, owner.assembler,
-                owner.profile if owner.profile and owner.profile.id == pid else fallback,
-            ),
-            archive_cache_dir=owner.repo.root / "cache" / "clipboard" / "txt-vocabulary" / profile.id,
-        )
+        self.txt_vocabulary_page = None
         self.editor_content_stack = QStackedWidget()
         self.editor_content_stack.addWidget(self.editor)
-        self.editor_content_stack.addWidget(self.txt_vocabulary_page)
         editor_layout.addWidget(self.editor_content_stack, 1)
         self.sync_vocabulary_source()
         editor_host = QWidget()
@@ -823,23 +813,51 @@ class WorkspacePage(QWidget):
     def set_mode(self, index):
         self.content_stack.setCurrentIndex(0)
 
+    def _ensure_txt_vocabulary_page(self):
+        """Create expensive batch controls only when requested."""
+        if self.txt_vocabulary_page is None:
+            profile = next((p for p in self.owner.ps_list if p.id == self.profile_id), None)
+            if profile is None:
+                return None
+            default_source = (
+                Path(profile.main_folder).expanduser() / "source"
+                if profile.main_folder.strip() else self.owner.repo.profile_dir(profile.id) / "source"
+            )
+            page = TxtVocabularyPage(
+                self.owner.settings.vocabulary_txt_profiles.get(profile.id, {}),
+                lambda state: self.owner.save_txt_vocabulary_state(profile.id, state),
+                default_source,
+                stage_reader=lambda pid=profile.id, fallback=profile: enabled_vocabulary_attachments(
+                    self.owner.repo, self.owner.assembler,
+                    self.owner.profile if self.owner.profile and self.owner.profile.id == pid else fallback,
+                ),
+                archive_cache_dir=self.owner.repo.root / "cache" / "clipboard" / "txt-vocabulary" / profile.id,
+            )
+            self.txt_vocabulary_page = page
+            self.editor_content_stack.addWidget(page)
+        return self.txt_vocabulary_page
+
     def set_vocabulary_source(self, mode):
         if mode not in ("manual", "files"):
             return
         self.vocabulary_source_mode = mode
-        self.txt_vocabulary_page.state["mode"] = mode
-        self.owner.save_txt_vocabulary_state(self.profile_id, self.txt_vocabulary_page.state)
+        page = self._ensure_txt_vocabulary_page() if mode == "files" else self.txt_vocabulary_page
+        if page is not None:
+            page.state["mode"] = mode
+        if page is not None:
+            self.owner.save_txt_vocabulary_state(self.profile_id, page.state)
         self.sync_vocabulary_source()
-        if mode == "files":
-            self.txt_vocabulary_page.refresh()
+        if mode == "files" and page is not None:
+            page.refresh()
 
     def sync_vocabulary_source(self):
         self.vocabulary_source_bar.setVisible(self.vocabulary_mode)
         self.manual_source_button.setChecked(self.vocabulary_source_mode != "files")
         self.txt_source_button.setChecked(self.vocabulary_source_mode == "files")
-        self.editor_content_stack.setCurrentIndex(
-            1 if self.vocabulary_mode and self.vocabulary_source_mode == "files" else 0
-        )
+        show_files = self.vocabulary_mode and self.vocabulary_source_mode == "files"
+        if show_files:
+            self._ensure_txt_vocabulary_page()
+        self.editor_content_stack.setCurrentIndex(1 if show_files else 0)
 
     def filter_files(self, query):
         query = query.strip().casefold()
