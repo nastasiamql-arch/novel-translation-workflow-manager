@@ -46,17 +46,19 @@ def window(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('zipped', [False, True])
-def test_named_stage_click_snapshot_then_native_clipboard(window, zipped):
+def test_named_stage_select_then_explicit_copy_without_snapshot(window, zipped):
     w, p, workspace, errors = window
     assert hasattr(workspace, 'history_range'), 'Missing compact chapter range input'
     workspace.history_range.setText('6-10'); w.settings.copy_files_as_zip = zipped
+    QApplication.clipboard().setText("keep this text")
     workspace.stage_buttons[1].click()
-    wait_until(lambda: not w.history_busy())
+    assert QApplication.clipboard().text() == "keep this text"
+    workspace.copy_step_button.click()
     urls = QApplication.clipboard().mimeData().urls()
-    assert len(urls) == (1 if zipped else 2)
+    assert len(urls) == 1
     assert all(Path(u.toLocalFile()).is_file() for u in urls)
     assert w.si == 1 and not errors
-    assert len(w.polish_history.list(p)) == 1
+    assert len(w.polish_history.list(p)) == 0
     assert p.verified_goal_count == 0 and p.verified_export_history == []
 
 
@@ -64,6 +66,7 @@ def test_other_stage_keeps_enabled_only_behavior(window):
     w, p, workspace, errors = window
     assert hasattr(w, 'polish_history'), 'History service missing'
     workspace.stage_buttons[0].click()
+    workspace.copy_step_button.click()
     assert len(QApplication.clipboard().mimeData().urls()) == 1
     assert w.polish_history.list(p) == []
 
@@ -74,7 +77,7 @@ def test_history_page_copy_and_back_preserve_editor_and_stage(window):
     editor = workspace.editor.open_file(w.repo.profile_dir(p.id) / 'a.txt')
     editor.moveCursor(QTextCursor.End)
     position = editor.textCursor().position()
-    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click()
+    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
     wait_until(lambda: not w.history_busy())
     Path(p.context_path).write_bytes(b'new context')
     w.open_polish_history()
@@ -99,7 +102,8 @@ def test_history_page_copy_and_back_preserve_editor_and_stage(window):
 def test_range_required_focus_and_no_false_success(window):
     w, p, workspace, errors = window
     assert hasattr(workspace, 'history_range')
-    workspace.stage_buttons[1].click(); wait_until(lambda: not w.history_busy())
+    workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    wait_until(lambda: not w.history_busy())
     assert not w.polish_history.list(p)
     assert 'ช่วงบท' in w.statusBar().currentMessage()
 
@@ -127,7 +131,7 @@ def test_legacy_default_only_clear_polish_name(names, expected):
 def test_history_copy_survives_window_close(window):
     w, p, workspace, errors = window
     assert hasattr(workspace, 'history_range')
-    workspace.history_range.setText('1-5'); workspace.stage_buttons[1].click()
+    workspace.history_range.setText('1-5'); workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
     wait_until(lambda: not w.history_busy())
     paths = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
     w._close_export_reminder_accepted = True; w.close()
@@ -188,14 +192,14 @@ def test_failed_save_blocks_stage_snapshot(window, monkeypatch):
     editor = workspace.editor.open_file(w.repo.profile_dir(p.id) / 'a.txt')
     editor.insertPlainText('unsaved work')
     monkeypatch.setattr(workspace.editor, 'save_editor', lambda *args, **kwargs: False)
-    workspace.stage_buttons[1].click()
+    workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
     assert w.polish_history.list(p) == []
 
 
 def test_cached_history_follows_changed_main_folder(window, tmp_path):
     from dataclasses import asdict
     w, p, workspace, errors = window
-    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click()
+    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
     wait_until(lambda: not w.history_busy())
     w.open_polish_history(); wait_until(lambda: not w.history_busy())
     w.utility_back.click()
@@ -218,13 +222,13 @@ def test_multistage_zip_keeps_all_stages_and_snapshot_context(window):
         assert len(content.namelist()) == 3
         assert any(name.startswith('01_Translate/') for name in content.namelist())
         assert any(name.startswith('02_Polish/') for name in content.namelist())
-    assert '4 ไฟล์' in w.statusBar().currentMessage()
+    assert '3 ไฟล์' in w.statusBar().currentMessage()
     assert not errors
 
 
 def test_reopened_window_recovers_old_context_from_disk(window):
     w, p, workspace, errors = window
-    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click()
+    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
     wait_until(lambda: not w.history_busy())
     w._close_export_reminder_accepted = True; w.close()
     Path(p.context_path).write_bytes(b'latest context after restart')
@@ -252,7 +256,8 @@ def test_history_opened_during_snapshot_loads_after_job_finishes(window, monkeyp
         assert ready.wait(3)
         return create(*args, **kwargs)
     monkeypatch.setattr(w.polish_history, 'create', pending)
-    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click()
+    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    wait_until(lambda: not w.history_busy())
     w.open_polish_history(); ready.set()
     page = w._utility_pages['polish-history:' + p.id]
     wait_until(lambda: not w.history_busy() and len(page.snapshots) == 1)
@@ -284,7 +289,7 @@ def test_history_copy_button_shows_zip_scope_when_enabled(window):
     import zipfile
     w, p, workspace, errors = window
     workspace.history_range.setText('6-10')
-    workspace.stage_buttons[1].click()
+    workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
     wait_until(lambda: not w.history_busy())
     w.open_polish_history()
     wait_until(lambda: not w.history_busy())

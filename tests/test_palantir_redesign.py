@@ -325,7 +325,7 @@ def test_copy_step_shortcut_is_distinct_from_copy(window,tmp_path):
     copied = [Path(url.toLocalFile()) for url in QApplication.clipboard().mimeData().urls()]
     assert len(copied) == 1 and copied[0] != path.resolve()
     assert copied[0].name == path.name and copied[0].read_bytes() == path.read_bytes()
-    assert window.si==1
+    assert window.si==0
 
 
 def test_preferences_and_draft_survive_restart(tmp_path):
@@ -694,3 +694,33 @@ def test_application_allows_navigation_tooltips(window):
     event=QHelpEvent(QEvent.ToolTip,point,target.mapToGlobal(point))
     assert QApplication.sendEvent(target,event)
     assert target.toolTip() == 'temporary tooltip'
+
+
+def test_tab_click_focuses_text_for_immediate_paste(window, tmp_path):
+    from PySide6.QtGui import QTextCursor
+    tabs = window.workspaces[window.profile.id].editor
+    app = QApplication.instance() or QApplication([])
+    first_path = tmp_path / "first.txt"
+    second_path = tmp_path / "second.txt"
+    first_path.write_text("first", encoding="utf-8")
+    second_path.write_text("second", encoding="utf-8")
+    first = tabs.open_file(first_path)
+    second = tabs.open_file(second_path)
+    window.show()
+    app.processEvents()
+    bar = tabs.tabs.tabBar()
+    index = tabs.tabs.indexOf(first)
+    QTest.mouseClick(bar, Qt.LeftButton, pos=bar.tabRect(index).center())
+    app.processEvents()
+    assert QApplication.focusWidget() is first
+    assert first.textCursor().position() == 5
+    app.clipboard().setText(" pasted")
+    QTest.keyClick(first, Qt.Key_V, Qt.ControlModifier)
+    assert first.toPlainText() == "first pasted"
+    assert second.toPlainText() == "second"
+    first.moveCursor(QTextCursor.Start)
+    first._user_positioned_caret = True
+    QTest.mouseClick(bar, Qt.LeftButton, pos=bar.tabRect(index).center())
+    app.processEvents()
+    assert QApplication.focusWidget() is first
+    assert first.textCursor().position() == 0
