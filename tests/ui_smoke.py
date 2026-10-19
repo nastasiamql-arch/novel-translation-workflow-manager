@@ -298,6 +298,8 @@ def main() -> int:
                 workspace.editor.close_tab(workspace.editor.tabs.indexOf(export_tab))
                 assert workspace.editor.tabs.count() == 2
                 workspace.editor.tabs.setCurrentWidget(export_tab)
+                assert workspace.editor.tabs.currentWidget() is export_tab
+                workspace.editor._update_status(workspace.editor.tabs.currentIndex())
                 # Qt's status update can be queued after the tab signal on slow CI.
                 for _ in range(30):
                     app.processEvents()
