@@ -46,20 +46,38 @@ def window(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('zipped', [False, True])
-def test_named_stage_select_then_explicit_copy_without_snapshot(window, zipped):
+def test_named_stage_click_copies_immediately_without_snapshot(window, zipped):
     w, p, workspace, errors = window
     assert hasattr(workspace, 'history_range'), 'Missing compact chapter range input'
-    workspace.history_range.setText('6-10'); w.settings.copy_files_as_zip = zipped
+    workspace.history_range.setText('6-10')
+    w.settings.copy_files_as_zip = zipped
     QApplication.clipboard().setText("keep this text")
+
+    # Clicking the named stage itself must publish its files to the clipboard.
     workspace.stage_buttons[1].click()
-    assert QApplication.clipboard().text() == "keep this text"
-    workspace.copy_step_button.click()
     urls = QApplication.clipboard().mimeData().urls()
     assert len(urls) == 1
-    assert all(Path(u.toLocalFile()).is_file() for u in urls)
-    assert w.si == 1 and not errors
-    assert len(w.polish_history.list(p)) == 0
+    copied = Path(urls[0].toLocalFile())
+    assert copied.is_file()
+    if zipped:
+        import zipfile
+        with zipfile.ZipFile(copied) as archive:
+            assert len(archive.namelist()) == 2  # ZIP includes disabled attachments.
+            assert any(name.endswith('/a.txt') for name in archive.namelist())
+    else:
+        assert copied.read_bytes() == (w.repo.profile_dir(p.id) / 'a.txt').read_bytes()
+
+    assert w.si == 1 and workspace.step_index == 1 and not errors
+    assert workspace.history_range.text() == '6-10'
+    assert w.polish_history.list(p) == []
     assert p.verified_goal_count == 0 and p.verified_export_history == []
+
+    # The explicit button remains usable, including on the already selected step.
+    QApplication.clipboard().setText("replace me again")
+    workspace.copy_step_button.click()
+    assert len(QApplication.clipboard().mimeData().urls()) == 1
+    assert w.si == 1 and not errors
+    assert w.polish_history.list(p) == []
 
 
 def test_other_stage_keeps_enabled_only_behavior(window):
@@ -68,6 +86,47 @@ def test_other_stage_keeps_enabled_only_behavior(window):
     workspace.stage_buttons[0].click()
     workspace.copy_step_button.click()
     assert len(QApplication.clipboard().mimeData().urls()) == 1
+    assert w.polish_history.list(p) == []
+
+
+def test_vocabulary_custom_and_repeated_stage_clicks_copy_only_active_files(window):
+    w, p, workspace, errors = window
+    p.vocabulary_step.files = [StepFile(path='disabled.txt')]
+    p.workflow.steps.append(WorkflowStep(name='ตรวจเพิ่ม', files=[StepFile(path='disabled.txt')]))
+    w.refresh_steps()
+
+    actions = [
+        (workspace.vocabulary_button, 'หาศัพท์', b'disabled', None),
+        (workspace.stage_buttons[0], 'Translate', b'original\\t\\n\\n', 0),
+        (workspace.stage_buttons[1], 'Polish', b'original\\t\\n\\n', 1),
+        (workspace.stage_buttons[2], 'ตรวจเพิ่ม', b'disabled', 2),
+        (workspace.stage_buttons[2], 'ตรวจเพิ่ม', b'disabled', 2),
+    ]
+    for button, stage_name, expected, row in actions:
+        QApplication.clipboard().setText('old clipboard')
+        button.click()
+        urls = QApplication.clipboard().mimeData().urls()
+        assert len(urls) == 1, stage_name
+        copied = Path(urls[0].toLocalFile())
+        assert copied.read_bytes() == expected, stage_name
+        assert w.step().name == stage_name
+        assert workspace.vocabulary_mode == (row is None)
+        if row is not None:
+            assert w.si == row and workspace.step_index == row
+        assert not errors
+
+    assert w.polish_history.list(p) == []
+    assert p.verified_goal_count == 0 and p.verified_export_history == []
+
+
+def test_named_stage_copy_failure_keeps_previous_clipboard(window):
+    w, p, workspace, errors = window
+    p.workflow.steps[0].files = [StepFile(path='missing-file.txt')]
+    QApplication.clipboard().setText('existing clipboard contents')
+    workspace.stage_buttons[0].click()
+    assert QApplication.clipboard().text() == 'existing clipboard contents'
+    assert w.si == 0
+    assert errors and 'missing-file.txt' in str(errors[-1])
     assert w.polish_history.list(p) == []
 
 

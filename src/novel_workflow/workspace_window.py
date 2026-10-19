@@ -273,7 +273,7 @@ class WorkspacePage(QWidget):
         self.vocabulary_button = WorkflowStageButton("หาศัพท์")
         self.vocabulary_button.setObjectName("vocabularyButton")
         self.vocabulary_button.setWorkflowActive(False)
-        self.vocabulary_button.setToolTip("เลือกขั้นตอนหาศัพท์ · คัดลอกด้วยปุ่ม COPY STEP หรือ Ctrl+Shift+C")
+        self.vocabulary_button.setToolTip("คลิกเพื่อเลือกและคัดลอกไฟล์ขั้นตอนหาศัพท์ทันที · หรือใช้ COPY STEP / Ctrl+Shift+C")
         self.vocabulary_button.clicked.connect(
             lambda checked=False: self.owner.copy_named_stage(self.profile_id, "vocabulary")
         )
@@ -2781,7 +2781,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     button.setWorkflowActive(False)
                     button.setMinimumHeight(38)
                     button.setCursor(Qt.PointingHandCursor)
-                    button.setToolTip(f"เลือกขั้นตอน{step.name} · คัดลอกด้วยปุ่ม COPY STEP หรือ Ctrl+Shift+C")
+                    button.setToolTip(f"คลิกเพื่อเลือกและคัดลอกไฟล์ขั้นตอน{step.name}ทันที · หรือใช้ COPY STEP / Ctrl+Shift+C")
                     button.clicked.connect(
                         lambda checked=False, row=index, pid=self.profile.id:
                             self.copy_named_stage(pid, row)
@@ -2877,7 +2877,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 self.copy_step(advance=False, selected_steps=selected)
 
     def copy_named_stage(self, profile_id, stage):
-        """Select a stage without copying, saving history, or advancing."""
+        """Select and copy one stage immediately, without export, history, or advancing."""
         if not self.profile or self.profile.id != profile_id:
             return
         workspace = self.workspaces.get(profile_id)
@@ -2900,8 +2900,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.steps.blockSignals(False)
         self._sync_stage_buttons(workspace)
         self.refresh_files()
-        self.statusBar().showMessage("เลือกขั้นตอนแล้ว · กด COPY STEP หรือ Ctrl+Shift+C เพื่อคัดลอก", 4000)
         self._schedule_workspace_session_save()
+        self.copy_step(advance=False)
 
     def save_txt_vocabulary_state(self, profile_id, state):
         self.settings.vocabulary_txt_profiles[profile_id] = dict(state)

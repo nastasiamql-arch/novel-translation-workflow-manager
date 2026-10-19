@@ -2,6 +2,12 @@
 
 All notable changes to Palantir: Novel are documented here.
 
+## 5.4.1 - 2026-10-20
+
+- Restore one-click clipboard copying when selecting any named workflow stage, including vocabulary, translation, review, and user-created stages; keep COPY STEP / Ctrl+Shift+C working.
+- Preserve the current stage after copying without automatic Export, review snapshots, or advancing to another stage. Keep existing clipboard data intact when file validation or copying fails.
+- Update stage-button guidance and add Windows UI regression coverage for regular files, ZIP mode, custom stages, repeated clicks, and failure safety.
+
 ## 4.6.0 - 2026-10-19
 
 - Reduce Library cards to the saved novel cover and the novel title only, including after background progress refresh; preserve category tabs, search, reordering and opening novels.
