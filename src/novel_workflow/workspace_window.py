@@ -1282,7 +1282,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self._utility_pages[key] = page
             self.utility_stack.addWidget(page)
         elif key == "progress":
-            page.set_profiles(self.refresh_translation_progress())
+            page.set_profiles(self.ps_list)
         elif key in {"groups", "launcher", "file-manager", "preview"}:
             self.utility_stack.removeWidget(page)
             page.deleteLater()
@@ -1319,7 +1319,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._show_utility_page("groups", "กลุ่มนิยาย", lambda: NovelGroupsPage(self))
 
     def translation_dashboard(self):
-        profiles = self.refresh_translation_progress()
+        profiles = self.ps_list
 
         def create_dashboard():
             from .progress_dialog import TranslationDashboardDialog
@@ -1980,7 +1980,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 # Library cards are strictly visual book shelves: title + cover.
                 # Progress and verified information remain stored in profile data.
                 card.setText(profile.name)
-                card.setToolTip(profile.name)
+                card.setToolTip('')
         if self.profile:
             fresh = next((item for item in profiles if item.id == self.profile.id), None)
             if fresh:
@@ -2026,6 +2026,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.navigation = NavigationSidebar(self.settings.navigation_collapsed)
         self.navigation.refresh_icons(self.settings.appearance)
         self.navigation.selected.connect(self.navigate)
+        self.navigation.collapsedChanged.connect(self._navigation_collapsed_changed)
 
         root = QWidget()
         root.setObjectName("appShell")
@@ -2067,7 +2068,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.shell_splitter.addWidget(self.navigation); self.shell_splitter.addWidget(self.main_pages)
         self.shell_splitter.setStretchFactor(1, 1)
         self.shell_splitter.setChildrenCollapsible(False)
-        self.shell_splitter.setSizes([60, 1200])
+        self.shell_splitter.setSizes([60 if self.navigation.collapsed else 196, 1200])
         root_layout.addWidget(self.shell_splitter, 1)
         self.main_pages.currentChanged.connect(self._sync_navigation)
 
@@ -2147,6 +2148,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._automatic_update_timer.timeout.connect(lambda: self.check_updates(manual=False))
         if self.settings.last_update_check_date != date.today().isoformat():
             self._automatic_update_timer.start(2500)
+
+    def _navigation_collapsed_changed(self, collapsed):
+        self.settings.navigation_collapsed = bool(collapsed)
+        self._schedule_workspace_session_save()
 
     def navigate(self, key):
         if key == "library": self.show_library()
@@ -2644,7 +2649,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if self.si >= 0:
             self.steps.setCurrentRow(self.si)
         self.refresh_goal_indicator()
-        self._update_progress_page(workspace)
         self.statusBar().showMessage(f"กำลังทำงาน: {self.profile.name}", 2500)
         self._update_editor_status()
         self._schedule_workspace_session_save()

@@ -74,8 +74,8 @@ def main():
                 assert_layout(ws.editor_header)
                 assert_layout(ws.novel_header)
                 assert_layout(win.navigation)
-                assert win.navigation.width() == 60
-                assert all(button.toolButtonStyle() == Qt.ToolButtonIconOnly
+                assert win.navigation.width() == (60 if win.navigation.collapsed else 196)
+                assert all(button.toolButtonStyle() == (Qt.ToolButtonIconOnly if win.navigation.collapsed else Qt.ToolButtonTextBesideIcon)
                            for button in win.navigation.buttons.values())
                 bar=ws.editor.tabs.tabBar()
                 rects=[bar.tabRect(i) for i in range(bar.count())]

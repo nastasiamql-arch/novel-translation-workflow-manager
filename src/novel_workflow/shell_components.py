@@ -125,33 +125,75 @@ class NovelHeader(QFrame):
 
 
 class NavigationSidebar(QFrame):
+    """Readable navigation that can collapse to icon-only mode."""
     selected = Signal(str)
+    collapsedChanged = Signal(bool)
+
     def __init__(self, collapsed=False):
-        super().__init__(); self.setObjectName('navigationSidebar')
-        self.buttons = {}; self.labels = {}
-        # Legacy width/collapse preferences remain stored, but navigation is icon-only.
-        self.collapsed = True
-        self.setMinimumWidth(60); self.setMaximumWidth(60)
-        layout = QVBoxLayout(self); layout.setContentsMargins(6,8,6,8)
-        for key, icon, title in [('library','▦','คลังนิยาย'),('workspace','▤','กำลังทำงาน'),('progress','◷','สถิติ'),('groups','▧','กลุ่ม'),('settings','⚙','ตั้งค่า')]:
-            if key == 'settings': layout.addStretch(1)
-            button = QToolButton(); button.setCheckable(True); button.setObjectName('navigationItem')
+        super().__init__()
+        self.setObjectName('navigationSidebar')
+        self.buttons = {}
+        self.labels = {}
+        self.collapsed = None
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 12, 8, 12)
+        layout.setSpacing(6)
+
+        self.brand_toggle = QToolButton(self)
+        self.brand_toggle.setObjectName('navigationBrand')
+        self.brand_toggle.setAccessibleName('ย่อหรือขยายเมนูหลัก')
+        self.brand_toggle.setCursor(Qt.PointingHandCursor)
+        self.brand_toggle.clicked.connect(lambda: self.set_collapsed(not self.collapsed))
+        layout.addWidget(self.brand_toggle)
+        layout.addSpacing(14)
+
+        for key, icon, title in [
+            ('library', '▦', 'คลังนิยาย'),
+            ('workspace', '▤', 'กำลังทำงาน'),
+            ('progress', '◷', 'สถิติ'),
+            ('groups', '▧', 'กลุ่มนิยาย'),
+            ('settings', '⚙', 'ตั้งค่า'),
+        ]:
+            if key == 'settings':
+                layout.addStretch(1)
+            button = QToolButton(self)
+            button.setCheckable(True)
+            button.setObjectName('navigationItem')
+            button.setText(title)
             button.setIconSize(QSize(20, 20))
-            button.setToolButtonStyle(Qt.ToolButtonIconOnly)
-            button.setToolTip(title); button.setAccessibleName(title)
-            button.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred)
-            button.clicked.connect(lambda checked=False,key=key:self.selected.emit(key))
-            self.buttons[key]=button; self.labels[key]=(icon,title); layout.addWidget(button)
-        self.refresh_icons("Light")
+            button.setToolTip(title)
+            button.setAccessibleName(title)
+            button.setCursor(Qt.PointingHandCursor)
+            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            button.clicked.connect(lambda checked=False, name=key: self.selected.emit(name))
+            self.buttons[key] = button
+            self.labels[key] = (icon, title)
+            layout.addWidget(button)
+        self.set_collapsed(bool(collapsed), notify=False)
+        self.refresh_icons('Light')
+
+    def set_collapsed(self, collapsed, *, notify=True):
+        collapsed = bool(collapsed)
+        if self.collapsed == collapsed:
+            return
+        self.collapsed = collapsed
+        self.setFixedWidth(60 if collapsed else 196)
+        self.brand_toggle.setText('☰' if collapsed else '☰   VALHALLA')
+        self.brand_toggle.setToolTip('ขยายเมนู' if collapsed else 'ย่อเมนู')
+        for button in self.buttons.values():
+            button.setToolButtonStyle(
+                Qt.ToolButtonIconOnly if collapsed else Qt.ToolButtonTextBesideIcon
+            )
+        if notify:
+            self.collapsedChanged.emit(collapsed)
 
     def refresh_icons(self, appearance):
         for key, button in self.buttons.items():
             button.setIcon(navigation_icon(key, theme_colors(appearance)))
 
     def select(self, key):
-        for name,button in self.buttons.items():
-            button.setChecked(name==key)
-
+        for name, button in self.buttons.items():
+            button.setChecked(name == key)
 
 class EditorToolbar(QFrame):
     """Secondary controls move into More when the editor becomes narrow."""

@@ -1286,12 +1286,17 @@ class EditorTabs(QWidget):
         return self.save_editor(editor) if editor else True
 
     def save_all(self, include_normalization=True) -> bool:
-        self.export_tab.editor.normalize_visible_text()
-        if self.export_tab.export_service:
-            try: self.export_tab.export_service.save_draft(self.export_tab.editor.toPlainText())
-            except OSError as exc:
-                QMessageBox.warning(self, "บันทึก TXT Export draft ไม่สำเร็จ", str(exc))
-                return False
+        # No disk/profile scan for an unchanged draft during page navigation.
+        revision = self.export_tab.editor.document().revision()
+        if getattr(self, "_saved_export_revision", None) != revision:
+            self.export_tab.editor.normalize_visible_text()
+            if self.export_tab.export_service:
+                try:
+                    self.export_tab.export_service.save_draft(self.export_tab.editor.toPlainText())
+                except OSError as exc:
+                    QMessageBox.warning(self, "บันทึก TXT Export draft ไม่สำเร็จ", str(exc))
+                    return False
+            self._saved_export_revision = self.export_tab.editor.document().revision()
         for index in range(self.tabs.count()):
             editor = self.tabs.widget(index)
             if not include_normalization and editor.property('normalizationPending'):

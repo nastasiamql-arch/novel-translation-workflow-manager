@@ -123,9 +123,13 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     check_mark = (resources / f'check-{arrow_theme}.svg').as_posix()
     return f"""
     QWidget {{ color: {c['text']}; font-family: "Segoe UI", "Leelawadee UI", "Tahoma", sans-serif; font-size: 11pt; }}
-    QFrame#navigationSidebar, QFrame#novelHeader {{ background: {c['sidebar']}; }}
-    QToolButton#navigationItem {{ border: 0; border-left: 3px solid transparent; border-radius: 6px; padding: 8px 6px; text-align: left; }}
-    QToolButton#navigationItem:checked {{ background: {c['item_selection']}; border-left: 3px solid transparent; font-weight: 600; }}
+    QFrame#navigationSidebar {{ background: {c['sidebar']}; border-right: 1px solid {c['border']}; }}
+    QFrame#novelHeader {{ background: {c['surface']}; border-bottom: 1px solid {c['border']}; }}
+    QToolButton#navigationBrand {{ color: {c['text']}; background: transparent; border: 0; border-radius: 10px; font-size: 10pt; font-weight: 700; text-align: left; padding: 10px 6px; min-height: 34px; }}
+    QToolButton#navigationBrand:hover {{ background: {c['hover']}; }}
+    QToolButton#navigationItem {{ border: 0; border-left: 3px solid transparent; border-radius: 10px; padding: 11px 10px; text-align: left; min-height: 34px; }}
+    QToolButton#navigationItem:hover {{ background: {c['hover']}; }}
+    QToolButton#navigationItem:checked {{ background: {c['item_selection']}; border-left: 3px solid {c['accent']}; font-weight: 600; }}
     QToolButton#navigationItem[keyboardFocus="true"] {{ border-bottom: 2px solid {c['focus']}; }}
     QWidget:disabled {{ color: {c['disabled_text']}; }}
     QLabel:disabled, QAbstractButton:disabled, QTabBar::tab:disabled {{ color: {c['disabled_text']}; }}
@@ -182,12 +186,12 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QToolButton:pressed {{ background: {c['item_selection']}; }}
     QToolButton[keyboardFocus="true"] {{ border-bottom: 3px solid {c['focus']}; }}
     QListWidget, QTreeWidget, QTreeView, QTableWidget, QTableView {{ background: {c['surface']}; color: {c['text']}; border: 0; outline: none; selection-background-color: {c['selection']}; selection-color: {c['selection_text']}; }}
-    QListWidget#novelLibrary {{ background: {c['sidebar']}; border: 0; padding: 5px 0; }}
-    QListWidget#novelLibrary::item {{ background: transparent; border: 0; padding: 8px 8px; }}
+    QListWidget#novelLibrary {{ background: {c['app']}; border: 0; padding: 9px 1px; }}
+    QListWidget#novelLibrary::item {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 12px; padding: 8px 8px; }}
     QListWidget#novelLibrary::item:hover {{ background: {c['hover']}; }}
-    QListWidget#novelLibrary::item:selected {{ background: {c['item_selection']}; border: 2px solid {c['secondary']}; color: {c['selection_text']}; }}
+    QListWidget#novelLibrary::item:selected {{ background: {c['surface']}; border: 2px solid {c['accent']}; color: {c['text']}; }}
     QLabel#emptyStateIcon {{ color: {c['accent']}; font-size: 25pt; }}
-    QLineEdit#librarySearch {{ background: {c['input']}; border: 1px solid {c['control_border']}; border-radius: 0; padding: 7px 10px; min-height: 30px; }}
+    QLineEdit#librarySearch {{ background: {c['input']}; border: 1px solid {c['border']}; border-radius: 10px; padding: 8px 12px; min-height: 32px; }}
     QTabBar#libraryStatusTabs {{ background: transparent; border: 0; }}
     QTabBar#libraryStatusTabs::tab {{ color: {c['secondary']}; background: transparent; border: 0; border-bottom: 2px solid transparent; min-height: 38px; padding: 6px 14px; margin: 0; }}
     QTabBar#libraryStatusTabs::tab:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; }}

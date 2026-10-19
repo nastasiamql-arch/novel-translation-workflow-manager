@@ -355,29 +355,35 @@ def test_recovery_can_restore_oldest_retained_copy(tmp_path):
     assert p.read_text(encoding='utf-8')=='Chapter 1'
 
 @pytest.mark.parametrize('legacy_collapsed', [False, True])
-def test_navigation_is_always_icon_only(legacy_collapsed):
+def test_navigation_can_expand_to_readable_labels(legacy_collapsed):
     from novel_workflow.shell_components import NavigationSidebar
     from PySide6.QtWidgets import QToolButton
     app = QApplication.instance() or QApplication([])
     sidebar = NavigationSidebar(legacy_collapsed)
-    sidebar.resize(240, 600)
     sidebar.show()
     app.processEvents()
-    assert sidebar.width() == 60
-    assert sidebar.collapsed
-    assert len(sidebar.findChildren(QToolButton)) == 5
-    for key, button in sidebar.buttons.items():
-        assert button.toolButtonStyle() == Qt.ToolButtonIconOnly
-        assert button.toolTip() and button.accessibleName()
+    assert sidebar.width() == (60 if legacy_collapsed else 196)
+    assert sidebar.collapsed == legacy_collapsed
+    assert len(sidebar.findChildren(QToolButton)) == 6
+    for button in sidebar.buttons.values():
+        expected = Qt.ToolButtonIconOnly if legacy_collapsed else Qt.ToolButtonTextBesideIcon
+        assert button.toolButtonStyle() == expected
+        assert button.text() and button.toolTip() and button.accessibleName()
+    sidebar.brand_toggle.click()
+    app.processEvents()
+    assert sidebar.collapsed != legacy_collapsed
+    assert sidebar.width() == (196 if legacy_collapsed else 60)
     sidebar.select('groups')
     assert sidebar.buttons['groups'].isChecked()
     sidebar.close()
 
 
-def test_shell_ignores_legacy_expanded_navigation_width(window):
-    assert window.navigation.width() == 60
-    assert all(button.toolButtonStyle() == Qt.ToolButtonIconOnly
-               for button in window.navigation.buttons.values())
+def test_shell_navigation_is_expandable_and_remembers_setting(window):
+    initial = window.navigation.collapsed
+    assert window.navigation.width() == (60 if initial else 196)
+    window.navigation.brand_toggle.click()
+    assert window.navigation.collapsed != initial
+    assert window.settings.navigation_collapsed == window.navigation.collapsed
 
 
 def test_unchanged_context_is_not_read_repeatedly(tmp_path, monkeypatch):
