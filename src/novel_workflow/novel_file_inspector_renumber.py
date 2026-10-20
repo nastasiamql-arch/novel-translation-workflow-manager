@@ -45,7 +45,11 @@ def update_heading(data: bytes, encoding: str, current: int | None, number: int)
     header = headings[0]
     before = text[header.number_start:header.number_end]
     replaced = text[:header.number_start] + format_heading_number(number, before) + text[header.number_end:]
-    # Round-trip encoding strictly; preserve BOM and exact newlines.
+    # Round-trip encoding strictly; preserve UTF-16 byte order/BOM and newlines.
+    if encoding == "utf-16" and data.startswith(b"\xfe\xff"):
+        return b"\xfe\xff" + replaced.encode("utf-16-be")
+    if encoding == "utf-16" and data.startswith(b"\xff\xfe"):
+        return b"\xff\xfe" + replaced.encode("utf-16-le")
     return replaced.encode(encoding)
 
 
