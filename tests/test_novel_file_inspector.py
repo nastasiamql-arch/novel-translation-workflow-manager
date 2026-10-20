@@ -12,7 +12,7 @@ from novel_workflow.novel_file_inspector import (
 )
 from novel_workflow.novel_file_inspector_history import InspectorStore
 from novel_workflow.novel_file_inspector_renumber import (
-    execute_new, plan_renumber, restore_backup, execute_in_place,
+    execute_new, plan_renumber, plan_heading_repair, restore_backup, execute_in_place,
 )
 
 
@@ -258,3 +258,71 @@ def test_failed_transaction_retains_discoverable_backup(tmp_path, monkeypatch):
     assert json.loads(journals[0].read_text(encoding="utf-8"))["status"] == "recovery_required"
     restore_backup(journals[0].parent, tmp_path / "recovered")
     assert (tmp_path / "recovered" / "0002.txt").is_file()
+
+
+def test_bulk_heading_repair_preserves_original_and_story(tmp_path):
+    root = files(tmp_path, ["0719.txt", "0720.txt", "0721.txt"], "")
+    originals = {}
+    for filename, heading in (("0719.txt", 718), ("0720.txt", 719), ("0721.txt", 720)):
+        raw = ("第%d章 开始\r\n" % heading + "正文718不得更改\r\n" + "中" * 1600).encode("utf-8")
+        (root / filename).write_bytes(b"\xef\xbb\xbf" + raw)
+        originals[filename] = (root / filename).read_bytes()
+    result = inspect(root)
+    assert result.summary()["total"] == 3
+    assert result.summary()["suspicious"] == 3
+    assert result.summary()["heading_mismatch"] == 3
+    assert len(result.shifted_heading_runs()) == 1
+    plan, skipped = plan_heading_repair(result)
+    assert not skipped
+    target = tmp_path / "fixed"
+    operation = execute_new(plan, target)
+    assert operation["changed"] == 3
+    for filename, expected in (("0719.txt", 719), ("0720.txt", 720), ("0721.txt", 721)):
+        assert (root / filename).read_bytes() == originals[filename]
+        raw = (target / filename).read_bytes()
+        assert raw.startswith(b"\xef\xbb\xbf")
+        assert b"\r\n" in raw
+        assert b"\n" not in raw.replace(b"\r\n", b"")
+        text, _ = decode_text(raw)
+        assert text.startswith(f"第{expected}章")
+        assert "正文718不得更改" in text
+    assert inspect(target).summary()["heading_mismatch"] == 0
+
+
+def test_bulk_repair_skips_uncertain_but_copies_it_unchanged(tmp_path):
+    root = files(tmp_path, ["0001.txt", "0002.txt"], "")
+    (root / "0001.txt").write_text("第3章 示例\n" + "中" * 1600, encoding="utf-8")
+    (root / "0002.txt").write_text("没有标题\n" + "海" * 1600, encoding="utf-8")
+    result = inspect(root)
+    plan, blocked = plan_heading_repair(result)
+    assert blocked["0002.txt"]
+    target = tmp_path / "result"
+    execute_new(plan, target)
+    assert (target / "0001.txt").read_text(encoding="utf-8").startswith("第1章")
+    assert (target / "0002.txt").read_bytes() == (root / "0002.txt").read_bytes()
+
+
+def test_bulk_repair_rejects_modified_file(tmp_path):
+    root = files(tmp_path, ["0040.txt"], "第39章 开始\n" + "中" * 1600)
+    plan, _ = plan_heading_repair(inspect(root))
+    (root / "0040.txt").write_text("第40章 替换\n" + "海" * 1600, encoding="utf-8")
+    with pytest.raises(ValueError, match="changed"):
+        execute_new(plan, tmp_path / "fixed")
+
+
+def test_summary_counts_overlap_and_review_separately(tmp_path):
+    root = files(tmp_path, ["0001.txt", "0003.txt"], "")
+    (root / "0001.txt").write_text("第2章 开始\n短", encoding="utf-8")
+    (root / "0003.txt").write_text("第3章 开始\n" + "海" * 1600, encoding="utf-8")
+    result = inspect(root)
+    state = InspectorStore(tmp_path / "state")
+    summary = result.summary()
+    assert summary["total"] == 2
+    assert summary["suspicious"] == 1
+    assert summary["missing"] == 1
+    assert summary["short"] == 1
+    assert summary["heading_mismatch"] == 1
+    assert summary["pending_review"] == 1
+    state.mark(result, "0001.txt", "keep")
+    assert result.summary()["pending_review"] == 0
+    assert result.summary()["suspicious"] == 1
