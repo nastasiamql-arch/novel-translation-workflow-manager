@@ -326,3 +326,18 @@ def test_summary_counts_overlap_and_review_separately(tmp_path):
     state.mark(result, "0001.txt", "keep")
     assert result.summary()["pending_review"] == 0
     assert result.summary()["suspicious"] == 1
+
+
+@pytest.mark.parametrize("bom,codec", [(b"\xff\xfe", "utf-16-le"), (b"\xfe\xff", "utf-16-be")])
+def test_bulk_heading_repair_preserves_utf16_endian(tmp_path, bom, codec):
+    root = files(tmp_path, ["0010.txt"], "")
+    text = "第九章 标题\r\n" + "海" * 1600
+    original = bom + text.encode(codec)
+    (root / "0010.txt").write_bytes(original)
+    plan, blocked = plan_heading_repair(inspect(root))
+    assert not blocked
+    execute_new(plan, tmp_path / "inspected")
+    actual = (tmp_path / "inspected" / "0010.txt").read_bytes()
+    assert actual.startswith(bom)
+    assert actual[len(bom):].decode(codec).startswith("第十章 标题\r\n")
+    assert (root / "0010.txt").read_bytes() == original
