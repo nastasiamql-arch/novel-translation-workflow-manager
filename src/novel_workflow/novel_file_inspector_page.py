@@ -153,28 +153,19 @@ class NovelFileInspectorPage(QWidget):
         root.setContentsMargins(4, 2, 4, 4)
         root.setSpacing(10)
         source = QHBoxLayout()
-        for label, handler in (("เลือกโฟลเดอร์ TXT", self.choose_folder),
-                               ("เลือก ZIP", self.choose_zip)):
-            button = QPushButton(label)
-            button.clicked.connect(handler)
-            source.addWidget(button)
-        self.profile_combo = QComboBox()
-        self.profile_combo.addItem("เลือกนิยายใน NovelWorkflow", None)
-        for profile in self.repo.list_profiles():
-            self.profile_combo.addItem(profile.name, profile.id)
-        source.addWidget(self.profile_combo)
-        profile_button = QPushButton("เลือกต้นฉบับของนิยาย")
-        profile_button.clicked.connect(self.choose_profile)
-        source.addWidget(profile_button)
+        folder = QPushButton("เลือกโฟลเดอร์ TXT")
+        folder.clicked.connect(self.choose_folder)
+        source.addWidget(folder)
+        self.more_button = QPushButton("ตัวเลือกเพิ่มเติม")
+        self.more_button.clicked.connect(self.open_more)
+        source.addWidget(self.more_button)
+        source.addStretch(1)
         root.addLayout(source)
         self.source_label = QLabel("ยังไม่ได้เลือกไฟล์ต้นฉบับ")
         self.source_label.setWordWrap(True)
         root.addWidget(self.source_label)
 
-        self.tabs = QTabWidget()
-        root.addWidget(self.tabs, 1)
-        review_page = QWidget()
-        body = QVBoxLayout(review_page)
+        body = root
         opts = QHBoxLayout()
         opts.addWidget(QLabel("ขั้นต่ำ"))
         self.minimum = QSpinBox()
@@ -190,7 +181,10 @@ class NovelFileInspectorPage(QWidget):
             self.checks[key] = checkbox
             opts.addWidget(checkbox)
         opts.addStretch(1)
-        body.addLayout(opts)
+        self.settings_panel = QWidget()
+        self.settings_panel.setLayout(opts)
+        self.settings_panel.hide()
+        body.addWidget(self.settings_panel)
         controls = QHBoxLayout()
         self.scan_button = QPushButton("ตรวจสอบไฟล์")
         self.scan_button.clicked.connect(self.start_scan)
@@ -202,6 +196,7 @@ class NovelFileInspectorPage(QWidget):
         self.progress = QProgressBar()
         controls.addWidget(self.progress, 1)
         body.addLayout(controls)
+        self.scan_button.hide()
         self.summary = QLabel("ไฟล์ทั้งหมด 0 · ผ่านเกณฑ์ 0 · น่าสงสัย 0 · เลขบทขาด 0")
         body.addWidget(self.summary)
         filters = QHBoxLayout()
@@ -258,7 +253,7 @@ class NovelFileInspectorPage(QWidget):
         splitter.addWidget(reader)
         splitter.setSizes([550, 650])
         body.addWidget(splitter, 1)
-        self.tabs.addTab(review_page, "ตรวจสอบและอ่านเนื้อหา")
+
 
         renumber = QWidget()
         form = QVBoxLayout(renumber)
@@ -292,7 +287,10 @@ class NovelFileInspectorPage(QWidget):
         for changed in (self.start.valueChanged, self.padding.valueChanged, self.heading.toggled):
             changed.connect(lambda *_: self.apply.setEnabled(False))
         form.addWidget(self.apply)
-        self.tabs.addTab(renumber, "จัดเลขบทใหม่ · Preview")
+        self.renumber_dialog = QDialog(self)
+        self.renumber_dialog.setWindowTitle("จัดเลขบทใหม่ · Preview")
+        self.renumber_dialog.resize(780, 550)
+        self.renumber_dialog.setLayout(form)
 
         history = QWidget()
         hist = QVBoxLayout(history)
@@ -307,7 +305,10 @@ class NovelFileInspectorPage(QWidget):
         restore.clicked.connect(self.restore)
         hist.addWidget(restore)
         hist.addStretch(1)
-        self.tabs.addTab(history, "ประวัติ / กู้คืน")
+        self.history_dialog = QDialog(self)
+        self.history_dialog.setWindowTitle("ประวัติ / กู้คืน")
+        self.history_dialog.resize(720, 400)
+        self.history_dialog.setLayout(hist)
         self.refresh_history()
 
     def choose_folder(self):
@@ -564,7 +565,7 @@ class NovelFileInspectorPage(QWidget):
         if ident:
             try:
                 self.set_result(self.store.read_inspection(ident))
-                self.tabs.setCurrentIndex(0)
+
             except Exception as exc:
                 QMessageBox.warning(self, "เปิดประวัติไม่ได้", str(exc))
 
