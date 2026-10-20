@@ -1,3 +1,9 @@
+## v5.7.1 — Windows Qt test runner reliability
+
+- Fix Windows CI handling of a fully passing pytest group that emits warnings before a known native Qt shutdown access violation.
+- Add a regression test to ensure a warning-only successful summary is accepted while actual failed assertions remain rejected.
+- Release the latest Inspector fixes without rewriting the existing v5.7.0 tag or installer.
+
 ## v5.7.0 — Single-screen Novel File Inspector and batch heading repair
 
 - Simplify the dedicated inspector into a single main screen with a side-by-side table and read-only chapter reader; keep renumber preview and backup recovery accessible separately.
