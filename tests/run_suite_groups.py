@@ -44,7 +44,7 @@ def main() -> int:
         unsigned = result & 0xFFFFFFFF
         clean_pytest = (
             SUCCESS_MARKER in output
-            and re.search(r"(?m)^\d+ passed(?:, \d+ skipped|, \d+ xfailed)* in ", output)
+            and re.search(r"(?m)^\d+ passed(?:, \d+ (?:skipped|xfailed|warnings?))* in ", output)
             and not re.search(r"(?im)(?:\bFAILED\b|\bERRORS\b|\bfailed\b)", output)
         )
         if unsigned in QT_SHUTDOWN_CODES and clean_pytest:
