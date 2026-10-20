@@ -197,7 +197,8 @@ class NovelFileInspectorPage(QWidget):
         controls.addWidget(self.progress, 1)
         body.addLayout(controls)
         self.scan_button.hide()
-        self.summary = QLabel("ไฟล์ทั้งหมด 0 · ผ่านเกณฑ์ 0 · น่าสงสัย 0 · เลขบทขาด 0")
+        self.summary = QLabel("เลือกโฟลเดอร์ TXT เพื่อเริ่มตรวจสอบ")
+        self.summary.setWordWrap(True)
         body.addWidget(self.summary)
         filters = QHBoxLayout()
         self.filter = QComboBox()
@@ -446,7 +447,10 @@ class NovelFileInspectorPage(QWidget):
         self.proxy.minimum = result.minimum
         self.proxy.invalidateFilter()
         s = result.summary()
-        self.summary.setText(f"ไฟล์ทั้งหมด {s['total']:,} · ผ่านเกณฑ์ความยาว {s['length_pass']:,} · น่าสงสัย {s['suspicious']:,} · เลขบทขาด {s['missing']:,}")
+        self.summary.setText(
+            f"ไฟล์ทั้งหมด {s['total']:,} · ไม่พบปัญหา {s['clean']:,} · ต้องตรวจสอบ {s['suspicious']:,} · รอตรวจทาน {s['pending_review']:,}" +
+            f"  |  เลขหัวบทไม่ตรง {s['heading_mismatch']:,} · สั้นกว่าเกณฑ์ {s['short']:,} · เนื้อหาซ้ำ {s['duplicate_content']:,}" +
+            f" · เลขบทขาด {s['missing']:,} · อ่านไม่ได้ {s['unreadable']:,} · แก้เลขอัตโนมัติได้ {s['repairable']:,}")
         self.preview_table.setRowCount(0)
         self.apply.setEnabled(False)
         self.table.sortByColumn(0, Qt.AscendingOrder)
@@ -467,7 +471,7 @@ class NovelFileInspectorPage(QWidget):
             self.detail.setText(f"เลือก {len(files)} รายการ" if files else "เลือกบทเพื่ออ่านเนื้อหา")
             return
         row = files[0]
-        self.detail.setText(f"{row.name} · บท {row.chapter or '—'} · {row.count:,} ตัวอักษร · {row.size/1024:.1f} KB · "
+        self.detail.setText(f"{row.name} · หัวบท {row.heading if row.heading is not None else 'ไม่พบ'} · บทจากชื่อไฟล์ {row.chapter or '—'} · {row.count:,} ตัวอักษร · {row.size/1024:.1f} KB · "
                             + (row.error or ", ".join(row.reasons) or "ไม่มีข้อสงสัย"))
         if row.virtual or row.error:
             self.text.clear()
@@ -517,6 +521,7 @@ class NovelFileInspectorPage(QWidget):
             self.store.mark(self.result, row.name, decision)
         self.model.reset_rows(self.result.files)
         self.apply.setEnabled(False)
+        self.set_result(self.result)
 
     def preview(self):
         self.apply.setEnabled(False)
@@ -575,6 +580,9 @@ class NovelFileInspectorPage(QWidget):
         self.store.add_operation(operation, self.plan)
         self.refresh_history()
         QMessageBox.information(self, "เสร็จแล้ว", f"สร้างผลลัพธ์สำเร็จ\n{operation.get('output', operation.get('backup'))}")
+        output = operation.get("output")
+        if output and Path(output).is_dir():
+            self.set_source(output, "folder")
 
     def write_failed(self, message):
         QMessageBox.critical(self, "จัดเลขบทไม่สำเร็จ",
