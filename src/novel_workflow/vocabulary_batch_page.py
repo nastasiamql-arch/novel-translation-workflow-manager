@@ -57,6 +57,7 @@ class TxtVocabularyPage(QWidget):
         self.state.setdefault("source_mode", "stage")
         self.state.setdefault("source_folder", "")
         self._copy_buttons = []
+        self._display_references = None
         self._segments = ()
         self._preview_input = None
         self._groups = ()
@@ -70,6 +71,9 @@ class TxtVocabularyPage(QWidget):
         title = QLabel("หาคำศัพท์จาก TXT")
         title.setObjectName("sectionHeading")
         root.addWidget(title)
+        guide = QLabel("1  เลือกต้นฉบับ     →     2  กำหนดจำนวนบท     →     3  คัดลอกชุดที่ต้องการ")
+        guide.setObjectName("mutedLabel")
+        root.addWidget(guide)
         self.tabs = QTabWidget()
         self.tabs.setObjectName("txtVocabularyTabs")
         root.addWidget(self.tabs, 1)
@@ -454,6 +458,7 @@ class TxtVocabularyPage(QWidget):
 
     def _clear_cards(self):
         self._groups = ()
+        self._display_references = None
         while self.cards_layout.count():
             item = self.cards_layout.takeAt(0)
             widget = item.widget()
@@ -561,16 +566,18 @@ class TxtVocabularyPage(QWidget):
                      or not self._using_folder() and entry.id != self._selected_source_id)
             ]
             try:
-                if self._using_folder():
-                    paths = batch_folder_files(
-                        group, self._stage_entries, self.state["source_folder"]
-                    )
-                else:
-                    paths = batch_stage_files(
-                        group, self._stage_entries, self._selected_source_id,
-                        chapter_folder=self._split_source_folder,
-                    )
-                unique_count = len(paths)
+                if self._display_references is None:
+                    if self._using_folder():
+                        paths = batch_folder_files(
+                            group, self._stage_entries, self.state["source_folder"])
+                    else:
+                        paths = batch_stage_files(
+                            group, self._stage_entries, self._selected_source_id,
+                            chapter_folder=self._split_source_folder)
+                    chapters = {chapter.path.resolve() for chapter in group.chapters}
+                    self._display_references = tuple(
+                        path for path in paths if path.resolve() not in chapters)
+                unique_count = len(group.chapters) + len(self._display_references)
                 missing_references = []
             except (OSError, ValueError) as exc:
                 unique_count = len(group.chapters)
