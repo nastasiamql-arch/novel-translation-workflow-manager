@@ -146,6 +146,7 @@ class NovelFileInspectorPage(QWidget):
         self.worker = None
         self.write_worker = None
         self._post_write_output = None
+        self.bulk_in_place = False
         self.source, self.kind = "", "folder"
         self.pending_source = None
         self._setup_ui()
@@ -326,6 +327,10 @@ class NovelFileInspectorPage(QWidget):
         menu = QMenu(self)
         menu.addAction("เกณฑ์ตรวจ", lambda: self.settings_panel.setVisible(not self.settings_panel.isVisible()))
         menu.addAction("ประวัติ / กู้คืน", self.history_dialog.exec)
+        in_place = menu.addAction("ขั้นสูง: แก้ต้นฉบับจริง")
+        in_place.setCheckable(True)
+        in_place.setChecked(self.bulk_in_place)
+        in_place.toggled.connect(lambda enabled: setattr(self, "bulk_in_place", enabled))
         menu.exec(self.more_button.mapToGlobal(self.more_button.rect().bottomLeft()))
 
     def repair_headings(self, selected_only=False):
