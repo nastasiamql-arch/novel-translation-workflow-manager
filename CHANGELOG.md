@@ -1,3 +1,11 @@
+## v5.6.0 — Novel File Inspector
+
+- Add a standalone “ตรวจสอบไฟล์นิยาย” navigation page without changing existing translation, vocabulary, clipboard, export or history behavior.
+- Inspect TXT folders and ZIP archives for chapter gaps, duplicate numbers, character count (1,500 by default), size anomalies, unreadable files, and duplicate content.
+- Provide read-only full-chapter review, persistent keep/exclude choices, separate history, numeric renumber preview, and optional conservative heading changes.
+- Default to separate output folders/ZIP; in-place changes require confirmation, backup and durable recovery journal. Block unsafe archives, filename collisions and modified input fingerprints.
+- Scan in the background with cancellation; support cached incremental detection.
+
 ## v5.5.0 — Translation Batch Workflow
 
 - เพิ่มหน้า "แปลหลายบท" แยกจากหาศัพท์และตรวจคำแปล: เลือกต้นฉบับรวม, โฟลเดอร์ TXT, ต้นฉบับจากขั้นตอนแปล หรือวางข้อความได้

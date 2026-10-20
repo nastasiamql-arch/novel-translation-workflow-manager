@@ -236,3 +236,8 @@ CI ทดสอบ Windows CF_HDROP ซึ่ง Windows Explorer ใช้ร�
 ### แปลหลายบท (Translation Batch Workflow)
 
 ใน Novel Workspace กด **แปลหลายบท** โดยไม่ต้องเปลี่ยนขั้นตอนแปล เลือกวิธีนำเข้าต้นฉบับ: วางเนื้อหาเอง, ไฟล์ TXT รวม, โฟลเดอร์ TXT รายบท หรือไฟล์ที่เปิดใช้งานในขั้นตอนแปลเดิม แล้วกด **ตรวจต้นฉบับ / รีเฟรช** ระบบจัดกลุ่มด้วยเลขบทจริง ขนาดชุด 1–100 บท และค้นหาช่วงเช่น `6-10` ได้ คลิก **คัดลอก** ของชุดใดก็ได้ซ้ำกี่ครั้งก็ได้ การคัดลอกสร้างไฟล์ใน cache สำหรับ Windows Clipboard โดยไม่แก้ต้นฉบับ, Translator, Context หรือประวัติตรวจคำแปล โหมด ZIP กับไฟล์ปกติเป็นการตั้งค่าเฉพาะนิยาย แยกจากระบบหาศัพท์และ COPY STEP เดิม เมื่อไฟล์เปลี่ยนจาก Preview ให้รีเฟรชก่อนคัดลอกอีกครั้ง
+
+
+## Novel File Inspector (ตรวจสอบไฟล์นิยาย)
+
+The standalone **ตรวจสอบไฟล์นิยาย** item in the main navigation scans TXT chapter folders, ZIP archives and a chosen source folder for an existing novel. Review missing or duplicate chapter numbers, short chapters (default 1,500 non-whitespace characters), suspicious file sizes and duplicate content. Read full chapters in a read-only pane and choose keep, exclude or undecided per chapter. Preview numeric renumbering before writing files; creating separate output is the default. In-place changes require an explicit confirmation and write immutable backups with a separate restore option. Translator stages, copy workflows and export histories are unchanged.
