@@ -865,6 +865,8 @@ class WorkspacePage(QWidget):
     def set_vocabulary_source(self, mode):
         if mode not in ("manual", "files"):
             return
+        previous_mode = self.vocabulary_source_mode
+        had_page = self.txt_vocabulary_page is not None
         self.vocabulary_source_mode = mode
         page = self._ensure_txt_vocabulary_page() if mode == "files" else self.txt_vocabulary_page
         if page is not None:
@@ -872,7 +874,9 @@ class WorkspacePage(QWidget):
         if page is not None:
             self.owner.save_txt_vocabulary_state(self.profile_id, page.state)
         self.sync_vocabulary_source()
-        if mode == "files" and page is not None:
+        # The TXT page already scans while being created. Reopening an existing
+        # page should reuse its rows; explicit Refresh remains available.
+        if mode == "files" and page is not None and had_page and previous_mode != mode:
             page.refresh()
 
     def sync_vocabulary_source(self):
@@ -2943,8 +2947,28 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if not self.profile or self.profile.id != profile_id:
             return
         workspace = self.workspaces.get(profile_id)
-        if workspace is not None:
-            workspace.open_translation_batches()
+        if workspace is None:
+            return
+        # Opening the batch page is navigation, NOT a COPY STEP action.
+        # Keep the sidebar in sync without triggering copy_named_stage().
+        translation_indices = [
+            index for index, step in enumerate(self.profile.workflow.steps)
+            if step.name.strip() == "แปล"
+        ]
+        if len(translation_indices) == 1:
+            index = translation_indices[0]
+            workspace.vocabulary_mode = False
+            workspace.step_index = index
+            self.si = index
+            self.settings.workspace_step_indices[profile_id] = index
+            workspace.steps.blockSignals(True)
+            workspace.steps.setCurrentRow(index)
+            workspace.steps.blockSignals(False)
+            self._sync_stage_buttons(workspace)
+            self.refresh_files()
+            workspace.copy_step_button.setEnabled(bool(self.step()))
+            self._schedule_workspace_session_save()
+        workspace.open_translation_batches()
 
     def save_txt_vocabulary_state(self, profile_id, state):
         self.settings.vocabulary_txt_profiles[profile_id] = dict(state)

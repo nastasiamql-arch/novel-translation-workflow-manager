@@ -1,3 +1,12 @@
+## v5.7.3 — Sidebar synchronization and faster chapter batch preparation
+
+- Align workspace step/file sidebar with the active translation-batch view without invoking COPY STEP.
+- Avoid redundant TXT vocabulary rescans while opening the existing page.
+- Retain an initial full source fingerprint, then validate folder contents via metadata while fully hashing just the chapters included in each copied batch.
+- Resolve translation-stage reference files off the main UI thread; leave all reference-selection and copy formats unchanged.
+- Move chapter range, file count and copy actions together for easier batch scanning.
+- Add regression coverage for navigation, unchanged clipboard contents, and detection of modified sources.
+
 ## v5.7.2 — Faster translation batches and clearer TXT workflows
 
 - Perform translation batch source scanning and content fingerprinting in a background Qt worker to keep the main window responsive.

@@ -600,7 +600,7 @@ class TxtVocabularyPage(QWidget):
         count.setObjectName("txtVocabularyBatchCount")
         count.setMinimumWidth(75)
         count.setToolTip("จำนวนไฟล์ต้นฉบับและไฟล์ที่เปิดใช้งานในขั้นตอนหาศัพท์เดิม")
-        top.addWidget(count, 1)
+        top.addWidget(count)
 
         detail_button = QPushButton("ดูรายชื่อไฟล์ ▾")
         detail_button.setObjectName(f"txtVocabularyDetails{group.index}")
@@ -625,6 +625,7 @@ class TxtVocabularyPage(QWidget):
         copy.clicked.connect(lambda checked=False, batch=group, button=copy: self.copy_batch(batch, button))
         self._copy_buttons.append((copy, unique_count))
         top.addWidget(copy)
+        top.addStretch(1)
         layout.addLayout(top)
 
         detail = QWidget()

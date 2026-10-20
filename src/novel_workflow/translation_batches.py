@@ -29,13 +29,25 @@ class TranslationSource:
     signatures: tuple[tuple[Path, bytes], ...]
     folder: Path | None = None
     raw_text: str | None = None
+    # Cheap directory-wide change detection after the initial full fingerprint.
+    # Only copied chapters need another content hash on subsequent copies.
+    file_stats: tuple[tuple[Path, tuple[int, int, int, int]], ...] = ()
+
+
+def _stat_signature(path: Path) -> tuple[int, int, int, int]:
+    info = path.stat()
+    return (info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_ino)
 
 
 def _signature(path: Path) -> tuple[Path, bytes]:
     resolved = _check_path(path)
     if not resolved.is_file():
         raise ValueError(f"ไม่ใช่ไฟล์ต้นฉบับ: {resolved}")
-    return resolved, file_digest(resolved)
+    before = _stat_signature(resolved)
+    digest = file_digest(resolved)
+    if _stat_signature(resolved) != before:
+        raise ValueError(f"ต้นฉบับเปลี่ยนระหว่างตรวจ: {resolved.name}")
+    return resolved, digest
 
 
 def _split_text(text: str) -> tuple[TranslationChapter, ...]:
@@ -64,7 +76,9 @@ def load_translation_source(mode: str, *, path: str | Path | None = None,
             raise ValueError("ไม่พบไฟล์ TXT ที่มีเลขบทในโฟลเดอร์")
         chapters = tuple(TranslationChapter(c.number, c.path.name, path=_check_path(c.path))
                          for c in files)
-        return TranslationSource(chapters, tuple(_signature(c.path) for c in chapters), folder=source)
+        signatures = tuple(_signature(c.path) for c in chapters)
+        metadata = tuple((path, _stat_signature(path)) for path, _ in signatures)
+        return TranslationSource(chapters, signatures, folder=source, file_stats=metadata)
     if not source.is_file() or source.suffix.casefold() != ".txt":
         raise ValueError("ต้นฉบับรวมต้องเป็นไฟล์ TXT")
     signed = _signature(source)
@@ -82,7 +96,8 @@ def translation_groups(source: TranslationSource, size: int = 5):
     )
 
 
-def validate_translation_source(source: TranslationSource, *, text: str | None = None):
+def validate_translation_source(source: TranslationSource, *, text: str | None = None,
+                                selected_paths=None):
     """Detect changes since preview, including added/deleted chapters in folders."""
     if source.raw_text is not None and source.raw_text != text:
         raise ValueError("Draft เปลี่ยนหลัง Preview กรุณาตรวจหัวบทใหม่")
@@ -91,7 +106,19 @@ def validate_translation_source(source: TranslationSource, *, text: str | None =
         original = tuple((c.path, c.number) for c in source.chapters)
         if current != original:
             raise ValueError("รายการไฟล์บทเปลี่ยน กรุณารีเฟรชก่อนคัดลอก")
-    for path, digest in source.signatures:
+    # Unselected files cannot affect this batch's contents; their metadata
+    # still detects modifications, additions, removals and path replacement.
+    if selected_paths is not None and source.folder is not None and source.file_stats:
+        for path, expected in source.file_stats:
+            if _stat_signature(_check_path(path)) != expected:
+                raise ValueError(f"ต้นฉบับเปลี่ยนหลัง Preview: {path.name} กรุณารีเฟรช")
+        selected = {Path(path).resolve() for path in selected_paths}
+        fingerprints = ((path, digest) for path, digest in source.signatures
+                        if path in selected)
+    else:
+        # Strict contract for ordinary callers and combined source files.
+        fingerprints = iter(source.signatures)
+    for path, digest in fingerprints:
         if file_digest(_check_path(path)) != digest:
             raise ValueError(f"ต้นฉบับเปลี่ยนหลัง Preview: {path.name} กรุณารีเฟรช")
 

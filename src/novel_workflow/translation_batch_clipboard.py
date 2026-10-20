@@ -15,8 +15,9 @@ from .workflow_archive import _check_path, file_digest, stream_digest
 def prepare_translation_batch(source, group, references, cache_directory, *,
                               as_zip=False, pasted_text=None):
     """Publish only after all inputs verify; never mutate the original source."""
-    validate_translation_source(source, text=pasted_text)
     selected = chapters_for_group(source, group)
+    selected_paths = tuple(ch.path for ch in selected if ch.path is not None)
+    validate_translation_source(source, text=pasted_text, selected_paths=selected_paths)
     references = tuple(_check_path(p) for p in references)
     root = Path(cache_directory)
     root.mkdir(parents=True, exist_ok=True)
@@ -53,7 +54,7 @@ def prepare_translation_batch(source, group, references, cache_directory, *,
             if file_digest(destination) != input_hashes[path]:
                 raise OSError(f"ไฟล์ประกอบเปลี่ยนระหว่างคัดลอก: {path.name}")
             entries.append((destination, name))
-        validate_translation_source(source, text=pasted_text)
+        validate_translation_source(source, text=pasted_text, selected_paths=selected_paths)
         for path, digest in input_hashes.items():
             if file_digest(_check_path(path)) != digest:
                 raise OSError(f"ไฟล์เปลี่ยนระหว่างเตรียมคัดลอก: {path.name}")

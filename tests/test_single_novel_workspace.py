@@ -189,3 +189,36 @@ def test_suspended_workspace_invalidated_after_external_file_change(tmp_path):
     select(window, first)
     assert window.workspaces[first.id] is not original
     assert 'after externally edited' in window.workspaces[first.id].editor._current_editor().toPlainText()
+
+
+def test_batch_navigation_updates_sidebar_without_copy(tmp_path, monkeypatch):
+    from novel_workflow.models import StepFile
+    repo, profile, _ = setup_profile(tmp_path)
+    vocabulary_file = repo.profile_dir(profile.id) / "reference" / "vocab.txt"
+    translation_file = repo.profile_dir(profile.id) / "reference" / "translation.txt"
+    vocabulary_file.write_text("ศัพท์", encoding="utf-8")
+    translation_file.write_text("แปล", encoding="utf-8")
+    profile.vocabulary_step.files = [StepFile(path="reference/vocab.txt", label="VOCAB_ONLY")]
+    translation = next(step for step in profile.workflow.steps if step.name == "แปล")
+    translation.files = [StepFile(path="reference/translation.txt", label="TRANSLATE_ONLY")]
+    repo.save_profile(profile)
+    window = MainWindow(repo)
+    select(window, profile)
+    workspace = window.workspaces[profile.id]
+    copied = []
+    monkeypatch.setattr(window, "copy_step", lambda *a, **kw: copied.append(True))
+    try:
+        window.open_txt_vocabulary(profile.id)
+        assert workspace.vocabulary_mode
+        assert "VOCAB_ONLY" in [workspace.files.item(i).text() for i in range(workspace.files.count())]
+        window.open_translation_batches(profile.id)
+        assert not workspace.vocabulary_mode
+        assert window.step().name == "แปล"
+        assert workspace.translation_batch_page is not None
+        assert "TRANSLATE_ONLY" in [workspace.files.item(i).text() for i in range(workspace.files.count())]
+        assert not copied
+    finally:
+        for worker in (getattr(workspace.translation_batch_page, "_load_worker", None),):
+            if worker and worker.isRunning():
+                worker.wait(20000)
+        window.close()

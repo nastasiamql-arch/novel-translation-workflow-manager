@@ -141,3 +141,44 @@ def test_translation_step_strict():
     profile.workflow.steps.append(WorkflowStep(name="แปล"))
     with pytest.raises(ValueError):
         translation_step(profile)
+
+
+def test_selected_folder_copy_does_not_rehash_all_unselected_chapters(tmp_path, monkeypatch):
+    """Validate every filename/metadata, but hash copied chapters only."""
+    import novel_workflow.translation_batches as batch_module
+    source_folder = tmp_path / "source"
+    source_folder.mkdir()
+    for number in range(1, 101):
+        (source_folder / f"{number:04d}.txt").write_text(
+            f"第{number}章\\n正文", encoding="utf-8")
+    source = load_translation_source("folder", path=source_folder)
+    group = translation_groups(source, 3)[0]
+    digested = []
+    real_digest = batch_module.file_digest
+    def counted(path):
+        digested.append(Path(path).name)
+        return real_digest(path)
+    monkeypatch.setattr(batch_module, "file_digest", counted)
+    output = prepare_translation_batch(source, group, (), tmp_path / "cache")
+    assert len(output) == 3
+    assert set(digested) == {"0001.txt", "0002.txt", "0003.txt"}
+    assert all(p.read_bytes() == (source_folder / p.name).read_bytes() for p in output)
+    # A changed unselected chapter must still invalidate a source snapshot.
+    (source_folder / "0099.txt").write_text("changed content", encoding="utf-8")
+    with pytest.raises(ValueError, match="เปลี่ยน"):
+        prepare_translation_batch(source, group, (), tmp_path / "another")
+
+
+def test_strict_validation_detects_same_mtime_content_change(tmp_path):
+    import os
+    source_folder = tmp_path / "chapters"
+    source_folder.mkdir()
+    chapter = source_folder / "0001.txt"
+    chapter.write_text("第1章\\nAAA", encoding="utf-8")
+    source = load_translation_source("folder", path=source_folder)
+    state = chapter.stat()
+    chapter.write_text("第1章\\nBBB", encoding="utf-8")
+    os.utime(chapter, ns=(state.st_atime_ns, state.st_mtime_ns))
+    # Even if modification time is restored, strict validation re-hashes.
+    with pytest.raises(ValueError, match="เปลี่ยน"):
+        validate_translation_source(source)

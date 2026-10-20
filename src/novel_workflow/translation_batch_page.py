@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import tempfile
+from copy import deepcopy
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
@@ -42,15 +43,30 @@ class TranslationCopyWorker(QThread):
     prepared = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, source, group, references, cache_path, *, as_zip, pasted_text):
+    def __init__(self, source, group, repo, assembler, profile, source_path,
+                 source_id, cache_path, *, as_zip, pasted_text):
         super().__init__()
-        self.source, self.group, self.references = source, group, references
+        self.source, self.group = source, group
+        self.repo, self.assembler, self.profile = repo, assembler, profile
+        self.source_path, self.source_id = source_path, source_id
         self.cache_path, self.as_zip, self.pasted_text = cache_path, as_zip, pasted_text
 
     def run(self):
         try:
+            # Resolving reference folders can traverse thousands of files.
+            # Both resolution and bundle preparation stay off the GUI thread.
+            entries = enabled_translation_attachments(
+                self.repo, self.assembler, self.profile)
+            selected_path = self.source_path
+            if self.source_id:
+                chosen = next((item for item in entries if item.id == self.source_id), None)
+                if chosen is None or chosen.path is None:
+                    raise ValueError("ต้นฉบับจากขั้นตอนแปลไม่พร้อมใช้งาน")
+                selected_path = chosen.path
+            references = translation_reference_files(
+                entries, selected_path, self.source_id)
             self.prepared.emit(prepare_translation_batch(
-                self.source, self.group, self.references, self.cache_path,
+                self.source, self.group, references, self.cache_path,
                 as_zip=self.as_zip, pasted_text=self.pasted_text))
         except (OSError, ValueError, UnicodeError) as exc:
             self.failed.emit(str(exc))
@@ -355,7 +371,7 @@ class TranslationBatchPage(QWidget):
                 description = f"ต้นฉบับ {len(group.chapters)} บท"
                 if group.missing:
                     description += " · ⚠ ขาด " + ", ".join(map(str, group.missing[:8]))
-                layout.addWidget(QLabel(description), 1)
+                layout.addWidget(QLabel(description))
                 details = QPushButton("รายละเอียด")
                 details.setCheckable(True)
                 layout.addWidget(details)
@@ -363,6 +379,7 @@ class TranslationBatchPage(QWidget):
                 button.setObjectName(f"translationBatchCopy{group.index}")
                 button.clicked.connect(lambda _checked=False, g=group, b=button: self.copy_group(g, b))
                 layout.addWidget(button)
+                layout.addStretch(1)
                 self.rows.addWidget(row)
                 filenames = QLabel(", ".join(c.path.name for c in group.chapters))
                 filenames.setWordWrap(True)
@@ -390,19 +407,18 @@ class TranslationBatchPage(QWidget):
             if result != QMessageBox.Yes:
                 return
         try:
-            profile = self._profile()
-            entries = enabled_translation_attachments(self.repo, self.assembler, profile)
-            chosen = self._step_path() if self.mode.currentData() == "step" else (
-                self.state.get("path") if self.mode.currentData() != "paste" else None)
-            references = translation_reference_files(
-                entries, chosen, self.state.get("attachment_id") if self.mode.currentData() == "step" else None)
+            profile = deepcopy(self._profile())
+            mode = self.mode.currentData()
+            chosen = self.state.get("path") if mode in ("file", "folder") else None
+            selected_id = self.state.get("attachment_id") if mode == "step" else None
             worker = TranslationCopyWorker(
-                self._source, group, references,
+                self._source, group, self.repo, self.assembler, profile,
+                chosen, selected_id,
                 self.repo.root / "cache" / "clipboard" / "translation" / profile.id,
                 as_zip=bool(self.copy_mode.currentData()),
                 pasted_text=self.pasted_text.toPlainText() if self.mode.currentData() == "paste" else None)
             self._copy_worker = worker
-            self._copy_pending = (group, button)
+            self._copy_pending = (group, button, self._source, mode)
             if button:
                 button.setEnabled(False)
                 button.setText("กำลังเตรียมไฟล์…")
@@ -415,7 +431,12 @@ class TranslationBatchPage(QWidget):
             QMessageBox.warning(self, "คัดลอกไม่สำเร็จ", str(exc))
 
     def _copy_ready(self, files):
-        group, button = self._copy_pending
+        if self._copy_pending is None:
+            return
+        group, button, source, mode = self._copy_pending
+        if source is not self._source or mode != self.mode.currentData():
+            self.summary.setText("ต้นฉบับเปลี่ยนแล้ว กรุณาคัดลอกชุดใหม่")
+            return
         try:
             copied = copy_file_paths(files)  # Qt Clipboard must only change on the GUI thread.
             self.state["last_range"] = f"{group.start}-{group.end}"
@@ -433,7 +454,7 @@ class TranslationBatchPage(QWidget):
 
     def _copy_finished(self):
         if self._copy_pending:
-            _, button = self._copy_pending
+            _, button, _, _ = self._copy_pending
             if button:
                 button.setEnabled(True)
                 if button.text() == "กำลังเตรียมไฟล์…":
