@@ -1,3 +1,12 @@
+## v5.7.0 — Single-screen Novel File Inspector and batch heading repair
+
+- Simplify the dedicated inspector into a single main screen with a side-by-side table and read-only chapter reader; keep renumber preview and backup recovery accessible separately.
+- Open TXT folders without selecting a novel, and automatically scan after selecting the directory. Support safe cancellation and a queued folder switch.
+- Clarify distinct real-file issue totals, short chapters, missing positions, duplicates, heading mismatches, user review progress and repair candidates.
+- Add a conservative preview-and-confirm batch heading repair using chapter numbers from filenames only after explicit approval. Preserve unrelated text, BOM and original line endings; create a separate inspected output directory.
+- Retain the existing ZIP engine, renumbering engine and recoverable backup journal. Add regression tests for multi-file repairs, source fingerprints, Chinese text, BOM/CRLF and the single-screen UI.
+- Windows installer publication and end-to-end in-app upgrade require passing GitHub Actions validation.
+
 ## v5.6.0 — Novel File Inspector
 
 - Add a standalone “ตรวจสอบไฟล์นิยาย” navigation page without changing existing translation, vocabulary, clipboard, export or history behavior.
