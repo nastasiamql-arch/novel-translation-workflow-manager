@@ -4,7 +4,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
@@ -14,11 +14,46 @@ from .translation_batches import (
     find_translation_groups, load_translation_source, translation_groups,
     validate_translation_source,
 )
-from .translation_batch_clipboard import copy_translation_batch
+from .translation_batch_clipboard import prepare_translation_batch
+from .clipboard_files import copy_file_paths
 from .translation_source_binding import (
     enabled_translation_attachments, source_candidates, translation_reference_files,
 )
 from .vocabulary_batches import split_missing_numbers
+
+
+
+class TranslationSourceWorker(QThread):
+    loaded = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, mode, path, text):
+        super().__init__()
+        self.mode, self.path, self.text = mode, path, text
+
+    def run(self):
+        try:
+            self.loaded.emit(load_translation_source(self.mode, path=self.path, text=self.text))
+        except (OSError, ValueError, UnicodeError) as exc:
+            self.failed.emit(str(exc))
+
+
+class TranslationCopyWorker(QThread):
+    prepared = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, source, group, references, cache_path, *, as_zip, pasted_text):
+        super().__init__()
+        self.source, self.group, self.references = source, group, references
+        self.cache_path, self.as_zip, self.pasted_text = cache_path, as_zip, pasted_text
+
+    def run(self):
+        try:
+            self.prepared.emit(prepare_translation_batch(
+                self.source, self.group, self.references, self.cache_path,
+                as_zip=self.as_zip, pasted_text=self.pasted_text))
+        except (OSError, ValueError, UnicodeError) as exc:
+            self.failed.emit(str(exc))
 
 
 class TranslationBatchPage(QWidget):
@@ -34,16 +69,26 @@ class TranslationBatchPage(QWidget):
         self._rendered = 0
         self._visible = ()
         self._busy = False
+        self._load_worker = None
+        self._load_queued = False
+        self._copy_worker = None
+        self._copy_pending = None
+        self._initialized = False
         self.setObjectName("translationBatchPage")
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 8, 12, 8)
         heading = QHBoxLayout()
-        heading.addWidget(QLabel("แปลหลายบท"), 1)
+        title = QLabel("แปลหลายบท · เลือกชุดแล้วคัดลอก")
+        title.setObjectName("sectionHeading")
+        heading.addWidget(title, 1)
         back = QPushButton("กลับไป Workspace")
         back.setObjectName("translationBatchBack")
         back.clicked.connect(on_close)
         heading.addWidget(back)
         outer.addLayout(heading)
+        helper = QLabel("1  เลือกต้นฉบับ     →     2  กำหนดบทต่อชุด     →     3  กดคัดลอกชุดที่ต้องการ")
+        helper.setObjectName("mutedLabel")
+        outer.addWidget(helper)
 
         sources = QHBoxLayout()
         self.mode = QComboBox()
@@ -105,7 +150,7 @@ class TranslationBatchPage(QWidget):
         controls.addWidget(refresh)
         outer.addLayout(controls)
 
-        self.summary = QLabel("เลือกต้นฉบับแล้วกดตรวจต้นฉบับ")
+        self.summary = QLabel("กำลังเตรียมรายการบท…")
         self.summary.setObjectName("mutedLabel")
         outer.addWidget(self.summary)
         self.scroll = QScrollArea()
@@ -121,7 +166,10 @@ class TranslationBatchPage(QWidget):
         self.scroll.verticalScrollBar().valueChanged.connect(self._on_scroll)
         outer.addWidget(self.scroll, 4)
         self._mode_changed()
-        if current_mode != "paste" and self.state.get("path"):
+        self._initialized = True
+        if current_mode in ("folder", "file") and self.state.get("path"):
+            self.refresh()
+        elif current_mode == "step" and self.state.get("attachment_id"):
             self.refresh()
         elif current_mode == "paste" and self.pasted_text.toPlainText().strip():
             self.refresh()
@@ -148,6 +196,8 @@ class TranslationBatchPage(QWidget):
         self._groups = ()
         self._clear_rows()
         self._persist()
+        if self._initialized and (mode == "step" or mode == "paste" and self.pasted_text.toPlainText().strip() or mode in ("file", "folder") and self.state.get("path")):
+            self.refresh()
 
     def _populate_sources(self):
         current = self.state.get("attachment_id", "")
@@ -172,6 +222,8 @@ class TranslationBatchPage(QWidget):
             self._groups = ()
             self._clear_rows()
             self._persist()
+            if self.state["attachment_id"]:
+                self.refresh()
 
     def _browse(self):
         mode = self.mode.currentData()
@@ -212,24 +264,61 @@ class TranslationBatchPage(QWidget):
         return chosen.path
 
     def refresh(self):
+        """Keep disk scanning and source fingerprints off the Qt GUI thread."""
+        if self._load_worker is not None and self._load_worker.isRunning():
+            self._load_queued = True
+            self.summary.setText("กำลังรอการตรวจต้นฉบับรอบใหม่…")
+            return
+        mode = self.mode.currentData()
         try:
-            mode = self.mode.currentData()
             path = self._step_path() if mode == "step" else self.state.get("path")
-            source = load_translation_source(mode, path=path, text=self.pasted_text.toPlainText())
-            self._source = source
-            self._groups = translation_groups(source, self.size.value())
-            missing = split_missing_numbers(tuple(
-                type("Segment", (), {"number": chapter.number}) for chapter in source.chapters))
-            self.summary.setText(
-                f"พบ {len(source.chapters)} บท · {len(self._groups)} ชุด"
-                + (f" · ขาดบท {', '.join(map(str, missing[:20]))}" if missing else "")
-            )
-            self._refresh_rows()
-        except (OSError, ValueError, UnicodeError) as exc:
+        except (OSError, ValueError) as exc:
+            self.summary.setText(str(exc))
+            return
+        text = self.pasted_text.toPlainText() if mode == "paste" else None
+        self.summary.setText("กำลังตรวจต้นฉบับ…")
+        self._source = None
+        self._groups = ()
+        self._clear_rows()
+        worker = TranslationSourceWorker(mode, path, text)
+        self._load_worker = worker
+        worker.loaded.connect(self._loaded_source)
+        worker.failed.connect(self._source_failed)
+        worker.finished.connect(self._load_finished)
+        worker.start()
+
+    def _loaded_source(self, source):
+        worker = self._load_worker
+        if worker is None or self._load_queued or self.mode.currentData() != worker.mode:
+            return
+        if worker.mode == "paste" and self.pasted_text.toPlainText() != worker.text:
+            return
+        if worker.mode in ("folder", "file") and self.state.get("path") != worker.path:
+            return
+        self._source = source
+        self._groups = translation_groups(source, self.size.value())
+        missing = split_missing_numbers(tuple(
+            type("Segment", (), {"number": chapter.number}) for chapter in source.chapters))
+        self.summary.setText(
+            f"พร้อมคัดลอก · {len(source.chapters)} บท · {len(self._groups)} ชุด"
+            + (f" · ขาดบท {', '.join(map(str, missing[:20]))}" if missing else ""))
+        self._refresh_rows()
+
+    def _source_failed(self, reason):
+        if not self._load_queued:
             self._source = None
             self._groups = ()
             self._clear_rows()
-            self.summary.setText(str(exc))
+            self.summary.setText("ตรวจต้นฉบับไม่สำเร็จ: " + reason)
+
+    def _load_finished(self):
+        worker = self._load_worker
+        self._load_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        if self._load_queued:
+            self._load_queued = False
+            self.refresh()
 
     def _clear_rows(self):
         while self.rows.count():
@@ -255,18 +344,22 @@ class TranslationBatchPage(QWidget):
                 row = QFrame()
                 layout = QHBoxLayout(row)
                 layout.setContentsMargins(5, 4, 5, 4)
-                layout.addWidget(QLabel(str(group.index)))
-                layout.addWidget(QLabel(f"บท {group.start}–{group.end}"), 1)
-                description = f"{len(group.chapters)} บท · {len(group.chapters)} ไฟล์"
+                row.setObjectName("translationBatchRow")
+                row.setMinimumHeight(54)
+                layout.addWidget(QLabel(f"ชุด {group.index:02d}"))
+                chapter_label = QLabel(f"บท {group.start:04d}–{group.end:04d}")
+                chapter_label.setMinimumWidth(125)
+                layout.addWidget(chapter_label)
+                description = f"ต้นฉบับ {len(group.chapters)} บท"
                 if group.missing:
-                    description += " · ขาด " + ", ".join(map(str, group.missing[:8]))
-                layout.addWidget(QLabel(description))
+                    description += " · ⚠ ขาด " + ", ".join(map(str, group.missing[:8]))
+                layout.addWidget(QLabel(description), 1)
                 details = QPushButton("รายละเอียด")
                 details.setCheckable(True)
                 layout.addWidget(details)
                 button = QPushButton("คัดลอก ZIP" if self.copy_mode.currentData() else "คัดลอก")
                 button.setObjectName(f"translationBatchCopy{group.index}")
-                button.clicked.connect(lambda _checked=False, g=group: self.copy_group(g))
+                button.clicked.connect(lambda _checked=False, g=group, b=button: self.copy_group(g, b))
                 layout.addWidget(button)
                 self.rows.addWidget(row)
                 filenames = QLabel(", ".join(c.path.name for c in group.chapters))
@@ -283,8 +376,8 @@ class TranslationBatchPage(QWidget):
         if bar.maximum() and position >= bar.maximum() - max(70, bar.pageStep() // 2):
             self._append_rows()
 
-    def copy_group(self, group):
-        if not self._source:
+    def copy_group(self, group, button=None):
+        if not self._source or (self._copy_worker and self._copy_worker.isRunning()):
             return
         if group.missing:
             result = QMessageBox.question(
@@ -301,13 +394,58 @@ class TranslationBatchPage(QWidget):
                 self.state.get("path") if self.mode.currentData() != "paste" else None)
             references = translation_reference_files(
                 entries, chosen, self.state.get("attachment_id") if self.mode.currentData() == "step" else None)
-            copied = copy_translation_batch(
+            worker = TranslationCopyWorker(
                 self._source, group, references,
                 self.repo.root / "cache" / "clipboard" / "translation" / profile.id,
                 as_zip=bool(self.copy_mode.currentData()),
                 pasted_text=self.pasted_text.toPlainText() if self.mode.currentData() == "paste" else None)
-            self.state["last_range"] = f"{group.start}-{group.end}"
-            self._persist()
-            self.summary.setText(f"คัดลอกบท {group.start}–{group.end} สำเร็จ · {len(copied)} ไฟล์ใน Clipboard")
+            self._copy_worker = worker
+            self._copy_pending = (group, button)
+            if button:
+                button.setEnabled(False)
+                button.setText("กำลังเตรียมไฟล์…")
+            self.summary.setText(f"กำลังเตรียมชุดบท {group.start}–{group.end} · ยังไม่เปลี่ยน Clipboard")
+            worker.prepared.connect(self._copy_ready)
+            worker.failed.connect(self._copy_failed)
+            worker.finished.connect(self._copy_finished)
+            worker.start()
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "คัดลอกไม่สำเร็จ", str(exc))
+
+    def _copy_ready(self, files):
+        group, button = self._copy_pending
+        try:
+            copied = copy_file_paths(files)  # Qt Clipboard must only change on the GUI thread.
+            self.state["last_range"] = f"{group.start}-{group.end}"
+            self._persist()
+            self.summary.setText(
+                f"✓ คัดลอกบท {group.start}–{group.end} สำเร็จ · {len(copied)} ไฟล์ · วางด้วย Ctrl+V")
+            if button:
+                button.setText("✓ คัดลอกแล้ว")
+        except (OSError, ValueError) as exc:
+            self._copy_failed(str(exc))
+
+    def _copy_failed(self, reason):
+        self.summary.setText("คัดลอกไม่สำเร็จ: " + reason)
+        QMessageBox.warning(self, "คัดลอกไม่สำเร็จ", reason)
+
+    def _copy_finished(self):
+        if self._copy_pending:
+            _, button = self._copy_pending
+            if button:
+                button.setEnabled(True)
+                if button.text() == "กำลังเตรียมไฟล์…":
+                    button.setText("คัดลอก ZIP" if self.copy_mode.currentData() else "คัดลอก")
+        self._copy_pending = None
+        worker = self._copy_worker
+        self._copy_worker = None
+        if worker:
+            worker.deleteLater()
+
+    def closeEvent(self, event):
+        if ((self._load_worker and self._load_worker.isRunning()) or
+                (self._copy_worker and self._copy_worker.isRunning())):
+            event.ignore()
+            self.summary.setText("กำลังอ่านหรือเตรียมไฟล์ กรุณารอสักครู่ก่อนปิดหน้าต่าง")
+            return
+        super().closeEvent(event)
