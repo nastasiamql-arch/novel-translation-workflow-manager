@@ -105,6 +105,8 @@ def plan_heading_repair(result: Inspection, names: set[str] | None = None) -> tu
             reason = "เลขหัวบทตรงแล้ว"
         if reason:
             blocked[row.name] = reason
+        if row.error or row.review_stale or not row.fingerprint:
+            continue  # Never copy unreadable/stale files into a claimed validated result.
         planned.append(PlannedFile(row.name, row.name, row.fingerprint,
                                    row.heading if not reason else None,
                                    row.chapter if not reason else None, row.encoding))
