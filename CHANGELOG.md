@@ -1,3 +1,12 @@
+## v5.7.2 — Faster translation batches and clearer TXT workflows
+
+- Perform translation batch source scanning and content fingerprinting in a background Qt worker to keep the main window responsive.
+- Prepare verified translation clipboard files and ZIPs off the UI thread; publish the same exact files to the Windows clipboard only from the GUI thread.
+- Preserve chapter selection, existing stage reference files, history, Export, and copy-format settings.
+- Reuse vocabulary reference metadata across displayed batch rows rather than rescanning folders for every visible row.
+- Improve labels and step-by-step cues on translation and vocabulary batch pages.
+- Add an async clipboard regression test for exact chapter content and chapter count.
+
 ## v5.7.1 — Windows Qt test runner reliability
 
 - Fix Windows CI handling of a fully passing pytest group that emits warnings before a known native Qt shutdown access violation.
