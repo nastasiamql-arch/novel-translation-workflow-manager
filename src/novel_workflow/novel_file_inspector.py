@@ -58,12 +58,51 @@ class Inspection:
     cancelled: bool = False
 
     def summary(self) -> dict[str, int]:
+        """Count distinct real files, independently of overlapping issue categories.
+
+        Missing chapters are virtual positions, never damaged files. User review
+        decisions are deliberately independent from scanner findings.
+        """
+        real = [row for row in self.files if not row.virtual]
+        flagged = [row for row in real if row.suspicious]
+        repairable = [row for row in real if
+                      not row.error and not row.review_stale
+                      and bool(row.fingerprint) and row.chapter is not None
+                      and row.heading is not None and row.chapter != row.heading]
         return {
-            "total": sum(not f.virtual for f in self.files),
-            "length_pass": sum(not f.virtual and not f.error and f.count >= self.minimum for f in self.files),
-            "suspicious": sum(not f.virtual and f.suspicious for f in self.files),
+            "total": len(real),
+            "length_pass": sum(not f.error and f.count >= self.minimum for f in real),
+            "suspicious": len(flagged),
+            "clean": len(real) - len(flagged),
             "missing": sum(f.virtual for f in self.files),
+            "heading_mismatch": sum("เลขหัวบทไม่ตรงกับชื่อไฟล์" in f.reasons for f in real),
+            "short": sum(not f.error and f.count < self.minimum for f in real),
+            "duplicate_content": sum(bool(f.duplicate_of) for f in real),
+            "unreadable": sum(bool(f.error) for f in real),
+            "repairable": len(repairable),
+            "pending_review": sum(f.review == "pending" or f.review_stale for f in flagged),
+            "kept": sum(f.review == "keep" and not f.review_stale for f in real),
+            "excluded": sum(f.review == "excluded" and not f.review_stale for f in real),
         }
+
+    def shifted_heading_runs(self, minimum_length: int = 3) -> list[list[InspectedFile]]:
+        """Find contiguous filenames with the same nonzero heading displacement."""
+        ordered = sorted((f for f in self.files if not f.virtual and not f.error
+                          and f.chapter is not None and f.heading is not None
+                          and f.chapter != f.heading), key=lambda f: (f.chapter, f.name))
+        runs: list[list[InspectedFile]] = []
+        current: list[InspectedFile] = []
+        for row in ordered:
+            if (current and (row.chapter != current[-1].chapter + 1
+                             or row.heading != current[-1].heading + 1
+                             or row.chapter - row.heading != current[-1].chapter - current[-1].heading)):
+                if len(current) >= minimum_length:
+                    runs.append(current)
+                current = []
+            current.append(row)
+        if len(current) >= minimum_length:
+            runs.append(current)
+        return runs
 
 
 def number_from_filename(name: str) -> int | None:
