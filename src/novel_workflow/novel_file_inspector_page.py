@@ -145,6 +145,7 @@ class NovelFileInspectorPage(QWidget):
         self.result = None
         self.worker = None
         self.write_worker = None
+        self._post_write_output = None
         self.source, self.kind = "", "folder"
         self.pending_source = None
         self._setup_ui()
@@ -358,6 +359,7 @@ class NovelFileInspectorPage(QWidget):
         self.write_worker = WriteWorker(plan, str(destination), False, self.store.root / "backups")
         self.write_worker.completed.connect(self.write_done)
         self.write_worker.failed.connect(self.write_failed)
+        self.write_worker.finished.connect(self.post_write_rescan)
         self.write_worker.start()
 
     def choose_folder(self):
@@ -592,6 +594,12 @@ class NovelFileInspectorPage(QWidget):
         QMessageBox.information(self, "เสร็จแล้ว", f"สร้างผลลัพธ์สำเร็จ\n{operation.get('output', operation.get('backup'))}")
         output = operation.get("output")
         if output and Path(output).is_dir():
+            self._post_write_output = output
+
+    def post_write_rescan(self):
+        output = self._post_write_output
+        self._post_write_output = None
+        if output:
             self.set_source(output, "folder")
 
     def write_failed(self, message):
