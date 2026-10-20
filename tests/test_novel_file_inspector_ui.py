@@ -40,3 +40,33 @@ def test_standalone_page_no_profile_created(app, tmp_path):
     finally:
         window._automatic_update_timer.stop()
         window.close()
+
+
+def test_inspector_single_screen_and_direct_folder_scan(app, tmp_path, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QSplitter
+    from novel_workflow.novel_file_inspector_page import NovelFileInspectorPage
+    repo = ProjectRepository(tmp_path / "state")
+    page = NovelFileInspectorPage(repo)
+    root = tmp_path / "chapters"
+    root.mkdir()
+    (root / "0001.txt").write_text("第2章 标题\n" + "中" * 1600, encoding="utf-8")
+    try:
+        assert page.findChild(QSplitter).orientation() == Qt.Horizontal
+        assert page.table.model().columnCount() == 4
+        assert not hasattr(page, "profile_combo")
+        assert not hasattr(page, "tabs")
+        page.set_source(str(root), "folder")
+        assert page.worker is not None
+        assert page.worker.wait(15000)
+        app.processEvents()
+        assert page.result is not None
+        assert page.result.summary()["heading_mismatch"] == 1
+        assert page.summary.text().find("หัวบทไม่ตรง") >= 0
+        assert page.renumber_dialog.isHidden()
+        assert page.history_dialog.isHidden()
+    finally:
+        if page.worker and page.worker.isRunning():
+            page.worker.cancel()
+            page.worker.wait(15000)
+        page.close()
