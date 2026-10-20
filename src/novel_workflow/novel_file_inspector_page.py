@@ -9,14 +9,14 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyMod
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
-    QProgressBar, QPushButton, QSpinBox, QSplitter, QTableView, QVBoxLayout,
+    QProgressBar, QPushButton, QSpinBox, QSplitter, QTableView, QVBoxLayout, QHeaderView, QMenu,
     QWidget, QDialog, QTableWidget, QTableWidgetItem, QTabWidget,
 )
 
 from .novel_file_inspector import Inspection, inspect, read_source, decode_text
 from .novel_file_inspector_history import InspectorStore
 from .novel_file_inspector_renumber import (
-    plan_renumber, execute_new, execute_in_place, restore_backup,
+    plan_renumber, plan_heading_repair, execute_new, execute_in_place, restore_backup,
 )
 
 
@@ -66,7 +66,7 @@ class WriteWorker(QThread):
 
 
 class FileTable(QAbstractTableModel):
-    HEADERS = ("บท", "ชื่อไฟล์", "ตัวอักษร", "ขนาด", "สถานะระบบ", "ผลตรวจของฉัน")
+    HEADERS = ("บท", "ชื่อไฟล์", "ตัวอักษร", "สถานะ")
 
     def __init__(self):
         super().__init__()
@@ -98,10 +98,7 @@ class FileTable(QAbstractTableModel):
             c = index.column()
             values = [f"{row.chapter:04d}" if row.chapter is not None else "—",
                       row.name, "—" if row.virtual else f"{row.count:,}",
-                      "—" if row.virtual else f"{row.size / 1024:.1f} KB",
-                      row.error or ", ".join(row.reasons) or "ผ่านเกณฑ์ความยาว",
-                      "ต้องตรวจใหม่" if row.review_stale else
-                      {"keep": "เป็นนิยาย — เก็บไว้", "excluded": "คัดออก", "pending": "ยังไม่ตัดสินใจ"}.get(row.review, "—")]
+                      f"หัวบท {row.heading} ≠ {row.chapter}" if row.heading is not None and row.chapter is not None and row.heading != row.chapter else row.error or ", ".join(row.reasons) or "ปกติ"]
             return values[c]
         if role == Qt.ToolTipRole:
             return row.error or ", ".join(row.reasons)
@@ -121,6 +118,7 @@ class InspectorFilter(QSortFilterProxyModel):
             return False
         return {"all": lambda: True, "suspicious": lambda: item.suspicious,
                 "missing": lambda: item.virtual,
+                "heading": lambda: not item.virtual and item.heading is not None and item.chapter != item.heading,
                 "short": lambda: not item.virtual and item.count < self.minimum and not item.error,
                 "duplicate": lambda: bool(item.duplicate_of or "เลขบทซ้ำ" in item.reasons)}[self.category]()
 
@@ -134,8 +132,6 @@ class InspectorFilter(QSortFilterProxyModel):
             return (a.chapter is None, a.chapter or 0, a.name.casefold()) < (b.chapter is None, b.chapter or 0, b.name.casefold())
         if col == 2:
             return a.count < b.count
-        if col == 3:
-            return a.size < b.size
         return str(self.sourceModel().data(left, Qt.DisplayRole)).casefold() < str(self.sourceModel().data(right, Qt.DisplayRole)).casefold()
 
 
@@ -211,7 +207,7 @@ class NovelFileInspectorPage(QWidget):
         filters = QHBoxLayout()
         self.filter = QComboBox()
         for name, key in (("ทั้งหมด", "all"), ("น่าสงสัย", "suspicious"),
-                          ("เลขบทขาด", "missing"), ("ไฟล์สั้น", "short"),
+                          ("หัวบทไม่ตรง", "heading"), ("เลขบทขาด", "missing"), ("ไฟล์สั้น", "short"),
                           ("ไฟล์ซ้ำ", "duplicate")):
             self.filter.addItem(name, key)
         self.filter.currentIndexChanged.connect(self.update_filter)
@@ -221,7 +217,7 @@ class NovelFileInspectorPage(QWidget):
         self.search.textChanged.connect(self.update_filter)
         filters.addWidget(self.search, 1)
         body.addLayout(filters)
-        splitter = QSplitter(Qt.Vertical)
+        splitter = QSplitter(Qt.Horizontal)
         self.model = FileTable()
         self.proxy = InspectorFilter()
         self.proxy.setSourceModel(self.model)
@@ -231,7 +227,12 @@ class NovelFileInspectorPage(QWidget):
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table.setSortingEnabled(True)
         self.table.setAlternatingRowColors(True)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        self.table.setColumnWidth(1, 160)
         self.table.selectionModel().selectionChanged.connect(self.show_selected)
         splitter.addWidget(self.table)
         reader = QWidget()
@@ -255,7 +256,7 @@ class NovelFileInspectorPage(QWidget):
             actions.addWidget(button)
         read_layout.addLayout(actions)
         splitter.addWidget(reader)
-        splitter.setSizes([470, 330])
+        splitter.setSizes([550, 650])
         body.addWidget(splitter, 1)
         self.tabs.addTab(review_page, "ตรวจสอบและอ่านเนื้อหา")
 
