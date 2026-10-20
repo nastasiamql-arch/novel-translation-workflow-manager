@@ -243,6 +243,8 @@ class TranslationBatchPage(QWidget):
         self._source = None
         self._groups = ()
         self._clear_rows()
+        if self._load_worker is not None and self._load_worker.isRunning():
+            self._load_queued = True
         self._persist()
 
     def _size_changed(self, *_):
