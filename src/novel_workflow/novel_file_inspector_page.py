@@ -197,7 +197,20 @@ class NovelFileInspectorPage(QWidget):
         self.cancel_button.clicked.connect(self.cancel_scan)
         controls.addWidget(self.cancel_button)
         self.progress = QProgressBar()
-        controls.addWidget(self.progress, 1)
+        self.progress.setObjectName("inspectorScanProgress")
+        self.progress.setTextVisible(False)
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.hide()
+        self.progress_status = QLabel("")
+        self.progress_status.setObjectName("inspectorScanStatus")
+        self.progress_status.setWordWrap(True)
+        self.progress_status.hide()
+        progress_area = QVBoxLayout()
+        progress_area.setSpacing(3)
+        progress_area.addWidget(self.progress_status)
+        progress_area.addWidget(self.progress)
+        controls.addLayout(progress_area, 1)
         body.addLayout(controls)
         self.scan_button.hide()
         self.summary = QLabel("เลือกโฟลเดอร์ TXT เพื่อเริ่มตรวจสอบ")
@@ -434,6 +447,9 @@ class NovelFileInspectorPage(QWidget):
         self.worker.failed.connect(self.scan_failed)
         self.worker.finished.connect(self.finish_worker)
         self.progress.setRange(0, 0)
+        self.progress_status.setText("กำลังเตรียมรายการไฟล์สำหรับตรวจสอบ…")
+        self.progress_status.show()
+        self.progress.show()
         self.scan_button.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.worker.start()
@@ -442,26 +458,37 @@ class NovelFileInspectorPage(QWidget):
         if self.worker:
             self.worker.cancel()
             self.cancel_button.setEnabled(False)
+            self.progress_status.setText("กำลังยกเลิกการตรวจสอบ…")
 
     def progress_scan(self, n, total):
         self.progress.setRange(0, max(1, total))
         self.progress.setValue(n)
+        percent = min(100, round(100 * n / total)) if total else 0
+        self.progress_status.setText(
+            f"กำลังตรวจไฟล์ {n:,}/{total:,} · {percent}%"
+        )
 
     def finish_worker(self):
         self.scan_button.setEnabled(True)
         self.cancel_button.setEnabled(False)
+        self.progress.hide()
         if self.pending_source is not None:
             path, kind = self.pending_source
             self.pending_source = None
             self.set_source(path, kind)
 
     def scan_failed(self, message):
+        self.progress_status.setText("ตรวจสอบไม่สำเร็จ · " + message)
         QMessageBox.warning(self, "ตรวจสอบไม่สำเร็จ", message)
 
     def scan_done(self, result):
         if result.cancelled or self.pending_source is not None:
+            self.progress_status.setText("ยกเลิกการตรวจแล้ว · ไม่มีการบันทึกผลลัพธ์บางส่วน")
             self.detail.setText("ยกเลิกการตรวจแล้ว ผลลัพธ์บางส่วนไม่ได้บันทึก")
             return
+        self.progress_status.setText(
+            f"ตรวจสอบเสร็จแล้ว · {result.summary()['total']:,} ไฟล์"
+        )
         self.set_result(result)
         self.store.save_cache(result.source, result.kind, self.worker.cache)
         self.store.add_inspection(result)

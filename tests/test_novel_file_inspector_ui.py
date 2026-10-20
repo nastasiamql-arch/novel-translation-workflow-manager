@@ -70,3 +70,20 @@ def test_inspector_single_screen_and_direct_folder_scan(app, tmp_path, monkeypat
             page.worker.cancel()
             page.worker.wait(15000)
         page.close()
+
+
+def test_scan_progress_has_clear_status_outside_bar(app, tmp_path):
+    from novel_workflow.novel_file_inspector_page import NovelFileInspectorPage
+    page = NovelFileInspectorPage(ProjectRepository(tmp_path))
+    try:
+        assert page.progress.objectName() == "inspectorScanProgress"
+        assert not page.progress.isTextVisible()
+        page.progress_scan(53, 100)
+        assert page.progress.value() == 53
+        assert "53/100" in page.progress_status.text()
+        assert "53%" in page.progress_status.text()
+        page.progress_scan(1250, 2500)
+        assert "1,250/2,500" in page.progress_status.text()
+        assert "50%" in page.progress_status.text()
+    finally:
+        page.close()

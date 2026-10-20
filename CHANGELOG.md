@@ -1,3 +1,11 @@
+## v5.7.4 — Cleaner stage selection and readable scan progress
+
+- Remove the bright left selection stripe from workflow stage and navigation buttons while retaining active background and keyboard-focus visibility.
+- Make the file-inspector scan progress a compact rounded track without overlaid text.
+- Display the current scanned/total file count and percentage in a separate, readable status label, with clear completion, cancellation and failure states.
+- Keep all translation stages, Clipboard behavior, file inspection and other workflow logic unchanged.
+- Add UI/theme regression tests for both dark and light modes.
+
 ## v5.7.3 — Sidebar synchronization and faster chapter batch preparation
 
 - Align workspace step/file sidebar with the active translation-batch view without invoking COPY STEP.

@@ -206,3 +206,30 @@ def test_reapplying_same_theme_avoids_repolishing_every_open_widget(monkeypatch)
     ManagementActionsMixin.apply_theme(owner)
     assert calls == [application_stylesheet('Dark')]
     assert app.palette().color(QPalette.Window).name() == _DARK['app']
+
+
+def test_active_navigation_and_stages_have_no_bright_left_selection_stripe():
+    for appearance, tokens in (("Dark", _DARK), ("Light", _LIGHT)):
+        stylesheet = application_stylesheet(appearance)
+        for selector in (
+            "QToolButton#navigationItem {",
+            "QToolButton#navigationItem:checked {",
+            'QPushButton#workflowStageButton[workflowActive="true"], QPushButton#vocabularyButton[workflowActive="true"] {',
+        ):
+            rule = stylesheet.split(selector, 1)[1].split("}", 1)[0]
+            assert "border-left:" not in rule
+        # Keep a visible selected background and keyboard focus cues.
+        assert f"background: {tokens['item_selection']}" in stylesheet
+        assert 'QToolButton#navigationItem[keyboardFocus="true"]' in stylesheet
+        assert 'QPushButton#workflowStageButton[keyboardFocus="true"]' in stylesheet
+
+
+def test_inspector_scan_bar_uses_separate_label_and_compact_track():
+    for appearance, tokens in (("Dark", _DARK), ("Light", _LIGHT)):
+        stylesheet = application_stylesheet(appearance)
+        bar = stylesheet.split("QProgressBar#inspectorScanProgress {", 1)[1].split("}", 1)[0]
+        label = stylesheet.split("QLabel#inspectorScanStatus {", 1)[1].split("}", 1)[0]
+        assert "min-height: 12px" in bar
+        assert "max-height: 12px" in bar
+        assert "border-radius: 6px" in bar
+        assert f"color: {tokens['secondary']}" in label

@@ -127,9 +127,9 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QFrame#novelHeader {{ background: {c['surface']}; border-bottom: 1px solid {c['border']}; }}
     QToolButton#navigationBrand {{ color: {c['text']}; background: transparent; border: 0; border-radius: 10px; font-size: 10pt; font-weight: 700; text-align: left; padding: 10px 6px; min-height: 34px; }}
     QToolButton#navigationBrand:hover {{ background: {c['hover']}; }}
-    QToolButton#navigationItem {{ border: 0; border-left: 3px solid transparent; border-radius: 10px; padding: 11px 10px; text-align: left; min-height: 34px; }}
+    QToolButton#navigationItem {{ border: 0; border-radius: 10px; padding: 11px 10px; text-align: left; min-height: 34px; }}
     QToolButton#navigationItem:hover {{ background: {c['hover']}; }}
-    QToolButton#navigationItem:checked {{ background: {c['item_selection']}; border-left: 3px solid {c['accent']}; font-weight: 600; }}
+    QToolButton#navigationItem:checked {{ background: {c['item_selection']}; color: {c['text']}; font-weight: 600; }}
     QToolButton#navigationItem[keyboardFocus="true"] {{ border-bottom: 2px solid {c['focus']}; }}
     QWidget:disabled {{ color: {c['disabled_text']}; }}
     QLabel:disabled, QAbstractButton:disabled, QTabBar::tab:disabled {{ color: {c['disabled_text']}; }}
@@ -207,7 +207,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QListWidget#workflowSteps::item:hover {{ background: {c['hover']}; }}
     QPushButton#workflowStageButton, QPushButton#vocabularyButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 36px; padding: 0 10px; text-align: left; }}
     QPushButton#workflowStageButton:hover, QPushButton#vocabularyButton:hover {{ background: {c['hover']}; }}
-    QPushButton#workflowStageButton[workflowActive="true"], QPushButton#vocabularyButton[workflowActive="true"] {{ background: {c['item_selection']}; border-left: 3px solid {c['secondary']}; font-weight: 600; }}
+    QPushButton#workflowStageButton[workflowActive="true"], QPushButton#vocabularyButton[workflowActive="true"] {{ background: {c['item_selection']}; color: {c['text']}; font-weight: 600; }}
     QPushButton#workflowStageButton[keyboardFocus="true"], QPushButton#vocabularyButton[keyboardFocus="true"] {{ border-bottom: 2px solid {c['focus']}; }}
     QPushButton#copyStepButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 34px; padding: 7px 14px; font-weight: 600; }}
     QPushButton#copyStepButton:hover {{ color: {c['muted']}; background: transparent; text-decoration: none; }}
@@ -216,6 +216,9 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QLabel#editorStatusBar, QLabel#progressStatusBar, QLabel#goalStatusBar, QLabel#contextStatusBar {{ color: {c['status_text']}; background: transparent; border: 0; padding: 3px 9px; min-height: 24px; font-size: 9pt; }}
     QProgressBar#goalProgressStatusBar {{ background: {c['surface2']}; border: 0; border-radius: 0; min-height: 8px; max-height: 8px; }}
     QProgressBar#goalProgressStatusBar::chunk {{ background: {c['accent']}; border-radius: 0; }}
+    QLabel#inspectorScanStatus {{ color: {c['secondary']}; font-size: 10pt; }}
+    QProgressBar#inspectorScanProgress {{ background: {c['surface2']}; border: 0; border-radius: 6px; min-height: 12px; max-height: 12px; }}
+    QProgressBar#inspectorScanProgress::chunk {{ background: {c['accent']}; border-radius: 6px; }}
     QTreeView#fileTree {{ border: 0; padding: 2px; background: {c['surface']}; }}
     QListWidget[keyboardFocus="true"], QTreeWidget[keyboardFocus="true"], QTreeView[keyboardFocus="true"], QTableWidget[keyboardFocus="true"], QTableView[keyboardFocus="true"] {{ outline: 0; border-bottom: 2px solid {c['focus']}; }}
     QListWidget::item, QTreeWidget::item, QTreeView::item {{ color: {c['text']}; min-height: 28px; padding: 4px 7px; margin: 0; border: 0; }}
