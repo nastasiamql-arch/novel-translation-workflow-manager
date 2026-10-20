@@ -290,7 +290,7 @@ class NovelFileInspectorPage(QWidget):
         self.renumber_dialog = QDialog(self)
         self.renumber_dialog.setWindowTitle("จัดเลขบทใหม่ · Preview")
         self.renumber_dialog.resize(780, 550)
-        self.renumber_dialog.setLayout(form)
+        QVBoxLayout(self.renumber_dialog).addWidget(renumber)
 
         history = QWidget()
         hist = QVBoxLayout(history)
@@ -308,8 +308,55 @@ class NovelFileInspectorPage(QWidget):
         self.history_dialog = QDialog(self)
         self.history_dialog.setWindowTitle("ประวัติ / กู้คืน")
         self.history_dialog.resize(720, 400)
-        self.history_dialog.setLayout(hist)
+        QVBoxLayout(self.history_dialog).addWidget(history)
+        actions = QHBoxLayout()
+        for label, handler in (("แก้รายการที่เลือก", lambda: self.repair_headings(True)),
+                               ("แก้เลขหัวบททั้งหมด", lambda: self.repair_headings(False)),
+                               ("จัดเลขบทใหม่ทั้งหมด", self.renumber_dialog.exec)):
+            button = QPushButton(label)
+            button.clicked.connect(handler)
+            actions.addWidget(button)
+        body.addLayout(actions)
         self.refresh_history()
+
+    def open_more(self):
+        menu = QMenu(self)
+        menu.addAction("เกณฑ์ตรวจ", lambda: self.settings_panel.setVisible(not self.settings_panel.isVisible()))
+        menu.addAction("ประวัติ / กู้คืน", self.history_dialog.exec)
+        menu.exec(self.more_button.mapToGlobal(self.more_button.rect().bottomLeft()))
+
+    def repair_headings(self, selected_only=False):
+        if not self.result or (self.worker and self.worker.isRunning()) or (self.write_worker and self.write_worker.isRunning()):
+            return
+        names = {r.name for r in self.selected_files()} if selected_only else None
+        if selected_only and not names:
+            QMessageBox.information(self, "เลือกรายการ", "เลือกไฟล์ก่อน")
+            return
+        plan, blocked = plan_heading_repair(self.result, names)
+        eligible = [r for r in plan.files if r.before is not None and r.after is not None]
+        if not eligible:
+            QMessageBox.information(self, "ไม่พบรายการแก้ได้", "ไม่มีหัวบทที่แก้ได้อย่างปลอดภัย")
+            return
+        examples = "\\n".join(f"{r.original}: {r.before} → {r.after}" for r in eligible[:10])
+        warning = max((len(run) for run in self.result.shifted_heading_runs()), default=0)
+        message = (f"ยืนยันให้ใช้เลขจากชื่อไฟล์เป็นหลัก?\\nแก้ {len(eligible)} ไฟล์ · ข้าม {len(blocked)} ไฟล์\\n"
+                   + (f"พบหัวบทเหลื่อมต่อเนื่อง {warning} บท\\n" if warning else "")
+                   + examples + "\\n\\nจะสร้างโฟลเดอร์ผลลัพธ์ใหม่ ต้นฉบับไม่เปลี่ยน")
+        if QMessageBox.question(self, "ตัวอย่างก่อนแก้", message,
+                                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        source = Path(plan.source)
+        base = source.stem + "-inspected"
+        destination = source.with_name(base)
+        index = 2
+        while destination.exists():
+            destination = source.with_name(f"{base}-{index}")
+            index += 1
+        self.plan = plan
+        self.write_worker = WriteWorker(plan, str(destination), False, self.store.root / "backups")
+        self.write_worker.completed.connect(self.write_done)
+        self.write_worker.failed.connect(self.write_failed)
+        self.write_worker.start()
 
     def choose_folder(self):
         path = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์ TXT", self.source or str(Path.home()))
@@ -345,6 +392,7 @@ class NovelFileInspectorPage(QWidget):
         self.model.reset_rows([])
         self.text.clear()
         self.apply.setEnabled(False)
+        self.start_scan()
 
     def start_scan(self):
         if self.worker and self.worker.isRunning():
