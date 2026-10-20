@@ -146,6 +146,7 @@ class NovelFileInspectorPage(QWidget):
         self.worker = None
         self.write_worker = None
         self.source, self.kind = "", "folder"
+        self.pending_source = None
         self._setup_ui()
 
     def _setup_ui(self):
@@ -384,9 +385,14 @@ class NovelFileInspectorPage(QWidget):
             self.set_source(path, "folder")
 
     def set_source(self, path, kind):
-        if (self.worker and self.worker.isRunning()) or (self.write_worker and self.write_worker.isRunning()):
-            QMessageBox.warning(self, "กำลังตรวจสอบ", "รอให้การทำงานปัจจุบันสิ้นสุดก่อนเปลี่ยนแหล่งไฟล์")
+        if self.write_worker and self.write_worker.isRunning():
+            QMessageBox.warning(self, "กำลังบันทึก", "ยังไม่สามารถเปลี่ยนโฟลเดอร์ได้")
             return
+        if self.worker and self.worker.isRunning():
+            self.pending_source = (str(path), kind)
+            self.worker.cancel()
+            return
+        self.pending_source = None
         self.source, self.kind = str(path), kind
         self.source_label.setText(f"{kind.upper()}: {path}")
         self.result = None
@@ -428,12 +434,16 @@ class NovelFileInspectorPage(QWidget):
     def finish_worker(self):
         self.scan_button.setEnabled(True)
         self.cancel_button.setEnabled(False)
+        if self.pending_source is not None:
+            path, kind = self.pending_source
+            self.pending_source = None
+            self.set_source(path, kind)
 
     def scan_failed(self, message):
         QMessageBox.warning(self, "ตรวจสอบไม่สำเร็จ", message)
 
     def scan_done(self, result):
-        if result.cancelled:
+        if result.cancelled or self.pending_source is not None:
             self.detail.setText("ยกเลิกการตรวจแล้ว ผลลัพธ์บางส่วนไม่ได้บันทึก")
             return
         self.set_result(result)
