@@ -1370,6 +1370,12 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
         self._show_utility_page("progress", "ความคืบหน้าการแปล", create_dashboard)
 
+    def novel_inspector_dialog(self):
+        """Standalone inspector; does not change translation stages."""
+        from .novel_file_inspector_page import NovelFileInspectorPage
+        self._show_utility_page("novel-inspector", "ตรวจสอบไฟล์นิยาย",
+                                lambda: NovelFileInspectorPage(self.repo, self))
+
     def settings_dialog(self):
         if self._settings_page_state is None:
             self._build_settings_page()
@@ -2207,6 +2213,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.return_from_utility_page()
         elif key == "progress": self.translation_dashboard()
         elif key == "groups": self.groups_dialog()
+        elif key == "novel-inspector": self.novel_inspector_dialog()
         elif key == "settings": self.settings_dialog()
         self._sync_navigation()
 
@@ -2214,7 +2221,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         page = self.main_pages.currentWidget()
         key = "library" if page is self.library_page else "workspace"
         if page is self.utility_page:
-            key = {"progress":"progress", "groups":"groups", "settings":"settings"}.get(self._active_utility_page, "workspace")
+            key = {"progress":"progress", "groups":"groups", "settings":"settings", "novel-inspector":"novel-inspector"}.get(self._active_utility_page, "workspace")
         self.navigation.select(key)
         # Keep the native window titlebar and menu, without a custom title strip.
         self.brand_toolbar.hide()
@@ -4207,6 +4214,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             timer.stop()
         workers = [self._update_check_worker, self._update_download_worker]
         workers.extend(self._history_workers)
+        inspector_page = self._utility_pages.get("novel-inspector")
+        if inspector_page is not None:
+            workers.extend([inspector_page.worker, inspector_page.write_worker])
         for worker in workers:
             if worker and worker.isRunning():
                 worker.requestInterruption()
