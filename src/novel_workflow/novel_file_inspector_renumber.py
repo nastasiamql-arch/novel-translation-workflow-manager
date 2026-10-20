@@ -84,6 +84,35 @@ def plan_renumber(result: Inspection, start: int = 1, padding: int = 4,
     return RenumberPlan(result.source, result.kind, staged, start, padding, change_heading)
 
 
+
+def plan_heading_repair(result: Inspection, names: set[str] | None = None) -> tuple[RenumberPlan, dict[str, str]]:
+    """Plan filename-authoritative heading edits, preserving all other files."""
+    selected = set(names) if names is not None else None
+    rows = [r for r in result.files if not r.virtual]
+    blocked: dict[str, str] = {}
+    planned = []
+    for row in rows:
+        reason = ""
+        if selected is not None and row.name not in selected:
+            reason = "ไม่ได้เลือก"
+        elif row.error or row.review_stale or not row.fingerprint:
+            reason = row.error or "ไฟล์เปลี่ยนหรือยังตรวจไม่ได้"
+        elif row.chapter is None:
+            reason = "ชื่อไฟล์ไม่มีเลขบทที่แน่นอน"
+        elif row.heading is None:
+            reason = "ไม่พบหัวบทที่แก้ได้อย่างแน่นอน"
+        elif row.heading == row.chapter:
+            reason = "เลขหัวบทตรงแล้ว"
+        if reason:
+            blocked[row.name] = reason
+        planned.append(PlannedFile(row.name, row.name, row.fingerprint,
+                                   row.heading if not reason else None,
+                                   row.chapter if not reason else None, row.encoding))
+    if not planned:
+        raise ValueError("ไม่มีไฟล์ TXT ให้แก้")
+    return RenumberPlan(result.source, result.kind, planned, 1, 4, True), blocked
+
+
 def _prepare(plan: RenumberPlan) -> list[tuple[PlannedFile, bytes]]:
     output = []
     for row in plan.files:
@@ -92,7 +121,7 @@ def _prepare(plan: RenumberPlan) -> list[tuple[PlannedFile, bytes]]:
             raise ValueError(f"Source changed since inspection: {row.original}")
         if row.target is None:
             continue
-        if plan.change_heading:
+        if plan.change_heading and row.before is not None and row.after is not None:
             data = update_heading(data, row.encoding, row.before, row.after)
         output.append((row, data))
     return output
@@ -167,7 +196,7 @@ def execute_new(plan: RenumberPlan, target: str | Path) -> dict:
         finally:
             if scratch.exists():
                 shutil.rmtree(scratch)
-    return {"mode": "new", "output": str(target), "changed": sum(r.original != r.target for r, _ in payloads),
+    return {"mode": "new", "output": str(target), "changed": sum(r.original != r.target or (plan.change_heading and r.before is not None and r.after is not None and r.before != r.after) for r, _ in payloads),
             "excluded": sum(r.target is None for r in plan.files)}
 
 
@@ -238,7 +267,7 @@ def execute_in_place(plan: RenumberPlan, backup_root: str | Path) -> dict:
         journal["result_fingerprints"] = {row.target: sha256(data).hexdigest() for row, data in payloads}
         _write_journal(backup / "journal.json", journal)
         return {"mode": "in_place", "backup": str(backup), "id": ident,
-                "changed": sum(row.original != row.target for row, _ in payloads),
+                "changed": sum(row.original != row.target or (plan.change_heading and row.before is not None and row.after is not None and row.before != row.after) for row, _ in payloads),
                 "excluded": sum(row.target is None for row in plan.files)}
     except Exception:
         # Incomplete operations never silently claim success; backup persists.
