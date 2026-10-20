@@ -353,6 +353,14 @@ class NovelFileInspectorPage(QWidget):
         if QMessageBox.question(self, "ตัวอย่างก่อนแก้", message,
                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
+        if self.bulk_in_place:
+            if plan.kind != "folder":
+                QMessageBox.warning(self, "รูปแบบไม่รองรับ", "แก้ต้นฉบับจริงรองรับเฉพาะโฟลเดอร์")
+                return
+            if QMessageBox.warning(self, "ยืนยันการแก้ไฟล์ต้นฉบับ",
+                                   "ระบบจะสร้าง Backup และ Transaction Journal ก่อนแก้ไฟล์จริง ยืนยันอีกครั้ง?",
+                                   QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+                return
         source = Path(plan.source)
         base = source.stem + "-inspected"
         destination = source.with_name(base)
@@ -361,7 +369,8 @@ class NovelFileInspectorPage(QWidget):
             destination = source.with_name(f"{base}-{index}")
             index += 1
         self.plan = plan
-        self.write_worker = WriteWorker(plan, str(destination), False, self.store.root / "backups")
+        self.write_worker = WriteWorker(plan, None if self.bulk_in_place else str(destination),
+                                        self.bulk_in_place, self.store.root / "backups")
         self.write_worker.completed.connect(self.write_done)
         self.write_worker.failed.connect(self.write_failed)
         self.write_worker.finished.connect(self.post_write_rescan)
