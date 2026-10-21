@@ -87,7 +87,8 @@ def test_translation_step_real_chapter_heading_not_confused_with_lesson(tmp_path
     selected = load_translation_source("step", path=source)
     assert [chapter.number for chapter in selected.chapters] == [1, 3, 4]
     assert lesson.encode("utf-8") in selected.chapters[1].content
-    assert b"".join(ch.content for ch in selected.chapters).decode("utf-8") == original
+    # Windows write_text can translate LF into CRLF; preserve actual source bytes.
+    assert b"".join(ch.content for ch in selected.chapters) == source.read_bytes()
     assert source.read_text(encoding="utf-8") == original
 
 
