@@ -319,3 +319,52 @@ def test_paste_in_middle_does_not_add_a_newline():
     mime = QMimeData(); mime.setText('pasted')
     editor.insertFromMimeData(mime)
     assert editor.toPlainText() == 'before pastedafter'
+
+
+@pytest.mark.parametrize("count", [1, 10, 20])
+def test_rapid_paste_preserves_chapter_boundaries_and_undo(tmp_path, count):
+    app()
+    export = panel(tmp_path)
+    editor = export.editor
+    editor.setProperty("autoNewlineOnPaste", False)
+    for index in range(count):
+        mime = QMimeData()
+        mime.setText(f"บทที่ {475 + index} 内容ไทย中文")
+        editor.insertFromMimeData(mime)
+    expected = "\\n".join(f"บทที่ {475 + index} 内容ไทย中文" for index in range(count))
+    assert editor.toPlainText() == expected
+    for _ in range(count):
+        editor.undo()
+    assert editor.toPlainText() == ""
+    for _ in range(count):
+        editor.redo()
+    assert editor.toPlainText() == expected
+
+
+def test_rapid_paste_at_explicit_midline_never_inserts_separator(tmp_path):
+    app()
+    editor = panel(tmp_path).editor
+    editor.setProperty("autoNewlineOnPaste", False)
+    editor.setPlainText("ABCD")
+    cursor = editor.textCursor()
+    cursor.setPosition(2)
+    editor.setTextCursor(cursor)
+    mime = QMimeData(); mime.setText("中文ไทย")
+    editor.insertFromMimeData(mime)
+    assert editor.toPlainText() == "AB中文ไทยCD"
+    editor.undo()
+    assert editor.toPlainText() == "ABCD"
+
+
+def test_txt_export_and_file_editor_paste_boundary_without_extra_blank_lines(tmp_path):
+    app()
+    path = tmp_path / "WSTContext.md"
+    path.write_text("", encoding="utf-8")
+    tabs = EditorTabs()
+    editor = tabs.open_file(path)
+    for text in ("บทที่ 474\n正文", "บทที่ 475\nภาษาไทย"):
+        mime = QMimeData(); mime.setText(text)
+        editor.insertFromMimeData(mime)
+    assert editor.toPlainText() == "บทที่ 474\n正文\nบทที่ 475\nภาษาไทย\n"
+    assert tabs.save_editor(editor)
+    assert path.read_text(encoding="utf-8") == editor.toPlainText()

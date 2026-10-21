@@ -415,6 +415,10 @@ class WorkspacePage(QWidget):
         self.retranslation_button.setText("ย้อนแปลจาก Context")
         self.retranslation_button.setToolTip("ตรวจหัวบทใน Context และดูตัวอย่างช่วงที่จะกลับไปแปลใหม่")
         self.retranslation_button.clicked.connect(lambda: self.owner.review_context_retranslation(self.profile_id))
+        self.retranslation_undo_button = QToolButton(self.editor_header)
+        self.retranslation_undo_button.setObjectName("undoContextRetranslationButton")
+        self.retranslation_undo_button.setText("คืนสถานะย้อนแปล")
+        self.retranslation_undo_button.clicked.connect(lambda: self.owner.undo_context_retranslation(self.profile_id))
         self.update_context_button = QToolButton(self.editor_header)
         self.update_context_button.setText("Export")
         self.update_context_button.setToolTip("Export Translator to TXT and update Context")
@@ -432,6 +436,7 @@ class WorkspacePage(QWidget):
         self.chapter_number_button.hide()
         header_layout.addWidget(self.chapter_number_button)
         header_layout.addWidget(self.retranslation_button)
+        header_layout.addWidget(self.retranslation_undo_button)
         header_layout.addWidget(self.update_context_button)
         self.export_status_label = QLabel("Export Status Unknown", self.editor_header)
         self.export_status_label.setObjectName("exportStatusLabel")
@@ -2018,6 +2023,28 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         to_watch = list(files | directories)
         if to_watch:
             watcher.addPaths(to_watch)
+
+    def undo_context_retranslation(self, profile_id):
+        try:
+            profile = self.repo.load_profile(profile_id)
+            resets = [r for r in profile.translation_retranslation_resets
+                      if isinstance(r, dict) and r.get("active") is True]
+            if not resets:
+                QMessageBox.information(self, "คืนสถานะย้อนแปล", "ไม่มีการย้อนแปลที่ต้องคืนสถานะ")
+                return
+            last = resets[-1]
+            if QMessageBox.question(
+                self, "คืนสถานะการนับบท",
+                f"คืนสถานะก่อนย้อนแปลจากบท {last['start_chapter']}?\n"
+                "ประวัติและไฟล์ Export ทั้งหมดยังคงอยู่",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            ) != QMessageBox.Yes:
+                return
+            if undo_retranslation(profile, last.get("reset_id")):
+                self.repo.save_profile(profile)
+                self.refresh_translation_progress()
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "คืนสถานะไม่สำเร็จ", str(exc))
 
     def review_context_retranslation(self, profile_id):
         """Explicit preview and confirmation; Context never resets Export by itself."""
