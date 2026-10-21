@@ -1026,10 +1026,12 @@ class EditorTabs(QWidget):
         return bool(editor.property("documentDirty"))
 
     def _focus_clicked_tab(self, index):
-        # Focus synchronously when the clicked tab is already current. For a
-        # different tab, _handle_tab_change applies focus on currentChanged.
+        # Qt finishes selecting a different tab after tabBarClicked. Preserve
+        # the existing post-selection focus/caret logic for both click paths.
         if index == self.tabs.currentIndex():
             self._focus_tab_editor(index)
+        else:
+            QTimer.singleShot(0, lambda i=index: self._focus_tab_editor(i))
 
     def _focus_tab_editor(self, index):
         if (index < 0 or self.tabs.currentIndex() != index
