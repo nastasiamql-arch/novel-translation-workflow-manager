@@ -1,3 +1,10 @@
+## v5.8.2 — Explain duplicate source headings with exact locations
+
+- Show the real resolved TXT source path when checking translation batch chapters, including a file selected from the translation workflow step.
+- Report both line numbers and actual heading excerpts when the chapter-heading detector finds a repeated number, even across different Chinese/English heading styles.
+- Make multiline diagnostics wrap and be text-selectable in the translation batch view; preserve source bytes, copy settings, batch progression and clipboard state.
+- Add parsing, source-resolution and background-UI regression tests for chapter 0003, including a valid one-occurrence case.
+
 ## v5.8.1 — Prevent overlapping Thai text in the editor header
 
 - Fix two unparented-by-layout Context retranslation controls introduced in v5.8.0. Both actions are now backed directly by the **...** menu instead of floating QToolButtons that could paint over one another and the editor header.

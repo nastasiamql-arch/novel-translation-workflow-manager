@@ -54,6 +54,27 @@ def test_missing_and_duplicate():
         load_translation_source("paste", text="ห้ามทิ้งข้อมูล\n" + novel_text(1, 2))
 
 
+def test_duplicate_combined_source_identifies_real_file_and_both_lines(tmp_path):
+    source = tmp_path / "CMR.txt"
+    original = "第1章 开始\n内容\n第3章 干仗\n正文\nChapter 3 Old notes\n后续"
+    source.write_text(original, encoding="utf-8")
+    with pytest.raises(ValueError) as error:
+        load_translation_source("step", path=source)
+    message = str(error.value)
+    assert f"ไฟล์ที่ตรวจ: {source}" in message
+    assert "0003" in message
+    assert "ครั้งแรก บรรทัด 3: 第3章 干仗" in message
+    assert "ครั้งที่สอง บรรทัด 5: Chapter 3 Old notes" in message
+    assert source.read_text(encoding="utf-8") == original
+
+
+def test_single_chapter_three_is_not_treated_as_duplicate(tmp_path):
+    source = tmp_path / "CMR.txt"
+    source.write_text("第2章 前言\n正文\n第3章 干仗\n正文", encoding="utf-8")
+    selected = load_translation_source("file", path=source)
+    assert [chapter.number for chapter in selected.chapters] == [2, 3]
+
+
 def test_resplit_does_not_destroy_source():
     source = load_translation_source("paste", text=novel_text(1, 30))
     assert len(translation_groups(source, 5)) == 6

@@ -66,6 +66,16 @@ def test_100_pasted_chapters_preserve_all_original_characters(tmp_path):
     assert len(make_chapter_batches(scan_chapter_files(tmp_path), 5)) == 20
 
 
+def test_pasted_duplicate_reports_the_two_real_heading_lines():
+    text = "第1章 前言\n内容\n第3章 干仗\n正文\n第三章 新标题\n正文"
+    with pytest.raises(ValueError) as error:
+        parse_pasted_chapters(text)
+    message = str(error.value)
+    assert "0003" in message
+    assert "ครั้งแรก บรรทัด 3: 第3章 干仗" in message
+    assert "ครั้งที่สอง บรรทัด 5: 第三章 新标题" in message
+
+
 def test_heading_formats_chinese_numbers_thai_english_and_gaps():
     text = "第一章 起始\n甲\n\n第十二章 中间\n乙\n\nบทที่ 13 ทดสอบ\nค\n\nChapter 14 Last\nD"
     chapters = parse_pasted_chapters(text)

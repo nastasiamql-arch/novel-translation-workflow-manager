@@ -130,6 +130,9 @@ class TranslationBatchPage(QWidget):
 
         self.path_label = QLabel("")
         self.path_label.setObjectName("mutedLabel")
+        self.path_label.setTextFormat(Qt.PlainText)
+        self.path_label.setWordWrap(True)
+        self.path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         outer.addWidget(self.path_label)
         self.pasted_text = QPlainTextEdit()
         self.pasted_text.setObjectName("translationBatchDraft")
@@ -168,6 +171,9 @@ class TranslationBatchPage(QWidget):
 
         self.summary = QLabel("กำลังเตรียมรายการบท…")
         self.summary.setObjectName("mutedLabel")
+        self.summary.setTextFormat(Qt.PlainText)
+        self.summary.setWordWrap(True)
+        self.summary.setTextInteractionFlags(Qt.TextSelectableByMouse)
         outer.addWidget(self.summary)
         self.scroll = QScrollArea()
         self.scroll.setObjectName("translationBatchScroll")
@@ -207,7 +213,10 @@ class TranslationBatchPage(QWidget):
         self.source_picker.setVisible(mode == "step")
         self.browse.setVisible(mode in ("file", "folder"))
         self._populate_sources() if mode == "step" else None
-        self.path_label.setText(self.state.get("path", "") if not is_paste else "Draft เฉพาะนิยายเรื่องนี้")
+        self.path_label.setText(
+            "Draft เฉพาะนิยายเรื่องนี้" if is_paste
+            else self.state.get("path", "") if mode in ("file", "folder") else ""
+        )
         self._source = None
         self._groups = ()
         self._clear_rows()
@@ -294,6 +303,11 @@ class TranslationBatchPage(QWidget):
             self.summary.setText(str(exc))
             return
         text = self.pasted_text.toPlainText() if mode == "paste" else None
+        if mode != "paste" and path:
+            self.path_label.setText(f"ต้นฉบับที่ตรวจ: {path}")
+            self.path_label.setToolTip(str(path))
+        else:
+            self.path_label.setToolTip("")
         self.summary.setText("กำลังตรวจต้นฉบับ…")
         self._source = None
         self._groups = ()
@@ -327,7 +341,7 @@ class TranslationBatchPage(QWidget):
             self._source = None
             self._groups = ()
             self._clear_rows()
-            self.summary.setText("ตรวจต้นฉบับไม่สำเร็จ: " + reason)
+            self.summary.setText("ตรวจต้นฉบับไม่สำเร็จ:\n" + reason)
 
     def _load_finished(self):
         worker = self._load_worker

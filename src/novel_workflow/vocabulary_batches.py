@@ -177,12 +177,20 @@ def parse_pasted_chapters(text: str) -> tuple[PastedChapter, ...]:
         raise ValueError("พบเกิน 5,000 บท กรุณาแบ่งข้อความก่อน")
     if text[:matches[0][2]].strip():
         raise ValueError("พบเนื้อหาก่อนหัวบทแรก กรุณาตรวจและแยกข้อความส่วนนั้นก่อนบันทึก")
-    seen = set()
+    seen: dict[int, tuple[int, str]] = {}
     chapters = []
     for index, (number, title, begin, lineno, header) in enumerate(matches):
         if number in seen:
-            raise ValueError(f"พบหัวบทเลข {number:04d} ซ้ำ กรุณาตรวจข้อความต้นฉบับ")
-        seen.add(number)
+            first_line, first_heading = seen[number]
+            first_excerpt = first_heading[:160] + ("…" if len(first_heading) > 160 else "")
+            second_excerpt = header[:160] + ("…" if len(header) > 160 else "")
+            raise ValueError(
+                f"พบหัวบทเลข {number:04d} ซ้ำจากบรรทัดที่โปรแกรมอ่านเป็นหัวบท:\n"
+                f"ครั้งแรก บรรทัด {first_line}: {first_excerpt}\n"
+                f"ครั้งที่สอง บรรทัด {lineno}: {second_excerpt}\n"
+                "หากบรรทัดใดเป็นเนื้อเรื่อง ไม่ใช่หัวบทจริง กรุณาตรวจตำแหน่งนั้นในต้นฉบับ"
+            )
+        seen[number] = (lineno, header)
         # Include leading whitespace in first chapter; no pasted content is lost.
         first = 0 if index == 0 else begin
         end = matches[index + 1][2] if index + 1 < len(matches) else len(text)

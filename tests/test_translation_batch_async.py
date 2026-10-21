@@ -4,6 +4,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from novel_workflow.models import NovelProfile
@@ -44,4 +45,31 @@ def test_translation_batch_copy_uses_background_worker_and_exact_files(tmp_path)
             page._load_worker.wait(20000)
         if page._copy_worker and page._copy_worker.isRunning():
             page._copy_worker.wait(20000)
+        page.close()
+
+
+def test_translation_batch_error_shows_actual_source_and_duplicate_locations(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path / "repo")
+    profile = NovelProfile()
+    source = tmp_path / "CMR.txt"
+    contents = "第1章 开始\n正文\n第3章 干仗\n正文\n第三章 再次出现\n正文"
+    source.write_text(contents, encoding="utf-8")
+    page = TranslationBatchPage(repo, lambda: profile, object(), {
+        "mode": "file", "path": str(source), "size": 5
+    }, lambda _state: None, lambda: None)
+    try:
+        assert page._load_worker is not None
+        assert page._load_worker.wait(20000)
+        app.processEvents()
+        assert str(source) in page.path_label.text()
+        assert str(source) in page.summary.text()
+        assert "บรรทัด 3: 第3章 干仗" in page.summary.text()
+        assert "บรรทัด 5: 第三章 再次出现" in page.summary.text()
+        assert page.summary.textInteractionFlags() & Qt.TextSelectableByMouse
+        assert not page._groups
+        assert source.read_text(encoding="utf-8") == contents
+    finally:
+        if page._load_worker and page._load_worker.isRunning():
+            page._load_worker.wait(20000)
         page.close()

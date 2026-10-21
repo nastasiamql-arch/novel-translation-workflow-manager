@@ -86,7 +86,11 @@ def load_translation_source(mode: str, *, path: str | Path | None = None,
         contents = source.read_bytes().decode("utf-8-sig")
     except UnicodeError as exc:
         raise ValueError(f"ต้นฉบับต้องเป็น UTF-8: {source.name}") from exc
-    return TranslationSource(_split_text(contents), (signed,), raw_text=None)
+    try:
+        chapters = _split_text(contents)
+    except ValueError as exc:
+        raise ValueError(f"ไฟล์ที่ตรวจ: {source}\n{exc}") from exc
+    return TranslationSource(chapters, (signed,), raw_text=None)
 
 
 def translation_groups(source: TranslationSource, size: int = 5):
