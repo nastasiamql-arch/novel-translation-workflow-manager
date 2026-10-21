@@ -20,11 +20,12 @@ from PySide6.QtWidgets import (
 
 from .models import LaunchTarget, StepFile, migrate_legacy_basic_workflow, migrate_legacy_vocabulary_step
 from .auto_chapter_review import (
-    is_original_source_document, scan_original_chapter_issues,
+    is_original_source_document, is_auxiliary_document, scan_original_chapter_issues,
 )
 from .translation_progress import (
     daily_chapter_count, goal_progress, latest_context_chapter, completion_label, completion_tooltip, completed_chapter_count,
     sync_profile_context, read_context_chapter, reset_goal_progress,
+    retranslation_preview, confirm_retranslation, undo_retranslation, completed_chapters,
 )
 from .ui import ManagementActionsMixin
 from .shell_components import NovelHeader, NavigationSidebar, ElidingLabel, EditorToolbar, MainPageStack
@@ -409,6 +410,11 @@ class WorkspacePage(QWidget):
         self.context_button.setToolTip("เลือกไฟล์ Context ที่ติดตามความคืบหน้า")
         self.context_button.clicked.connect(self._choose_context)
         self.context_button.hide()
+        self.retranslation_button = QToolButton(self.editor_header)
+        self.retranslation_button.setObjectName("contextRetranslationButton")
+        self.retranslation_button.setText("ย้อนแปลจาก Context")
+        self.retranslation_button.setToolTip("ตรวจหัวบทใน Context และดูตัวอย่างช่วงที่จะกลับไปแปลใหม่")
+        self.retranslation_button.clicked.connect(lambda: self.owner.review_context_retranslation(self.profile_id))
         self.update_context_button = QToolButton(self.editor_header)
         self.update_context_button.setText("Export")
         self.update_context_button.setToolTip("Export Translator to TXT and update Context")
@@ -425,6 +431,7 @@ class WorkspacePage(QWidget):
         self.chapter_number_button.clicked.connect(self.inspect_chapter_numbers)
         self.chapter_number_button.hide()
         header_layout.addWidget(self.chapter_number_button)
+        header_layout.addWidget(self.retranslation_button)
         header_layout.addWidget(self.update_context_button)
         self.export_status_label = QLabel("Export Status Unknown", self.editor_header)
         self.export_status_label.setObjectName("exportStatusLabel")
@@ -597,7 +604,7 @@ class WorkspacePage(QWidget):
             path = Path(path).expanduser().resolve()
             if not path.is_file() or path.suffix.casefold() not in {".txt", ".md", ".markdown"}:
                 return False
-            if path.name.casefold().endswith("translator.txt"):
+            if is_auxiliary_document(path):
                 return False
             profile = next(
                 (item for item in self.owner.repo.list_profiles() if item.id == self.profile_id),
@@ -2012,6 +2019,63 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if to_watch:
             watcher.addPaths(to_watch)
 
+    def review_context_retranslation(self, profile_id):
+        """Explicit preview and confirmation; Context never resets Export by itself."""
+        try:
+            profile = self.repo.load_profile(profile_id)
+            if not profile.context_path:
+                QMessageBox.information(self, "ตรวจ Context", "เลือกไฟล์ Context ของเรื่องนี้ก่อน")
+                return
+            path = Path(profile.context_path).expanduser().resolve()
+            if not path.is_file():
+                QMessageBox.warning(self, "ตรวจ Context", "ไม่พบไฟล์ Context ที่เลือก")
+                return
+            workspace = self.workspaces.get(profile_id)
+            if workspace:
+                for index in range(workspace.editor.tabs.count()):
+                    editor = workspace.editor.tabs.widget(index)
+                    if workspace.editor._path(editor) == path and workspace.editor._dirty(editor):
+                        if not workspace.editor.save_editor(editor, quiet=True):
+                            QMessageBox.warning(self, "ตรวจ Context", "บันทึก Context ไม่สำเร็จ")
+                            return
+            text = path.read_text(encoding="utf-8-sig")
+            chapter = latest_context_chapter(text)
+            if chapter is None:
+                value, ok = QInputDialog.getInt(
+                    self, "ยืนยันเลขบท", "ไม่พบหัวบทที่ชัดเจนใน Context\nกรอกบทล่าสุดด้วยตัวเอง:",
+                    value=1, min=1, max=2147483646)
+                if not ok:
+                    return
+                chapter = value
+            start = chapter + 1
+            preview = retranslation_preview(profile, start)
+            if not preview['chapters']:
+                QMessageBox.information(self, "ย้อนแปลจาก Context",
+                                        f"Context ล่าสุด: บท {chapter}\nไม่มีบทที่ต้องยกเลิกการนับ")
+                return
+            display = (
+                f"Context ล่าสุด: บท {chapter}\nเสนอเริ่มแปล: บท {start}\n"
+                f"Export เดิมสูงสุด: บท {preview['latest_export']}\n"
+                f"ช่วงที่ได้รับผลกระทบ: บท {preview['chapters'][0]}–{preview['chapters'][-1]}\n"
+                f"จำนวน: {preview['count']} บท\n\n"
+                "ยกเลิกการนับเฉพาะบทเหล่านี้ โดยไม่ลบไฟล์และประวัติ Export?"
+            )
+            if QMessageBox.question(
+                self, "ยืนยันย้อนแปลจาก Context", display,
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            ) != QMessageBox.Yes:
+                return
+            fresh = self.repo.load_profile(profile_id)
+            record = confirm_retranslation(fresh, start, context_chapter=chapter,
+                                           reason="Context-based retranslation")
+            if record is not None:
+                self.repo.save_profile(fresh)
+                self.refresh_translation_progress()
+                self.statusBar().showMessage(
+                    f"เริ่มแปลใหม่บท {start} · ยกเลิกการนับ {preview['count']} บท", 8000)
+        except (OSError, ValueError, UnicodeError) as exc:
+            QMessageBox.warning(self, "ย้อนแปลไม่สำเร็จ", str(exc))
+
     def refresh_translation_progress(self):
         """Refresh confirmed Export activity plus informational Context state."""
         if any(getattr(listing,"_dragging",False) for listing in (self.profile_cards,self.profiles)):
@@ -3095,7 +3159,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
         pending = getattr(workspace, "auto_chapter_review_paths", set())
         blocked = getattr(workspace, "auto_chapter_review_failed_paths", set())
-        candidates = set(pending) | set(blocked)
+        candidates = {path for path in set(pending) | set(blocked)
+                      if self._auto_original_source_eligible(profile, workspace, path)}
         editors = {}
         for index in range(workspace.editor.tabs.count()):
             editor = workspace.editor.tabs.widget(index)
@@ -3108,6 +3173,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if needs_review and self._auto_original_source_eligible(profile, workspace, path):
                 candidates.add(path)
             elif (path in attached and workspace._source_file_eligible(path)
+                    and not is_auxiliary_document(path)
                     and path.name.casefold() != "novel.txt"
                     and scan_original_chapter_issues(editor.toPlainText())[0]
                     and not self._auto_original_source_eligible(profile, workspace, path)):

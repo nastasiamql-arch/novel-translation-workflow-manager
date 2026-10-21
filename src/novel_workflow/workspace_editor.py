@@ -556,6 +556,9 @@ class CodeEditor(QPlainTextEdit):
         self.clean_empty_lines = False
         self.compact_pasted_empty_lines = False
         self.destructive_paste_callback = None
+        self._paste_boundary_pending = False
+        self._paste_in_progress = False
+        self.textChanged.connect(self._clear_external_paste_boundary)
         self.appearance = appearance
         self.colors = editor_colors(appearance)
         self.setObjectName("codeEditor")
@@ -597,11 +600,17 @@ class CodeEditor(QPlainTextEdit):
         self.update_line_number_area_width()
         self.highlight_current_line()
 
+    def _clear_external_paste_boundary(self):
+        if not self._paste_in_progress:
+            self._paste_boundary_pending = False
+
     def _mark_user_caret_positioned(self):
         self._user_positioned_caret = True
+        self._paste_boundary_pending = False
 
     def mousePressEvent(self, event):
         self._user_positioned_caret = True
+        self._paste_boundary_pending = False
         super().mousePressEvent(event)
 
     def keyPressEvent(self, event):
@@ -610,6 +619,7 @@ class CodeEditor(QPlainTextEdit):
             Qt.Key_Home, Qt.Key_End, Qt.Key_PageUp, Qt.Key_PageDown,
         ) or (event.text() and not (event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)))):
             self._user_positioned_caret = True
+            self._paste_boundary_pending = False
         super().keyPressEvent(event)
 
     def insertFromMimeData(self, source):
@@ -639,15 +649,33 @@ class CodeEditor(QPlainTextEdit):
                     text = '\n' + text
                 if source.text()[-1:] in '\n\r\u2028\u2029\u0085' and after.positionInBlock() < after.block().length() - 1:
                     text += '\n'
+            # A second immediate paste at the unchanged end cursor must not
+            # join the previous pasted paragraph. Never edit a user-selected
+            # insertion point or change separators within the incoming text.
+            at_end = (not cursor.hasSelection()
+                      and cursor.position() == self.document().characterCount() - 1)
+            prefix = bool(self._paste_boundary_pending and at_end and text
+                          and not LINE_SEPARATOR.match(text)
+                          and cursor.positionInBlock() > 0)
+            self._paste_in_progress = True
             cursor.beginEditBlock()
-            cursor.insertText(text)
-            if (self.property("autoNewlineOnPaste") and text
-                    and not text.endswith(('\n', '\r', '\u2028', '\u2029', '\u0085'))
-                    and cursor.position() == self.document().characterCount() - 1):
-                cursor.insertText('\n')
-                self.setProperty("autoNewlineAtEnd", True)
-            cursor.endEditBlock()
+            try:
+                if prefix:
+                    cursor.insertText('\n')
+                cursor.insertText(text)
+                if (self.property("autoNewlineOnPaste") and text
+                        and not text.endswith(('\n', '\r', '\u2028', '\u2029', '\u0085'))
+                        and cursor.position() == self.document().characterCount() - 1):
+                    cursor.insertText('\n')
+                    self.setProperty("autoNewlineAtEnd", True)
+            finally:
+                cursor.endEditBlock()
+                self._paste_in_progress = False
             self.setTextCursor(cursor)
+            self._paste_boundary_pending = bool(
+                text and cursor.position() == self.document().characterCount() - 1
+                and cursor.positionInBlock() > 0
+            )
         else:
             super().insertFromMimeData(source)
 
@@ -998,9 +1026,10 @@ class EditorTabs(QWidget):
         return bool(editor.property("documentDirty"))
 
     def _focus_clicked_tab(self, index):
-        # Tab clicks are delivered before Qt completes the selection change.
-        # Defer focus so no tab bar/button consumes the next paste shortcut.
-        QTimer.singleShot(0, lambda i=index: self._focus_tab_editor(i))
+        # Focus synchronously when the clicked tab is already current. For a
+        # different tab, _handle_tab_change applies focus on currentChanged.
+        if index == self.tabs.currentIndex():
+            self._focus_tab_editor(index)
 
     def _focus_tab_editor(self, index):
         if (index < 0 or self.tabs.currentIndex() != index

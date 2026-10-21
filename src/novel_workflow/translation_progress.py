@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import time
+import uuid
 
 from .models import NovelProfile
 
@@ -106,11 +107,87 @@ def migrate_translation_progress(profile):
 
 
 def confirmed_events(profile):
-    for event in profile.translator_export_events:
+    """Yield effective chapters without altering immutable Export audit entries.
+
+    Each confirmed reset masks only the Export entries existing at the moment
+    the user confirmed it. A subsequent Export can therefore complete a
+    previously masked chapter, even if older Export events span that chapter.
+    """
+    resets = [
+        reset for reset in getattr(profile, 'translation_retranslation_resets', [])
+        if (isinstance(reset, dict) and reset.get('active') is True
+            and type(reset.get('event_count')) is int
+            and type(reset.get('start_chapter')) is int)
+    ]
+    for index, event in enumerate(profile.translator_export_events):
         if (isinstance(event, dict) and event.get('profile_id') == profile.id
                 and event.get('status') == 'committed' and isinstance(event.get('chapters'), list)
                 and all(type(n) is int and 0 < n <= 2_147_483_647 for n in event['chapters'])):
-            yield event
+            chapters = [
+                n for n in event['chapters']
+                if not any(index < reset['event_count'] and n >= reset['start_chapter']
+                           for reset in resets)
+            ]
+            yield {**event, 'chapters': chapters}
+
+
+def retranslation_preview(profile, start_chapter: int) -> dict:
+    """Read-only preview; never infer affected chapters from Context text."""
+    if type(start_chapter) is not int or not 0 < start_chapter <= 2_147_483_647:
+        raise ValueError("เลขบทเริ่มแปลใหม่ไม่ถูกต้อง")
+    affected = sorted(n for n in completed_chapters(profile) if n >= start_chapter)
+    return {
+        'start_chapter': start_chapter,
+        'chapters': affected,
+        'count': len(affected),
+        'latest_export': max(completed_chapters(profile), default=0),
+    }
+
+
+def confirm_retranslation(profile, start_chapter: int, *, context_chapter=None,
+                          reason: str = "") -> dict | None:
+    """Record a reversible, partial reset; preserve all original Export events."""
+    preview = retranslation_preview(profile, start_chapter)
+    if not preview['chapters']:
+        return None
+    if context_chapter is not None and (
+            type(context_chapter) is not int or context_chapter + 1 != start_chapter):
+        raise ValueError("เลขบทจาก Context ไม่ตรงกับจุดเริ่มแปล")
+    previous_baseline = profile.translator_goal_baseline
+    baseline_after = (min(previous_baseline, completed_chapter_count(profile) - preview['count'])
+                      if previous_baseline is not None else None)
+    entry = {
+        'reset_id': uuid.uuid4().hex,
+        'event_count': len(profile.translator_export_events),
+        'start_chapter': start_chapter,
+        'context_chapter': context_chapter,
+        'reason': str(reason),
+        'created_at': datetime.now().astimezone().isoformat(timespec='seconds'),
+        'affected_chapters': preview['chapters'],
+        'active': True,
+        'goal_baseline_before': previous_baseline,
+        'goal_baseline_after': baseline_after,
+    }
+    profile.translation_retranslation_resets.append(entry)
+    profile.translator_goal_baseline = baseline_after
+    return entry
+
+
+def undo_retranslation(profile, reset_id: str | None = None) -> bool:
+    """Restore the latest active reset without touching disk files or events."""
+    active = [
+        record for record in profile.translation_retranslation_resets
+        if isinstance(record, dict) and record.get('active') is True
+    ]
+    if not active:
+        return False
+    record = active[-1]
+    if reset_id is not None and record.get('reset_id') != reset_id:
+        return False
+    record['active'] = False
+    if profile.translator_goal_baseline == record.get('goal_baseline_after'):
+        profile.translator_goal_baseline = record.get('goal_baseline_before')
+    return True
 
 
 def completed_chapters(profile):

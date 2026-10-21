@@ -151,6 +151,7 @@ class NovelProfile:
     translation_checkpoint_path: str | None = None
     translation_daily_activity: dict[str, list[int]] = field(default_factory=dict)
     translator_export_events: list[dict] = field(default_factory=list)
+    translation_retranslation_resets: list[dict] = field(default_factory=list)
     translator_goal_baseline: int | None = None
     translation_progress_version: int = 2
     legacy_translation_progress: dict = field(default_factory=dict)
@@ -203,6 +204,10 @@ class NovelProfile:
             translation_checkpoint_path=d.get("translation_checkpoint_path"),
             translation_daily_activity=_daily_activity_from_dict(d.get("translation_daily_activity", {})),
             translator_export_events=d.get('translator_export_events', []),
+            translation_retranslation_resets=[
+                item for item in d.get('translation_retranslation_resets', [])
+                if isinstance(item, dict)
+            ] if isinstance(d.get('translation_retranslation_resets', []), list) else [],
             translator_goal_baseline=d.get('translator_goal_baseline'),
             translation_progress_version=int(d.get('translation_progress_version', 1)),
             legacy_translation_progress=d.get('legacy_translation_progress', {}),

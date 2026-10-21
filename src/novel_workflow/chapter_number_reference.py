@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 
 from .translation_progress import translator_chapters
+from .auto_chapter_review import is_auxiliary_document
 
 
 @dataclass(frozen=True)
@@ -90,9 +91,7 @@ def matched_translator_path(repo, profile_id: str, source_path: Path):
             return None, "ไม่พบ Novel Profile ที่เลือก"
         if (source_path.name.casefold() == "novel.txt"
                 or source_path.suffix.casefold() not in {".txt", ".md", ".markdown"}
-                or source_path.name.casefold().endswith(
-                    ("translator.txt", "context.txt", "glossary.txt", "vocabulary.txt")
-                )):
+                or is_auxiliary_document(source_path)):
             return None, "แท็บนี้ไม่ใช่ไฟล์ต้นฉบับที่จับคู่กับ Translator"
         bound = {p.id: _bound_paths(repo, p) for p in profiles}
         own = bound[profile_id]

@@ -40,6 +40,20 @@ def review_step_index(profile, active_index, document_path):
         return None
     return next((index for index, step in enumerate(steps) if step.id == review), None)
 
+_AUXILIARY_SUFFIXES = (
+    "translator", "context", "glossary", "vocabulary", "style", "prompt",
+    "reviewed", "notes", "characters", "character", "guideline", "guide",
+    "reference", "references", "terms", "terminology",
+)
+
+
+def is_auxiliary_document(path):
+    """Classify codename-prefixed support files without inspecting their prose."""
+    candidate = Path(path)
+    stem = candidate.stem.casefold()
+    return any(stem.endswith(kind) for kind in _AUXILIARY_SUFFIXES)
+
+
 def is_original_source_document(path, bound_paths, project_source_dir, main_folder=None):
     """Require a source text document owned by this novel; never scan Context/Translator."""
     if path is None:
@@ -48,10 +62,7 @@ def is_original_source_document(path, bound_paths, project_source_dir, main_fold
     name = candidate.name.casefold()
     if candidate.suffix.casefold() not in {".txt", ".md", ".markdown"}:
         return False
-    if any(name.endswith(suffix) for suffix in (
-        "translator.txt", "context.txt", "glossary.txt", "vocabulary.txt",
-        "reviewed.txt", "notes.txt", "prompt.md",
-    )):
+    if is_auxiliary_document(candidate):
         return False
     if candidate in bound_paths:
         return True
