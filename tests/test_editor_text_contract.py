@@ -331,7 +331,7 @@ def test_rapid_paste_preserves_chapter_boundaries_and_undo(tmp_path, count):
         mime = QMimeData()
         mime.setText(f"บทที่ {475 + index} 内容ไทย中文")
         editor.insertFromMimeData(mime)
-    expected = "\\n".join(f"บทที่ {475 + index} 内容ไทย中文" for index in range(count))
+    expected = "\n".join(f"บทที่ {475 + index} 内容ไทย中文" for index in range(count))
     assert editor.toPlainText() == expected
     for _ in range(count):
         editor.undo()
