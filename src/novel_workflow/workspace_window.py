@@ -435,8 +435,6 @@ class WorkspacePage(QWidget):
         self.chapter_number_button.clicked.connect(self.inspect_chapter_numbers)
         self.chapter_number_button.hide()
         header_layout.addWidget(self.chapter_number_button)
-        header_layout.addWidget(self.retranslation_button)
-        header_layout.addWidget(self.retranslation_undo_button)
         header_layout.addWidget(self.update_context_button)
         self.export_status_label = QLabel("Export Status Unknown", self.editor_header)
         self.export_status_label.setObjectName("exportStatusLabel")
@@ -475,6 +473,8 @@ class WorkspacePage(QWidget):
         self.more_menu = QMenu(self)
         for button in (self.pause_profile_button, self.caught_up_profile_button, self.checking_web_profile_button, self.resume_profile_button, self.context_button, reset_font):
             self.more_menu.addAction(button.text(), button.click)
+        self.more_menu.addAction("ตรวจ Context และเริ่มแปลใหม่", self.retranslation_button.click)
+        self.more_menu.addAction("คืนสถานะย้อนแปล", self.retranslation_undo_button.click)
         self.more_menu.addAction("เปิดรายการของเรื่อง", self.owner.launch_profile)
         self.more_menu.addAction("History / กู้ไฟล์", self.show_recovery)
         more = QToolButton(); more.setText("..."); more.setAccessibleName("คำสั่งเพิ่มเติม")
