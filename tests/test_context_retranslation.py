@@ -8,7 +8,7 @@ from novel_workflow.models import NovelProfile
 from novel_workflow.translation_progress import (
     completed_chapters, completed_chapter_count, confirmed_daily_activity,
     confirm_retranslation, daily_chapter_count, goal_progress,
-    retranslation_preview, record_translator_export, undo_retranslation,
+    retranslation_preview, retranslation_context_candidate, record_translator_export, undo_retranslation,
 )
 
 
@@ -68,3 +68,20 @@ def test_partial_event_reset_preserves_unaffected_chapters():
     assert completed_chapters(profile) == {472, 473, 474}
     assert confirmed_daily_activity(profile)["2026-10-20"] == {472, 473, 474}
     assert profile.translator_export_events[0]["chapters"] == [472, 473, 474, 475, 476]
+
+
+def test_context_candidate_ignores_glossary_chapter_examples():
+    text = "# Novel Text\nบทที่ 473 旧文\n正文\nบทที่ 474 完结\n正文\n# Glossary\n第999章 术语示例"
+    assert retranslation_context_candidate(text) == (474, (473, 474))
+
+
+def test_context_candidate_is_ambiguous_when_headings_jump():
+    text = "บทที่ 470\n正文\nบทที่ 474\n正文"
+    chapter, found = retranslation_context_candidate(text)
+    assert chapter is None
+    assert found == (470, 474)
+
+
+def test_context_candidate_no_headings_and_non_novel_sections():
+    assert retranslation_context_candidate("today 474 words") == (None, ())
+    assert retranslation_context_candidate("# Glossary\n第999章 术语示例") == (None, ())

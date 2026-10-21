@@ -25,6 +25,38 @@ def local_day(timestamp: float | None = None) -> str:
     return datetime.fromtimestamp(time.time() if timestamp is None else timestamp).date().isoformat()
 
 
+def retranslation_context_candidate(text: str) -> tuple[int | None, tuple[int, ...]]:
+    """Detect an unambiguous final chapter in the novel portion of Context.
+
+    Auxiliary markdown sections (Glossary, Settings, etc.) are not chapter
+    evidence. A non-sequential set of headings requires explicit user input.
+    """
+    section_heading = re.compile(r"(?im)^[ \t]*#{1,6}[ \t]+(?!บทที่[ \t]*\d|Chapter[ \t]+\d|第[ \t]*\d)([^\n]+)")
+    sections = list(section_heading.finditer(text))
+    novel = []
+    if sections:
+        for i, header in enumerate(sections):
+            heading = header.group(1).strip().casefold()
+            if heading in {"novel text", "story", "story text", "เนื้อหานิยาย", "เนื้อเรื่อง", "正文", "小说正文", "chapter progress", "translation progress", "ความคืบหน้าบท"}:
+                novel.append(text[header.end():sections[i + 1].start() if i + 1 < len(sections) else len(text)])
+        if not novel:
+            return None, ()
+        text = "\n".join(novel)
+    chapters = []
+    for match in _CHAPTER_LINE.finditer(text):
+        first = next((match.group(i) for i in (1, 3, 5) if match.group(i)), None)
+        last = next((match.group(i) for i in (2, 4, 6) if match.group(i)), None)
+        if first:
+            first, last = int(first), int(last or first)
+            if 0 < first <= last <= 2_147_483_647 and last - first <= 100000:
+                chapters.extend(range(first, last + 1))
+    if not chapters:
+        return None, ()
+    distinct = tuple(sorted(set(chapters)))
+    unambiguous = chapters == list(range(chapters[0], chapters[-1] + 1))
+    return (chapters[-1] if unambiguous else None), distinct
+
+
 def latest_context_chapter(text: str) -> int | None:
     sections = list(re.finditer(
         r"(?im)^[ \t]*(?:#{1,6}[ \t]+)?(?:chapter[ \t]+progress|translation[ \t]+progress|ความคืบหน้า(?:การแปล)?|ความคืบหน้าบท|进度|章節進度|章节进度)[ \t]*[:：]?[ \t]*", text))

@@ -25,7 +25,7 @@ from .auto_chapter_review import (
 from .translation_progress import (
     daily_chapter_count, goal_progress, latest_context_chapter, completion_label, completion_tooltip, completed_chapter_count,
     sync_profile_context, read_context_chapter, reset_goal_progress,
-    retranslation_preview, confirm_retranslation, undo_retranslation, completed_chapters,
+    retranslation_preview, confirm_retranslation, undo_retranslation, retranslation_context_candidate, completed_chapters,
 )
 from .ui import ManagementActionsMixin
 from .shell_components import NovelHeader, NavigationSidebar, ElidingLabel, EditorToolbar, MainPageStack
@@ -2066,11 +2066,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                             QMessageBox.warning(self, "ตรวจ Context", "บันทึก Context ไม่สำเร็จ")
                             return
             text = path.read_text(encoding="utf-8-sig")
-            chapter = latest_context_chapter(text)
+            chapter, detected = retranslation_context_candidate(text)
             if chapter is None:
+                found = ", ".join(str(n) for n in detected[-12:]) if detected else "ไม่พบ"
                 value, ok = QInputDialog.getInt(
-                    self, "ยืนยันเลขบท", "ไม่พบหัวบทที่ชัดเจนใน Context\nกรอกบทล่าสุดด้วยตัวเอง:",
-                    value=1, min=1, max=2147483646)
+                    self, "ยืนยันเลขบท",
+                    f"เลขบทใน Context ไม่ชัดเจน (ที่พบ: {found})\nกรอกบทล่าสุดที่ยืนยันด้วยตัวเอง:",
+                    value=detected[-1] if detected else 1, min=1, max=2147483646)
                 if not ok:
                     return
                 chapter = value
