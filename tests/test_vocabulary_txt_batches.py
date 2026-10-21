@@ -76,6 +76,34 @@ def test_pasted_duplicate_reports_the_two_real_heading_lines():
     assert "ครั้งที่สอง บรรทัด 5: 第三章 新标题" in message
 
 
+def test_chapter_only_scanner_ignores_lessons_and_prose_without_losing_text():
+    # Actual user regression: 第三节课的上课铃... is a class period, not 第3章.
+    lesson = "第三节课的上课铃刚刚打响，教室后门的动静就吸引了全班的目光。"
+    original = (
+        "第2章 前章\n前章正文\n"
+        "第3章 干仗\n本章正文\n" + lesson + "\n"
+        "第三節 课堂回忆\n这一段也属于第三章。\n"
+        "第4回 尾声\n故事结束\n"
+    )
+    chapters = parse_pasted_chapters(original)
+    assert [chapter.number for chapter in chapters] == [2, 3, 4]
+    assert lesson in chapters[1].text
+    assert "第三節 课堂回忆" in chapters[1].text
+    assert "".join(chapter.text for chapter in chapters) == original
+
+
+def test_chapter_only_scanner_rejects_prose_looking_like_chapter():
+    original = (
+        "第3章 干仗\n正文\n"
+        "第三章的故事在这一刻才刚刚开始。\n"
+        "第3章 " + "很长的叙述" * 40 + "\n"
+        "第4章 新的一天\n正文"
+    )
+    chapters = parse_pasted_chapters(original)
+    assert [chapter.number for chapter in chapters] == [3, 4]
+    assert "".join(chapter.text for chapter in chapters) == original
+
+
 def test_heading_formats_chinese_numbers_thai_english_and_gaps():
     text = "第一章 起始\n甲\n\n第十二章 中间\n乙\n\nบทที่ 13 ทดสอบ\nค\n\nChapter 14 Last\nD"
     chapters = parse_pasted_chapters(text)

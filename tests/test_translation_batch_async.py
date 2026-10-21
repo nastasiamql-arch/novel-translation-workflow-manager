@@ -12,6 +12,34 @@ from novel_workflow.storage import ProjectRepository
 from novel_workflow.translation_batch_page import TranslationBatchPage
 
 
+def test_translation_batch_ignores_lesson_inside_chapter(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path / "repo")
+    profile = NovelProfile()
+    source = tmp_path / "CMR.txt"
+    original = (
+        "第2章 之前\n正文\n第3章 干仗\n正文\n"
+        "第三节课的上课铃刚刚打响，教室后门的动静就吸引了全班的目光。\n"
+        "第4章 完结\n结束"
+    )
+    source.write_text(original, encoding="utf-8")
+    page = TranslationBatchPage(repo, lambda: profile, object(), {
+        "mode": "file", "path": str(source), "size": 5,
+    }, lambda _state: None, lambda: None)
+    try:
+        assert page._load_worker is not None
+        assert page._load_worker.wait(20000)
+        app.processEvents()
+        assert "พร้อมคัดลอก" in page.summary.text()
+        assert len(page._source.chapters) == 3
+        assert page._source.chapters[1].number == 3
+        assert source.read_text(encoding="utf-8") == original
+    finally:
+        if page._load_worker and page._load_worker.isRunning():
+            page._load_worker.wait(20000)
+        page.close()
+
+
 def test_translation_batch_copy_uses_background_worker_and_exact_files(tmp_path):
     app = QApplication.instance() or QApplication([])
     repo = ProjectRepository(tmp_path / "repo")

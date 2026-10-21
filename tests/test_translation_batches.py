@@ -75,6 +75,22 @@ def test_single_chapter_three_is_not_treated_as_duplicate(tmp_path):
     assert [chapter.number for chapter in selected.chapters] == [2, 3]
 
 
+def test_translation_step_real_chapter_heading_not_confused_with_lesson(tmp_path):
+    source = tmp_path / "CMR.txt"
+    lesson = "第三节课的上课铃刚刚打响，教室后门的动静就吸引了全班的目光。"
+    original = (
+        "第1章 开始\n正文\n"
+        "第3章 干仗\n正文\n" + lesson + "\n"
+        "第4章 新篇\n下一章内容"
+    )
+    source.write_text(original, encoding="utf-8")
+    selected = load_translation_source("step", path=source)
+    assert [chapter.number for chapter in selected.chapters] == [1, 3, 4]
+    assert lesson.encode("utf-8") in selected.chapters[1].content
+    assert b"".join(ch.content for ch in selected.chapters).decode("utf-8") == original
+    assert source.read_text(encoding="utf-8") == original
+
+
 def test_resplit_does_not_destroy_source():
     source = load_translation_source("paste", text=novel_text(1, 30))
     assert len(translation_groups(source, 5)) == 6

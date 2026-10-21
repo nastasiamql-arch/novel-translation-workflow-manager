@@ -1,3 +1,11 @@
+## v5.8.3 — Only treat actual chapter headings as chapter boundaries
+
+- Fix false duplicate-chapter errors in combined Chinese TXT novels: prose such as "第三节课的上课铃..." describes a class period, not chapter 0003.
+- Recognize numbered Chinese 章 and 回 headings; do not reinterpret 节/節 sections or lesson text as chapter boundaries.
+- Conservatively exclude full-line sentences containing Chinese prose punctuation or exceptionally long heading-like lines, while keeping all original source text unchanged within its true chapter.
+- Add parsing, translation-stage source, UI/background-worker and lossless-text regression tests for CMR-style novels.
+- Preserve the existing duplicate-location diagnostics for genuine repeated chapter headings.
+
 ## v5.8.2 — Explain duplicate source headings with exact locations
 
 - Show the real resolved TXT source path when checking translation batch chapters, including a file selected from the translation workflow step.

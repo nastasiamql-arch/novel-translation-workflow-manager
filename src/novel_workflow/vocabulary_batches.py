@@ -17,7 +17,9 @@ from uuid import uuid4
 
 
 _FILENAME_NUMBER = re.compile(r"^0*([1-9]\d*)(?:[\s._-]+.*)?$")
-_ZH = re.compile(r"^\s*(?:#{1,6}\s*)?第\s*([0-9０-９〇零一二两兩三四五六七八九十百千万萬亿億]+)\s*[章节節回]\s*(.*)$")
+# Only 章 (chapter) and 回 (installment) mark a numbered Chinese chapter.
+# 节/節 also means a lesson or section: "第三节课..." is narrative, not a heading.
+_ZH = re.compile(r"^\s*(?:#{1,6}\s*)?第\s*([0-9０-９〇零一二两兩三四五六七八九十百千万萬亿億]+)\s*[章回]\s*(.*)$")
 _TH = re.compile(r"^\s*(?:#{1,6}\s*)?(?:บทที่|ตอนที่|บท|ตอน)\s*([0-9０-９]+)(?:\s*[:：.\-–]\s*|\s+)?(.*)$", re.I)
 _EN = re.compile(r"^\s*(?:#{1,6}\s*)?chapter\s+([0-9０-９]+)(?:\s*[:：.\-–]\s*|\s+)?(.*)$", re.I)
 _DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "兩": 2, "三": 3, "四": 4,
@@ -143,6 +145,11 @@ def _heading_match(line: str) -> tuple[int, str] | None:
     for pattern in (_ZH, _TH, _EN):
         match = pattern.fullmatch(line)
         if match:
+            # A whole-line heading must not be a long prose sentence. Keep
+            # legitimate short titles and preserve rejected text in the chapter.
+            title = match.group(2).strip()
+            if len(line.strip()) > 160 or "。" in title or "；" in title:
+                return None
             number = _chapter_number(match.group(1))
             if number < 1 or number > 999999:
                 raise ValueError(f"เลขบทไม่ถูกต้อง: {line[:100]}")
