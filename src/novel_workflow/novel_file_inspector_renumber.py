@@ -89,7 +89,8 @@ def plan_renumber(result: Inspection, start: int = 1, padding: int = 4,
 
 
 
-def plan_heading_repair(result: Inspection, names: set[str] | None = None) -> tuple[RenumberPlan, dict[str, str]]:
+def plan_heading_repair(result: Inspection, names: set[str] | None = None,
+                        only_changed: bool = False) -> tuple[RenumberPlan, dict[str, str]]:
     """Plan filename-authoritative heading edits, preserving all other files."""
     selected = set(names) if names is not None else None
     rows = [r for r in result.files if not r.virtual]
@@ -109,6 +110,8 @@ def plan_heading_repair(result: Inspection, names: set[str] | None = None) -> tu
             reason = "เลขหัวบทตรงแล้ว"
         if reason:
             blocked[row.name] = reason
+        if only_changed and reason:
+            continue
         if row.error or row.review_stale or not row.fingerprint:
             continue  # Never copy unreadable/stale files into a claimed validated result.
         planned.append(PlannedFile(row.name, row.name, row.fingerprint,

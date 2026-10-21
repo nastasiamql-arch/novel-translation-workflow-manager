@@ -341,3 +341,18 @@ def test_bulk_heading_repair_preserves_utf16_endian(tmp_path, bom, codec):
     assert actual.startswith(bom)
     assert actual[len(bom):].decode(codec).startswith("第十章 标题\r\n")
     assert (root / "0010.txt").read_bytes() == original
+
+
+def test_repair_selected_original_with_backup(tmp_path):
+    root = files(tmp_path, ["0001.txt", "0002.txt"], "")
+    (root / "0001.txt").write_text("第2章 标题\n" + "海" * 1600, encoding="utf-8")
+    (root / "0002.txt").write_text("第2章 标题\n" + "山" * 1600, encoding="utf-8")
+    original = (root / "0002.txt").read_bytes()
+    plan, blocked = plan_heading_repair(inspect(root), only_changed=True)
+    assert len(plan.files) == 1
+    assert "0002.txt" in blocked
+    outcome = execute_in_place(plan, tmp_path / "backups")
+    assert outcome["changed"] == 1
+    assert (root / "0002.txt").read_bytes() == original
+    assert not (tmp_path / "novel-inspected").exists()
+    assert (Path(outcome["backup"]) / "original" / "0001.txt").exists()

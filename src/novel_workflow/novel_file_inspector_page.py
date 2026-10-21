@@ -98,10 +98,10 @@ class FileTable(QAbstractTableModel):
             c = index.column()
             values = [f"{row.chapter:04d}" if row.chapter is not None else "—",
                       row.name, "—" if row.virtual else f"{row.count:,}",
-                      f"หัวบท {row.heading} ≠ {row.chapter}" if row.heading is not None and row.chapter is not None and row.heading != row.chapter else row.error or ", ".join(row.reasons) or "ปกติ"]
+                      (f"หัวบท {row.heading} ≠ {row.chapter}" if row.heading is not None and row.chapter is not None and row.heading != row.chapter else row.error or ", ".join(row.reasons) or "ปกติ") + (f" · ซ้ำกับ {row.duplicate_of}" if row.duplicate_of else "") + (" · ยืนยันเก็บไว้" if row.review == "keep" and not row.review_stale else "")]
             return values[c]
         if role == Qt.ToolTipRole:
-            return row.error or ", ".join(row.reasons)
+            return (row.error or ", ".join(row.reasons)) + (f" · ซ้ำกับ {row.duplicate_of}" if row.duplicate_of else "")
         return None
 
 
@@ -146,7 +146,7 @@ class NovelFileInspectorPage(QWidget):
         self.worker = None
         self.write_worker = None
         self._post_write_output = None
-        self.bulk_in_place = False
+        self.bulk_in_place = True
         self.source, self.kind = "", "folder"
         self.pending_source = None
         self._setup_ui()
@@ -286,6 +286,8 @@ class NovelFileInspectorPage(QWidget):
         self.heading = QCheckBox("แก้เลขหัวบทด้วย (เฉพาะที่ตรวจพบได้แน่นอน)")
         settings.addRow("วิธีการ", self.heading)
         self.in_place = QCheckBox("แก้ไฟล์ต้นฉบับจริง (สำรองก่อนทุกครั้ง)")
+        self.in_place.setChecked(True)
+        self.in_place.setEnabled(False)
         settings.addRow("รูปแบบผลลัพธ์", self.in_place)
         form.addLayout(settings)
         preview_button = QPushButton("สร้าง Preview")
@@ -343,7 +345,7 @@ class NovelFileInspectorPage(QWidget):
         in_place = menu.addAction("ขั้นสูง: แก้ต้นฉบับจริง")
         in_place.setCheckable(True)
         in_place.setChecked(self.bulk_in_place)
-        in_place.toggled.connect(lambda enabled: setattr(self, "bulk_in_place", enabled))
+        in_place.setEnabled(False)
         menu.exec(self.more_button.mapToGlobal(self.more_button.rect().bottomLeft()))
 
     def repair_headings(self, selected_only=False):
@@ -353,7 +355,7 @@ class NovelFileInspectorPage(QWidget):
         if selected_only and not names:
             QMessageBox.information(self, "เลือกรายการ", "เลือกไฟล์ก่อน")
             return
-        plan, blocked = plan_heading_repair(self.result, names)
+        plan, blocked = plan_heading_repair(self.result, names, only_changed=True)
         eligible = [r for r in plan.files if r.before is not None and r.after is not None]
         if not eligible:
             QMessageBox.information(self, "ไม่พบรายการแก้ได้", "ไม่มีหัวบทที่แก้ได้อย่างปลอดภัย")
@@ -362,7 +364,7 @@ class NovelFileInspectorPage(QWidget):
         warning = max((len(run) for run in self.result.shifted_heading_runs()), default=0)
         message = (f"ยืนยันให้ใช้เลขจากชื่อไฟล์เป็นหลัก?\\nแก้ {len(eligible)} ไฟล์ · ข้าม {len(blocked)} ไฟล์\\n"
                    + (f"พบหัวบทเหลื่อมต่อเนื่อง {warning} บท\\n" if warning else "")
-                   + examples + "\\n\\nจะสร้างโฟลเดอร์ผลลัพธ์ใหม่ ต้นฉบับไม่เปลี่ยน")
+                   + examples + "\\n\\nจะแก้ทับไฟล์เดิมโดยสำรองก่อนทุกครั้ง ไม่สร้างโฟลเดอร์ -inspected")
         if QMessageBox.question(self, "ตัวอย่างก่อนแก้", message,
                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
@@ -627,13 +629,14 @@ class NovelFileInspectorPage(QWidget):
                                         self.in_place.isChecked(), self.store.root / "backups")
         self.write_worker.completed.connect(self.write_done)
         self.write_worker.failed.connect(self.write_failed)
+        self.write_worker.finished.connect(self.post_write_rescan)
         self.write_worker.start()
 
     def write_done(self, operation):
         self.store.add_operation(operation, self.plan)
         self.refresh_history()
-        QMessageBox.information(self, "เสร็จแล้ว", f"สร้างผลลัพธ์สำเร็จ\n{operation.get('output', operation.get('backup'))}")
-        output = operation.get("output")
+        QMessageBox.information(self, "เสร็จแล้ว", f"แก้ไฟล์เดิม {operation.get('changed', 0)} ไฟล์\nสำรอง: {operation.get('backup')}")
+        output = operation.get("output") or (self.plan.source if operation.get("mode") == "in_place" else None)
         if output and Path(output).is_dir():
             self._post_write_output = output
 
