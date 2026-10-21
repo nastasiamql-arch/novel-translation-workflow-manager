@@ -9,7 +9,7 @@ os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication,QAbstractButton,QLineEdit,QSpinBox,QLabel,QWidget
+from PySide6.QtWidgets import QApplication,QAbstractButton,QLineEdit,QSpinBox,QLabel,QWidget,QToolButton
 from novel_workflow.storage import ProjectRepository
 from novel_workflow.models import NovelProfile, StepFile
 from novel_workflow.workspace_window import MainWindow
@@ -72,6 +72,16 @@ def main():
                 assert_layout(ws.editor.export_tab)
                 ws.editor.export_tab.advanced_button.setChecked(False); app.processEvents()
                 assert_layout(ws.editor_header)
+                # Catch unmanaged, visible children missing from the Qt layout:
+                # they are not visited by assert_layout and can paint over Thai text.
+                header_layout = ws.editor_header.layout()
+                for button in ws.editor_header.findChildren(
+                    QToolButton, options=Qt.FindDirectChildrenOnly
+                ):
+                    if button.isVisible():
+                        assert header_layout.indexOf(button) >= 0, (
+                            button.objectName(), button.text(), button.geometry()
+                        )
                 assert_layout(ws.novel_header)
                 assert_layout(win.navigation)
                 assert win.navigation.width() == (60 if win.navigation.collapsed else 196)

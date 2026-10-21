@@ -222,3 +222,34 @@ def test_batch_navigation_updates_sidebar_without_copy(tmp_path, monkeypatch):
             if worker and worker.isRunning():
                 worker.wait(20000)
         window.close()
+
+
+def test_retranslation_actions_are_menu_only_and_never_overlay_editor_header(tmp_path, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QToolButton
+
+    repo, profile, _ = setup_profile(tmp_path)
+    window = MainWindow(repo)
+    select(window, profile)
+    workspace = window.workspaces[profile.id]
+    window.show()
+    app().processEvents()
+
+    # Only managed children are allowed to be visible in the header. In v5.8.0
+    # two detached toolbar buttons painted on top of one another at (0, 0).
+    header = workspace.editor_header
+    for button in header.findChildren(QToolButton, options=Qt.FindDirectChildrenOnly):
+        if button.isVisible():
+            assert header.layout().indexOf(button) >= 0, (
+                button.objectName(), button.text(), button.geometry()
+            )
+    assert not header.findChild(QToolButton, "contextRetranslationButton")
+    assert not header.findChild(QToolButton, "undoContextRetranslationButton")
+
+    calls = []
+    monkeypatch.setattr(window, "review_context_retranslation", lambda pid: calls.append(("review", pid)))
+    monkeypatch.setattr(window, "undo_context_retranslation", lambda pid: calls.append(("undo", pid)))
+    actions = {action.text(): action for action in workspace.more_menu.actions()}
+    actions["ตรวจ Context และเริ่มแปลใหม่"].trigger()
+    actions["คืนสถานะย้อนแปล"].trigger()
+    assert calls == [("review", profile.id), ("undo", profile.id)]

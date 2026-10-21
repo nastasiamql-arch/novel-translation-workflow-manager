@@ -410,15 +410,6 @@ class WorkspacePage(QWidget):
         self.context_button.setToolTip("เลือกไฟล์ Context ที่ติดตามความคืบหน้า")
         self.context_button.clicked.connect(self._choose_context)
         self.context_button.hide()
-        self.retranslation_button = QToolButton(self.editor_header)
-        self.retranslation_button.setObjectName("contextRetranslationButton")
-        self.retranslation_button.setText("ย้อนแปลจาก Context")
-        self.retranslation_button.setToolTip("ตรวจหัวบทใน Context และดูตัวอย่างช่วงที่จะกลับไปแปลใหม่")
-        self.retranslation_button.clicked.connect(lambda: self.owner.review_context_retranslation(self.profile_id))
-        self.retranslation_undo_button = QToolButton(self.editor_header)
-        self.retranslation_undo_button.setObjectName("undoContextRetranslationButton")
-        self.retranslation_undo_button.setText("คืนสถานะย้อนแปล")
-        self.retranslation_undo_button.clicked.connect(lambda: self.owner.undo_context_retranslation(self.profile_id))
         self.update_context_button = QToolButton(self.editor_header)
         self.update_context_button.setText("Export")
         self.update_context_button.setToolTip("Export Translator to TXT and update Context")
@@ -473,8 +464,17 @@ class WorkspacePage(QWidget):
         self.more_menu = QMenu(self)
         for button in (self.pause_profile_button, self.caught_up_profile_button, self.checking_web_profile_button, self.resume_profile_button, self.context_button, reset_font):
             self.more_menu.addAction(button.text(), button.click)
-        self.more_menu.addAction("ตรวจ Context และเริ่มแปลใหม่", self.retranslation_button.click)
-        self.more_menu.addAction("คืนสถานะย้อนแปล", self.retranslation_undo_button.click)
+        # These commands have no on-screen toolbar widgets: creating orphan
+        # QToolButtons without adding them to a layout makes Qt paint both at
+        # (0, 0), overlapping Thai labels and the sidebar toggle.
+        self.more_menu.addAction(
+            "ตรวจ Context และเริ่มแปลใหม่",
+            lambda: self.owner.review_context_retranslation(self.profile_id),
+        )
+        self.more_menu.addAction(
+            "คืนสถานะย้อนแปล",
+            lambda: self.owner.undo_context_retranslation(self.profile_id),
+        )
         self.more_menu.addAction("เปิดรายการของเรื่อง", self.owner.launch_profile)
         self.more_menu.addAction("History / กู้ไฟล์", self.show_recovery)
         more = QToolButton(); more.setText("..."); more.setAccessibleName("คำสั่งเพิ่มเติม")

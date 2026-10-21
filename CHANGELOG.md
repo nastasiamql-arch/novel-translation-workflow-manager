@@ -1,3 +1,9 @@
+## v5.8.1 — Prevent overlapping Thai text in the editor header
+
+- Fix two unparented-by-layout Context retranslation controls introduced in v5.8.0. Both actions are now backed directly by the **...** menu instead of floating QToolButtons that could paint over one another and the editor header.
+- Preserve Context review/reset, undo, workflow navigation, file selection, and all user data unchanged.
+- Add a regression test for both menu actions and a DPI-matrix assertion that every visible editor-header QToolButton belongs to the layout.
+
 ## v5.8.0 — Context retranslation and safer clipboard/editor behavior
 
 - Exclude codename-prefixed Glossary, Style, Prompt, Context, and other supporting documents from Chinese-source chapter correction. Preserve existing attachment and Clipboard selection.
