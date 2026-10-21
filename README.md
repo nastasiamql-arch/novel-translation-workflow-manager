@@ -241,3 +241,11 @@ CI ทดสอบ Windows CF_HDROP ซึ่ง Windows Explorer ใช้ร�
 ## Novel File Inspector (ตรวจสอบไฟล์นิยาย)
 
 The standalone **ตรวจสอบไฟล์นิยาย** item in the main navigation scans TXT chapter folders, ZIP archives and a chosen source folder for an existing novel. Review missing or duplicate chapter numbers, short chapters (default 1,500 non-whitespace characters), suspicious file sizes and duplicate content. Read full chapters in a read-only pane and choose keep, exclude or undecided per chapter. Preview numeric renumbering before writing files; creating separate output is the default. In-place changes require an explicit confirmation and write immutable backups with a separate restore option. Translator stages, copy workflows and export histories are unchanged.
+
+## Context-based retranslation (v5.8.0)
+
+เปิดนิยายและบันทึกไฟล์ Context ก่อน จากนั้นใช้เมนู `...` → **ตรวจ Context และเริ่มแปลใหม่** โปรแกรมจะอ่านหัวบทในส่วนเนื้อหานิยายของ Context (ไม่ใช้หัวบทตัวอย่างใน Glossary) และเสนอเริ่มแปลที่บทถัดไป หากเลขบทกำกวมต้องระบุด้วยตนเอง ก่อนยืนยันจะแสดงจำนวนบทที่ยังนับว่า Export เสร็จและจะถูกคืนเป็นรอแปลใหม่
+
+การยืนยันเปลี่ยนเฉพาะ **การนับความคืบหน้า** ไม่แก้ต้นฉบับ Translator, Context, Export TXT หรือ Backup เดิม ประวัติ Export ถูกเก็บครบพร้อมบันทึกเหตุการณ์ย้อนแปลครั้งนั้น หลังแปลและ Export ใหม่ โปรแกรมจะนับเฉพาะบทที่เสร็จใหม่ สามารถคืนสถานะผ่าน `...` → **คืนสถานะย้อนแปล** โดยต้องยืนยันอีกครั้ง
+
+การคัดลอกไฟล์ Glossary/Style/Prompt/Context ไม่จำเป็นต้องมี Translator ที่จับคู่เพื่อเข้าสู่ระบบตรวจเลขบทจีน การเลือกไฟล์และจำนวนไฟล์ของแต่ละขั้นตอนยังคงเป็นไปตามการตั้งค่าเดิม

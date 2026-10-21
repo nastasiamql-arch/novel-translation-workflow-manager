@@ -1,3 +1,12 @@
+## v5.8.0 — Context retranslation and safer clipboard/editor behavior
+
+- Exclude codename-prefixed Glossary, Style, Prompt, Context, and other supporting documents from Chinese-source chapter correction. Preserve existing attachment and Clipboard selection.
+- Add explicit Context-driven retranslation preview and opt-in chapter-count reset, with Undo in the workspace overflow menu. Historical Translator Export events and files remain intact.
+- Recount completed, daily and goal progress using effective chapter histories; chapters exported anew become completed without restoring later chapters prematurely.
+- Separate novel chapter headings from Markdown glossary and support sections; require manual confirmation of ambiguous Context markers.
+- Protect rapid repeated pastes at the document end with atomic undo edits and separator handling; retain original per-file normalization policies.
+- Keep Context actions in the compact toolbar overflow menu so DPI layouts remain stable. Add regression coverage for classification, Context resets and repeated paste.
+
 ## v5.7.4 — Cleaner stage selection and readable scan progress
 
 - Remove the bright left selection stripe from workflow stage and navigation buttons while retaining active background and keyboard-focus visibility.
