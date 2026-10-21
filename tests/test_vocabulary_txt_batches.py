@@ -104,6 +104,29 @@ def test_chapter_only_scanner_rejects_prose_looking_like_chapter():
     assert "".join(chapter.text for chapter in chapters) == original
 
 
+def test_real_first_chapter_title_with_full_stop_is_not_mistaken_for_preface():
+    title = "第1章 钱在银行，人在天堂。"
+    lesson = "第三节课的上课铃刚刚打响，教室后门的动静就吸引了全班的目光。"
+    content = title + "\n正文\n第2章 转学生\n正文\n第3章 干仗\n" + lesson + "\n"
+    chapters = parse_pasted_chapters(content)
+    assert [part.number for part in chapters] == [1, 2, 3]
+    assert chapters[0].heading == title
+    assert lesson in chapters[2].text
+    assert "".join(part.text for part in chapters) == content
+
+
+def test_punctuated_chinese_heading_requires_explicit_separator():
+    text = (
+        "第1章 钱在银行，人在天堂。\n正文\n"
+        "第一章的故事在这一刻才刚刚开始。\n"
+        "第2章：新的起点。\n正文"
+    )
+    parsed = parse_pasted_chapters(text)
+    assert [chapter.number for chapter in parsed] == [1, 2]
+    assert "第一章的故事" in parsed[0].text
+    assert "".join(chapter.text for chapter in parsed) == text
+
+
 def test_heading_formats_chinese_numbers_thai_english_and_gaps():
     text = "第一章 起始\n甲\n\n第十二章 中间\n乙\n\nบทที่ 13 ทดสอบ\nค\n\nChapter 14 Last\nD"
     chapters = parse_pasted_chapters(text)

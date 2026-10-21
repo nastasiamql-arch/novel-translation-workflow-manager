@@ -92,6 +92,24 @@ def test_translation_step_real_chapter_heading_not_confused_with_lesson(tmp_path
     assert source.read_text(encoding="utf-8") == original
 
 
+def test_hundred_chapter_cmr_source_with_punctuated_first_title(tmp_path):
+    """A title ending with 。 must not make the first chapter disappear."""
+    source = tmp_path / "CMR.txt"
+    lesson = "第三节课的上课铃刚刚打响，教室后门的动静就吸引了全班的目光。"
+    chapter_text = "".join(
+        f"第{number}章 " +
+        ("钱在银行，人在天堂。" if number == 1 else f"标题{number}") +
+        "\n" + (lesson if number == 4 else f"正文{number}") + "\n"
+        for number in range(1, 101)
+    )
+    source.write_bytes(chapter_text.encode("utf-8"))
+    parsed = load_translation_source("step", path=source)
+    assert [c.number for c in parsed.chapters] == list(range(1, 101))
+    assert parsed.chapters[0].content.startswith("第1章 钱在银行，人在天堂。".encode())
+    assert lesson.encode("utf-8") in parsed.chapters[3].content
+    assert b"".join(c.content for c in parsed.chapters) == source.read_bytes()
+
+
 def test_resplit_does_not_destroy_source():
     source = load_translation_source("paste", text=novel_text(1, 30))
     assert len(translation_groups(source, 5)) == 6

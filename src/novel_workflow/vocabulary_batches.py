@@ -20,6 +20,12 @@ _FILENAME_NUMBER = re.compile(r"^0*([1-9]\d*)(?:[\s._-]+.*)?$")
 # Only 章 (chapter) and 回 (installment) mark a numbered Chinese chapter.
 # 节/節 also means a lesson or section: "第三节课..." is narrative, not a heading.
 _ZH = re.compile(r"^\s*(?:#{1,6}\s*)?第\s*([0-9０-９〇零一二两兩三四五六七八九十百千万萬亿億]+)\s*[章回]\s*(.*)$")
+# Real headings can end with Chinese full stops (e.g. 第1章 钱在银行，人在天堂。).
+# When such prose punctuation occurs, require an explicit space/colon after 章/回
+# to avoid mistaking a sentence like 第三章的故事在这一刻才刚刚开始。 for a heading.
+_ZH_PUNCTUATED_HEADING = re.compile(
+    r"^\s*(?:#{1,6}\s*)?第\s*[0-9０-９〇零一二两兩三四五六七八九十百千万萬亿億]+\s*[章回](?:[ \t]+|[:：])"
+)
 _TH = re.compile(r"^\s*(?:#{1,6}\s*)?(?:บทที่|ตอนที่|บท|ตอน)\s*([0-9０-９]+)(?:\s*[:：.\-–]\s*|\s+)?(.*)$", re.I)
 _EN = re.compile(r"^\s*(?:#{1,6}\s*)?chapter\s+([0-9０-９]+)(?:\s*[:：.\-–]\s*|\s+)?(.*)$", re.I)
 _DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "兩": 2, "三": 3, "四": 4,
@@ -148,8 +154,13 @@ def _heading_match(line: str) -> tuple[int, str] | None:
             # A whole-line heading must not be a long prose sentence. Keep
             # legitimate short titles and preserve rejected text in the chapter.
             title = match.group(2).strip()
-            if len(line.strip()) > 160 or "。" in title or "；" in title:
+            if len(line.strip()) > 160:
                 return None
+            if "。" in title or "；" in title:
+                # Punctuation is valid in a chapter title, but a free-standing
+                # prose sentence without a visible heading separator is not.
+                if pattern is not _ZH or not _ZH_PUNCTUATED_HEADING.match(line) or len(title) > 80:
+                    return None
             number = _chapter_number(match.group(1))
             if number < 1 or number > 999999:
                 raise ValueError(f"เลขบทไม่ถูกต้อง: {line[:100]}")

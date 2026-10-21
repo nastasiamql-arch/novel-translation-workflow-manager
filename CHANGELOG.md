@@ -1,3 +1,10 @@
+## v5.8.5 — Restore punctuation in real Chinese chapter titles
+
+- Correct the chapter-only scanner so a genuine first heading like `第1章 钱在银行，人在天堂。` is accepted instead of falsely reporting preface text.
+- Continue rejecting prose sentences starting with chapter-like words without a heading separator, and ignore `第三节课` (third class period) inside the story.
+- Verify all 100 chapter headings and lossless chapter content with a CMR-style 100-chapter fixture; preserve UTF-8 source bytes.
+- No changes to the user's original files, translations, clipboard, history, or export behavior.
+
 ## v5.8.3 — Only treat actual chapter headings as chapter boundaries
 
 - Fix false duplicate-chapter errors in combined Chinese TXT novels: prose such as "第三节课的上课铃..." describes a class period, not chapter 0003.
