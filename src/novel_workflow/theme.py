@@ -1,4 +1,4 @@
-"""Accessible shared color tokens and component styles for Valhalla."""
+"""Accessible semantic color tokens for the Palantir Slate Blue themes."""
 
 from pathlib import Path
 from PySide6.QtCore import Qt
@@ -11,28 +11,28 @@ _SYSTEM_APPEARANCE_DARK: bool | None = None
 # Quiet neutral surfaces share an understated blue accent. Selection, focus,
 # current line and hover have independent roles across every appearance.
 _LIGHT = {
-    "scroll_track": "#F5F5F7", "scroll_thumb": "#808080", "scroll_thumb_hover": "#626262",
+    "scroll_track": "#E9EEF6", "scroll_thumb": "#808080", "scroll_thumb_hover": "#626262",
     "app": "#F6F8FC", "surface": "#FFFFFF", "sidebar": "#F0F3F8",
     "surface2": "#E9EEF6", "item_selection": "#DDEAFF", "hover": "#E7ECF5", "current_line": "#F0F4FC", "elevated": "#FFFFFF",
-    "control_border": "#7A808A", "border": "#E1E4EA", "text": "#1D1D1F", "secondary": "#474C55",
-    "muted": "#606060", "disabled_text": "#606060",
-    "accent": "#245FB7", "focus": "#474747", "success": "#21633B",
-    "warning": "#735100", "danger": "#9B302B", "selection": "#CBE1FF",
-    "selection_text": "#174A85", "input": "#FFFFFF", "primary": "#245FB7",
-    "primary_hover": "#174A85", "primary_text": "#FFFFFF",
-    "status": "#F0F3F8", "status_text": "#174A85",
+    "control_border": "#7A808A", "border": "#DCE3ED", "text": "#1E293B", "secondary": "#526176",
+    "muted": "#526176", "disabled_text": "#526176",
+    "accent": "#2459A6", "focus": "#2459A6", "success": "#127561",
+    "warning": "#A05B18", "danger": "#B63838", "selection": "#DDEAFF",
+    "selection_text": "#19457F", "input": "#FFFFFF", "primary": "#2459A6",
+    "primary_hover": "#19457F", "primary_text": "#FFFFFF",
+    "status": "#F0F3F8", "status_text": "#19457F",
 }
 _DARK = {
-    "scroll_track": "#212121", "scroll_thumb": "#858585", "scroll_thumb_hover": "#A0A0A0",
+    "scroll_track": "#1C2430", "scroll_thumb": "#858585", "scroll_thumb_hover": "#A0A0A0",
     "app": "#181D27", "surface": "#222A37", "sidebar": "#1C2430",
     "surface2": "#303B4C", "item_selection": "#344D70", "hover": "#374357", "current_line": "#293546", "elevated": "#303B4C",
-    "control_border": "#858585", "border": "#3F3F3F", "text": "#E6E6E6", "secondary": "#C2C2C2",
-    "muted": "#A0A0A0", "disabled_text": "#A0A0A0",
-    "accent": "#80ADFF", "focus": "#C2C2C2", "success": "#91D49A",
-    "warning": "#F1C66D", "danger": "#FF8A80", "selection": "#344D70",
-    "selection_text": "#F2F2F2", "input": "#303030", "primary": "#E6E6E6",
-    "primary_hover": "#FFFFFF", "primary_text": "#1E1E1E",
-    "status": "#252526", "status_text": "#E6E6E6",
+    "control_border": "#858FA0", "border": "#3C4758", "text": "#EDF2F8", "secondary": "#ADB9CC",
+    "muted": "#ADB9CC", "disabled_text": "#ADB9CC",
+    "accent": "#80ADFF", "focus": "#80ADFF", "success": "#56C5A7",
+    "warning": "#F1B963", "danger": "#FF8585", "selection": "#344D70",
+    "selection_text": "#EDF2F8", "input": "#303B4C", "primary": "#80ADFF",
+    "primary_hover": "#A2C4FF", "primary_text": "#181D27",
+    "status": "#222A37", "status_text": "#EDF2F8",
 }
 
 
