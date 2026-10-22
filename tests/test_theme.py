@@ -205,7 +205,7 @@ def test_reapplying_same_theme_avoids_repolishing_every_open_widget(monkeypatch)
     owner.settings.appearance = 'Dark'
     ManagementActionsMixin.apply_theme(owner)
     assert calls == [application_stylesheet('Dark')]
-    assert app.palette().color(QPalette.Window).name() == _DARK['app']
+    assert app.palette().color(QPalette.Window).name().lower() == _DARK['app'].lower()
 
 
 def test_active_navigation_and_stages_have_no_bright_left_selection_stripe():

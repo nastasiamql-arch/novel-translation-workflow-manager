@@ -27,6 +27,26 @@ macOS-inspired hierarchy and restrained chrome inside native Windows window cont
 
 Normal text/selection target 4.5:1 contrast and focus 3:1 against adjacent surfaces. Navigation uses neutral selected background and weight without an accent edge. Workflow uses neutral selected background, weight and a subtle gray edge. Library cards use neutral selection and bold text; blue is reserved for text selection, focus and other semantic accents. Mouse focus rectangles are suppressed; keyboard-only indicators remain. The workspace cover rail is removed; profiles are selected in Library. Hover must not look active. theme.py is the palette source of truth.
 
+## Slate Blue design tokens and planning
+
+All UI components use `theme.py` semantic color roles. New design foundation:
+
+| Role | Light | Dark |
+| --- | --- | --- |
+| App | #F6F8FC | #181D27 |
+| Surface | #FFFFFF | #222A37 |
+| Secondary | #E9EEF6 | #303B4C |
+| Sidebar | #F0F3F8 | #1C2430 |
+| Text | #1E293B | #EDF2F8 |
+| Secondary text | #526176 | #ADB9CC |
+| Accent | #2459A6 | #80ADFF |
+| Selected | #DDEAFF | #344969 |
+| Border | #DCE3ED | #3C4758 |
+
+Keyboard focus remains neutral, not confused with selected text. Light success/warning use contrast-adjusted tones for WCAG AA on secondary surfaces.
+
+Translation Planner is a passive task-selection interface with one primary plan per day; it never triggers Export, Clipboard or step changes. Its local JSON is independent of the existing profile schema and carries unfinished finish goals across dates, with reversible completion acknowledgement.
+
 ## Typography and geometry
 
 UI uses Windows Segoe UI with Leelawadee UI/Tahoma fallback. The application font configuration prefers available Segoe UI Variable Text; shared Qt styles use Segoe UI at 12 pt. Editor uses one Segoe UI primary family at 11 pt by default, adjustable independently, with Qt script fallback to installed Thai/CJK fonts. No monospace font promise.

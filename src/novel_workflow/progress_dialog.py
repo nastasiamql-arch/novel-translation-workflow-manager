@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 from .models import NovelProfile
 from .storage import ProjectRepository
+from .translation_planner import TranslationPlanner
 from .translation_progress import daily_chapter_count, goal_progress, profile_week_count, reset_goal_progress, completed_chapter_count, completion_label, completion_tooltip
 
 
@@ -176,6 +177,14 @@ class StatisticsPage(QWidget):
         week_total = sum(profile_week_count(profile, today) for profile in self.profiles)
         self._metric("วันนี้", today_total)
         self._metric("สัปดาห์นี้", week_total)
+        planned = TranslationPlanner(self.repo).summary(today_key, self.profiles)
+        plan = planned.get("plan", {})
+        completed = (
+            planned["status"] == "active"
+            and ((plan.get("plan_type") == "daily" and planned.get("remaining") == 0)
+                 or (plan.get("plan_type") == "finish" and planned.get("confirmed_finished") is True))
+        )
+        self._metric("เป้าหมายวันนี้สำเร็จ", int(completed), "แผน")
 
         recent = [today - timedelta(days=offset) for offset in range(6, -1, -1)]
         max_count = max((sum(daily_chapter_count(profile, day.isoformat()) for profile in self.profiles) for day in recent), default=0)

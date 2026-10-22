@@ -82,7 +82,7 @@ def test_progress_cards_keep_covers_and_hide_verified_and_summary_notes(tmp_path
     profile.verified_goal_count = 2
     repo.save_profile(profile)
     dashboard = TranslationDashboardDialog(None, repo.list_profiles(), repo, repo.list_profiles)
-    assert dashboard.summary.count() == 2
+    assert dashboard.summary.count() == 3  # Today, week, confirmed plan completion
     cards = dashboard.rows_host.findChildren(QLabel)
     visible_text = " ".join(label.text() for label in cards if not label.isHidden())
     assert "verified" not in visible_text.casefold()
@@ -93,7 +93,7 @@ def test_progress_cards_keep_covers_and_hide_verified_and_summary_notes(tmp_path
     assert cover_widget is not None and not cover_widget.pixmap().isNull()
     assert any(label.text() == profile.name for label in cards)
     dashboard.refresh()
-    assert dashboard.summary.count() == 2
+    assert dashboard.summary.count() == 3  # Today, week, confirmed plan completion
 
 
 def test_compact_progress_grid_reflows_without_recreating_cards(tmp_path):

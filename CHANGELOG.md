@@ -1,3 +1,13 @@
+## v5.9.0 — Palantir Slate Blue / Translation Planner
+
+- Add Today dashboard with manual focus, daily goals, finish goals, rest days and seven-day scheduling.
+- Store planner history independently of profiles and compute counts from confirmed effective Translator Export events.
+- Respect duplicate exports, retranslation reset/undo and missing chapters before a declared final chapter.
+- Add reversible manual finish acknowledgement, novel covers and quick workspace opening.
+- Establish shared Light/Dark Slate Blue semantic palettes, group filter and cached library covers.
+- Extend Statistics with planner completion; add dedicated persistence and regression coverage.
+- Preserve profile data, source, Translator, Context, workflows, clipboard and existing updater identity.
+
 ## v5.8.5 — Restore punctuation in real Chinese chapter titles
 
 - Correct the chapter-only scanner so a genuine first heading like `第1章 钱在银行，人在天堂。` is accepted instead of falsely reporting preface text.

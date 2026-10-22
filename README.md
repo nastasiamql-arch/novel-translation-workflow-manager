@@ -1,5 +1,14 @@
 # Palantir: Novel
 
+## Translation Planner / Today Dashboard
+
+หน้า **วันนี้** ใช้วางแผนแบบเลือกเอง มีโหมดโฟกัสวันนี้, เป้าหมายรายวัน, แปลจนจบเรื่อง และวันพัก เลือกวันและนิยายได้ล่วงหน้าโดยไม่เปิดนิยายหรือคัดลอกอัตโนมัติ แผนเก็บใน `%LOCALAPPDATA%\NovelWorkflow\translation_planner.json` แยกจาก Profile และเก็บประวัติการแก้แผนเดิม
+
+จำนวนบทของแผนมาจาก Translator Export ที่ Commit สำเร็จเท่านั้น ไม่รวม Clipboard, Save Editor, Context หรือ Verified TXT Export; Export บทเดิมไม่เพิ่มยอดซ้ำ แผนแปลจนจบใช้ชุดบทที่มีอยู่จริงเพื่อค้นหาบทขาด ไม่ถือว่าเลขสูงสุดแปลครบทุกบท และยืนยันจบเรื่องหรือยกเลิกการยืนยันเองได้ เป้าหมายที่ไม่รู้เลขบทสุดท้ายไม่สร้าง Progress Bar ปลอม
+
+Library กรองตามกลุ่มเดิมได้ และ Cache ปกตามลายเซ็นไฟล์โดยไม่เปลี่ยนลำดับนิยายที่จัดไว้
+
+
 ## Version 4.0.0 — Translation workflow only
 
 The website/Novel Downloader feature has been removed completely, including the

@@ -1095,6 +1095,7 @@ class NovelGroupsPage(QWidget):
             if self.members.item(index).checkState() == Qt.Checked
         ]
         self.owner.repo.save_groups(self.groups)
+        self.owner._refresh_library_groups()
         selected = self.selector.currentIndex()
         self.selector.setItemText(selected, group.name)
         self.owner.statusBar().showMessage(f"บันทึกกลุ่ม {group.name} แล้ว", 3000)
@@ -1108,6 +1109,7 @@ class NovelGroupsPage(QWidget):
         group = NovelGroup(name=name, order=len(self.groups))
         self.groups.append(group)
         self.owner.repo.save_groups(self.groups)
+        self.owner._refresh_library_groups()
         self.selector.addItem(group.name, group.id)
         self.selector.setCurrentIndex(self.selector.count() - 1)
         self.new_name.clear()
@@ -1120,6 +1122,7 @@ class NovelGroupsPage(QWidget):
             return
         self.groups.remove(group)
         self.owner.repo.save_groups(self.groups)
+        self.owner._refresh_library_groups()
         index = self.selector.currentIndex()
         self.selector.removeItem(index)
         self.show_group(self.selector.currentIndex())
@@ -2132,6 +2135,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if fresh:
                 self.profile = fresh
         self._watch_context_paths()
+        if hasattr(self, 'today_page'):
+            self.today_page.refresh()
         if self.profile:
             self.refresh_goal_indicator()
             self._update_editor_status()
@@ -2185,6 +2190,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         root_layout.setSpacing(0)
 
         self.main_pages = MainPageStack()
+        from .translation_planner_page import TodayPage
+        self.today_page = TodayPage(self.repo, self)
+        self.today_page.openNovel.connect(self.open_planned_novel)
+        self.main_pages.addWidget(self.today_page)
         self.library_page = LibraryPage(self, PROFILE_STATUSES)
         self.main_pages.addWidget(self.library_page)
 
@@ -2304,7 +2313,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._schedule_workspace_session_save()
 
     def navigate(self, key):
-        if key == "library": self.show_library()
+        if key == "today":
+            self.today_page.refresh()
+            self.main_pages.setCurrentWidget(self.today_page)
+        elif key == "library": self.show_library()
         elif key == "workspace":
             self._utility_return_page = self.workspace_stack
             self.return_from_utility_page()
@@ -2316,7 +2328,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
     def _sync_navigation(self, *_args):
         page = self.main_pages.currentWidget()
-        key = "library" if page is self.library_page else "workspace"
+        key = "today" if page is self.today_page else ("library" if page is self.library_page else "workspace")
         if page is self.utility_page:
             key = {"progress":"progress", "groups":"groups", "settings":"settings", "novel-inspector":"novel-inspector"}.get(self._active_utility_page, "workspace")
         self.navigation.select(key)
@@ -2471,6 +2483,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.profiles.addItem(item)
         self.profiles.blockSignals(False)
 
+        self._refresh_library_groups()
         self.profile_cards.clear()
         status_counts = {
             status: sum(1 for profile in self.ps_list if _profile_status(profile) == status)
@@ -2481,26 +2494,41 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 index, f"{label} ({status_counts[status]})"
             )
         placeholder = Path(__file__).resolve().parent / "resources" / "novelworkflow.png"
+        # Cache scaled covers until image identity changes.
+        cache = getattr(self, "_library_cover_cache", {})
+        updated_cache = {}
         for profile in self.ps_list:
-            pixmap = QPixmap(str(placeholder)) if placeholder.is_file() else QPixmap()
+            candidate = placeholder
             if profile.cover_image_path:
                 try:
-                    candidate = self.repo.resolve_project_path(
+                    cover = self.repo.resolve_project_path(
                         profile.id, profile.cover_image_path
                     )
-                    if candidate.is_file():
-                        pixmap = QPixmap(str(candidate))
-                except ValueError:
+                    if cover.is_file():
+                        candidate = cover
+                except (OSError, ValueError):
                     pass
-            if not pixmap.isNull():
-                pixmap = pixmap.scaled(156, 208, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                pixmap = pixmap.copy((pixmap.width()-156)//2, (pixmap.height()-208)//2, 156, 208)
+            try:
+                info = candidate.stat()
+                signature = (str(candidate), info.st_mtime_ns, info.st_size)
+            except OSError:
+                signature = (str(candidate), None, None)
+            cached = cache.get(profile.id)
+            if cached is not None and cached[0] == signature:
+                pixmap = cached[1]
+            else:
+                pixmap = QPixmap(str(candidate))
+                if not pixmap.isNull():
+                    pixmap = pixmap.scaled(156, 208, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                    pixmap = pixmap.copy((pixmap.width()-156)//2, (pixmap.height()-208)//2, 156, 208)
+            updated_cache[profile.id] = (signature, pixmap)
             status = _profile_status(profile)
             card = QListWidgetItem(QIcon(pixmap), profile.name)
             card.setData(Qt.UserRole, profile.id)
             card.setData(Qt.UserRole + 1, status)
             card.setToolTip(profile.name)
             self.profile_cards.addItem(card)
+        self._library_cover_cache = updated_cache
 
         target_id = pid or (
             self.settings.last_profile_id
@@ -2521,16 +2549,36 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if self.repo.export_recovery_errors:
             self.statusBar().showMessage(' · '.join(self.repo.export_recovery_errors.values()), 15000)
 
+    def _refresh_library_groups(self):
+        selector = self.library_group_filter
+        selected = selector.currentData()
+        selector.blockSignals(True)
+        try:
+            selector.clear()
+            selector.addItem("ทุกกลุ่ม", None)
+            self._library_group_ids = {}
+            for group in self.repo.load_groups():
+                selector.addItem(group.name, group.id)
+                self._library_group_ids[group.id] = set(group.profile_ids)
+            selector.setCurrentIndex(max(0, selector.findData(selected)))
+        finally:
+            selector.blockSignals(False)
+        if self.profile_cards.count():
+            self.filter_profiles(self.library_search.text())
+
     def filter_profiles(self, query):
         query = query.strip().casefold()
         selected_status = self.library_status_tabs.tabData(
             self.library_status_tabs.currentIndex()
         )
+        group_id = self.library_group_filter.currentData()
+        group_members = getattr(self, "_library_group_ids", {}).get(group_id, set())
         visible = 0
         for index in range(self.profile_cards.count()):
             item = self.profile_cards.item(index)
             matches = (
                 item.data(Qt.UserRole + 1) == selected_status
+                and (group_id is None or item.data(Qt.UserRole) in group_members)
                 and (not query or query in item.text().casefold())
             )
             item.setHidden(not matches)
@@ -2538,7 +2586,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.profile_cards.setVisible(visible > 0)
         self.library_empty_label.setText(
             f"ยังไม่มีนิยายในหมวด{_profile_status_label(selected_status)}"
-            if not query else "ไม่พบนิยายที่ค้นหาในหมวดนี้"
+            if not query and group_id is None else "ไม่พบนิยายที่ตรงกับตัวกรอง"
         )
         self.library_empty_label.setVisible(visible == 0)
 
@@ -2578,6 +2626,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.refresh_profiles(profile_id)
         self.submit_toast.show_message(f"ย้าย {profile.name} ไป{_profile_status_label(status)}แล้ว", undo)
 
+
+    def open_planned_novel(self, profile_id):
+        index = next((i for i, p in enumerate(self.ps_list) if p.id == profile_id), -1)
+        if index >= 0:
+            self.select_profile(index)
 
     def show_library(self):
         if self._settings_page_state:
