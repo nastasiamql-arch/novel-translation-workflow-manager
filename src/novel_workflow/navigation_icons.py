@@ -22,7 +22,13 @@ class LineIconEngine(QIconEngine):
         pen.setCapStyle(Qt.RoundCap); pen.setJoinStyle(Qt.RoundJoin)
         painter.setPen(pen); painter.setBrush(Qt.NoBrush)
         path = QPainterPath()
-        if self.name == 'library':
+        if self.name == 'today':
+            path.addRoundedRect(QRectF(3, 4, 18, 17), 2, 2)
+            path.moveTo(3, 9); path.lineTo(21, 9)
+            path.moveTo(8, 2); path.lineTo(8, 6)
+            path.moveTo(16, 2); path.lineTo(16, 6)
+            path.moveTo(8, 14); path.lineTo(11, 17); path.lineTo(17, 12)
+        elif self.name == 'library':
             path.moveTo(12, 5); path.cubicTo(9, 3, 5, 3, 3, 4)
             path.lineTo(3, 19); path.cubicTo(6, 18, 9, 18, 12, 20)
             path.cubicTo(15, 18, 18, 18, 21, 19); path.lineTo(21, 4)
