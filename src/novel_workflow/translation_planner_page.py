@@ -2,6 +2,8 @@
 from __future__ import annotations
 from datetime import date, timedelta
 from PySide6.QtCore import Qt, Signal, QDate
+from PySide6.QtGui import QPixmap
+from pathlib import Path
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QSpinBox, QDateEdit, QProgressBar, QFormLayout, QGroupBox, QMessageBox)
 from .translation_planner import TranslationPlanner
@@ -19,6 +21,12 @@ class TodayPage(QWidget):
         self.heading = QLabel()
         self.heading.setObjectName("pageTitle")
         layout.addWidget(self.heading)
+        self.cover = QLabel()
+        self.cover.setFixedSize(86, 116)
+        self.cover.setAlignment(Qt.AlignCenter)
+        self.cover.setAccessibleName('ปกนิยายหลักวันนี้')
+        self.cover.hide()
+        layout.addWidget(self.cover)
         self.summary = QLabel()
         self.summary.setWordWrap(True)
         self.summary.setObjectName("sectionHeading")
@@ -130,6 +138,8 @@ class TodayPage(QWidget):
         info = self.planner.summary(today, profiles)
         self._selected_profile_id = None
         self.progress.hide()
+        self.cover.hide()
+        self.cover.clear()
         status = info["status"]
         if status == "empty":
             self.summary.setText("ยังไม่มีแผนสำหรับวันนี้ กดสร้างหรือแก้แผนเพื่อเริ่มต้น")
@@ -140,6 +150,16 @@ class TodayPage(QWidget):
         else:
             profile, plan = info["profile"], info["plan"]
             self._selected_profile_id = profile.id
+            if profile.cover_image_path:
+                try:
+                    cover_path = self.repo.resolve_project_path(profile.id, profile.cover_image_path)
+                    if cover_path.is_file():
+                        picture = QPixmap(str(cover_path))
+                        if not picture.isNull():
+                            self.cover.setPixmap(picture.scaled(self.cover.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                            self.cover.show()
+                except (OSError, ValueError):
+                    pass
             mode = plan["plan_type"]
             if mode == "daily":
                 target = plan["target_chapters"]
