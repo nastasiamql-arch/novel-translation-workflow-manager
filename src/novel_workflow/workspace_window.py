@@ -2480,6 +2480,18 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.profiles.addItem(item)
         self.profiles.blockSignals(False)
 
+        group_selector = self.library_group_filter
+        selected_group = group_selector.currentData()
+        group_selector.blockSignals(True)
+        group_selector.clear()
+        group_selector.addItem("ทุกกลุ่ม", None)
+        self._library_group_ids = {}
+        for group in self.repo.load_groups():
+            group_selector.addItem(group.name, group.id)
+            self._library_group_ids[group.id] = set(group.profile_ids)
+        group_index = group_selector.findData(selected_group)
+        group_selector.setCurrentIndex(max(0, group_index))
+        group_selector.blockSignals(False)
         self.profile_cards.clear()
         status_counts = {
             status: sum(1 for profile in self.ps_list if _profile_status(profile) == status)
@@ -2550,11 +2562,14 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         selected_status = self.library_status_tabs.tabData(
             self.library_status_tabs.currentIndex()
         )
+        group_id = self.library_group_filter.currentData()
+        group_members = getattr(self, "_library_group_ids", {}).get(group_id, set())
         visible = 0
         for index in range(self.profile_cards.count()):
             item = self.profile_cards.item(index)
             matches = (
                 item.data(Qt.UserRole + 1) == selected_status
+                and (group_id is None or item.data(Qt.UserRole) in group_members)
                 and (not query or query in item.text().casefold())
             )
             item.setHidden(not matches)
@@ -2562,7 +2577,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.profile_cards.setVisible(visible > 0)
         self.library_empty_label.setText(
             f"ยังไม่มีนิยายในหมวด{_profile_status_label(selected_status)}"
-            if not query else "ไม่พบนิยายที่ค้นหาในหมวดนี้"
+            if not query and group_id is None else "ไม่พบนิยายที่ตรงกับตัวกรอง"
         )
         self.library_empty_label.setVisible(visible == 0)
 
