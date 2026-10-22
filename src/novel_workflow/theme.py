@@ -12,8 +12,8 @@ _SYSTEM_APPEARANCE_DARK: bool | None = None
 # current line and hover have independent roles across every appearance.
 _LIGHT = {
     "scroll_track": "#F5F5F7", "scroll_thumb": "#808080", "scroll_thumb_hover": "#626262",
-    "app": "#F5F5F7", "surface": "#FFFFFF", "sidebar": "#F9F9FB",
-    "surface2": "#ECEFF4", "item_selection": "#E8F2FF", "hover": "#F0F3F8", "current_line": "#F7F9FC", "elevated": "#FFFFFF",
+    "app": "#F6F8FC", "surface": "#FFFFFF", "sidebar": "#F0F3F8",
+    "surface2": "#E9EEF6", "item_selection": "#DDEAFF", "hover": "#E7ECF5", "current_line": "#F0F4FC", "elevated": "#FFFFFF",
     "control_border": "#7A808A", "border": "#E1E4EA", "text": "#1D1D1F", "secondary": "#474C55",
     "muted": "#606060", "disabled_text": "#606060",
     "accent": "#245FB7", "focus": "#474747", "success": "#21633B",
@@ -24,12 +24,12 @@ _LIGHT = {
 }
 _DARK = {
     "scroll_track": "#212121", "scroll_thumb": "#858585", "scroll_thumb_hover": "#A0A0A0",
-    "app": "#212121", "surface": "#242424", "sidebar": "#282828",
-    "surface2": "#303030", "item_selection": "#444444", "hover": "#343434", "current_line": "#2D2D2D", "elevated": "#2B2B2B",
+    "app": "#181D27", "surface": "#222A37", "sidebar": "#1C2430",
+    "surface2": "#303B4C", "item_selection": "#344D70", "hover": "#374357", "current_line": "#293546", "elevated": "#303B4C",
     "control_border": "#858585", "border": "#3F3F3F", "text": "#E6E6E6", "secondary": "#C2C2C2",
     "muted": "#A0A0A0", "disabled_text": "#A0A0A0",
-    "accent": "#80B9EF", "focus": "#C2C2C2", "success": "#91D49A",
-    "warning": "#F1C66D", "danger": "#FF8A80", "selection": "#285582",
+    "accent": "#80ADFF", "focus": "#C2C2C2", "success": "#91D49A",
+    "warning": "#F1C66D", "danger": "#FF8A80", "selection": "#344D70",
     "selection_text": "#F2F2F2", "input": "#303030", "primary": "#E6E6E6",
     "primary_hover": "#FFFFFF", "primary_text": "#1E1E1E",
     "status": "#252526", "status_text": "#E6E6E6",
