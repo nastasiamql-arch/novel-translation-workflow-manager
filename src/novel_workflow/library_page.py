@@ -1,7 +1,7 @@
 """Novel library surface and profile navigation controls."""
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QTabBar, QListWidget, QStyledItemDelegate, QStyle)
+    QPushButton, QTabBar, QListWidget, QStyledItemDelegate, QStyle, QComboBox)
 
 
 from .profile_list import ReorderableProfileList, ProfileItemDelegate as LibraryCardDelegate
@@ -29,6 +29,15 @@ class LibraryPage(QWidget):
         owner.library_search.setMaximumWidth(340)
         owner.library_search.textChanged.connect(owner.filter_profiles)
         library_header.addWidget(owner.library_search)
+        owner.library_group_filter = QComboBox()
+        owner.library_group_filter.setObjectName("libraryGroupFilter")
+        owner.library_group_filter.setAccessibleName("กรองคลังนิยายตามกลุ่ม")
+        owner.library_group_filter.setMinimumWidth(130)
+        owner.library_group_filter.addItem("ทุกกลุ่ม", None)
+        library_header.addWidget(owner.library_group_filter)
+        manage_groups = QPushButton("จัดการกลุ่ม")
+        manage_groups.clicked.connect(owner.groups_dialog)
+        library_header.addWidget(manage_groups)
         add_story = QPushButton("＋ เพิ่มนิยาย")
         add_story.setObjectName("primaryButton")
         add_story.clicked.connect(owner.new_profile)
@@ -47,6 +56,9 @@ class LibraryPage(QWidget):
         library_layout.addWidget(owner.library_status_tabs)
         owner.profile_cards = ReorderableProfileList()
         owner.profile_cards.orderChanged.connect(owner._persist_profile_order)
+        owner.library_group_filter.currentIndexChanged.connect(
+            lambda _index: owner.filter_profiles(owner.library_search.text())
+        )
         owner.profile_cards.setItemDelegate(LibraryCardDelegate(owner.profile_cards))
         owner.profile_cards.setObjectName("novelLibrary")
         owner.profile_cards.setViewMode(QListWidget.IconMode)
