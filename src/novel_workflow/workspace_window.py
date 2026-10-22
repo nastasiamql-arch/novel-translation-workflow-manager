@@ -2132,6 +2132,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if fresh:
                 self.profile = fresh
         self._watch_context_paths()
+        if hasattr(self, 'today_page'):
+            self.today_page.refresh()
         if self.profile:
             self.refresh_goal_indicator()
             self._update_editor_status()
@@ -2185,6 +2187,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         root_layout.setSpacing(0)
 
         self.main_pages = MainPageStack()
+        from .translation_planner_page import TodayPage
+        self.today_page = TodayPage(self.repo, self)
+        self.today_page.openNovel.connect(self.open_planned_novel)
+        self.main_pages.addWidget(self.today_page)
         self.library_page = LibraryPage(self, PROFILE_STATUSES)
         self.main_pages.addWidget(self.library_page)
 
@@ -2304,7 +2310,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._schedule_workspace_session_save()
 
     def navigate(self, key):
-        if key == "library": self.show_library()
+        if key == "today":
+            self.today_page.refresh()
+            self.main_pages.setCurrentWidget(self.today_page)
+        elif key == "library": self.show_library()
         elif key == "workspace":
             self._utility_return_page = self.workspace_stack
             self.return_from_utility_page()
@@ -2316,7 +2325,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
     def _sync_navigation(self, *_args):
         page = self.main_pages.currentWidget()
-        key = "library" if page is self.library_page else "workspace"
+        key = "today" if page is self.today_page else ("library" if page is self.library_page else "workspace")
         if page is self.utility_page:
             key = {"progress":"progress", "groups":"groups", "settings":"settings", "novel-inspector":"novel-inspector"}.get(self._active_utility_page, "workspace")
         self.navigation.select(key)
@@ -2578,6 +2587,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.refresh_profiles(profile_id)
         self.submit_toast.show_message(f"ย้าย {profile.name} ไป{_profile_status_label(status)}แล้ว", undo)
 
+
+    def open_planned_novel(self, profile_id):
+        index = next((i for i, p in enumerate(self.ps_list) if p.id == profile_id), -1)
+        if index >= 0:
+            self.select_profile(index)
 
     def show_library(self):
         if self._settings_page_state:
