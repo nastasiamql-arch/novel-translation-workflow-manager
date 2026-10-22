@@ -164,8 +164,20 @@ class TranslationPlanner:
                 within = sum(1 for n in chapters if 1 <= n <= final)
                 result["percent"] = min(100, round(within * 100 / final))
                 result["remaining"] = final - within
-                result["missing_preview"] = [
-                    n for n in range(1, final + 1) if n not in chapters
-                ][:10]
+                # Find only the first ten gaps; never iterate to a potentially
+                # enormous announced final chapter in the UI thread.
+                gaps = []
+                expected = 1
+                for number in sorted(n for n in chapters if 1 <= n <= final):
+                    while expected < number and len(gaps) < 10:
+                        gaps.append(expected)
+                        expected += 1
+                    expected = number + 1
+                    if len(gaps) >= 10:
+                        break
+                while expected <= final and len(gaps) < 10:
+                    gaps.append(expected)
+                    expected += 1
+                result["missing_preview"] = gaps
                 result["final_chapter"] = final
         return result
