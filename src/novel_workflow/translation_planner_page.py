@@ -41,6 +41,10 @@ class TodayPage(QWidget):
         self.edit_button = QPushButton("สร้างหรือแก้แผน")
         self.edit_button.clicked.connect(self._toggle_editor)
         actions.addWidget(self.edit_button)
+        self.finish_button = QPushButton("ยืนยันจบเรื่อง")
+        self.finish_button.clicked.connect(self._toggle_finish)
+        self.finish_button.hide()
+        actions.addWidget(self.finish_button)
         actions.addStretch()
         layout.addLayout(actions)
         self.editor = QGroupBox("แผนการแปล")
@@ -118,6 +122,25 @@ class TodayPage(QWidget):
         if self._selected_profile_id:
             self.openNovel.emit(self._selected_profile_id)
 
+    def _toggle_finish(self):
+        profile_id = self._selected_profile_id
+        if not profile_id:
+            return
+        goal = self.planner.finish_goal(profile_id) or {}
+        finished = goal.get("confirmed_finished") is True
+        if not finished:
+            answer = QMessageBox.question(
+                self, "ยืนยันจบเรื่อง",
+                "ยืนยันว่าการแปลเรื่องนี้จบแล้วหรือไม่? ระบบจะไม่เปลี่ยนไฟล์หรือประวัติ Export")
+            if answer != QMessageBox.Yes:
+                return
+        try:
+            self.planner.confirm_finished(profile_id, not finished)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "บันทึกสถานะไม่สำเร็จ", str(exc))
+            return
+        self.refresh()
+
     def refresh(self):
         profiles = self.repo.list_profiles()
         selected = self.profile_combo.currentData()
@@ -138,6 +161,7 @@ class TodayPage(QWidget):
         info = self.planner.summary(today, profiles)
         self._selected_profile_id = None
         self.progress.hide()
+        self.finish_button.hide()
         self.cover.hide()
         self.cover.clear()
         status = info["status"]
@@ -161,6 +185,11 @@ class TodayPage(QWidget):
                 except (OSError, ValueError):
                     pass
             mode = plan["plan_type"]
+            if mode == "finish":
+                self.finish_button.setText(
+                    "ยกเลิกยืนยันจบเรื่อง" if info.get("confirmed_finished")
+                    else "ยืนยันจบเรื่อง")
+                self.finish_button.show()
             if mode == "daily":
                 target = plan["target_chapters"]
                 text = f"{profile.name}\nแปลแล้ว {info['today_count']}/{target} บท · เหลือ {info['remaining']} บท"
