@@ -25,7 +25,7 @@ _LIGHT = {
 _DARK = {
     "scroll_track": "#1C2430", "scroll_thumb": "#858585", "scroll_thumb_hover": "#A0A0A0",
     "app": "#181D27", "surface": "#222A37", "sidebar": "#1C2430",
-    "surface2": "#303B4C", "item_selection": "#344D70", "hover": "#374357", "current_line": "#293546", "elevated": "#303B4C",
+    "surface2": "#303B4C", "item_selection": "#385374", "hover": "#374357", "current_line": "#293546", "elevated": "#303B4C",
     "control_border": "#858FA0", "border": "#3C4758", "text": "#EDF2F8", "secondary": "#ADB9CC",
     "muted": "#ADB9CC", "disabled_text": "#ADB9CC",
     "accent": "#80ADFF", "focus": "#80ADFF", "success": "#56C5A7",
