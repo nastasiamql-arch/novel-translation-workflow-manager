@@ -1095,6 +1095,7 @@ class NovelGroupsPage(QWidget):
             if self.members.item(index).checkState() == Qt.Checked
         ]
         self.owner.repo.save_groups(self.groups)
+        self.owner._refresh_library_groups()
         selected = self.selector.currentIndex()
         self.selector.setItemText(selected, group.name)
         self.owner.statusBar().showMessage(f"บันทึกกลุ่ม {group.name} แล้ว", 3000)
@@ -1108,6 +1109,7 @@ class NovelGroupsPage(QWidget):
         group = NovelGroup(name=name, order=len(self.groups))
         self.groups.append(group)
         self.owner.repo.save_groups(self.groups)
+        self.owner._refresh_library_groups()
         self.selector.addItem(group.name, group.id)
         self.selector.setCurrentIndex(self.selector.count() - 1)
         self.new_name.clear()
@@ -1120,6 +1122,7 @@ class NovelGroupsPage(QWidget):
             return
         self.groups.remove(group)
         self.owner.repo.save_groups(self.groups)
+        self.owner._refresh_library_groups()
         index = self.selector.currentIndex()
         self.selector.removeItem(index)
         self.show_group(self.selector.currentIndex())
@@ -2480,18 +2483,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.profiles.addItem(item)
         self.profiles.blockSignals(False)
 
-        group_selector = self.library_group_filter
-        selected_group = group_selector.currentData()
-        group_selector.blockSignals(True)
-        group_selector.clear()
-        group_selector.addItem("ทุกกลุ่ม", None)
-        self._library_group_ids = {}
-        for group in self.repo.load_groups():
-            group_selector.addItem(group.name, group.id)
-            self._library_group_ids[group.id] = set(group.profile_ids)
-        group_index = group_selector.findData(selected_group)
-        group_selector.setCurrentIndex(max(0, group_index))
-        group_selector.blockSignals(False)
+        self._refresh_library_groups()
         self.profile_cards.clear()
         status_counts = {
             status: sum(1 for profile in self.ps_list if _profile_status(profile) == status)
@@ -2556,6 +2548,23 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.filter_profiles(self.library_search.text())
         if self.repo.export_recovery_errors:
             self.statusBar().showMessage(' · '.join(self.repo.export_recovery_errors.values()), 15000)
+
+    def _refresh_library_groups(self):
+        selector = self.library_group_filter
+        selected = selector.currentData()
+        selector.blockSignals(True)
+        try:
+            selector.clear()
+            selector.addItem("ทุกกลุ่ม", None)
+            self._library_group_ids = {}
+            for group in self.repo.load_groups():
+                selector.addItem(group.name, group.id)
+                self._library_group_ids[group.id] = set(group.profile_ids)
+            selector.setCurrentIndex(max(0, selector.findData(selected)))
+        finally:
+            selector.blockSignals(False)
+        if self.profile_cards.count():
+            self.filter_profiles(self.library_search.text())
 
     def filter_profiles(self, query):
         query = query.strip().casefold()
