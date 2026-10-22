@@ -1,7 +1,7 @@
 """Today dashboard for manually selected translation work."""
 from __future__ import annotations
 from datetime import date, timedelta
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QDate
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QSpinBox, QDateEdit, QProgressBar, QFormLayout, QGroupBox, QMessageBox)
 from .translation_planner import TranslationPlanner
@@ -39,7 +39,7 @@ class TodayPage(QWidget):
         form = QFormLayout(self.editor)
         self.day = QDateEdit()
         self.day.setCalendarPopup(True)
-        self.day.setDate(date.today())
+        self.day.setDate(QDate.currentDate())
         self.day.dateChanged.connect(self._load_day)
         form.addRow("วันที่", self.day)
         self.profile_combo = QComboBox()
