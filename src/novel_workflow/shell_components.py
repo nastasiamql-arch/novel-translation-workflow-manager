@@ -148,6 +148,7 @@ class NavigationSidebar(QFrame):
         layout.addSpacing(14)
 
         for key, icon, title in [
+            ('today', '◷', 'วันนี้'),
             ('library', '▦', 'คลังนิยาย'),
             ('workspace', '▤', 'กำลังทำงาน'),
             ('progress', '◷', 'สถิติ'),
@@ -179,7 +180,7 @@ class NavigationSidebar(QFrame):
             return
         self.collapsed = collapsed
         self.setFixedWidth(60 if collapsed else 196)
-        self.brand_toggle.setText('☰' if collapsed else '☰   VALHALLA')
+        self.brand_toggle.setText('☰' if collapsed else '☰   PALANTIR: NOVEL')
         self.brand_toggle.setToolTip('ขยายเมนู' if collapsed else 'ย่อเมนู')
         for button in self.buttons.values():
             button.setToolButtonStyle(
