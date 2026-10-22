@@ -1,0 +1,119 @@
+from datetime import date, datetime, timedelta, timezone
+
+import pytest
+
+from novel_workflow.models import NovelProfile
+from novel_workflow.storage import ProjectRepository
+from novel_workflow.translation_planner import TranslationPlanner
+from novel_workflow.translation_progress import (
+    record_translator_export, confirm_retranslation, undo_retranslation,
+)
+
+
+def exported(profile, chapters, event_id, when):
+    return record_translator_export(
+        profile, chapters, source_path="Translator.txt", digest="a" * 64,
+        exported_path="export.txt", event_id=event_id, completed_at=when)
+
+
+def test_daily_plans_count_only_unique_confirmed_exports(tmp_path):
+    repo = ProjectRepository(tmp_path)
+    profile = NovelProfile(name="A")
+    repo.save_profile(profile)
+    planner = TranslationPlanner(repo)
+    day = date(2026, 10, 22)
+    plan = planner.save(day, profile.id, "daily", target_chapters=5)
+    assert planner.summary(day)["today_count"] == 0
+    stamp = datetime(2026, 10, 22, 12, tzinfo=timezone(timedelta(hours=7)))
+    exported(profile, [1, 2], "e1", stamp)
+    exported(profile, [1, 2], "e2", stamp)
+    repo.save_profile(profile)
+    result = planner.summary(day)
+    assert result["today_count"] == 2
+    assert result["remaining"] == 3
+    exported(profile, [3, 4, 5, 6], "e3", stamp)
+    repo.save_profile(profile)
+    result = planner.summary(day)
+    assert result["today_count"] == 6
+    assert result["excess"] == 1
+    assert result["percent"] == 100
+    assert TranslationPlanner(repo).get(day)["id"] == plan["id"]
+
+
+def test_finish_goal_tracks_gaps_and_reset_without_mutating_export_history(tmp_path):
+    repo = ProjectRepository(tmp_path)
+    profile = NovelProfile(name="B")
+    repo.save_profile(profile)
+    planner = TranslationPlanner(repo)
+    day = "2026-10-22"
+    planner.save(day, profile.id, "finish", final_chapter=5)
+    stamp = datetime(2026, 10, 22, tzinfo=timezone.utc)
+    exported(profile, [1, 3, 5], "e1", stamp)
+    repo.save_profile(profile)
+    assert planner.summary(day)["missing_preview"] == [2, 4]
+    assert planner.summary(day)["remaining"] == 2
+    reset = confirm_retranslation(profile, 3)
+    repo.save_profile(profile)
+    assert planner.summary(day)["missing_preview"] == [2, 3, 4, 5]
+    exported(profile, [3], "e2", stamp)
+    repo.save_profile(profile)
+    assert planner.summary(day)["missing_preview"] == [2, 4, 5]
+    assert undo_retranslation(profile, reset["reset_id"])
+    repo.save_profile(profile)
+    assert planner.summary(day)["missing_preview"] == [2, 4]
+    assert len(profile.translator_export_events) == 2
+
+
+def test_manual_weekly_plans_preserve_history_and_unknown_fields(tmp_path):
+    repo = ProjectRepository(tmp_path)
+    profile = NovelProfile()
+    repo.save_profile(profile)
+    planner = TranslationPlanner(repo)
+    day = date(2026, 12, 31)
+    planner.save(day, profile.id, "focus")
+    planner.save(day, profile.id, "daily", target_chapters=20)
+    planner.save(day + timedelta(days=1), None, "rest")
+    assert len(planner.get(day)["history"]) == 1
+    assert planner.get(day + timedelta(days=1))["plan_type"] == "rest"
+    assert len(planner.week(day)) == 7
+    assert planner.get(day)["target_chapters"] == 20
+
+
+def test_missing_profile_and_unknown_end_are_safe(tmp_path):
+    repo = ProjectRepository(tmp_path)
+    p = NovelProfile()
+    repo.save_profile(p)
+    planner = TranslationPlanner(repo)
+    planner.save("2026-10-22", p.id, "finish")
+    assert planner.summary("2026-10-22")["percent"] is None
+    planner.confirm_finished(p.id)
+    assert planner.finish_goal(p.id)["confirmed_finished"]
+    repo.delete_profile(p.id)
+    assert planner.summary("2026-10-22")["status"] == "missing_profile"
+
+
+def test_invalid_plan_rejected_without_creating_planner_file(tmp_path):
+    repo = ProjectRepository(tmp_path)
+    planner = TranslationPlanner(repo)
+    with pytest.raises(ValueError):
+        planner.save("2026-10-22", "missing", "daily", target_chapters=0)
+    assert not planner.path.exists()
+
+
+def test_today_page_can_save_and_navigate(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    from novel_workflow.translation_planner_page import TodayPage
+    repo = ProjectRepository(tmp_path)
+    profile = NovelProfile()
+    repo.save_profile(profile)
+    page = TodayPage(repo)
+    try:
+        page.kind.setCurrentIndex(page.kind.findData("daily"))
+        page.day.setDate(page.day.date())
+        page.target.setValue(20)
+        page._save()
+        assert page.planner.get(date.today())["target_chapters"] == 20
+        assert page.open_button.isEnabled()
+    finally:
+        page.close()
