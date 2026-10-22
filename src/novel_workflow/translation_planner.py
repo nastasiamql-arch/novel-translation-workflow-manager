@@ -60,6 +60,24 @@ class TranslationPlanner:
         value = self._load().get("days", {}).get(_date(day))
         return dict(value) if isinstance(value, dict) else None
 
+    def active_for_day(self, day: str | date):
+        """A finish goal carries across dates unless a new explicit plan overrides it."""
+        local_date = _date(day)
+        data = self._load()
+        days = data.get("days", {})
+        explicit = days.get(local_date)
+        if isinstance(explicit, dict):
+            return dict(explicit)
+        # Never make a newer finish goal active on an earlier date.
+        eligible = ((key, value) for key, value in days.items()
+                    if isinstance(key, str) and key <= local_date
+                    and isinstance(value, dict) and value.get("plan_type") == "finish")
+        for _key, value in sorted(eligible, key=lambda pair: pair[0], reverse=True):
+            goal = data.get("finish_goals", {}).get(value.get("profile_id"), {})
+            if isinstance(goal, dict) and goal.get("confirmed_finished") is not True:
+                return {**value, "carried_from": value.get("local_date")}
+        return None
+
     def save(self, day: str | date, profile_id: str | None, plan_type: str,
              *, target_chapters: int | None = None, final_chapter: int | None = None):
         local_date = _date(day)
@@ -131,7 +149,7 @@ class TranslationPlanner:
 
     def summary(self, day: str | date, profiles=None):
         local_date = _date(day)
-        plan = self.get(local_date)
+        plan = self.active_for_day(local_date)
         if plan is None:
             return {"status": "empty", "day": local_date}
         if plan.get("plan_type") == "rest":
