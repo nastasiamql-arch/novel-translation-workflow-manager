@@ -2490,26 +2490,41 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 index, f"{label} ({status_counts[status]})"
             )
         placeholder = Path(__file__).resolve().parent / "resources" / "novelworkflow.png"
+        # Cache scaled covers until image identity changes.
+        cache = getattr(self, "_library_cover_cache", {})
+        updated_cache = {}
         for profile in self.ps_list:
-            pixmap = QPixmap(str(placeholder)) if placeholder.is_file() else QPixmap()
+            candidate = placeholder
             if profile.cover_image_path:
                 try:
-                    candidate = self.repo.resolve_project_path(
+                    cover = self.repo.resolve_project_path(
                         profile.id, profile.cover_image_path
                     )
-                    if candidate.is_file():
-                        pixmap = QPixmap(str(candidate))
-                except ValueError:
+                    if cover.is_file():
+                        candidate = cover
+                except (OSError, ValueError):
                     pass
-            if not pixmap.isNull():
-                pixmap = pixmap.scaled(156, 208, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                pixmap = pixmap.copy((pixmap.width()-156)//2, (pixmap.height()-208)//2, 156, 208)
+            try:
+                info = candidate.stat()
+                signature = (str(candidate), info.st_mtime_ns, info.st_size)
+            except OSError:
+                signature = (str(candidate), None, None)
+            cached = cache.get(profile.id)
+            if cached is not None and cached[0] == signature:
+                pixmap = cached[1]
+            else:
+                pixmap = QPixmap(str(candidate))
+                if not pixmap.isNull():
+                    pixmap = pixmap.scaled(156, 208, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                    pixmap = pixmap.copy((pixmap.width()-156)//2, (pixmap.height()-208)//2, 156, 208)
+            updated_cache[profile.id] = (signature, pixmap)
             status = _profile_status(profile)
             card = QListWidgetItem(QIcon(pixmap), profile.name)
             card.setData(Qt.UserRole, profile.id)
             card.setData(Qt.UserRole + 1, status)
             card.setToolTip(profile.name)
             self.profile_cards.addItem(card)
+        self._library_cover_cache = updated_cache
 
         target_id = pid or (
             self.settings.last_profile_id
