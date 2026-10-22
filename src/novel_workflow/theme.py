@@ -13,7 +13,7 @@ _SYSTEM_APPEARANCE_DARK: bool | None = None
 _LIGHT = {
     "scroll_track": "#E9EEF6", "scroll_thumb": "#808080", "scroll_thumb_hover": "#626262",
     "app": "#F6F8FC", "surface": "#FFFFFF", "sidebar": "#F0F3F8",
-    "surface2": "#E9EEF6", "item_selection": "#DDEAFF", "hover": "#E7ECF5", "current_line": "#F0F4FC", "elevated": "#FFFFFF",
+    "surface2": "#E9EEF6", "item_selection": "#DFEAFA", "hover": "#E7ECF5", "current_line": "#F0F4FC", "elevated": "#FFFFFF",
     "control_border": "#7A808A", "border": "#DCE3ED", "text": "#1E293B", "secondary": "#526176",
     "muted": "#526176", "disabled_text": "#526176",
     "accent": "#2459A6", "focus": "#474747", "success": "#127561",
