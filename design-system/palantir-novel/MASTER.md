@@ -40,7 +40,7 @@ All UI components use `theme.py` semantic color roles. New design foundation:
 | Text | #1E293B | #EDF2F8 |
 | Secondary text | #526176 | #ADB9CC |
 | Accent | #2459A6 | #80ADFF |
-| Selected | #DDEAFF | #385374 |
+| Selected | #DDEAFF | #344969 |
 | Border | #DCE3ED | #3C4758 |
 
 Keyboard focus remains neutral, not confused with selected text. Light success/warning use contrast-adjusted tones for WCAG AA on secondary surfaces.
