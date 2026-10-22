@@ -27,7 +27,7 @@ jobs:
         run: |
           foreach ($scale in @("1.0", "1.25", "1.5", "2.0")) {
             $env:QT_SCALE_FACTOR = $scale
-            python tests/ui_geometry.py
+            python -u -X faulthandler tests/ui_geometry.py
             if ($LASTEXITCODE -ne 0) { throw "UI geometry failed at scale $scale" }
           }
           Remove-Item Env:QT_SCALE_FACTOR
