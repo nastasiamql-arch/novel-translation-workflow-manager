@@ -117,3 +117,19 @@ def test_today_page_can_save_and_navigate(tmp_path):
         assert page.open_button.isEnabled()
     finally:
         page.close()
+
+
+def test_finish_goal_carries_to_next_day_without_copying_daily_plan(tmp_path):
+    repo = ProjectRepository(tmp_path)
+    profile = NovelProfile()
+    repo.save_profile(profile)
+    planner = TranslationPlanner(repo)
+    planner.save("2026-10-22", profile.id, "finish", final_chapter=10)
+    carried = planner.summary("2026-10-23")
+    assert carried["status"] == "active"
+    assert carried["plan"]["carried_from"] == "2026-10-22"
+    assert planner.get("2026-10-23") is None
+    planner.save("2026-10-23", None, "rest")
+    assert planner.summary("2026-10-23")["status"] == "rest"
+    planner.confirm_finished(profile.id)
+    assert planner.summary("2026-10-24")["status"] == "empty"
