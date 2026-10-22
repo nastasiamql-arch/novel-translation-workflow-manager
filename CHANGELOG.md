@@ -1,4 +1,4 @@
-## Unreleased — Palantir Slate Blue / Translation Planner
+## v5.9.0 — Palantir Slate Blue / Translation Planner
 
 - Add Today dashboard with manual focus, daily goals, finish goals, rest days and seven-day scheduling.
 - Store planner history independently of profiles and compute counts from confirmed effective Translator Export events.
