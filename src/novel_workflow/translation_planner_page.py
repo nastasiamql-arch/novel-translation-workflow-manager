@@ -122,6 +122,10 @@ class TodayPage(QWidget):
             self.profile_combo.setCurrentIndex(idx)
         self.profile_combo.blockSignals(False)
         today = date.today()
+        # Refresh the editable date when local midnight passes, but leave a
+        # user-selected future date alone while the editor is open.
+        if not self.editor.isVisible():
+            self.day.setDate(QDate.currentDate())
         self.heading.setText(f"วันนี้ — {today.strftime('%d/%m/%Y')}")
         info = self.planner.summary(today, profiles)
         self._selected_profile_id = None
