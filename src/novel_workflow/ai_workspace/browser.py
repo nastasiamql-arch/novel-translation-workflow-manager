@@ -417,6 +417,8 @@ class GeminiBrowserWorker(QThread):
                         for job in self.jobs:
                             if job["job_id"] in active and job.get("send_attempted") and not job.get("sent"):
                                 self._confirm_send(job)
+                                if not job.get("send_attempted") and not job.get("sent"):
+                                    active.discard(job["job_id"])
                             if job["job_id"] not in active or not job.get("sent"):
                                 continue
                             if (time.monotonic() - job.get("collect_started", time.monotonic())
