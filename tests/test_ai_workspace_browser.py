@@ -155,3 +155,22 @@ def test_virtualized_attachment_names_require_horizontal_scroll(browser):
         assert GeminiBrowserWorker._attachments_state(page, ["475.txt", "477.txt"]) == "unknown"
     finally:
         context.close()
+
+
+def test_prompt_visible_but_composer_not_cleared_is_not_submitted(browser, tmp_path):
+    import time
+    context = browser.new_context()
+    try:
+        page = context.new_page()
+        page.set_content(html() + "<main>TRANSLATE CHAPTER 475</main>")
+        page.locator('[contenteditable="true"]').fill("TRANSLATE CHAPTER 475")
+        worker = GeminiBrowserWorker([], tmp_path)
+        job = dict(job_id="composer", page=page, prompt="TRANSLATE CHAPTER 475",
+                   send_attempted=True, confirm_started=time.monotonic())
+        assert not worker._confirm_send(job)
+        assert not job.get("sent")
+        page.locator('[contenteditable="true"]').fill("")
+        assert worker._confirm_send(job)
+        assert job["sent"]
+    finally:
+        context.close()
