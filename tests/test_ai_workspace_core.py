@@ -74,3 +74,17 @@ def test_raw_survives_parser_failure():
     job = build_jobs("a" * 32, "แปล", chapters(475, 1), 1)[0]
     record_response(job, "not structured")
     assert job.status == "REVIEW_REQUIRED" and job.raw_response == "not structured"
+
+
+def test_auto_export_requires_explicit_persisted_batch_permission(tmp_path):
+    jobs = build_jobs("a" * 32, "แปล", chapters(475, 3), 1)
+    assert not any(job.auto_export for job in jobs)
+    for job in jobs:
+        job.auto_export = True
+        record_response(job, example(job.chapter_numbers[0]))
+    store = JobStore(tmp_path, "a" * 32)
+    store.save(jobs)
+    restored = store.load()
+    assert all(job.auto_export for job in restored)
+    assert [job.submission_order for job in restored] == [1, 2, 3]
+    assert "บทที่ 477" in ordered_results(restored)
