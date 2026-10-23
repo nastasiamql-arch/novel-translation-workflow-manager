@@ -150,7 +150,6 @@ class GeminiBrowserWorker(QThread):
         if not job.get("upload_pending") or job.get("cancelled"):
             return
         names = [Path(path).name for path in job.get("attachments", [])]
-        self._emit(job, "CHECKING_ATTACHMENTS", f"ตรวจไฟล์ {len(names)} รายการ")
         state = self._attachments_state(job["page"], names)
         if state == "ready":
             job["upload_pending"] = False
@@ -165,7 +164,8 @@ class GeminiBrowserWorker(QThread):
             self._emit(job, "ATTACHMENT_TIMEOUT", "ตรวจไฟล์ไม่ครบภายในเวลาที่กำหนด กรุณาตรวจแท็บ")
         else:
             # An opaque/virtualized chip stays pending, never silently succeeds.
-            self._emit(job, "UPLOADING", "กำลังโหลดหรือยังตรวจรายการไฟล์ไม่ครบ")
+            if job.get("last_state") != "UPLOADING":
+                self._emit(job, "UPLOADING", "กำลังโหลดหรือยังตรวจรายการไฟล์ไม่ครบ")
 
     def _send(self, job):
         page = job["page"]
