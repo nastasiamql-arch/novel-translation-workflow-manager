@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCombo
 from .core import JobStore, build_jobs, record_response, ordered_results, now
 from .standard_chrome import StandardChromeLauncher, ChromeLaunchError, GEMINI_URL
 from novel_workflow.clipboard_files import copy_file_paths
-from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QPlainTextEdit, QFileDialog
+from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QPlainTextEdit, QFileDialog, QGridLayout, QGroupBox
 from novel_workflow.translation_batches import load_translation_source, validate_translation_source
 from novel_workflow.translation_batch_clipboard import prepare_translation_batch
 from novel_workflow.vocabulary_batches import ChapterBatch, ChapterFile
@@ -113,6 +113,7 @@ class AIWorkspacePage(QWidget):
         self.auto_export = QCheckBox("เมื่อรับผลครบให้ Import/Export อัตโนมัติ")
         options.addWidget(self.auto_export)
         layout.addLayout(options)
+        layout.addWidget(QLabel("A · เตรียมงาน · เลือกต้นฉบับ ช่วงบท จำนวนแท็บ และรูปแบบไฟล์"))
         self.prompt = QTextEdit()
         self.prompt.setPlaceholderText("Prompt เพิ่มเติม (ใช้ไฟล์ Prompt ที่ผูกกับขั้นตอนอยู่แล้วด้วย)")
         self.prompt.setMaximumHeight(90)
@@ -130,13 +131,14 @@ class AIWorkspacePage(QWidget):
              ("ดูคำตอบดิบ", self.view_raw), ("ดูคำศัพท์ใหม่", self.view_vocabulary),
              ("ตรวจผลรวม", self.combine), ("Import / Export", self.import_export)]
         ]
-        for group in action_groups:
-            actions = QHBoxLayout()
-            for label, method in group:
+        for heading, group in zip(("B · Chrome Workspace / เตรียมและส่งเอง", "C–D · รับคำตอบ / ตรวจผล / Export"), action_groups):
+            group_box = QGroupBox(heading)
+            actions = QGridLayout(group_box)
+            for index, (label, method) in enumerate(group):
                 button = QPushButton(label)
                 button.clicked.connect(method)
-                actions.addWidget(button)
-            layout.addLayout(actions)
+                actions.addWidget(button, index // 3, index % 3)
+            layout.addWidget(group_box)
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["งาน", "บท", "โมเดล", "สถานะ", "รายละเอียด"])
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
