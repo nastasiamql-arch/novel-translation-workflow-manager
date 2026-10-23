@@ -115,31 +115,61 @@ class GeminiBrowserWorker(QThread):
         Unknown or virtualized/missing attachment chips are never interpreted
         as ready. An explicit upload error is different from pending progress.
         """
-        return page.evaluate(r"""(names) => {
+        return page.evaluate(r"""async (names) => {
           const input = document.querySelector('input[type=file]');
           const composer = document.querySelector('[contenteditable=true]');
           const root = input?.closest('form') || composer?.closest('form')
                     || composer?.parentElement?.parentElement;
-          if (!root || !names.length) return 'unknown';
-          const nodes = Array.from(root.querySelectorAll('[aria-label], [title], [data-file-name]'));
-          let pending = false;
-          for (const name of names) {
-            const hits = nodes.filter(el => [el.getAttribute('data-file-name'),
+          if (!root || !names.length || new Set(names).size !== names.length) return 'unknown';
+          const seen = new Map();
+          let duplicate = false;
+          const examine = () => {
+            const nodes = Array.from(root.querySelectorAll('[aria-label], [title], [data-file-name]'));
+            for (const name of names) {
+              const hits = nodes.filter(el => [el.getAttribute('data-file-name'),
                 el.getAttribute('title'), el.getAttribute('aria-label')].some(
                   value => value && (value === name || value.includes(name))));
-            if (hits.length !== 1) return 'unknown';
-            const el = hits[0];
-            const meta = [el.getAttribute('aria-label'), el.getAttribute('title'),
-              el.getAttribute('data-state'), el.getAttribute('data-status'),
-              el.textContent].join(' ').toLowerCase();
-            if (/error|failed|rejected|ผิดพลาด|ล้มเหลว/.test(meta)) return 'failed';
-            if (/uploading|loading|pending|processing|กำลัง|อัปโหลด/.test(meta) ||
-                el.matches('[aria-busy=true], [role=progressbar]') ||
-                el.querySelector('[aria-busy=true], [role=progressbar], progress')) {
-              pending = true;
+              if (hits.length > 1) duplicate = true;
+              for (const el of hits) {
+                const meta = [el.getAttribute('aria-label'), el.getAttribute('title'),
+                  el.getAttribute('data-state'), el.getAttribute('data-status'),
+                  el.textContent].join(' ').toLowerCase();
+                const failed = /error|failed|rejected|ผิดพลาด|ล้มเหลว/.test(meta);
+                const pending = /uploading|loading|pending|processing|กำลัง|อัปโหลด/.test(meta) ||
+                  el.matches('[aria-busy=true], [role=progressbar]') ||
+                  !!el.querySelector('[aria-busy=true], [role=progressbar], progress');
+                const state = failed ? 'failed' : (pending ? 'pending' : 'ready');
+                const prior = seen.get(name);
+                if (prior && prior !== state) {
+                  seen.set(name, 'pending');
+                } else {
+                  seen.set(name, state);
+                }
+              }
             }
+          };
+          examine();
+          const scrollers = [root, ...root.querySelectorAll('*')].filter(
+            el => el.scrollWidth > el.clientWidth + 5 && el.clientWidth > 0
+          );
+          for (const el of scrollers) {
+            const start = el.scrollLeft;
+            const max = el.scrollWidth - el.clientWidth;
+            const step = Math.max(1, Math.floor(el.clientWidth * 0.8));
+            for (let x = 0; x <= max; x += step) {
+              el.scrollLeft = x;
+              await new Promise(resolve => requestAnimationFrame(() => resolve()));
+              examine();
+            }
+            el.scrollLeft = max;
+            await new Promise(resolve => requestAnimationFrame(() => resolve()));
+            examine();
+            el.scrollLeft = start;
           }
-          return pending ? 'pending' : 'ready';
+          if (duplicate || names.some(name => !seen.has(name))) return 'unknown';
+          if (names.some(name => seen.get(name) === 'failed')) return 'failed';
+          if (names.some(name => seen.get(name) === 'pending')) return 'pending';
+          return 'ready';
         }""", filenames)
 
     @classmethod
