@@ -156,13 +156,14 @@ class GeminiBrowserWorker(QThread):
             const start = el.scrollLeft;
             const max = el.scrollWidth - el.clientWidth;
             const step = Math.max(1, Math.floor(el.clientWidth * 0.8));
+            if (Math.ceil(max / step) > 64) return "unknown";
             for (let x = 0; x <= max; x += step) {
               el.scrollLeft = x;
-              await new Promise(resolve => requestAnimationFrame(() => resolve()));
+              await new Promise(resolve => setTimeout(resolve, 0));
               examine();
             }
             el.scrollLeft = max;
-            await new Promise(resolve => requestAnimationFrame(() => resolve()));
+            await new Promise(resolve => setTimeout(resolve, 0));
             examine();
             el.scrollLeft = start;
           }
