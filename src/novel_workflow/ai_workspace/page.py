@@ -223,7 +223,10 @@ class AIWorkspacePage(QWidget):
             jobs = build_jobs(profile.id, self.stage.currentText(), selected_chapters,
                               self.size.value(), max_tabs=self.tabs.value(),
                               references=refs, model=self.model.currentText().strip(),
-                              prompt=self.prompt.toPlainText())
+                              prompt=self.prompt.toPlainText().strip() or (
+                                  "ปฏิบัติตามไฟล์ Prompt ที่แนบ และใช้ไฟล์อ้างอิงทั้งหมด"
+                                  if any(any(term in path.name.lower() for term in
+                                    ("prompt", "คำสั่ง", "提示")) for path in refs) else ""))
             if self.jobs and any(j.status not in {"IMPORTED", "CANCELLED"} for j in self.jobs):
                 raise ValueError("มีงานเดิมที่ยังไม่จบ กรุณานำผลลัพธ์ออกก่อนสร้างงานใหม่")
             worker = BundlePreparationWorker(
