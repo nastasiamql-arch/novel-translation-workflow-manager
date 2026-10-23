@@ -115,7 +115,8 @@ class AIWorkspacePage(QWidget):
         layout.addWidget(self.prompt)
         action_groups = [
             [("ตรวจและสร้างงาน", self.preview), ("เปิด Chrome / เริ่มส่ง", self.launch),
-             ("เปิดแท็บงาน", self.open_tab), ("ตรวจสถานะอีกครั้ง", self.retry_job),
+             ("เปิดแท็บงาน", self.open_tab), ("หยุด Chrome Workspace", self.stop_worker),
+             ("ตรวจสถานะอีกครั้ง", self.retry_job),
              ("ยืนยันส่งเองแล้ว", self.confirm_sent), ("ยกเลิกงาน", self.cancel_job)],
             [("รับผลอีกครั้ง", self.collect_again), ("รับผลด้วยตนเอง", self.manual_import),
              ("ตรวจผลรวม", self.combine), ("เปลี่ยนโมเดลงาน", self.edit_model),
@@ -313,6 +314,13 @@ class AIWorkspacePage(QWidget):
         job.events.append({"time": now(), "status": job.status, "detail": (job.error or "")[:180]})
         self._save()
         self.status.setText(f"งาน {job.submission_order}: {job.status} {job.error}")
+
+    def stop_worker(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.enqueue("stop")
+            self.status.setText("กำลังหยุดการควบคุม Chrome โดยรักษาข้อมูลงานไว้")
+        else:
+            self.status.setText("ไม่มี Chrome Workspace ที่กำลังทำงาน")
 
     def open_tab(self):
         job = self._chosen()
