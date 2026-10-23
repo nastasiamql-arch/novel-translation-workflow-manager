@@ -21,3 +21,11 @@ profiles/
 local_settings.json
 secrets.json
 **/Polish History/
+
+# AI Web Workspace local browser/session and private generated content
+chrome-ai-profile/
+**/chrome-ai-profile/
+**/ai_workspace_jobs.json
+cache/ai_workspace/
+**/cache/ai_workspace/
+**/ai_workspace/*.raw.txt

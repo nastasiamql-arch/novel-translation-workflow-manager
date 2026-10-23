@@ -108,6 +108,8 @@ class AIWorkspacePage(QWidget):
             options.addWidget(widget)
         self.zip_mode = QCheckBox("แนบเป็น ZIP")
         options.addWidget(self.zip_mode)
+        self.auto_export = QCheckBox("เมื่อรับผลครบให้ Import/Export อัตโนมัติ")
+        options.addWidget(self.auto_export)
         layout.addLayout(options)
         self.prompt = QTextEdit()
         self.prompt.setPlaceholderText("Prompt เพิ่มเติม (ใช้ไฟล์ Prompt ที่ผูกกับขั้นตอนอยู่แล้วด้วย)")
@@ -115,9 +117,11 @@ class AIWorkspacePage(QWidget):
         layout.addWidget(self.prompt)
         action_groups = [
             [("ตรวจและสร้างงาน", self.preview), ("เปิด Chrome / เริ่มส่ง", self.launch),
-             ("เปิดแท็บงาน", self.open_tab), ("ตรวจสถานะอีกครั้ง", self.retry_job),
+             ("เปิดแท็บงาน", self.open_tab), ("หยุด Chrome Workspace", self.stop_worker),
+             ("ตรวจสถานะอีกครั้ง", self.retry_job),
              ("ยืนยันส่งเองแล้ว", self.confirm_sent), ("ยกเลิกงาน", self.cancel_job)],
             [("รับผลอีกครั้ง", self.collect_again), ("รับผลด้วยตนเอง", self.manual_import),
+             ("ดูคำตอบดิบ", self.view_raw), ("ดูคำศัพท์ใหม่", self.view_vocabulary),
              ("ตรวจผลรวม", self.combine), ("เปลี่ยนโมเดลงาน", self.edit_model),
              ("Import / Export", self.import_export)],
         ]
@@ -164,6 +168,7 @@ class AIWorkspacePage(QWidget):
         self._render()
 
     def _stage_changed(self, *_):
+        self.auto_export.setEnabled(self.stage.currentText() == "แปล")
         current = self.source.currentData()
         self.source.blockSignals(True)
         self.source.clear()
@@ -244,6 +249,8 @@ class AIWorkspacePage(QWidget):
             def prepared(results):
                 for job in jobs:
                     job.prepared_files = results[job.job_id]
+                    job.auto_export = (self.stage.currentText() == "แปล"
+                                       and self.auto_export.isChecked())
                 self.jobs = jobs
                 self._save()
                 self.status.setText(
@@ -266,7 +273,9 @@ class AIWorkspacePage(QWidget):
         waiting = [j for j in self.jobs if j.status in {
             "PREPARED", "OPENED", "MODEL_SELECTED", "READY",
             "GOOGLE_LOGIN_REQUIRED", "MODEL_NOT_FOUND", "MODEL_SELECTION_FAILED",
-            "ATTACHMENT_NOT_READY", "ATTACHMENT_UPLOAD_FAILED", "PROMPT_INSERT_FAILED"}]
+            "ATTACHMENT_NOT_READY", "ATTACHMENT_UPLOAD_FAILED", "ATTACHMENT_TIMEOUT",
+            "ATTACHMENT_FAILED", "UPLOADING", "CHECKING_ATTACHMENTS",
+            "ATTACHMENT_READY", "READY_TO_SEND", "PROMPT_INSERT_FAILED"}]
         if not waiting:
             self.status.setText("ไม่มีงานที่เตรียมไว้ หรือกำลังรอแก้ไขงานเดิม")
             return
@@ -296,7 +305,11 @@ class AIWorkspacePage(QWidget):
         if not job:
             return
         if state.startswith("RAW:"):
-            record_response(job, state[4:])
+            try:
+                record_response(job, state[4:])
+            except ValueError as exc:
+                job.status = "REVIEW_REQUIRED"
+                job.error = str(exc)
         else:
             job.status = state
             job.error = reason
@@ -306,9 +319,22 @@ class AIWorkspacePage(QWidget):
                 job.page_url = url
         if state == "SUBMITTED":
             job.submitted_at = now()
+        if state == "READY_TO_SEND":
+            job.error = ""
         job.events.append({"time": now(), "status": job.status, "detail": (job.error or "")[:180]})
         self._save()
         self.status.setText(f"งาน {job.submission_order}: {job.status} {job.error}")
+        if (state.startswith("RAW:") and self.jobs
+                and all(j.auto_export and j.stage == "แปล" for j in self.jobs)
+                and all(j.status == "RECEIVED" and not j.imported for j in self.jobs)):
+            self.import_export(automatic=True)
+
+    def stop_worker(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.enqueue("stop")
+            self.status.setText("กำลังหยุดการควบคุม Chrome โดยรักษาข้อมูลงานไว้")
+        else:
+            self.status.setText("ไม่มี Chrome Workspace ที่กำลังทำงาน")
 
     def open_tab(self):
         job = self._chosen()
@@ -383,6 +409,39 @@ class AIWorkspacePage(QWidget):
             self._save()
             self.status.setText(f"กำหนดโมเดลให้งาน {job.submission_order} แล้ว · ระบบจะตรวจจริงก่อนแนบไฟล์")
 
+    def view_raw(self):
+        job = self._chosen()
+        if not job:
+            self.status.setText("เลือกงานก่อน")
+            return
+        if not job.raw_response:
+            self.status.setText("งานนี้ยังไม่มีคำตอบดิบ")
+            return
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(f"คำตอบดิบ · งาน {job.submission_order}")
+        dialog.setText("คำตอบดิบถูกเก็บไว้ใน Job Store · เปิดรายละเอียดเพื่ออ่านทั้งหมด")
+        dialog.setDetailedText(job.raw_response)
+        dialog.exec()
+
+    def view_vocabulary(self):
+        job = self._chosen()
+        if not job:
+            self.status.setText("เลือกงานก่อน")
+            return
+        if job.stage != "แปล":
+            self.status.setText("ขั้นตอนนี้เก็บคำตอบดิบไว้ตรวจเอง · ยังไม่เพิ่ม Glossary")
+            return
+        terms = [f"บท {chapter}: {term}" for chapter, items in job.vocabulary.items()
+                 for term in items]
+        if not terms:
+            self.status.setText("งานนี้ไม่มีคำศัพท์ใหม่ที่แยกได้")
+            return
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(f"คำศัพท์ใหม่ · งาน {job.submission_order}")
+        dialog.setText("คำศัพท์ใหม่รอตรวจสอบ · ยังไม่ได้เพิ่มใน Glossary")
+        dialog.setDetailedText("\n".join(terms))
+        dialog.exec()
+
     def manual_import(self):
         job = self._chosen()
         if not job:
@@ -409,8 +468,8 @@ class AIWorkspacePage(QWidget):
         self.status.setText("ตรวจครบแล้ว · คัดลอกผลรวมลง Clipboard เพื่อวางใน Translator และ Export ผ่านขั้นตอนเดิม")
 
 
-    def import_export(self):
-        """Use existing Translator export only, with preflight and user confirmation."""
+    def import_export(self, *, automatic=False):
+        """Use existing Translator export, retaining preflight and recovery journal."""
         try:
             text = ordered_results(self.jobs)
             profile = self._selected_profile()
@@ -420,6 +479,15 @@ class AIWorkspacePage(QWidget):
                 raise ValueError("Import Translator รองรับเฉพาะขั้นตอนแปล")
             if all(job.imported for job in self.jobs):
                 raise ValueError("ชุดงานนี้นำเข้าและ Export แล้ว")
+            if automatic:
+                from novel_workflow.translation_progress import completed_chapters
+                persisted_profile = self.owner.repo.load_profile(profile.id)
+                numbers = {n for job in self.jobs for n in job.chapter_numbers}
+                duplicates = sorted(numbers & completed_chapters(persisted_profile))
+                if duplicates:
+                    raise ValueError(
+                        f"บท {duplicates} เคย Export แล้ว · ป้องกัน Export ซ้ำหลัง Crash "
+                        "กรุณาตรวจประวัติและยืนยันการแปลใหม่ด้วยระบบเดิมก่อน")
             workspace = self.owner.workspaces.get(profile.id)
             if workspace is None:
                 raise ValueError("ไม่พบ Workspace ของนิยาย")
@@ -441,19 +509,24 @@ class AIWorkspacePage(QWidget):
                 raise ValueError("Translator มีการแก้ไขค้างอยู่")
             if target.read_bytes().strip():
                 raise ValueError("Translator ถูกแก้ไขจากภายนอก")
-            confirmation = QMessageBox.question(
-                self, "ยืนยัน Import + Export",
-                f"นำเข้า {sum(len(j.chapter_numbers) for j in self.jobs)} บท"
-                " ลง Translator ที่ว่าง และ Export ด้วยระบบเดิมหรือไม่?",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if confirmation != QMessageBox.Yes:
-                return
+            if automatic:
+                if not all(j.auto_export for j in self.jobs):
+                    raise ValueError("ชุดงานนี้ไม่ได้อนุญาต Auto Export ล่วงหน้า")
+            else:
+                confirmation = QMessageBox.question(
+                    self, "ยืนยัน Import + Export",
+                    f"นำเข้า {sum(len(j.chapter_numbers) for j in self.jobs)} บท"
+                    " ลง Translator ที่ว่าง และ Export ด้วยระบบเดิมหรือไม่?",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                if confirmation != QMessageBox.Yes:
+                    return
             editor.setPlainText(text)
             if not workspace.editor.save_editor(editor, quiet=True, normalize=False):
                 raise ValueError("บันทึก Translator ไม่สำเร็จหรือมีการแก้ไขจากภายนอก")
             # The existing Export handles backup, Context, progress, history and
             # recovery journal. Its confirmation and preflight remain enabled.
-            if not self.owner.update_context_from_translator(workspace):
+            if not self.owner.update_context_from_translator(
+                    workspace, preauthorized=automatic):
                 self.status.setText("นำเข้าแล้ว แต่ Export ยังไม่สำเร็จ · ผลลัพธ์ถูกเก็บไว้")
                 return
             for job in self.jobs:

@@ -7,6 +7,10 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+# Cancel superseded PR validations; never interrupt a main-branch release.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
     runs-on: windows-latest

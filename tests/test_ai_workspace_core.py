@@ -74,3 +74,40 @@ def test_raw_survives_parser_failure():
     job = build_jobs("a" * 32, "แปล", chapters(475, 1), 1)[0]
     record_response(job, "not structured")
     assert job.status == "REVIEW_REQUIRED" and job.raw_response == "not structured"
+
+
+def test_auto_export_requires_explicit_persisted_batch_permission(tmp_path):
+    jobs = build_jobs("a" * 32, "แปล", chapters(475, 3), 1)
+    assert not any(job.auto_export for job in jobs)
+    for job in jobs:
+        job.auto_export = True
+        record_response(job, example(job.chapter_numbers[0]))
+    store = JobStore(tmp_path, "a" * 32)
+    store.save(jobs)
+    restored = store.load()
+    assert all(job.auto_export for job in restored)
+    assert [job.submission_order for job in restored] == [1, 2, 3]
+    assert "บทที่ 477" in ordered_results(restored)
+
+
+@pytest.mark.parametrize("stage", ["หาศัพท์", "เกลา"])
+def test_stage_specific_raw_is_not_misparsed_as_translation(stage):
+    job = build_jobs("a" * 32, stage, chapters(475, 1), 1)[0]
+    raw = "คำศัพท์ใหม่\n凌云 = หลิงอวิ๋น\n[-]" if stage == "หาศัพท์" else "ข้อความเกลาที่ไม่ได้มีหัวบท"
+    record_response(job, raw)
+    assert job.status == "RECEIVED"
+    assert job.raw_response == raw
+    assert not job.chapters and not job.vocabulary
+    with pytest.raises(ValueError):
+        ordered_results([job])
+
+
+def test_thirty_chapters_from_ten_out_of_order_responses():
+    jobs = build_jobs("a" * 32, "แปล", chapters(475, 30), 3)
+    for job in reversed(jobs):
+        record_response(job, "\n".join(example(n) for n in job.chapter_numbers))
+    output = ordered_results(jobs)
+    found = [int(line.split()[1]) for line in output.splitlines()
+             if line.startswith("บทที่")]
+    assert found == list(range(475, 505))
+    assert output.count("[จบตอน]") == 30

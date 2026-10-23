@@ -65,10 +65,14 @@ class GeminiBrowserWorker(QThread):
         self._emit(job, "MODEL_SELECTED", model)
 
     def _prepare(self, job):
+        """Prepare a tab without blocking other jobs on slow uploads."""
         page = job["page"]
+        job["ready"] = False
+        job["sent"] = False
         page.goto("https://gemini.google.com/app", wait_until="domcontentloaded", timeout=25000)
         if "accounts.google.com" in page.url:
             raise BrowserFailure("GOOGLE_LOGIN_REQUIRED", "Google ขอเข้าสู่ระบบด้วยตนเอง")
+        # Model selection must be verified before Gemini sees any attachments.
         self._select_model(page, job)
         attachments = [Path(p) for p in job.get("attachments", [])]
         if not attachments or any(not p.is_file() for p in attachments):
@@ -76,6 +80,10 @@ class GeminiBrowserWorker(QThread):
         for path in attachments:
             if path.stat().st_size == 0:
                 raise BrowserFailure("ATTACHMENT_NOT_FOUND", f"ไฟล์ว่าง: {path.name}")
+        names = [p.name for p in attachments]
+        if len(set(names)) != len(names):
+            raise BrowserFailure("ATTACHMENT_UPLOAD_FAILED", "มีชื่อไฟล์แนบซ้ำกัน ตรวจแยกไฟล์ไม่ได้")
+        self._emit(job, "ATTACHING", f"{len(attachments)} ไฟล์")
         file_input = page.locator('input[type="file"]')
         if file_input.count() != 1:
             attach = self._selector(page, "button", r"attach|upload|แนบ|อัปโหลด|เพิ่มไฟล์")
@@ -86,6 +94,7 @@ class GeminiBrowserWorker(QThread):
         if file_input.count() != 1:
             raise BrowserFailure("ATTACHMENT_UPLOAD_FAILED", "ตัวรับไฟล์ไม่ชัดเจน กรุณาแนบเอง")
         file_input.set_input_files([str(p) for p in attachments], timeout=12000)
+        self._emit(job, "UPLOADING", "รอหลักฐานว่าไฟล์แนบพร้อมจริง")
         composer = page.locator('[contenteditable="true"]')
         if composer.count() != 1:
             raise BrowserFailure("PROMPT_INSERT_FAILED", "ไม่พบช่องพิมพ์ Prompt ที่ระบุแน่นอน")
@@ -95,33 +104,103 @@ class GeminiBrowserWorker(QThread):
         composer.fill(prompt, timeout=6000)
         if composer.inner_text().strip() != prompt:
             raise BrowserFailure("PROMPT_INSERT_FAILED", "ตรวจสอบข้อความ Prompt ไม่ตรง")
-        if not self._attachments_ready(page, [p.name for p in attachments]):
-            raise BrowserFailure("ATTACHMENT_NOT_READY", "ยังยืนยันไฟล์แนบครบทุกไฟล์ไม่ได้ กรุณาตรวจบน Chrome")
-        job["ready"] = True
-        self._emit(job, "READY", f"ตรวจ {len(attachments)} ไฟล์")
-        return True
+        job["upload_started"] = time.monotonic()
+        job["upload_pending"] = True
+        self._refresh_upload(job)
 
     @staticmethod
-    def _attachments_ready(page, filenames):
-        """Fail closed on virtualized/opaque attachment UI; never rely on a fixed delay."""
-        return bool(page.evaluate(r"""(names) => {
-          const root = document.querySelector('input[type=file]')?.closest('form')
-                    || document.querySelector('[contenteditable=true]')?.parentElement?.parentElement;
-          if (!root) return false;
-          const nodes = Array.from(root.querySelectorAll('[aria-label], [title], [data-file-name]'));
-          return names.every(name => {
-            const hits = nodes.filter(el => [el.getAttribute('aria-label'), el.getAttribute('title'),
-                el.getAttribute('data-file-name')].some(value => value && value.includes(name)));
-            return hits.length === 1 && hits.every(el => {
-              const text = [el.getAttribute('aria-label'), el.getAttribute('title'),
-                  el.getAttribute('data-state')].join(' ').toLowerCase();
-              if (/loading|uploading|progress|error|failed|กำลัง|ผิดพลาด/.test(text)) return false;
-              const busy = el.matches('[aria-busy=true], [role=progressbar]') ||
-                !!el.querySelector('[aria-busy=true], [role=progressbar], progress');
-              return !busy;
-            });
-          });
-        }""", filenames))
+    def _attachments_state(page, filenames):
+        """Check every expected attachment, including overflowed DOM elements.
+
+        Unknown or virtualized/missing attachment chips are never interpreted
+        as ready. An explicit upload error is different from pending progress.
+        """
+        return page.evaluate(r"""async (names) => {
+          const input = document.querySelector('input[type=file]');
+          const composer = document.querySelector('[contenteditable=true]');
+          const root = input?.closest('form') || composer?.closest('form')
+                    || composer?.parentElement?.parentElement;
+          if (!root || !names.length || new Set(names).size !== names.length) return 'unknown';
+          const seen = new Map();
+          let duplicate = false;
+          const examine = () => {
+            const nodes = Array.from(root.querySelectorAll('[aria-label], [title], [data-file-name]'));
+            for (const name of names) {
+              const hits = nodes.filter(el => [el.getAttribute('data-file-name'),
+                el.getAttribute('title'), el.getAttribute('aria-label')].some(
+                  value => value && (value === name || value.includes(name))));
+              if (hits.length > 1) duplicate = true;
+              for (const el of hits) {
+                const meta = [el.getAttribute('aria-label'), el.getAttribute('title'),
+                  el.getAttribute('data-state'), el.getAttribute('data-status'),
+                  el.textContent].join(' ').toLowerCase();
+                const failed = /error|failed|rejected|ผิดพลาด|ล้มเหลว/.test(meta);
+                const pending = /uploading|loading|pending|processing|กำลัง|อัปโหลดอยู่/.test(meta) ||
+                  el.matches('[aria-busy=true], [role=progressbar]') ||
+                  !!el.querySelector('[aria-busy=true], [role=progressbar], progress');
+                const state = failed ? 'failed' : (pending ? 'pending' : 'ready');
+                const prior = seen.get(name);
+                if (prior && prior !== state) {
+                  seen.set(name, 'pending');
+                } else {
+                  seen.set(name, state);
+                }
+              }
+            }
+          };
+          examine();
+          const scrollers = [root, ...root.querySelectorAll('*')].filter(
+            el => el.scrollWidth > el.clientWidth + 5 && el.clientWidth > 0
+          );
+          for (const el of scrollers) {
+            const start = el.scrollLeft;
+            const max = el.scrollWidth - el.clientWidth;
+            const step = Math.max(1, Math.floor(el.clientWidth * 0.8));
+            if (Math.ceil(max / step) > 64) return "unknown";
+            for (let x = 0; x <= max; x += step) {
+              el.scrollLeft = x;
+              el.dispatchEvent(new Event("scroll", {bubbles: true}));
+              await Promise.race([new Promise(resolve => requestAnimationFrame(resolve)),
+                                  new Promise(resolve => setTimeout(resolve, 100))]);
+              examine();
+            }
+            el.scrollLeft = max;
+            el.dispatchEvent(new Event("scroll", {bubbles: true}));
+            await Promise.race([new Promise(resolve => requestAnimationFrame(resolve)),
+                                new Promise(resolve => setTimeout(resolve, 100))]);
+            examine();
+            el.scrollLeft = start;
+          }
+          if (duplicate || names.some(name => !seen.has(name))) return 'unknown';
+          if (names.some(name => seen.get(name) === 'failed')) return 'failed';
+          if (names.some(name => seen.get(name) === 'pending')) return 'pending';
+          return 'ready';
+        }""", filenames)
+
+    @classmethod
+    def _attachments_ready(cls, page, filenames):
+        return cls._attachments_state(page, filenames) == "ready"
+
+    def _refresh_upload(self, job):
+        if not job.get("upload_pending") or job.get("cancelled"):
+            return
+        names = [Path(path).name for path in job.get("attachments", [])]
+        state = self._attachments_state(job["page"], names)
+        if state == "ready":
+            job["upload_pending"] = False
+            job["ready"] = True
+            self._emit(job, "ATTACHMENT_READY", f"ยืนยันไฟล์ {len(names)} รายการ")
+            self._emit(job, "READY_TO_SEND", "ไฟล์พร้อม รอปุ่มส่ง")
+        elif state == "failed":
+            job["upload_pending"] = False
+            self._emit(job, "ATTACHMENT_FAILED", "Gemini แจ้งข้อผิดพลาดของไฟล์แนบ")
+        elif time.monotonic() - job["upload_started"] >= job.get("upload_timeout", 120):
+            job["upload_pending"] = False
+            self._emit(job, "ATTACHMENT_TIMEOUT", "ตรวจไฟล์ไม่ครบภายในเวลาที่กำหนด กรุณาตรวจแท็บ")
+        else:
+            # An opaque/virtualized chip stays pending, never silently succeeds.
+            if job.get("last_state") != "UPLOADING":
+                self._emit(job, "UPLOADING", "กำลังโหลดหรือยังตรวจรายการไฟล์ไม่ครบ")
 
     def _send(self, job):
         page = job["page"]
@@ -131,17 +210,35 @@ class GeminiBrowserWorker(QThread):
         send = self._selector(page, "button", r"send|ส่ง")
         if send is None or not send.is_enabled():
             raise BrowserFailure("SEND_BUTTON_UNAVAILABLE", "ปุ่มส่งยังไม่พร้อม")
-        # A click is not proof of acceptance; unconfirmed prompts must not be retried.
+        # The click is a one-time, potentially irreversible operation.
+        # Confirmation happens in later scheduler ticks so other ready
+        # tabs are never blocked for nine seconds by this tab.
+        job["send_attempted"] = True
+        job["ready"] = False
+        job["confirm_started"] = time.monotonic()
+        self._emit(job, "SEND_UNCONFIRMED", "กำลังตรวจว่า Gemini รับข้อความ")
         send.click(timeout=5000)
-        self._emit(job, "SEND_UNCONFIRMED", "กดส่งแล้ว กำลังตรวจหลักฐาน")
-        # Conversation user messages can be virtualized or hidden; never infer from time.
+
+    def _confirm_send(self, job):
+        if not job.get("send_attempted") or job.get("sent"):
+            return False
+        page = job["page"]
         try:
-            page.get_by_role("main").get_by_text(job["prompt"], exact=True).wait_for(
-                state="visible", timeout=9000)
+            prompt = page.get_by_role("main").get_by_text(job["prompt"], exact=True)
+            composer = page.locator('[contenteditable="true"]')
+            composer_cleared = composer.count() == 1 and not composer.inner_text().strip()
+            if composer_cleared and prompt.count() == 1 and prompt.is_visible():
+                job["sent"] = True
+                job["collect_started"] = time.monotonic()
+                self._emit(job, "SUBMITTED", "เว็บไซต์แสดงข้อความที่ส่งแล้ว")
+                return True
         except Exception:
-            raise BrowserFailure("SEND_UNCONFIRMED", "ไม่สามารถยืนยันการรับ Prompt ห้ามกดซ้ำอัตโนมัติ")
-        job["sent"] = True
-        self._emit(job, "SUBMITTED", "เว็บไซต์แสดงข้อความที่ส่งแล้ว")
+            pass
+        if time.monotonic() - job["confirm_started"] >= 15:
+            job["send_attempted"] = False
+            self._emit(job, "SEND_UNCONFIRMED",
+                       "ยืนยันการรับ Prompt ไม่ได้ ห้ามส่งซ้ำอัตโนมัติ")
+        return False
 
     def _collect(self, job):
         page = job["page"]
@@ -199,10 +296,15 @@ class GeminiBrowserWorker(QThread):
             if not job:
                 continue
             if command == "open" and job.get("page"):
-                job["page"].bring_to_front()
+                try:
+                    job["page"].bring_to_front()
+                except Exception as exc:
+                    self._emit(job, "TAB_OPEN_FAILED",
+                               f"เปิดแท็บไม่สำเร็จ: {type(exc).__name__}")
             elif command == "cancel":
                 job["cancelled"] = True
                 job["ready"] = False
+                job["upload_pending"] = False
                 active.discard(job_id)
                 self._emit(job, "CANCELLED", "ผู้ใช้ยกเลิกงาน")
             elif command == "retry":
@@ -211,8 +313,10 @@ class GeminiBrowserWorker(QThread):
                     continue
                 try:
                     self._prepare(job)
-                    self._send(job)
-                    active.add(job_id)
+                    if job.get("ready"):
+                        self._send(job)
+                    if job.get("send_attempted"):
+                        active.add(job_id)
                 except BrowserFailure as exc:
                     self._emit(job, exc.code, str(exc))
                 except Exception as exc:
@@ -220,6 +324,7 @@ class GeminiBrowserWorker(QThread):
             elif command == "sent":
                 if job.get("page"):
                     job["sent"] = True
+                    job["collect_started"] = time.monotonic()
                     active.add(job_id)
                     self._emit(job, "SUBMITTED", "ผู้ใช้ยืนยันการส่งด้วยตนเอง")
             elif command == "collect" and job.get("page"):
@@ -239,10 +344,14 @@ class GeminiBrowserWorker(QThread):
                     str(self.profile_directory), channel="chrome", headless=False,
                     no_viewport=True, args=["--new-window"],
                 )
+                # Keep Chrome open while assisted recovery is possible. When
+                # stopped, Playwright must release the persistent profile lock.
                 try:
                     initial = context.pages
                     active = set()
+                    last_send = 0.0
                     for i, job in enumerate(self.jobs):
+                        self._drain_commands(active)
                         if self._stop_requested:
                             break
                         page = initial[0] if i == 0 and initial else context.new_page()
@@ -251,37 +360,80 @@ class GeminiBrowserWorker(QThread):
                         try:
                             self._prepare(job)
                         except BrowserFailure as exc:
+                            job["upload_pending"] = False
                             self._emit(job, exc.code, str(exc))
                         except Exception as exc:
-                            self._emit(job, "ATTACHMENT_UPLOAD_FAILED", f"{type(exc).__name__}: {str(exc)[:160]}")
-                    last_send = 0.0
-                    for job in self.jobs:
-                        self._drain_commands(active)
-                        if self._stop_requested:
+                            job["upload_pending"] = False
+                            self._emit(job, "ATTACHMENT_UPLOAD_FAILED",
+                                       f"{type(exc).__name__}: {str(exc)[:160]}")
+                        # Dispatch already-ready tabs while preparing later ones.
+                        # A slow upload on this or a previous tab is not a barrier.
+                        for candidate in self.jobs[:i + 1]:
+                            if (not candidate.get("ready") or candidate.get("sent")
+                                    or candidate.get("send_attempted")
+                                    or candidate.get("cancelled")):
+                                continue
+                            if time.monotonic() - last_send < self.send_gap:
+                                break
+                            try:
+                                self._send(candidate)
+                                active.add(candidate["job_id"])
+                            except BrowserFailure as exc:
+                                candidate["ready"] = False
+                                self._emit(candidate, exc.code, str(exc))
+                            except Exception as exc:
+                                candidate["ready"] = False
+                                self._emit(candidate, "SEND_UNCONFIRMED", str(exc)[:180])
+                            last_send = time.monotonic()
                             break
-                        if job.get("cancelled") or not job.get("ready") or job.get("sent") or not job.get("page"):
-                            continue
-                        if not self._attachments_ready(job["page"], [Path(p).name for p in job.get("attachments", [])]):
-                            continue
-                        wait = self.send_gap - (time.monotonic() - last_send)
-                        if wait > 0:
-                            time.sleep(wait)  # Deliberate 1-second click cadence, not an upload timer.
-                        try:
-                            self._send(job)
-                            active.add(job["job_id"])
-                        except BrowserFailure as exc:
-                            self._emit(job, exc.code, str(exc))
-                        except Exception as exc:
-                            self._emit(job, "SEND_UNCONFIRMED", str(exc)[:180])
-                        last_send = time.monotonic()
-                    start = time.monotonic()
                     while not self._stop_requested:
                         self._drain_commands(active)
+                        pending = [j for j in self.jobs if j.get("upload_pending")
+                                   and not j.get("cancelled")]
+                        for job in pending:
+                            try:
+                                self._refresh_upload(job)
+                            except Exception as exc:
+                                job["upload_pending"] = False
+                                self._emit(job, "ATTACHMENT_FAILED",
+                                           f"ตรวจไฟล์ไม่สำเร็จ: {type(exc).__name__}")
                         for job in self.jobs:
+                            if (job.get("cancelled") or not job.get("ready")
+                                    or job.get("sent") or job.get("send_attempted")
+                                    or not job.get("page")):
+                                continue
+                            # Send in submission order among *ready* jobs;
+                            # never block ready work on a still-uploading tab.
+                            remaining = self.send_gap - (time.monotonic() - last_send)
+                            if remaining > 0:
+                                continue
+                            try:
+                                self._send(job)
+                                active.add(job["job_id"])
+                            except BrowserFailure as exc:
+                                job["ready"] = False
+                                self._emit(job, exc.code, str(exc))
+                            except Exception as exc:
+                                job["ready"] = False
+                                self._emit(job, "SEND_UNCONFIRMED", str(exc)[:180])
+                            last_send = time.monotonic()
+                            break
+                        for job in self.jobs:
+                            if job["job_id"] in active and job.get("send_attempted") and not job.get("sent"):
+                                self._confirm_send(job)
+                                if not job.get("send_attempted") and not job.get("sent"):
+                                    active.discard(job["job_id"])
                             if job["job_id"] not in active or not job.get("sent"):
+                                continue
+                            if (time.monotonic() - job.get("collect_started", time.monotonic())
+                                    > job.get("response_timeout", 1800)):
+                                active.discard(job["job_id"])
+                                self._emit(job, "RESPONSE_TIMEOUT",
+                                           "เกินเวลารอคำตอบ กรุณารับผลเองจากแท็บเดิม")
                                 continue
                             try:
                                 if self._collect(job):
+                                    job["collected"] = True
                                     active.discard(job["job_id"])
                             except BrowserFailure as exc:
                                 active.discard(job["job_id"])
@@ -289,13 +441,26 @@ class GeminiBrowserWorker(QThread):
                             except Exception as exc:
                                 active.discard(job["job_id"])
                                 self._emit(job, "COPY_FAILED", str(exc)[:180])
-                        if time.monotonic() - start > 1800:
-                            for job in self.jobs:
-                                if job["job_id"] in active:
-                                    self._emit(job, "RESPONSE_TIMEOUT", "ครบเวลา 30 นาที เลือกรับผลเองได้")
-                            active.clear()
-                        time.sleep(0.5)
+                        # Do not spin after a batch has completed. Keep the
+                        # profile/session available for explicit manual recovery.
+                        if (not getattr(self, "_batch_done", False) and self.jobs
+                                and all(j.get("collected") or j.get("cancelled")
+                                        for j in self.jobs)):
+                            self._batch_done = True
+                            self.diagnostic.emit("รับผล Gemini ครบทุกงานแล้ว · ตรวจผลและ Export ได้")
+                        remaining_to_send = any(j.get("ready") and not j.get("sent")
+                                                for j in self.jobs)
+                        remaining_uploads = any(j.get("upload_pending") for j in self.jobs)
+                        if not active and not remaining_to_send and not remaining_uploads:
+                            try:
+                                command = self.commands.get(timeout=5)
+                                self.commands.put(command)
+                            except Empty:
+                                pass
+                        else:
+                            time.sleep(0.5)
                 finally:
                     context.close()
         except Exception as exc:
-            self.diagnostic.emit(f"CHROME_LAUNCH_FAILED/PROFILE_IN_USE: {type(exc).__name__}: {str(exc)[:250]}")
+            self.diagnostic.emit(
+                f"CHROME_LAUNCH_FAILED/PROFILE_IN_USE: {type(exc).__name__}: {str(exc)[:250]}")
