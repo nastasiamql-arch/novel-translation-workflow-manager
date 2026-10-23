@@ -105,3 +105,25 @@ def test_upload_timeout_is_not_success(monkeypatch, tmp_path):
     worker._refresh_upload(job)
     assert not job["upload_pending"] and not job.get("ready")
     assert events[-1] == "ATTACHMENT_TIMEOUT"
+
+def test_send_confirmation_is_deferred_and_idempotent(browser, tmp_path):
+    context = browser.new_context()
+    try:
+        page = context.new_page()
+        page.set_content(html() + '<main></main>')
+        worker = GeminiBrowserWorker([], tmp_path)
+        job = {"job_id": "send-once", "page": page, "context": context,
+               "prompt": "TRANSLATE CHAPTER 475", "attachments": ["475.txt", "476.txt"]}
+        events = []
+        worker.event.connect(lambda jid, state, reason, url: events.append(state))
+        worker._send(job)
+        assert job["send_attempted"] and not job.get("sent")
+        assert events[-1] == "SEND_UNCONFIRMED"
+        assert not worker._confirm_send(job)
+        page.locator("main").evaluate("(el) => el.textContent = 'TRANSLATE CHAPTER 475'")
+        assert worker._confirm_send(job)
+        assert job["sent"] and events[-1] == "SUBMITTED"
+        assert not worker._confirm_send(job)
+        assert events.count("SUBMITTED") == 1
+    finally:
+        context.close()
