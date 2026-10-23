@@ -65,10 +65,14 @@ class GeminiBrowserWorker(QThread):
         self._emit(job, "MODEL_SELECTED", model)
 
     def _prepare(self, job):
+        """Prepare a tab without blocking other jobs on slow uploads."""
         page = job["page"]
+        job["ready"] = False
+        job["sent"] = False
         page.goto("https://gemini.google.com/app", wait_until="domcontentloaded", timeout=25000)
         if "accounts.google.com" in page.url:
             raise BrowserFailure("GOOGLE_LOGIN_REQUIRED", "Google ขอเข้าสู่ระบบด้วยตนเอง")
+        # Model selection must be verified before Gemini sees any attachments.
         self._select_model(page, job)
         attachments = [Path(p) for p in job.get("attachments", [])]
         if not attachments or any(not p.is_file() for p in attachments):
@@ -76,6 +80,10 @@ class GeminiBrowserWorker(QThread):
         for path in attachments:
             if path.stat().st_size == 0:
                 raise BrowserFailure("ATTACHMENT_NOT_FOUND", f"ไฟล์ว่าง: {path.name}")
+        names = [p.name for p in attachments]
+        if len(set(names)) != len(names):
+            raise BrowserFailure("ATTACHMENT_UPLOAD_FAILED", "มีชื่อไฟล์แนบซ้ำกัน ตรวจแยกไฟล์ไม่ได้")
+        self._emit(job, "ATTACHING", f"{len(attachments)} ไฟล์")
         file_input = page.locator('input[type="file"]')
         if file_input.count() != 1:
             attach = self._selector(page, "button", r"attach|upload|แนบ|อัปโหลด|เพิ่มไฟล์")
@@ -86,6 +94,7 @@ class GeminiBrowserWorker(QThread):
         if file_input.count() != 1:
             raise BrowserFailure("ATTACHMENT_UPLOAD_FAILED", "ตัวรับไฟล์ไม่ชัดเจน กรุณาแนบเอง")
         file_input.set_input_files([str(p) for p in attachments], timeout=12000)
+        self._emit(job, "UPLOADING", "รอหลักฐานว่าไฟล์แนบพร้อมจริง")
         composer = page.locator('[contenteditable="true"]')
         if composer.count() != 1:
             raise BrowserFailure("PROMPT_INSERT_FAILED", "ไม่พบช่องพิมพ์ Prompt ที่ระบุแน่นอน")
@@ -95,33 +104,68 @@ class GeminiBrowserWorker(QThread):
         composer.fill(prompt, timeout=6000)
         if composer.inner_text().strip() != prompt:
             raise BrowserFailure("PROMPT_INSERT_FAILED", "ตรวจสอบข้อความ Prompt ไม่ตรง")
-        if not self._attachments_ready(page, [p.name for p in attachments]):
-            raise BrowserFailure("ATTACHMENT_NOT_READY", "ยังยืนยันไฟล์แนบครบทุกไฟล์ไม่ได้ กรุณาตรวจบน Chrome")
-        job["ready"] = True
-        self._emit(job, "READY", f"ตรวจ {len(attachments)} ไฟล์")
-        return True
+        job["upload_started"] = time.monotonic()
+        job["upload_pending"] = True
+        self._refresh_upload(job)
 
     @staticmethod
-    def _attachments_ready(page, filenames):
-        """Fail closed on virtualized/opaque attachment UI; never rely on a fixed delay."""
-        return bool(page.evaluate(r"""(names) => {
-          const root = document.querySelector('input[type=file]')?.closest('form')
-                    || document.querySelector('[contenteditable=true]')?.parentElement?.parentElement;
-          if (!root) return false;
+    def _attachments_state(page, filenames):
+        """Check every expected attachment, including overflowed DOM elements.
+
+        Unknown or virtualized/missing attachment chips are never interpreted
+        as ready. An explicit upload error is different from pending progress.
+        """
+        return page.evaluate(r"""(names) => {
+          const input = document.querySelector('input[type=file]');
+          const composer = document.querySelector('[contenteditable=true]');
+          const root = input?.closest('form') || composer?.closest('form')
+                    || composer?.parentElement?.parentElement;
+          if (!root || !names.length) return 'unknown';
           const nodes = Array.from(root.querySelectorAll('[aria-label], [title], [data-file-name]'));
-          return names.every(name => {
-            const hits = nodes.filter(el => [el.getAttribute('aria-label'), el.getAttribute('title'),
-                el.getAttribute('data-file-name')].some(value => value && value.includes(name)));
-            return hits.length === 1 && hits.every(el => {
-              const text = [el.getAttribute('aria-label'), el.getAttribute('title'),
-                  el.getAttribute('data-state')].join(' ').toLowerCase();
-              if (/loading|uploading|progress|error|failed|กำลัง|ผิดพลาด/.test(text)) return false;
-              const busy = el.matches('[aria-busy=true], [role=progressbar]') ||
-                !!el.querySelector('[aria-busy=true], [role=progressbar], progress');
-              return !busy;
-            });
-          });
-        }""", filenames))
+          let pending = false;
+          for (const name of names) {
+            const hits = nodes.filter(el => [el.getAttribute('data-file-name'),
+                el.getAttribute('title'), el.getAttribute('aria-label')].some(
+                  value => value && (value === name || value.includes(name))));
+            if (hits.length !== 1) return 'unknown';
+            const el = hits[0];
+            const meta = [el.getAttribute('aria-label'), el.getAttribute('title'),
+              el.getAttribute('data-state'), el.getAttribute('data-status'),
+              el.textContent].join(' ').toLowerCase();
+            if (/error|failed|rejected|ผิดพลาด|ล้มเหลว/.test(meta)) return 'failed';
+            if (/uploading|loading|pending|processing|กำลัง|อัปโหลด/.test(meta) ||
+                el.matches('[aria-busy=true], [role=progressbar]') ||
+                el.querySelector('[aria-busy=true], [role=progressbar], progress')) {
+              pending = true;
+            }
+          }
+          return pending ? 'pending' : 'ready';
+        }""", filenames)
+
+    @classmethod
+    def _attachments_ready(cls, page, filenames):
+        return cls._attachments_state(page, filenames) == "ready"
+
+    def _refresh_upload(self, job):
+        if not job.get("upload_pending") or job.get("cancelled"):
+            return
+        names = [Path(path).name for path in job.get("attachments", [])]
+        self._emit(job, "CHECKING_ATTACHMENTS", f"ตรวจไฟล์ {len(names)} รายการ")
+        state = self._attachments_state(job["page"], names)
+        if state == "ready":
+            job["upload_pending"] = False
+            job["ready"] = True
+            self._emit(job, "ATTACHMENT_READY", f"ยืนยันไฟล์ {len(names)} รายการ")
+            self._emit(job, "READY_TO_SEND", "ไฟล์พร้อม รอปุ่มส่ง")
+        elif state == "failed":
+            job["upload_pending"] = False
+            self._emit(job, "ATTACHMENT_FAILED", "Gemini แจ้งข้อผิดพลาดของไฟล์แนบ")
+        elif time.monotonic() - job["upload_started"] >= job.get("upload_timeout", 120):
+            job["upload_pending"] = False
+            self._emit(job, "ATTACHMENT_TIMEOUT", "ตรวจไฟล์ไม่ครบภายในเวลาที่กำหนด กรุณาตรวจแท็บ")
+        else:
+            # An opaque/virtualized chip stays pending, never silently succeeds.
+            self._emit(job, "UPLOADING", "กำลังโหลดหรือยังตรวจรายการไฟล์ไม่ครบ")
 
     def _send(self, job):
         page = job["page"]
