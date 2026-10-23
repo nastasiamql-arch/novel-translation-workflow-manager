@@ -26,9 +26,9 @@ $expectedHash = $previousAsset.digest -replace '^sha256:', ''
 if (-not $expectedHash -or (Get-FileHash -LiteralPath $previousInstaller -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) { throw 'Previous installer SHA-256 verification failed.' }
 Install-TestBuild $true $previousInstaller
 $executable = Join-Path $installDir 'NovelWorkflow.exe'
-# Ensure install-over cleanup removes the old browser-driver payload even if
-# the previous installer produced a different on-disk package layout.
-$legacyDriverDir = Join-Path $installDir '_internal/playwright'
+# Ensure install-over cleanup removes the obsolete downloader, while retaining
+# the new Playwright runtime required by AI Workspace.
+$legacyDriverDir = Join-Path $installDir '_internal/novel_workflow/downloader'
 New-Item -ItemType Directory -Path $legacyDriverDir -Force | Out-Null
 Set-Content -LiteralPath (Join-Path $legacyDriverDir 'old-browser-driver.test') -Value 'stale playwright' -Encoding UTF8
 $oldMetadata = @(
@@ -105,10 +105,14 @@ foreach ($path in $preservedFiles) {
 }
 if (-not (Test-Path -LiteralPath $unrelated)) { throw 'Unrelated install file was deleted.' }
 foreach ($folder in $oldMetadata) { if (Test-Path -LiteralPath $folder) { throw "Stale metadata remains: $folder" } }
-foreach ($module in @('playwright','selectolax','httpx','httpcore','pyee','greenlet','novel_workflow/downloader','novel_workflow/downloader_ui')) {
+foreach ($module in @('selectolax','httpx','httpcore','novel_workflow/downloader','novel_workflow/downloader_ui')) {
     if (Test-Path -LiteralPath (Join-Path $installDir "_internal/$module")) {
         throw "Obsolete web downloader module remains: $module"
     }
+}
+if (-not (Test-Path -LiteralPath (Join-Path $installDir '_internal/playwright/driver/node.exe')) -or
+    -not (Test-Path -LiteralPath (Join-Path $installDir '_internal/playwright/driver/package/cli.js'))) {
+    throw 'Required AI Workspace Playwright driver missing after installer upgrade.'
 }
 $metadata = @(Get-ChildItem -LiteralPath (Join-Path $installDir '_internal') -Directory -Filter 'novelworkflow-*.dist-info')
 if ($metadata.Count -ne 1 -or $metadata[0].Name -ne "novelworkflow-$Version.dist-info") { throw 'Incorrect installed metadata.' }
