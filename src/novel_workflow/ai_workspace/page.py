@@ -125,7 +125,7 @@ class AIWorkspacePage(QWidget):
         action_groups = [
             [("ตรวจและสร้างงาน", self.preview), ("เปิด Gemini ทุกงาน", self.launch),
              ("เปิด Gemini งานที่เลือก", self.open_tab), ("เปิดโฟลเดอร์งาน", self.open_folder),
-             ("คัดลอกไฟล์แนบ", self.copy_attachments), ("คัดลอก Prompt", self.copy_prompt)],
+             ("คัดลอกไฟล์แนบ", self.copy_attachments), ("ดูรายการไฟล์", self.view_files), ("คัดลอก Prompt", self.copy_prompt)],
             [("ยืนยันแนบครบ", self.confirm_attached), ("ยืนยันส่งเองแล้ว", self.confirm_sent),
              ("รับคำตอบจาก Clipboard", self.clipboard_import), ("วางคำตอบ/เลือก TXT", self.manual_import),
              ("ดูคำตอบดิบ", self.view_raw), ("ดูคำศัพท์ใหม่", self.view_vocabulary),
@@ -361,6 +361,29 @@ class AIWorkspacePage(QWidget):
         except (OSError, ValueError) as exc:
             self.status.setText(str(exc))
 
+    def view_files(self):
+        job = self._chosen()
+        if not job or not job.prepared_files:
+            self.status.setText("เลือกงานที่เตรียมไฟล์แล้ว")
+            return
+        entries = [Path(path) for path in job.prepared_files]
+        if any(not path.is_file() for path in entries):
+            self.status.setText("รายการแนบมีไฟล์ที่หายไป กรุณาเตรียมใหม่")
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"ไฟล์แนบงาน {job.submission_order}")
+        dialog.resize(760, 460)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("ตรวจรายชื่อไฟล์ก่อนแนบผ่าน Chrome · หากใช้ ZIP ให้แนบ ZIP เท่านั้น"))
+        content = QPlainTextEdit()
+        content.setReadOnly(True)
+        content.setPlainText("\\n".join(f"{index}. {path.name} — {path}" for index, path in enumerate(entries, 1)))
+        layout.addWidget(content)
+        close = QDialogButtonBox(QDialogButtonBox.Close)
+        close.rejected.connect(dialog.reject)
+        layout.addWidget(close)
+        dialog.exec()
+
     def copy_prompt(self):
         job = self._chosen()
         if not job:
@@ -479,6 +502,9 @@ class AIWorkspacePage(QWidget):
         dialog.setWindowTitle(f"ตรวจคำตอบงาน {job.submission_order} · บท {job.chapter_numbers}")
         dialog.resize(900, 650)
         layout = QVBoxLayout(dialog)
+        from .core import HEADING
+        found = [int(match.group(1)) for match in HEADING.finditer(initial)]
+        layout.addWidget(QLabel(f"บทที่คาด: {job.chapter_numbers} · บทที่พบ: {found} · ตัวอักษร: {len(initial):,}"))
         layout.addWidget(QLabel("ตรวจเลขบทและเนื้อหาก่อนรับผล · หากต่างจากผลเดิมจะไม่เขียนทับ"))
         editor = QPlainTextEdit()
         editor.setPlainText(initial)
