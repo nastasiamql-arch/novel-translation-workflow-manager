@@ -9,7 +9,9 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCombo
     QCheckBox, QHeaderView, QInputDialog)
 
 from .core import JobStore, build_jobs, record_response, ordered_results, now
-from .browser import GeminiBrowserWorker
+from .standard_chrome import StandardChromeLauncher, ChromeLaunchError, GEMINI_URL
+from novel_workflow.clipboard_files import copy_file_paths
+from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QPlainTextEdit, QFileDialog
 from novel_workflow.translation_batches import load_translation_source, validate_translation_source
 from novel_workflow.translation_batch_clipboard import prepare_translation_batch
 from novel_workflow.vocabulary_batches import ChapterBatch, ChapterFile
@@ -62,7 +64,7 @@ class AIWorkspacePage(QWidget):
         self.jobs = []
         self.store = None
         layout = QVBoxLayout(self)
-        title = QLabel("AI Web Workspace · Gemini (Chrome)")
+        title = QLabel("AI Web Workspace · Standard Chrome (Manual Assisted)")
         title.setObjectName("pageTitle")
         layout.addWidget(title)
         hint = QLabel("เลือกนิยายและต้นฉบับที่ผูกไว้ · ตรวจงานก่อนส่ง · ส่งไม่แน่นอนให้แก้ใน Chrome โดยไม่ส่งซ้ำ")
@@ -115,15 +117,18 @@ class AIWorkspacePage(QWidget):
         self.prompt.setPlaceholderText("Prompt เพิ่มเติม (ใช้ไฟล์ Prompt ที่ผูกกับขั้นตอนอยู่แล้วด้วย)")
         self.prompt.setMaximumHeight(90)
         layout.addWidget(self.prompt)
+        self.chrome_executable = QComboBox()
+        self.chrome_executable.setEditable(True)
+        self.chrome_executable.setPlaceholderText("Chrome executable (ว่าง = ตรวจอัตโนมัติ)")
+        layout.addWidget(self.chrome_executable)
         action_groups = [
-            [("ตรวจและสร้างงาน", self.preview), ("เปิด Chrome / เริ่มส่ง", self.launch),
-             ("เปิดแท็บงาน", self.open_tab), ("หยุด Chrome Workspace", self.stop_worker),
-             ("ตรวจสถานะอีกครั้ง", self.retry_job),
-             ("ยืนยันส่งเองแล้ว", self.confirm_sent), ("ยกเลิกงาน", self.cancel_job)],
-            [("รับผลอีกครั้ง", self.collect_again), ("รับผลด้วยตนเอง", self.manual_import),
+            [("ตรวจและสร้างงาน", self.preview), ("เปิด Gemini ทุกงาน", self.launch),
+             ("เปิด Gemini งานที่เลือก", self.open_tab), ("เปิดโฟลเดอร์งาน", self.open_folder),
+             ("คัดลอกไฟล์แนบ", self.copy_attachments), ("คัดลอก Prompt", self.copy_prompt)],
+            [("ยืนยันแนบครบ", self.confirm_attached), ("ยืนยันส่งเองแล้ว", self.confirm_sent),
+             ("รับคำตอบจาก Clipboard", self.clipboard_import), ("วางคำตอบ/เลือก TXT", self.manual_import),
              ("ดูคำตอบดิบ", self.view_raw), ("ดูคำศัพท์ใหม่", self.view_vocabulary),
-             ("ตรวจผลรวม", self.combine), ("เปลี่ยนโมเดลงาน", self.edit_model),
-             ("Import / Export", self.import_export)],
+             ("ตรวจผลรวม", self.combine), ("Import / Export", self.import_export)]
         ]
         for group in action_groups:
             actions = QHBoxLayout()
@@ -264,41 +269,23 @@ class AIWorkspacePage(QWidget):
             self.status.setText(f"สร้างงานไม่ได้: {exc}")
 
     def launch(self):
-        if self.prepare_worker and self.prepare_worker.isRunning():
-            self.status.setText("ต้องตรวจไฟล์ครบก่อนเริ่ม Chrome")
+        waiting = [j for j in self.jobs if j.status != "CANCELLED" and not j.imported]
+        if not waiting or len(waiting) > 10:
+            self.status.setText("ต้องเตรียมงาน 1–10 รายการก่อน")
             return
-        if self.worker and self.worker.isRunning():
-            self.status.setText("Chrome Workspace ทำงานอยู่แล้ว")
+        if any(not j.prepared_files or not all(Path(p).is_file() for p in j.prepared_files) for j in waiting):
+            self.status.setText("ไฟล์แนบไม่ครบ กรุณาตรวจชุดงานก่อน")
             return
-        waiting = [j for j in self.jobs if j.status in {
-            "PREPARED", "OPENED", "MODEL_SELECTED", "READY",
-            "GOOGLE_LOGIN_REQUIRED", "MODEL_NOT_FOUND", "MODEL_SELECTION_FAILED",
-            "ATTACHMENT_NOT_READY", "ATTACHMENT_UPLOAD_FAILED", "ATTACHMENT_TIMEOUT",
-            "ATTACHMENT_FAILED", "UPLOADING", "CHECKING_ATTACHMENTS",
-            "ATTACHMENT_READY", "READY_TO_SEND", "PROMPT_INSERT_FAILED"}]
-        if not waiting:
-            self.status.setText("ไม่มีงานที่เตรียมไว้ หรือกำลังรอแก้ไขงานเดิม")
-            return
-        if not all(j.model and j.prompt.strip() for j in waiting):
-            self.status.setText("กรอกชื่อโมเดลและ Prompt ก่อนเริ่ม · โปรแกรมจะไม่ส่งข้อความว่าง")
-            return
-        entries = []
         try:
-            for job in waiting:
-                attachments = job.prepared_files
-                if not all(p and Path(p).is_file() for p in attachments):
-                    raise ValueError(f"งาน {job.submission_order} มีไฟล์ต้นฉบับไม่พร้อม")
-                entries.append({**vars(job), "attachments": attachments})
-        except ValueError as exc:
+            count = StandardChromeLauncher(self.chrome_executable.currentText()).open_urls([GEMINI_URL] * len(waiting))
+        except (ChromeLaunchError, OSError) as exc:
             self.status.setText(str(exc))
             return
-        self.worker = GeminiBrowserWorker(entries, self.owner.repo.root / "chrome-ai-profile",
-                                          send_gap=self.gap.value(), parent=self)
-        self.worker.event.connect(self._event)
-        self.worker.diagnostic.connect(self.status.setText)
-        self.worker.finished.connect(lambda: self.status.setText("Chrome หยุดทำงาน · ตรวจสถานะงานได้"))
-        self.worker.start()
-        self.status.setText("กำลังเปิด Google Chrome · บัญชี Google ต้องเข้าสู่ระบบด้วยตนเอง")
+        for job in waiting:
+            if job.status == "PREPARED":
+                job.status, job.page_url = "BROWSER_OPENED", GEMINI_URL
+        self._save()
+        self.status.setText(f"ส่งคำขอเปิด {count} แท็บแล้ว · ไม่ได้ตรวจสถานะ Login หรือการจัดแท็บ · แนบไฟล์และกด Send เอง")
 
     def _event(self, job_id, state, reason, url):
         job = next((j for j in self.jobs if j.job_id == job_id), None)
@@ -330,41 +317,73 @@ class AIWorkspacePage(QWidget):
             self.import_export(automatic=True)
 
     def stop_worker(self):
-        if self.worker and self.worker.isRunning():
-            self.worker.enqueue("stop")
-            self.status.setText("กำลังหยุดการควบคุม Chrome โดยรักษาข้อมูลงานไว้")
-        else:
-            self.status.setText("ไม่มี Chrome Workspace ที่กำลังทำงาน")
+        self.status.setText("Chrome ปกติเป็นของผู้ใช้ โปรแกรมจะไม่ปิด Chrome")
 
     def open_tab(self):
         job = self._chosen()
-        if job and self.worker and self.worker.isRunning():
-            self.worker.enqueue("open", job.job_id)
-            self.status.setText(f"สั่งเปิดแท็บงาน {job.submission_order}")
-        else:
-            self.status.setText("กรุณาเลือกงานที่มี Chrome กำลังเปิดอยู่")
+        if not job:
+            self.status.setText("เลือกงานก่อน")
+            return
+        try:
+            StandardChromeLauncher(self.chrome_executable.currentText()).open_urls([GEMINI_URL], new_window=False)
+            if job.status == "PREPARED":
+                job.status = "BROWSER_OPENED"
+                self._save()
+            self.status.setText(f"ส่งคำขอเปิด Gemini ของงาน {job.submission_order} แล้ว")
+        except (ChromeLaunchError, OSError) as exc:
+            self.status.setText(str(exc))
 
-    def retry_job(self):
+    def open_folder(self):
+        job = self._chosen()
+        if not job or not job.prepared_files:
+            self.status.setText("เลือกงานที่เตรียมไฟล์แล้ว")
+            return
+        folder = Path(job.prepared_files[0]).parent
+        if not folder.is_dir():
+            self.status.setText("ไม่พบโฟลเดอร์งาน")
+            return
+        import os
+        if hasattr(os, "startfile"):
+            os.startfile(str(folder))
+        else:
+            self.status.setText(str(folder))
+
+    def copy_attachments(self):
         job = self._chosen()
         if not job:
-            self.status.setText("กรุณาเลือกงาน")
+            self.status.setText("เลือกงานก่อน")
             return
-        if job.status == "SEND_UNCONFIRMED" or job.submitted_verified or job.imported:
-            self.status.setText("งานนี้อาจถูกส่งแล้ว ห้ามส่งซ้ำ · ตรวจแท็บหรือยืนยันส่งเอง")
+        try:
+            paths = copy_file_paths(job.prepared_files)
+            self.status.setText(f"คัดลอกไฟล์ {len(paths)} รายการ · หาก Gemini ไม่รับการวางให้เปิดโฟลเดอร์แนบเอง")
+        except (OSError, ValueError) as exc:
+            self.status.setText(str(exc))
+
+    def copy_prompt(self):
+        job = self._chosen()
+        if not job:
+            self.status.setText("เลือกงานก่อน")
             return
-        if self.worker is None or not self.worker.isRunning():
-            self.status.setText("Chrome ไม่ได้เปิดอยู่ · ใช้เปิด Chrome / เริ่มส่งเพื่อกู้คืน")
+        if not job.prompt.strip():
+            self.status.setText("ไม่มี Prompt เพิ่มเติม · ใช้ไฟล์ Prompt ที่แนบ")
             return
-        self.worker.enqueue("retry", job.job_id)
-        self.status.setText(f"กำลังตรวจไฟล์และโมเดลใหม่สำหรับงาน {job.submission_order}")
+        QApplication.clipboard().setText(job.prompt)
+        self.status.setText("คัดลอก Prompt แล้ว · Clipboard ของไฟล์แนบก่อนหน้าถูกแทนที่")
+
+    def confirm_attached(self):
+        job = self._chosen()
+        if job and QMessageBox.question(self, "ยืนยันแนบไฟล์",
+                f"ตรวจไฟล์ทั้ง {len(job.prepared_files)} รายการบน Gemini และรออัปโหลดครบแล้วใช่หรือไม่?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
+            if job.status in {"PREPARED", "BROWSER_OPENED"}:
+                job.status = "ATTACHMENT_READY"
+                self._save()
+
+    def retry_job(self):
+        self.open_tab()
 
     def collect_again(self):
-        job = self._chosen()
-        if job and self.worker and self.worker.isRunning() and job.submitted_verified:
-            self.worker.enqueue("collect", job.job_id)
-            self.status.setText(f"กำลังรับผลเดิมของงาน {job.submission_order} อีกครั้ง")
-        else:
-            self.status.setText("เลือกงานที่ยืนยันการส่งแล้วและมี Chrome เปิดอยู่")
+        self.clipboard_import()
 
     def cancel_job(self):
         job = self._chosen()
@@ -377,8 +396,6 @@ class AIWorkspacePage(QWidget):
         if QMessageBox.question(self, "ยกเลิกงาน",
                 f"ยกเลิกงาน {job.submission_order} โดยเก็บข้อมูลต้นฉบับไว้ใช่หรือไม่?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
-            if self.worker and self.worker.isRunning():
-                self.worker.enqueue("cancel", job.job_id)
             job.status = "CANCELLED"
             self._save()
 
@@ -392,8 +409,8 @@ class AIWorkspacePage(QWidget):
         if confirm == QMessageBox.Yes:
             job.status, job.submitted_verified = "SUBMITTED", True
             self._save()
-            if self.worker and self.worker.isRunning():
-                self.worker.enqueue("sent", job.job_id)
+            job.submitted_at = now()
+            self._save()
 
     def edit_model(self):
         job = self._chosen()
@@ -442,20 +459,61 @@ class AIWorkspacePage(QWidget):
         dialog.setDetailedText("\n".join(terms))
         dialog.exec()
 
+    def _accept_response(self, job, raw):
+        from .manual_results import accept_clipboard_response
+        try:
+            accept_clipboard_response(job, raw)
+        except ValueError as exc:
+            self.status.setText(str(exc))
+            return
+        self._save()
+        self.status.setText(f"งาน {job.submission_order}: {job.status} {job.error}")
+        if (self.jobs and all(j.auto_export and j.stage == "แปล" for j in self.jobs)
+                and all(j.status == "RECEIVED" and not j.imported for j in self.jobs)):
+            self.import_export(automatic=True)
+
+    def _response_dialog(self, job, initial=""):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"ตรวจคำตอบงาน {job.submission_order} · บท {job.chapter_numbers}")
+        dialog.resize(900, 650)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("ตรวจเลขบทและเนื้อหาก่อนรับผล · หากต่างจากผลเดิมจะไม่เขียนทับ"))
+        editor = QPlainTextEdit()
+        editor.setPlainText(initial)
+        layout.addWidget(editor)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec() == QDialog.Accepted:
+            self._accept_response(job, editor.toPlainText())
+
+    def clipboard_import(self):
+        job = self._chosen()
+        if not job:
+            self.status.setText("เลือกงานก่อน")
+            return
+        mime = QApplication.clipboard().mimeData()
+        if mime is None or mime.hasUrls() or not mime.hasText() or not mime.text().strip():
+            self.status.setText("Clipboard ว่างหรือเป็นรายการไฟล์ ไม่ใช่คำตอบ Gemini")
+            return
+        self._response_dialog(job, mime.text())
+
     def manual_import(self):
         job = self._chosen()
         if not job:
             self.status.setText("เลือกงานก่อน")
             return
-        text, ok = QInputDialog.getMultiLineText(self, f"รับคำตอบดิบงาน {job.submission_order}",
-                                                   "วางข้อความทั้งหมดจาก Gemini:", job.raw_response)
-        if ok and text.strip():
+        file, _ = QFileDialog.getOpenFileName(self, "เลือกคำตอบ TXT (ยกเลิกเพื่อวางเอง)", "", "Text (*.txt);;All (*)")
+        if file:
             try:
-                record_response(job, text)
-                self._save()
-                self.status.setText(f"รับผลลัพธ์งาน {job.submission_order}: {job.status}")
-            except ValueError as exc:
+                raw = Path(file).read_text(encoding="utf-8-sig")
+            except (OSError, UnicodeError) as exc:
                 self.status.setText(str(exc))
+                return
+        else:
+            raw = ""
+        self._response_dialog(job, raw)
 
     def combine(self):
         try:
@@ -540,5 +598,5 @@ class AIWorkspacePage(QWidget):
     def shutdown(self):
         if self.prepare_worker and self.prepare_worker.isRunning():
             self.prepare_worker.requestInterruption()
-        if self.worker and self.worker.isRunning():
-            self.worker.enqueue("stop")
+        # Standard Chrome belongs to the user.
+        pass
