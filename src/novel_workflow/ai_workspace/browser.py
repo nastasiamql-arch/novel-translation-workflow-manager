@@ -221,7 +221,9 @@ class GeminiBrowserWorker(QThread):
         page = job["page"]
         try:
             prompt = page.get_by_role("main").get_by_text(job["prompt"], exact=True)
-            if prompt.count() == 1 and prompt.is_visible():
+            composer = page.locator('[contenteditable="true"]')
+            composer_cleared = composer.count() == 1 and not composer.inner_text().strip()
+            if composer_cleared and prompt.count() == 1 and prompt.is_visible():
                 job["sent"] = True
                 job["collect_started"] = time.monotonic()
                 self._emit(job, "SUBMITTED", "เว็บไซต์แสดงข้อความที่ส่งแล้ว")
