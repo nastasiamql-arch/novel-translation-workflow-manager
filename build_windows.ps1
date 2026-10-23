@@ -71,6 +71,14 @@ if (-not (Test-Path -LiteralPath $appExe)) {
     throw "The Windows app executable was not created."
 }
 
+# The automation subprocess must be included alongside the frozen Python runtime.
+# It is not enough for import playwright to succeed in the build venv.
+$playwrightDriver = Join-Path $PSScriptRoot "dist\NovelWorkflow\_internal\playwright\driver\node.exe"
+$playwrightCli = Join-Path $PSScriptRoot "dist\NovelWorkflow\_internal\playwright\driver\package\cli.js"
+if (-not (Test-Path -LiteralPath $playwrightDriver) -or -not (Test-Path -LiteralPath $playwrightCli)) {
+    throw "Playwright browser driver missing from frozen Windows build."
+}
+
 $runtimeCheck = @'
 import ctypes
 import os
