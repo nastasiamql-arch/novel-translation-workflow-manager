@@ -44,6 +44,7 @@ class AIJob:
     created_at: str = field(default_factory=now)
     submitted_at: str = ""
     received_at: str = ""
+    events: list[dict[str, str]] = field(default_factory=list)
 
 
 def build_jobs(profile_id: str, stage: str, chapters, per_job: int,

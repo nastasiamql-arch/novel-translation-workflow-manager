@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCombo
     QPushButton, QSpinBox, QDoubleSpinBox, QTableWidget, QTableWidgetItem, QTextEdit, QMessageBox,
     QCheckBox, QHeaderView, QInputDialog)
 
-from .core import JobStore, build_jobs, record_response, ordered_results
+from .core import JobStore, build_jobs, record_response, ordered_results, now
 from .browser import GeminiBrowserWorker
 from novel_workflow.translation_batches import load_translation_source, validate_translation_source
 from novel_workflow.translation_batch_clipboard import prepare_translation_batch
@@ -294,6 +294,9 @@ class AIWorkspacePage(QWidget):
                 job.submitted_verified = True
             if url:
                 job.page_url = url
+        if state == "SUBMITTED":
+            job.submitted_at = now()
+        job.events.append({"time": now(), "status": job.status, "detail": (job.error or "")[:180]})
         self._save()
         self.status.setText(f"งาน {job.submission_order}: {job.status} {job.error}")
 
