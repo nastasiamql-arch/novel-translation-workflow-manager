@@ -36,6 +36,8 @@ class GeminiBrowserWorker(QThread):
         self.commands.put((operation, job_id))
 
     def _emit(self, job, state, detail=""):
+        if not state.startswith("RAW:"):
+            job["last_state"] = state
         self.event.emit(job["job_id"], state, detail, getattr(job.get("page"), "url", ""))
 
     def _selector(self, page, role, *names):
@@ -199,8 +201,22 @@ class GeminiBrowserWorker(QThread):
             if command == "open" and job.get("page"):
                 job["page"].bring_to_front()
             elif command == "cancel":
+                job["cancelled"] = True
+                job["ready"] = False
                 active.discard(job_id)
                 self._emit(job, "CANCELLED", "ผู้ใช้ยกเลิกงาน")
+            elif command == "retry":
+                if job.get("sent") or job.get("cancelled") or job.get("last_state") == "SEND_UNCONFIRMED":
+                    self._emit(job, "RETRY_BLOCKED", "มีโอกาสส่งแล้ว · ห้ามส่งซ้ำโดยไม่ตรวจแท็บ")
+                    continue
+                try:
+                    self._prepare(job)
+                    self._send(job)
+                    active.add(job_id)
+                except BrowserFailure as exc:
+                    self._emit(job, exc.code, str(exc))
+                except Exception as exc:
+                    self._emit(job, "ATTACHMENT_UPLOAD_FAILED", f"{type(exc).__name__}: {str(exc)[:180]}")
             elif command == "sent":
                 if job.get("page"):
                     job["sent"] = True
@@ -243,7 +259,7 @@ class GeminiBrowserWorker(QThread):
                         self._drain_commands(active)
                         if self._stop_requested:
                             break
-                        if not job.get("ready") or job.get("sent") or not job.get("page"):
+                        if job.get("cancelled") or not job.get("ready") or job.get("sent") or not job.get("page"):
                             continue
                         if not self._attachments_ready(job["page"], [Path(p).name for p in job.get("attachments", [])]):
                             continue

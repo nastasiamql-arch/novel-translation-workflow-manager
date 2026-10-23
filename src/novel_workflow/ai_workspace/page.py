@@ -113,14 +113,21 @@ class AIWorkspacePage(QWidget):
         self.prompt.setPlaceholderText("Prompt เพิ่มเติม (ใช้ไฟล์ Prompt ที่ผูกกับขั้นตอนอยู่แล้วด้วย)")
         self.prompt.setMaximumHeight(90)
         layout.addWidget(self.prompt)
-        actions = QHBoxLayout()
-        for label, method in [("ตรวจและสร้างงาน", self.preview), ("เปิด Chrome / เริ่มส่ง", self.launch),
-                              ("เปิดแท็บงาน", self.open_tab), ("รับผลด้วยตนเอง", self.manual_import),
-                              ("ยืนยันส่งเองแล้ว", self.confirm_sent), ("ตรวจผลรวม", self.combine), ("เปลี่ยนโมเดลงาน", self.edit_model), ("Import / Export", self.import_export)]:
-            button = QPushButton(label)
-            button.clicked.connect(method)
-            actions.addWidget(button)
-        layout.addLayout(actions)
+        action_groups = [
+            [("ตรวจและสร้างงาน", self.preview), ("เปิด Chrome / เริ่มส่ง", self.launch),
+             ("เปิดแท็บงาน", self.open_tab), ("ตรวจสถานะอีกครั้ง", self.retry_job),
+             ("ยืนยันส่งเองแล้ว", self.confirm_sent), ("ยกเลิกงาน", self.cancel_job)],
+            [("รับผลอีกครั้ง", self.collect_again), ("รับผลด้วยตนเอง", self.manual_import),
+             ("ตรวจผลรวม", self.combine), ("เปลี่ยนโมเดลงาน", self.edit_model),
+             ("Import / Export", self.import_export)],
+        ]
+        for group in action_groups:
+            actions = QHBoxLayout()
+            for label, method in group:
+                button = QPushButton(label)
+                button.clicked.connect(method)
+                actions.addWidget(button)
+            layout.addLayout(actions)
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["งาน", "บท", "โมเดล", "สถานะ", "รายละเอียด"])
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
@@ -310,6 +317,44 @@ class AIWorkspacePage(QWidget):
             self.status.setText(f"สั่งเปิดแท็บงาน {job.submission_order}")
         else:
             self.status.setText("กรุณาเลือกงานที่มี Chrome กำลังเปิดอยู่")
+
+    def retry_job(self):
+        job = self._chosen()
+        if not job:
+            self.status.setText("กรุณาเลือกงาน")
+            return
+        if job.status == "SEND_UNCONFIRMED" or job.submitted_verified or job.imported:
+            self.status.setText("งานนี้อาจถูกส่งแล้ว ห้ามส่งซ้ำ · ตรวจแท็บหรือยืนยันส่งเอง")
+            return
+        if self.worker is None or not self.worker.isRunning():
+            self.status.setText("Chrome ไม่ได้เปิดอยู่ · ใช้เปิด Chrome / เริ่มส่งเพื่อกู้คืน")
+            return
+        self.worker.enqueue("retry", job.job_id)
+        self.status.setText(f"กำลังตรวจไฟล์และโมเดลใหม่สำหรับงาน {job.submission_order}")
+
+    def collect_again(self):
+        job = self._chosen()
+        if job and self.worker and self.worker.isRunning() and job.submitted_verified:
+            self.worker.enqueue("collect", job.job_id)
+            self.status.setText(f"กำลังรับผลเดิมของงาน {job.submission_order} อีกครั้ง")
+        else:
+            self.status.setText("เลือกงานที่ยืนยันการส่งแล้วและมี Chrome เปิดอยู่")
+
+    def cancel_job(self):
+        job = self._chosen()
+        if not job:
+            self.status.setText("เลือกงานก่อน")
+            return
+        if job.submitted_verified or job.raw_response:
+            self.status.setText("งานส่งแล้วหรือมีผลลัพธ์ · ไม่ยกเลิกทับข้อมูลที่รับมา")
+            return
+        if QMessageBox.question(self, "ยกเลิกงาน",
+                f"ยกเลิกงาน {job.submission_order} โดยเก็บข้อมูลต้นฉบับไว้ใช่หรือไม่?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
+            if self.worker and self.worker.isRunning():
+                self.worker.enqueue("cancel", job.job_id)
+            job.status = "CANCELLED"
+            self._save()
 
     def confirm_sent(self):
         job = self._chosen()
