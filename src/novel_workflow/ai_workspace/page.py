@@ -167,6 +167,7 @@ class AIWorkspacePage(QWidget):
         self._render()
 
     def _stage_changed(self, *_):
+        self.auto_export.setEnabled(self.stage.currentText() == "แปล")
         current = self.source.currentData()
         self.source.blockSignals(True)
         self.source.clear()
@@ -247,7 +248,8 @@ class AIWorkspacePage(QWidget):
             def prepared(results):
                 for job in jobs:
                     job.prepared_files = results[job.job_id]
-                    job.auto_export = self.auto_export.isChecked()
+                    job.auto_export = (self.stage.currentText() == "แปล"
+                                       and self.auto_export.isChecked())
                 self.jobs = jobs
                 self._save()
                 self.status.setText(
@@ -302,7 +304,11 @@ class AIWorkspacePage(QWidget):
         if not job:
             return
         if state.startswith("RAW:"):
-            record_response(job, state[4:])
+            try:
+                record_response(job, state[4:])
+            except ValueError as exc:
+                job.status = "REVIEW_REQUIRED"
+                job.error = str(exc)
         else:
             job.status = state
             job.error = reason
@@ -318,7 +324,7 @@ class AIWorkspacePage(QWidget):
         self._save()
         self.status.setText(f"งาน {job.submission_order}: {job.status} {job.error}")
         if (state.startswith("RAW:") and self.jobs
-                and all(j.auto_export for j in self.jobs)
+                and all(j.auto_export and j.stage == "แปล" for j in self.jobs)
                 and all(j.status == "RECEIVED" and not j.imported for j in self.jobs)):
             self.import_export(automatic=True)
 
