@@ -108,6 +108,8 @@ class AIWorkspacePage(QWidget):
             options.addWidget(widget)
         self.zip_mode = QCheckBox("แนบเป็น ZIP")
         options.addWidget(self.zip_mode)
+        self.auto_export = QCheckBox("เมื่อรับผลครบให้ Import/Export อัตโนมัติ")
+        options.addWidget(self.auto_export)
         layout.addLayout(options)
         self.prompt = QTextEdit()
         self.prompt.setPlaceholderText("Prompt เพิ่มเติม (ใช้ไฟล์ Prompt ที่ผูกกับขั้นตอนอยู่แล้วด้วย)")
@@ -245,6 +247,7 @@ class AIWorkspacePage(QWidget):
             def prepared(results):
                 for job in jobs:
                     job.prepared_files = results[job.job_id]
+                    job.auto_export = self.auto_export.isChecked()
                 self.jobs = jobs
                 self._save()
                 self.status.setText(
@@ -314,6 +317,10 @@ class AIWorkspacePage(QWidget):
         job.events.append({"time": now(), "status": job.status, "detail": (job.error or "")[:180]})
         self._save()
         self.status.setText(f"งาน {job.submission_order}: {job.status} {job.error}")
+        if (state.startswith("RAW:") and self.jobs
+                and all(j.auto_export for j in self.jobs)
+                and all(j.status == "RECEIVED" and not j.imported for j in self.jobs)):
+            self.import_export(automatic=True)
 
     def stop_worker(self):
         if self.worker and self.worker.isRunning():
@@ -421,8 +428,8 @@ class AIWorkspacePage(QWidget):
         self.status.setText("ตรวจครบแล้ว · คัดลอกผลรวมลง Clipboard เพื่อวางใน Translator และ Export ผ่านขั้นตอนเดิม")
 
 
-    def import_export(self):
-        """Use existing Translator export only, with preflight and user confirmation."""
+    def import_export(self, *, automatic=False):
+        """Use existing Translator export, retaining preflight and recovery journal."""
         try:
             text = ordered_results(self.jobs)
             profile = self._selected_profile()
@@ -453,19 +460,24 @@ class AIWorkspacePage(QWidget):
                 raise ValueError("Translator มีการแก้ไขค้างอยู่")
             if target.read_bytes().strip():
                 raise ValueError("Translator ถูกแก้ไขจากภายนอก")
-            confirmation = QMessageBox.question(
-                self, "ยืนยัน Import + Export",
-                f"นำเข้า {sum(len(j.chapter_numbers) for j in self.jobs)} บท"
-                " ลง Translator ที่ว่าง และ Export ด้วยระบบเดิมหรือไม่?",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if confirmation != QMessageBox.Yes:
-                return
+            if automatic:
+                if not all(j.auto_export for j in self.jobs):
+                    raise ValueError("ชุดงานนี้ไม่ได้อนุญาต Auto Export ล่วงหน้า")
+            else:
+                confirmation = QMessageBox.question(
+                    self, "ยืนยัน Import + Export",
+                    f"นำเข้า {sum(len(j.chapter_numbers) for j in self.jobs)} บท"
+                    " ลง Translator ที่ว่าง และ Export ด้วยระบบเดิมหรือไม่?",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                if confirmation != QMessageBox.Yes:
+                    return
             editor.setPlainText(text)
             if not workspace.editor.save_editor(editor, quiet=True, normalize=False):
                 raise ValueError("บันทึก Translator ไม่สำเร็จหรือมีการแก้ไขจากภายนอก")
             # The existing Export handles backup, Context, progress, history and
             # recovery journal. Its confirmation and preflight remain enabled.
-            if not self.owner.update_context_from_translator(workspace):
+            if not self.owner.update_context_from_translator(
+                    workspace, preauthorized=automatic):
                 self.status.setText("นำเข้าแล้ว แต่ Export ยังไม่สำเร็จ · ผลลัพธ์ถูกเก็บไว้")
                 return
             for job in self.jobs:
