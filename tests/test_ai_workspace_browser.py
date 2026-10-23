@@ -1,4 +1,5 @@
 """Real DOM browser fixture tests; intentionally NOT live Gemini acceptance tests."""
+import os
 import pytest
 
 from novel_workflow.ai_workspace.browser import GeminiBrowserWorker
@@ -11,6 +12,8 @@ def browser():
         try:
             client = runner.chromium.launch(channel="chrome", headless=True)
         except playwright.Error as exc:
+            if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+                pytest.fail(f"Required Chrome browser fixture unavailable: {exc}")
             pytest.skip(f"Chrome missing from fixture runner: {exc}")
         try:
             yield client
