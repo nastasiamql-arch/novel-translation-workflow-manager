@@ -9,7 +9,8 @@ version_file = project_root / 'build' / 'app-version.txt'
 version_file.parent.mkdir(parents=True, exist_ok=True)
 version_file.write_text(build_version, encoding='utf-8')
 
-hiddenimports = collect_submodules('novel_workflow') + collect_submodules('send2trash')
+hiddenimports = (collect_submodules('novel_workflow') + collect_submodules('send2trash')
+                 + collect_submodules('playwright'))
 datas = [
     (str(version_file), 'novel_workflow/resources'),
     ('src/novel_workflow/resources/novelworkflow.png', 'novel_workflow/resources'),
