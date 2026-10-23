@@ -159,11 +159,15 @@ class GeminiBrowserWorker(QThread):
             if (Math.ceil(max / step) > 64) return "unknown";
             for (let x = 0; x <= max; x += step) {
               el.scrollLeft = x;
-              await new Promise(resolve => setTimeout(resolve, 0));
+              el.dispatchEvent(new Event("scroll", {bubbles: true}));
+              await Promise.race([new Promise(resolve => requestAnimationFrame(resolve)),
+                                  new Promise(resolve => setTimeout(resolve, 100))]);
               examine();
             }
             el.scrollLeft = max;
-            await new Promise(resolve => setTimeout(resolve, 0));
+            el.dispatchEvent(new Event("scroll", {bubbles: true}));
+            await Promise.race([new Promise(resolve => requestAnimationFrame(resolve)),
+                                new Promise(resolve => setTimeout(resolve, 100))]);
             examine();
             el.scrollLeft = start;
           }
