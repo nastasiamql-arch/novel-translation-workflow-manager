@@ -135,7 +135,7 @@ class GeminiBrowserWorker(QThread):
                   el.getAttribute('data-state'), el.getAttribute('data-status'),
                   el.textContent].join(' ').toLowerCase();
                 const failed = /error|failed|rejected|ผิดพลาด|ล้มเหลว/.test(meta);
-                const pending = /uploading|loading|pending|processing|กำลัง|อัปโหลด/.test(meta) ||
+                const pending = /uploading|loading|pending|processing|กำลัง|อัปโหลดอยู่/.test(meta) ||
                   el.matches('[aria-busy=true], [role=progressbar]') ||
                   !!el.querySelector('[aria-busy=true], [role=progressbar], progress');
                 const state = failed ? 'failed' : (pending ? 'pending' : 'ready');
