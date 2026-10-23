@@ -266,7 +266,9 @@ class AIWorkspacePage(QWidget):
         waiting = [j for j in self.jobs if j.status in {
             "PREPARED", "OPENED", "MODEL_SELECTED", "READY",
             "GOOGLE_LOGIN_REQUIRED", "MODEL_NOT_FOUND", "MODEL_SELECTION_FAILED",
-            "ATTACHMENT_NOT_READY", "ATTACHMENT_UPLOAD_FAILED", "PROMPT_INSERT_FAILED"}]
+            "ATTACHMENT_NOT_READY", "ATTACHMENT_UPLOAD_FAILED", "ATTACHMENT_TIMEOUT",
+            "ATTACHMENT_FAILED", "UPLOADING", "CHECKING_ATTACHMENTS",
+            "ATTACHMENT_READY", "READY_TO_SEND", "PROMPT_INSERT_FAILED"}]
         if not waiting:
             self.status.setText("ไม่มีงานที่เตรียมไว้ หรือกำลังรอแก้ไขงานเดิม")
             return
@@ -306,6 +308,8 @@ class AIWorkspacePage(QWidget):
                 job.page_url = url
         if state == "SUBMITTED":
             job.submitted_at = now()
+        if state == "READY_TO_SEND":
+            job.error = ""
         job.events.append({"time": now(), "status": job.status, "detail": (job.error or "")[:180]})
         self._save()
         self.status.setText(f"งาน {job.submission_order}: {job.status} {job.error}")
