@@ -308,6 +308,7 @@ class GeminiBrowserWorker(QThread):
                 try:
                     initial = context.pages
                     active = set()
+                    last_send = 0.0
                     for i, job in enumerate(self.jobs):
                         self._drain_commands(active)
                         if self._stop_requested:
@@ -324,7 +325,26 @@ class GeminiBrowserWorker(QThread):
                             job["upload_pending"] = False
                             self._emit(job, "ATTACHMENT_UPLOAD_FAILED",
                                        f"{type(exc).__name__}: {str(exc)[:160]}")
-                    last_send = 0.0
+                        # Dispatch already-ready tabs while preparing later ones.
+                        # A slow upload on this or a previous tab is not a barrier.
+                        for candidate in self.jobs[:i + 1]:
+                            if (not candidate.get("ready") or candidate.get("sent")
+                                    or candidate.get("send_attempted")
+                                    or candidate.get("cancelled")):
+                                continue
+                            if time.monotonic() - last_send < self.send_gap:
+                                break
+                            try:
+                                self._send(candidate)
+                                active.add(candidate["job_id"])
+                            except BrowserFailure as exc:
+                                candidate["ready"] = False
+                                self._emit(candidate, exc.code, str(exc))
+                            except Exception as exc:
+                                candidate["ready"] = False
+                                self._emit(candidate, "SEND_UNCONFIRMED", str(exc)[:180])
+                            last_send = time.monotonic()
+                            break
                     while not self._stop_requested:
                         self._drain_commands(active)
                         pending = [j for j in self.jobs if j.get("upload_pending")
