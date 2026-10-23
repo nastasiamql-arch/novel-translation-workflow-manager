@@ -1,11 +1,11 @@
 """Resolve existing stage attachments without creating duplicate settings."""
 from __future__ import annotations
 
-from .translation_source_binding import (
+from novel_workflow.translation_source_binding import (
     TranslationAttachment, enabled_translation_attachments,
 )
-from .vocabulary_source_binding import enabled_vocabulary_attachments
-from .workflow_archive import resolve_attachment
+from novel_workflow.vocabulary_source_binding import enabled_vocabulary_attachments
+from novel_workflow.workflow_archive import resolve_attachment
 
 
 def stage_attachments(repo, assembler, profile, stage):
