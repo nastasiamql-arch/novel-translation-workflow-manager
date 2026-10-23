@@ -8,7 +8,7 @@ from novel_workflow.ai_workspace.standard_chrome import (
     ChromeLaunchError, StandardChromeLauncher, GEMINI_URL, validate_gemini_url,
 )
 from novel_workflow.ai_workspace.core import build_jobs, ordered_results
-from novel_workflow.ai_workspace.manual_results import accept_clipboard_response
+from novel_workflow.ai_workspace.manual_results import accept_clipboard_response, replace_clipboard_response
 
 
 def chapter(n):
@@ -81,3 +81,22 @@ def test_manual_invalid_response_is_review_only():
     assert accept_clipboard_response(job, "invalid")
     assert job.status == "REVIEW_REQUIRED"
     assert job.raw_response == "invalid"
+
+
+def test_explicit_replacement_preserves_original_in_recovery_store(tmp_path):
+    from novel_workflow.ai_workspace.core import JobStore
+    job = build_jobs("a"*32, "แปล", [chapter(475)], 1)[0]
+    old = answer(475)
+    new = old.replace("เนื้อหาแปล", "เนื้อหาฉบับแก้ไข")
+    accept_clipboard_response(job, old)
+    replace_clipboard_response(job, new)
+    assert job.raw_response == new
+    assert job.raw_response_history[0]["raw_response"] == old
+    store = JobStore(tmp_path, "a"*32)
+    store.save([job])
+    restored = store.load()[0]
+    assert restored.raw_response == new
+    assert restored.raw_response_history[0]["raw_response"] == old
+    with pytest.raises(ValueError, match="WRONG_JOB"):
+        replace_clipboard_response(restored, answer(999))
+    assert restored.raw_response == new
