@@ -166,6 +166,15 @@ def record_response(job: AIJob, raw: str) -> None:
         raise ValueError("คำตอบใหม่ขัดแย้งกับผลลัพธ์เดิม กรุณาตรวจด้วยตนเอง")
     job.raw_response = raw
     job.received_at = now()
+    if job.stage in {"หาศัพท์", "เกลา"}:
+        # Their existing workflow prompts have their own output contracts.
+        # Preserve the complete answer for review instead of incorrectly
+        # applying translation chapter delimiters or modifying the glossary.
+        job.chapters = {}
+        job.vocabulary = {}
+        job.status = "RECEIVED" if raw.strip() else "REVIEW_REQUIRED"
+        job.error = "รอตรวจผลลัพธ์ของขั้นตอนนี้ด้วยตนเอง" if raw.strip() else "ไม่มีคำตอบ"
+        return
     try:
         job.chapters, job.vocabulary = parse_translation(raw, job.chapter_numbers)
     except ValueError as exc:
