@@ -121,6 +121,7 @@ class AIWorkspacePage(QWidget):
              ("ตรวจสถานะอีกครั้ง", self.retry_job),
              ("ยืนยันส่งเองแล้ว", self.confirm_sent), ("ยกเลิกงาน", self.cancel_job)],
             [("รับผลอีกครั้ง", self.collect_again), ("รับผลด้วยตนเอง", self.manual_import),
+             ("ดูคำตอบดิบ", self.view_raw), ("ดูคำศัพท์ใหม่", self.view_vocabulary),
              ("ตรวจผลรวม", self.combine), ("เปลี่ยนโมเดลงาน", self.edit_model),
              ("Import / Export", self.import_export)],
         ]
@@ -407,6 +408,39 @@ class AIWorkspacePage(QWidget):
             job.model = value.strip()
             self._save()
             self.status.setText(f"กำหนดโมเดลให้งาน {job.submission_order} แล้ว · ระบบจะตรวจจริงก่อนแนบไฟล์")
+
+    def view_raw(self):
+        job = self._chosen()
+        if not job:
+            self.status.setText("เลือกงานก่อน")
+            return
+        if not job.raw_response:
+            self.status.setText("งานนี้ยังไม่มีคำตอบดิบ")
+            return
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(f"คำตอบดิบ · งาน {job.submission_order}")
+        dialog.setText("คำตอบดิบถูกเก็บไว้ใน Job Store · เปิดรายละเอียดเพื่ออ่านทั้งหมด")
+        dialog.setDetailedText(job.raw_response)
+        dialog.exec()
+
+    def view_vocabulary(self):
+        job = self._chosen()
+        if not job:
+            self.status.setText("เลือกงานก่อน")
+            return
+        if job.stage != "แปล":
+            self.status.setText("ขั้นตอนนี้เก็บคำตอบดิบไว้ตรวจเอง · ยังไม่เพิ่ม Glossary")
+            return
+        terms = [f"บท {chapter}: {term}" for chapter, items in job.vocabulary.items()
+                 for term in items]
+        if not terms:
+            self.status.setText("งานนี้ไม่มีคำศัพท์ใหม่ที่แยกได้")
+            return
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(f"คำศัพท์ใหม่ · งาน {job.submission_order}")
+        dialog.setText("คำศัพท์ใหม่รอตรวจสอบ · ยังไม่ได้เพิ่มใน Glossary")
+        dialog.setDetailedText("\n".join(terms))
+        dialog.exec()
 
     def manual_import(self):
         job = self._chosen()
