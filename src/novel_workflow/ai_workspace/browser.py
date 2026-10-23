@@ -247,6 +247,7 @@ class GeminiBrowserWorker(QThread):
             elif command == "cancel":
                 job["cancelled"] = True
                 job["ready"] = False
+                job["upload_pending"] = False
                 active.discard(job_id)
                 self._emit(job, "CANCELLED", "ผู้ใช้ยกเลิกงาน")
             elif command == "retry":
@@ -255,8 +256,9 @@ class GeminiBrowserWorker(QThread):
                     continue
                 try:
                     self._prepare(job)
-                    self._send(job)
-                    active.add(job_id)
+                    if job.get("ready"):
+                        self._send(job)
+                        active.add(job_id)
                 except BrowserFailure as exc:
                     self._emit(job, exc.code, str(exc))
                 except Exception as exc:
@@ -283,10 +285,13 @@ class GeminiBrowserWorker(QThread):
                     str(self.profile_directory), channel="chrome", headless=False,
                     no_viewport=True, args=["--new-window"],
                 )
+                # Keep Chrome open while assisted recovery is possible. When
+                # stopped, Playwright must release the persistent profile lock.
                 try:
                     initial = context.pages
                     active = set()
                     for i, job in enumerate(self.jobs):
+                        self._drain_commands(active)
                         if self._stop_requested:
                             break
                         page = initial[0] if i == 0 and initial else context.new_page()
@@ -295,32 +300,44 @@ class GeminiBrowserWorker(QThread):
                         try:
                             self._prepare(job)
                         except BrowserFailure as exc:
+                            job["upload_pending"] = False
                             self._emit(job, exc.code, str(exc))
                         except Exception as exc:
-                            self._emit(job, "ATTACHMENT_UPLOAD_FAILED", f"{type(exc).__name__}: {str(exc)[:160]}")
+                            job["upload_pending"] = False
+                            self._emit(job, "ATTACHMENT_UPLOAD_FAILED",
+                                       f"{type(exc).__name__}: {str(exc)[:160]}")
                     last_send = 0.0
-                    for job in self.jobs:
-                        self._drain_commands(active)
-                        if self._stop_requested:
-                            break
-                        if job.get("cancelled") or not job.get("ready") or job.get("sent") or not job.get("page"):
-                            continue
-                        if not self._attachments_ready(job["page"], [Path(p).name for p in job.get("attachments", [])]):
-                            continue
-                        wait = self.send_gap - (time.monotonic() - last_send)
-                        if wait > 0:
-                            time.sleep(wait)  # Deliberate 1-second click cadence, not an upload timer.
-                        try:
-                            self._send(job)
-                            active.add(job["job_id"])
-                        except BrowserFailure as exc:
-                            self._emit(job, exc.code, str(exc))
-                        except Exception as exc:
-                            self._emit(job, "SEND_UNCONFIRMED", str(exc)[:180])
-                        last_send = time.monotonic()
-                    start = time.monotonic()
                     while not self._stop_requested:
                         self._drain_commands(active)
+                        pending = [j for j in self.jobs if j.get("upload_pending")
+                                   and not j.get("cancelled")]
+                        for job in pending:
+                            try:
+                                self._refresh_upload(job)
+                            except Exception as exc:
+                                job["upload_pending"] = False
+                                self._emit(job, "ATTACHMENT_FAILED",
+                                           f"ตรวจไฟล์ไม่สำเร็จ: {type(exc).__name__}")
+                        for job in self.jobs:
+                            if (job.get("cancelled") or not job.get("ready")
+                                    or job.get("sent") or not job.get("page")):
+                                continue
+                            # Send in submission order among *ready* jobs;
+                            # never block ready work on a still-uploading tab.
+                            remaining = self.send_gap - (time.monotonic() - last_send)
+                            if remaining > 0:
+                                continue
+                            try:
+                                self._send(job)
+                                active.add(job["job_id"])
+                            except BrowserFailure as exc:
+                                job["ready"] = False
+                                self._emit(job, exc.code, str(exc))
+                            except Exception as exc:
+                                job["ready"] = False
+                                self._emit(job, "SEND_UNCONFIRMED", str(exc)[:180])
+                            last_send = time.monotonic()
+                            break
                         for job in self.jobs:
                             if job["job_id"] not in active or not job.get("sent"):
                                 continue
@@ -333,13 +350,11 @@ class GeminiBrowserWorker(QThread):
                             except Exception as exc:
                                 active.discard(job["job_id"])
                                 self._emit(job, "COPY_FAILED", str(exc)[:180])
-                        if time.monotonic() - start > 1800:
-                            for job in self.jobs:
-                                if job["job_id"] in active:
-                                    self._emit(job, "RESPONSE_TIMEOUT", "ครบเวลา 30 นาที เลือกรับผลเองได้")
-                            active.clear()
+                        # Keep the session alive for explicit recovery commands
+                        # until the user closes the workspace or requests stop.
                         time.sleep(0.5)
                 finally:
                     context.close()
         except Exception as exc:
-            self.diagnostic.emit(f"CHROME_LAUNCH_FAILED/PROFILE_IN_USE: {type(exc).__name__}: {str(exc)[:250]}")
+            self.diagnostic.emit(
+                f"CHROME_LAUNCH_FAILED/PROFILE_IN_USE: {type(exc).__name__}: {str(exc)[:250]}")
