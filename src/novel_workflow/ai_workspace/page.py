@@ -377,7 +377,7 @@ class AIWorkspacePage(QWidget):
         layout.addWidget(QLabel("ตรวจรายชื่อไฟล์ก่อนแนบผ่าน Chrome · หากใช้ ZIP ให้แนบ ZIP เท่านั้น"))
         content = QPlainTextEdit()
         content.setReadOnly(True)
-        content.setPlainText("\\n".join(f"{index}. {path.name} — {path}" for index, path in enumerate(entries, 1)))
+        content.setPlainText("\n".join(f"{index}. {path.name} — {path}" for index, path in enumerate(entries, 1)))
         layout.addWidget(content)
         close = QDialogButtonBox(QDialogButtonBox.Close)
         close.rejected.connect(dialog.reject)
@@ -489,8 +489,22 @@ class AIWorkspacePage(QWidget):
         try:
             accept_clipboard_response(job, raw)
         except ValueError as exc:
-            self.status.setText(str(exc))
-            return
+            if str(exc).startswith("RESPONSE_CONFLICT:") and not job.imported:
+                if QMessageBox.question(self, "คำตอบเดิมไม่ตรงกัน",
+                        "คำตอบใหม่ต่างจากของเดิม · สำรองฉบับเดิมไว้ใน Recovery History แล้วแทนที่ใช่หรือไม่?",
+                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
+                    from .manual_results import replace_clipboard_response
+                    try:
+                        replace_clipboard_response(job, raw)
+                    except ValueError as replacement_error:
+                        self.status.setText(str(replacement_error))
+                        return
+                else:
+                    self.status.setText("เก็บคำตอบเดิมไว้ ไม่มีการแทนที่")
+                    return
+            else:
+                self.status.setText(str(exc))
+                return
         self._save()
         self.status.setText(f"งาน {job.submission_order}: {job.status} {job.error}")
         if (self.jobs and all(j.auto_export and j.stage == "แปล" for j in self.jobs)
