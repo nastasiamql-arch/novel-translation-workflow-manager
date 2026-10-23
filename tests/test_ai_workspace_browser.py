@@ -127,3 +127,31 @@ def test_send_confirmation_is_deferred_and_idempotent(browser, tmp_path):
         assert events.count("SUBMITTED") == 1
     finally:
         context.close()
+
+
+def test_virtualized_attachment_names_require_horizontal_scroll(browser):
+    context = browser.new_context()
+    try:
+        page = context.new_page()
+        page.set_content("""
+        <form>
+          <input type="file"><div contenteditable="true"></div>
+          <div id="track" style="width:40px;overflow-x:auto">
+            <div style="width:200px;height:20px">
+              <span id="chip" data-file-name="475.txt" aria-label="475.txt"></span>
+            </div>
+          </div>
+        </form>
+        <script>
+          document.querySelector('#track').addEventListener('scroll', function () {
+            const name = this.scrollLeft >= 48 ? '476.txt' : '475.txt';
+            const chip = document.querySelector('#chip');
+            chip.setAttribute('data-file-name', name);
+            chip.setAttribute('aria-label', name);
+          });
+        </script>
+        """)
+        assert GeminiBrowserWorker._attachments_state(page, ["475.txt", "476.txt"]) == "ready"
+        assert GeminiBrowserWorker._attachments_state(page, ["475.txt", "477.txt"]) == "unknown"
+    finally:
+        context.close()
