@@ -224,6 +224,7 @@ class AIWorkspacePage(QWidget):
                     f"ตรวจและเตรียมไฟล์ครบ {len(jobs)} งาน / {len(source.chapters)} บท · ยังไม่ส่ง")
             worker.prepared.connect(prepared)
             worker.failed.connect(lambda detail: self.status.setText(f"เตรียมไฟล์ไม่สำเร็จ: {detail}"))
+            worker.finished.connect(lambda: setattr(self, 'prepare_worker', None))
             worker.finished.connect(worker.deleteLater)
             worker.start()
         except (OSError, ValueError) as exc:

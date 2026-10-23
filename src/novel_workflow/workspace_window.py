@@ -4389,10 +4389,14 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         ai_page = self._utility_pages.get("ai-workspace")
         if ai_page is not None:
             ai_page.shutdown()
-            if ai_page.worker and ai_page.worker.isRunning():
-                ai_page.worker.finished.connect(lambda: QTimer.singleShot(0, self.close))
-                event.ignore()
-                return
+            ai_workers = [getattr(ai_page, "prepare_worker", None), getattr(ai_page, "worker", None)]
+            for ai_worker in ai_workers:
+                if ai_worker is not None and ai_worker.isRunning():
+                    if not getattr(ai_worker, "_close_resume_connected", False):
+                        ai_worker._close_resume_connected = True
+                        ai_worker.finished.connect(lambda: QTimer.singleShot(0, self.close))
+                    event.ignore()
+                    return
         self._automatic_update_timer.stop()
         timer = getattr(self, "_session_save_timer", None)
         if timer is not None:
