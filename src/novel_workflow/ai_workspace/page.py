@@ -479,6 +479,15 @@ class AIWorkspacePage(QWidget):
                 raise ValueError("Import Translator รองรับเฉพาะขั้นตอนแปล")
             if all(job.imported for job in self.jobs):
                 raise ValueError("ชุดงานนี้นำเข้าและ Export แล้ว")
+            if automatic:
+                from novel_workflow.translation_progress import completed_chapters
+                persisted_profile = self.owner.repo.load_profile(profile.id)
+                numbers = {n for job in self.jobs for n in job.chapter_numbers}
+                duplicates = sorted(numbers & completed_chapters(persisted_profile))
+                if duplicates:
+                    raise ValueError(
+                        f"บท {duplicates} เคย Export แล้ว · ป้องกัน Export ซ้ำหลัง Crash "
+                        "กรุณาตรวจประวัติและยืนยันการแปลใหม่ด้วยระบบเดิมก่อน")
             workspace = self.owner.workspaces.get(profile.id)
             if workspace is None:
                 raise ValueError("ไม่พบ Workspace ของนิยาย")
