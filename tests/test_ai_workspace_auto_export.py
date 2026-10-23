@@ -44,7 +44,8 @@ class EditorService:
 
 
 def prepared_page(tmp_path, *, consent=True):
-    profile = SimpleNamespace(id="a" * 32)
+    profile = SimpleNamespace(id="a" * 32, translator_export_events=[],
+                              translation_retranslation_resets=[])
     target = tmp_path / "Novel Translator.txt"
     target.write_text("", encoding="utf-8")
     chapter = SimpleNamespace(number=475, path=Path("475.txt"))
@@ -56,6 +57,7 @@ def prepared_page(tmp_path, *, consent=True):
     events = []
     owner = SimpleNamespace(
         profile=profile,
+        repo=SimpleNamespace(load_profile=lambda pid: profile),
         workspaces={profile.id: workspace},
         _profile_file_paths=lambda p: [target],
         _translator_profile_for_path=lambda pid, path: profile if path == target else None,
@@ -82,3 +84,17 @@ def test_auto_export_rejects_missing_batch_consent_without_writing(tmp_path):
     assert target.read_text(encoding="utf-8") == ""
     assert not job.imported
     assert not any(isinstance(x, dict) for x in events)
+
+
+def test_auto_export_blocks_committed_duplicate_after_crash(tmp_path):
+    page, target, job, events = prepared_page(tmp_path)
+    profile = page.owner.profile
+    profile.translator_export_events.append({
+        "profile_id": profile.id, "status": "committed", "chapters": [475],
+        "event_id": "fixture-completed-export",
+    })
+    AIWorkspacePage.import_export(page, automatic=True)
+    assert not job.imported
+    assert target.read_bytes() == b""
+    assert not any(isinstance(entry, dict) for entry in events)
+    assert any("Export ซ้ำ" in entry for entry in events if isinstance(entry, str))
