@@ -427,6 +427,7 @@ class GeminiBrowserWorker(QThread):
                                 continue
                             try:
                                 if self._collect(job):
+                                    job["collected"] = True
                                     active.discard(job["job_id"])
                             except BrowserFailure as exc:
                                 active.discard(job["job_id"])
@@ -434,9 +435,24 @@ class GeminiBrowserWorker(QThread):
                             except Exception as exc:
                                 active.discard(job["job_id"])
                                 self._emit(job, "COPY_FAILED", str(exc)[:180])
-                        # Keep the session alive for explicit recovery commands
-                        # until the user closes the workspace or requests stop.
-                        time.sleep(0.5)
+                        # Do not spin after a batch has completed. Keep the
+                        # profile/session available for explicit manual recovery.
+                        if (not getattr(self, "_batch_done", False) and self.jobs
+                                and all(j.get("collected") or j.get("cancelled")
+                                        for j in self.jobs)):
+                            self._batch_done = True
+                            self.diagnostic.emit("รับผล Gemini ครบทุกงานแล้ว · ตรวจผลและ Export ได้")
+                        remaining_to_send = any(j.get("ready") and not j.get("sent")
+                                                for j in self.jobs)
+                        remaining_uploads = any(j.get("upload_pending") for j in self.jobs)
+                        if not active and not remaining_to_send and not remaining_uploads:
+                            try:
+                                command = self.commands.get(timeout=5)
+                                self.commands.put(command)
+                            except Empty:
+                                pass
+                        else:
+                            time.sleep(0.5)
                 finally:
                     context.close()
         except Exception as exc:
