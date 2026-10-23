@@ -165,16 +165,18 @@ class GeminiBrowserWorker(QThread):
         try:
             origin = "https://gemini.google.com"
             job["context"].grant_permissions(["clipboard-read", "clipboard-write"], origin=origin)
+            sentinel = "__novel_workflow_copy_pending_" + job["job_id"] + "__"
+            page.evaluate("(value) => navigator.clipboard.writeText(value)", sentinel)
             copy.click(timeout=6000)
             deadline = time.monotonic() + 7
             result = ""
             while time.monotonic() < deadline and not self._stop_requested:
                 result = page.evaluate("navigator.clipboard.readText()")
-                if result and result.strip():
+                if result and result.strip() and result != sentinel:
                     break
                 time.sleep(0.15)
-            if not result:
-                raise BrowserFailure("COPY_FAILED", "ปุ่ม Copy ไม่ส่งข้อความลง Clipboard")
+            if not result or result == sentinel:
+                raise BrowserFailure("COPY_FAILED", "ปุ่ม Copy ไม่ส่งข้อความใหม่ลง Clipboard")
             self._emit(job, "RAW:" + result, "")
         except BrowserFailure:
             raise
