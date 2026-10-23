@@ -100,3 +100,14 @@ def test_stage_specific_raw_is_not_misparsed_as_translation(stage):
     assert not job.chapters and not job.vocabulary
     with pytest.raises(ValueError):
         ordered_results([job])
+
+
+def test_thirty_chapters_from_ten_out_of_order_responses():
+    jobs = build_jobs("a" * 32, "แปล", chapters(475, 30), 3)
+    for job in reversed(jobs):
+        record_response(job, "\n".join(example(n) for n in job.chapter_numbers))
+    output = ordered_results(jobs)
+    found = [int(line.split()[1]) for line in output.splitlines()
+             if line.startswith("บทที่")]
+    assert found == list(range(475, 505))
+    assert output.count("[จบตอน]") == 30
