@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
-    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QTextEdit, QMessageBox,
+    QPushButton, QSpinBox, QDoubleSpinBox, QTableWidget, QTableWidgetItem, QTextEdit, QMessageBox,
     QCheckBox, QHeaderView, QInputDialog)
 
 from .core import JobStore, build_jobs, record_response, ordered_results
@@ -82,17 +82,28 @@ class AIWorkspacePage(QWidget):
         layout.addLayout(controls)
         options = QHBoxLayout()
         self.size = QSpinBox()
-        self.size.setRange(1, 30)
+        self.size.setRange(1, 100)
         self.size.setValue(3)
         self.tabs = QSpinBox()
         self.tabs.setRange(1, 10)
         self.tabs.setValue(10)
+        self.range_start = QSpinBox()
+        self.range_end = QSpinBox()
+        for spin in (self.range_start, self.range_end):
+            spin.setRange(0, 1000000)
+            spin.setSpecialValueText("ทั้งหมด")
+        self.gap = QDoubleSpinBox()
+        self.gap.setRange(0.1, 10.0)
+        self.gap.setSingleStep(0.1)
+        self.gap.setValue(1.0)
+        self.gap.setSuffix(" วินาที")
         self.model = QComboBox()
         self.model.setEditable(True)
         self.model.setInsertPolicy(QComboBox.NoInsert)
         self.model.setPlaceholderText("โมเดลตามชื่อบนเว็บ Gemini")
-        for label, widget in [("บท/งาน", self.size), ("สูงสุดแท็บ", self.tabs),
-                              ("โมเดล (ตรวจบนเว็บ)", self.model)]:
+        for label, widget in [("เริ่มบท", self.range_start), ("ถึงบท", self.range_end),
+                              ("บท/งาน", self.size), ("สูงสุดแท็บ", self.tabs),
+                              ("จังหวะส่ง", self.gap), ("โมเดล", self.model)]:
             options.addWidget(QLabel(label))
             options.addWidget(widget)
         self.zip_mode = QCheckBox("แนบเป็น ZIP")
@@ -105,7 +116,7 @@ class AIWorkspacePage(QWidget):
         actions = QHBoxLayout()
         for label, method in [("ตรวจและสร้างงาน", self.preview), ("เปิด Chrome / เริ่มส่ง", self.launch),
                               ("เปิดแท็บงาน", self.open_tab), ("รับผลด้วยตนเอง", self.manual_import),
-                              ("ยืนยันส่งเองแล้ว", self.confirm_sent), ("ตรวจผลรวม", self.combine), ("Import / Export", self.import_export)]:
+                              ("ยืนยันส่งเองแล้ว", self.confirm_sent), ("ตรวจผลรวม", self.combine), ("เปลี่ยนโมเดลงาน", self.edit_model), ("Import / Export", self.import_export)]:
             button = QPushButton(label)
             button.clicked.connect(method)
             actions.addWidget(button)
@@ -204,7 +215,12 @@ class AIWorkspacePage(QWidget):
             source = load_translation_source("step", path=entry.path)
             refs = translation_reference_files(self._source_entries, entry.path, entry.id)
             validate_translation_source(source)
-            jobs = build_jobs(profile.id, self.stage.currentText(), source.chapters,
+            first = self.range_start.value() or source.chapters[0].number
+            last = self.range_end.value() or source.chapters[-1].number
+            selected_chapters = [ch for ch in source.chapters if first <= ch.number <= last]
+            if first > last or not selected_chapters or selected_chapters[0].number != first or selected_chapters[-1].number != last:
+                raise ValueError("ช่วงบทไม่พบในต้นฉบับหรือระบุช่วงผิด")
+            jobs = build_jobs(profile.id, self.stage.currentText(), selected_chapters,
                               self.size.value(), max_tabs=self.tabs.value(),
                               references=refs, model=self.model.currentText().strip(),
                               prompt=self.prompt.toPlainText())
@@ -237,7 +253,10 @@ class AIWorkspacePage(QWidget):
         if self.worker and self.worker.isRunning():
             self.status.setText("Chrome Workspace ทำงานอยู่แล้ว")
             return
-        waiting = [j for j in self.jobs if j.status == "PREPARED"]
+        waiting = [j for j in self.jobs if j.status in {
+            "PREPARED", "OPENED", "MODEL_SELECTED", "READY",
+            "GOOGLE_LOGIN_REQUIRED", "MODEL_NOT_FOUND", "MODEL_SELECTION_FAILED",
+            "ATTACHMENT_NOT_READY", "ATTACHMENT_UPLOAD_FAILED", "PROMPT_INSERT_FAILED"}]
         if not waiting:
             self.status.setText("ไม่มีงานที่เตรียมไว้ หรือกำลังรอแก้ไขงานเดิม")
             return
@@ -254,7 +273,8 @@ class AIWorkspacePage(QWidget):
         except ValueError as exc:
             self.status.setText(str(exc))
             return
-        self.worker = GeminiBrowserWorker(entries, self.owner.repo.root / "chrome-ai-profile", parent=self)
+        self.worker = GeminiBrowserWorker(entries, self.owner.repo.root / "chrome-ai-profile",
+                                          send_gap=self.gap.value(), parent=self)
         self.worker.event.connect(self._event)
         self.worker.diagnostic.connect(self.status.setText)
         self.worker.finished.connect(lambda: self.status.setText("Chrome หยุดทำงาน · ตรวจสถานะงานได้"))
@@ -297,6 +317,20 @@ class AIWorkspacePage(QWidget):
             self._save()
             if self.worker and self.worker.isRunning():
                 self.worker.enqueue("sent", job.job_id)
+
+    def edit_model(self):
+        job = self._chosen()
+        if job is None:
+            self.status.setText("เลือกงานก่อน")
+            return
+        if job.submitted_verified or job.raw_response:
+            self.status.setText("งานนี้ส่งหรือรับคำตอบแล้ว ห้ามเปลี่ยนโมเดลย้อนหลัง")
+            return
+        value, ok = QInputDialog.getText(self, "โมเดลงาน", "ชื่อโมเดลตามตัวเลือก Gemini:", text=job.model)
+        if ok and value.strip():
+            job.model = value.strip()
+            self._save()
+            self.status.setText(f"กำหนดโมเดลให้งาน {job.submission_order} แล้ว · ระบบจะตรวจจริงก่อนแนบไฟล์")
 
     def manual_import(self):
         job = self._chosen()

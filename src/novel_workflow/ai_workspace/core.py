@@ -156,6 +156,10 @@ def ordered_results(jobs: list[AIJob]) -> str:
 
 def record_response(job: AIJob, raw: str) -> None:
     """Preserve untrusted raw response even if structural validation fails."""
+    if job.imported:
+        if job.raw_response != raw:
+            raise ValueError("งานนี้ Export แล้ว คำตอบใหม่ไม่สามารถเขียนทับได้")
+        return
     if job.raw_response and job.raw_response != raw:
         raise ValueError("คำตอบใหม่ขัดแย้งกับผลลัพธ์เดิม กรุณาตรวจด้วยตนเอง")
     job.raw_response = raw
