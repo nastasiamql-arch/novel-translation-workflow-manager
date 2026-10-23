@@ -3857,7 +3857,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             return None
         return profile
 
-    def update_context_from_translator(self, workspace):
+    def update_context_from_translator(self, workspace, *, preauthorized=False):
         """Export bound Translator bytes and replace its Context in one transaction."""
         from copy import deepcopy
         from .recovery import translator_chapter_range
@@ -3986,17 +3986,18 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             except OSError as exc:
                 QMessageBox.warning(self, "Export ไม่ได้", str(exc))
                 return False
-        preview = QMessageBox(self)
-        preview.setWindowTitle("ยืนยัน Export")
-        preview.setIcon(QMessageBox.Information)
-        preview.setText(
-            f"สำรองไฟล์ขั้นตอนตรวจคำแปลก่อน แล้วสร้างไฟล์ TXT และแทนที่ Context ทั้งหมด?\n"
-            f"TXT: {target.name}\n{chapter_label}\n"
-            f"Translator: {source}\nContext: {context}"
-        )
-        preview.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        if preview.exec() != QMessageBox.Yes:
-            return False
+        if not preauthorized:
+            preview = QMessageBox(self)
+            preview.setWindowTitle("ยืนยัน Export")
+            preview.setIcon(QMessageBox.Information)
+            preview.setText(
+                f"สำรองไฟล์ขั้นตอนตรวจคำแปลก่อน แล้วสร้างไฟล์ TXT และแทนที่ Context ทั้งหมด?\n"
+                f"TXT: {target.name}\n{chapter_label}\n"
+                f"Translator: {source}\nContext: {context}"
+            )
+            preview.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            if preview.exec() != QMessageBox.Yes:
+                return False
 
         self._translator_export_in_progress = True
         snapshot_verified = False
