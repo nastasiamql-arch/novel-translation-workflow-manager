@@ -175,18 +175,33 @@ class GeminiBrowserWorker(QThread):
         send = self._selector(page, "button", r"send|ส่ง")
         if send is None or not send.is_enabled():
             raise BrowserFailure("SEND_BUTTON_UNAVAILABLE", "ปุ่มส่งยังไม่พร้อม")
-        # A click is not proof of acceptance; unconfirmed prompts must not be retried.
+        # The click is a one-time, potentially irreversible operation.
+        # Confirmation happens in later scheduler ticks so other ready
+        # tabs are never blocked for nine seconds by this tab.
+        job["send_attempted"] = True
+        job["ready"] = False
+        job["confirm_started"] = time.monotonic()
+        self._emit(job, "SEND_UNCONFIRMED", "กำลังตรวจว่า Gemini รับข้อความ")
         send.click(timeout=5000)
-        self._emit(job, "SEND_UNCONFIRMED", "กดส่งแล้ว กำลังตรวจหลักฐาน")
-        # Conversation user messages can be virtualized or hidden; never infer from time.
+
+    def _confirm_send(self, job):
+        if not job.get("send_attempted") or job.get("sent"):
+            return False
+        page = job["page"]
         try:
-            page.get_by_role("main").get_by_text(job["prompt"], exact=True).wait_for(
-                state="visible", timeout=9000)
+            prompt = page.get_by_role("main").get_by_text(job["prompt"], exact=True)
+            if prompt.count() == 1 and prompt.is_visible():
+                job["sent"] = True
+                job["collect_started"] = time.monotonic()
+                self._emit(job, "SUBMITTED", "เว็บไซต์แสดงข้อความที่ส่งแล้ว")
+                return True
         except Exception:
-            raise BrowserFailure("SEND_UNCONFIRMED", "ไม่สามารถยืนยันการรับ Prompt ห้ามกดซ้ำอัตโนมัติ")
-        job["sent"] = True
-        job["collect_started"] = time.monotonic()
-        self._emit(job, "SUBMITTED", "เว็บไซต์แสดงข้อความที่ส่งแล้ว")
+            pass
+        if time.monotonic() - job["confirm_started"] >= 15:
+            job["send_attempted"] = False
+            self._emit(job, "SEND_UNCONFIRMED",
+                       "ยืนยันการรับ Prompt ไม่ได้ ห้ามส่งซ้ำอัตโนมัติ")
+        return False
 
     def _collect(self, job):
         page = job["page"]
@@ -259,6 +274,7 @@ class GeminiBrowserWorker(QThread):
                     self._prepare(job)
                     if job.get("ready"):
                         self._send(job)
+                    if job.get("send_attempted"):
                         active.add(job_id)
                 except BrowserFailure as exc:
                     self._emit(job, exc.code, str(exc))
@@ -322,7 +338,8 @@ class GeminiBrowserWorker(QThread):
                                            f"ตรวจไฟล์ไม่สำเร็จ: {type(exc).__name__}")
                         for job in self.jobs:
                             if (job.get("cancelled") or not job.get("ready")
-                                    or job.get("sent") or not job.get("page")):
+                                    or job.get("sent") or job.get("send_attempted")
+                                    or not job.get("page")):
                                 continue
                             # Send in submission order among *ready* jobs;
                             # never block ready work on a still-uploading tab.
@@ -341,6 +358,8 @@ class GeminiBrowserWorker(QThread):
                             last_send = time.monotonic()
                             break
                         for job in self.jobs:
+                            if job["job_id"] in active and job.get("send_attempted") and not job.get("sent"):
+                                self._confirm_send(job)
                             if job["job_id"] not in active or not job.get("sent"):
                                 continue
                             if (time.monotonic() - job.get("collect_started", time.monotonic())
