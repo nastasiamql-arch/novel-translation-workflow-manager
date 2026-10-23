@@ -37,6 +37,7 @@ class AIJob:
     error: str = ""
     page_url: str = ""
     raw_response: str = ""
+    raw_response_history: list[dict[str, str]] = field(default_factory=list)
     chapters: dict[str, str] = field(default_factory=dict)
     vocabulary: dict[str, list[str]] = field(default_factory=dict)
     submitted_verified: bool = False
