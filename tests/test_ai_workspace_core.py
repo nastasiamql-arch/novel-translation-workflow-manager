@@ -88,3 +88,15 @@ def test_auto_export_requires_explicit_persisted_batch_permission(tmp_path):
     assert all(job.auto_export for job in restored)
     assert [job.submission_order for job in restored] == [1, 2, 3]
     assert "บทที่ 477" in ordered_results(restored)
+
+
+@pytest.mark.parametrize("stage", ["หาศัพท์", "เกลา"])
+def test_stage_specific_raw_is_not_misparsed_as_translation(stage):
+    job = build_jobs("a" * 32, stage, chapters(475, 1), 1)[0]
+    raw = "คำศัพท์ใหม่\n凌云 = หลิงอวิ๋น\n[-]" if stage == "หาศัพท์" else "ข้อความเกลาที่ไม่ได้มีหัวบท"
+    record_response(job, raw)
+    assert job.status == "RECEIVED"
+    assert job.raw_response == raw
+    assert not job.chapters and not job.vocabulary
+    with pytest.raises(ValueError):
+        ordered_results([job])
