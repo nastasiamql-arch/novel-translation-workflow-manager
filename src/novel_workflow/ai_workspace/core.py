@@ -41,6 +41,7 @@ class AIJob:
     vocabulary: dict[str, list[str]] = field(default_factory=dict)
     submitted_verified: bool = False
     imported: bool = False
+    auto_export: bool = False
     created_at: str = field(default_factory=now)
     submitted_at: str = ""
     received_at: str = ""
