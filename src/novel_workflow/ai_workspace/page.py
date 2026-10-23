@@ -65,7 +65,7 @@ class AIWorkspacePage(QWidget):
         actions = QHBoxLayout()
         for label, method in [("ตรวจและสร้างงาน", self.preview), ("เปิด Chrome / เริ่มส่ง", self.launch),
                               ("เปิดแท็บงาน", self.open_tab), ("รับผลด้วยตนเอง", self.manual_import),
-                              ("ยืนยันส่งเองแล้ว", self.confirm_sent), ("ตรวจผลรวม", self.combine)]:
+                              ("ยืนยันส่งเองแล้ว", self.confirm_sent), ("ตรวจผลรวม", self.combine), ("Import / Export", self.import_export)]:
             button = QPushButton(label)
             button.clicked.connect(method)
             actions.addWidget(button)
@@ -246,6 +246,62 @@ class AIWorkspacePage(QWidget):
         QApplication = __import__("PySide6.QtWidgets", fromlist=["QApplication"]).QApplication
         QApplication.clipboard().setText(text)
         self.status.setText("ตรวจครบแล้ว · คัดลอกผลรวมลง Clipboard เพื่อวางใน Translator และ Export ผ่านขั้นตอนเดิม")
+
+
+    def import_export(self):
+        """Use existing Translator export only, with preflight and user confirmation."""
+        try:
+            text = ordered_results(self.jobs)
+            profile = self._selected_profile()
+            if not profile or not self.owner.profile or self.owner.profile.id != profile.id:
+                raise ValueError("กรุณาเปิดนิยายเรื่องนี้ใน Workspace ก่อน")
+            if any(job.stage != "แปล" for job in self.jobs):
+                raise ValueError("Import Translator รองรับเฉพาะขั้นตอนแปล")
+            if all(job.imported for job in self.jobs):
+                raise ValueError("ชุดงานนี้นำเข้าและ Export แล้ว")
+            workspace = self.owner.workspaces.get(profile.id)
+            if workspace is None:
+                raise ValueError("ไม่พบ Workspace ของนิยาย")
+            candidates = [path for path in self.owner._profile_file_paths(profile)
+                          if path.name.casefold().endswith("translator.txt")
+                          and path.name.casefold() != "translator.txt"
+                          and self.owner._translator_profile_for_path(profile.id, path)]
+            if len(candidates) != 1:
+                raise ValueError("Translator ที่ผูกกับนิยายไม่ชัดเจน")
+            target = candidates[0]
+            if target.read_bytes().strip():
+                raise ValueError("Translator มีข้อมูลอยู่แล้ว · กรุณา Export งานเดิมก่อน")
+            if not workspace.editor.save_all(include_normalization=False):
+                raise ValueError("มีงานที่ยังบันทึกไม่สำเร็จ")
+            if not workspace.editor.open_file(target):
+                raise ValueError("ไม่สามารถเปิด Translator")
+            editor = workspace.editor._current_editor()
+            if workspace.editor._path(editor) != target or workspace.editor._dirty(editor):
+                raise ValueError("Translator มีการแก้ไขค้างอยู่")
+            if target.read_bytes().strip():
+                raise ValueError("Translator ถูกแก้ไขจากภายนอก")
+            confirmation = QMessageBox.question(
+                self, "ยืนยัน Import + Export",
+                f"นำเข้า {sum(len(j.chapter_numbers) for j in self.jobs)} บท"
+                " ลง Translator ที่ว่าง และ Export ด้วยระบบเดิมหรือไม่?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if confirmation != QMessageBox.Yes:
+                return
+            editor.setPlainText(text)
+            if not workspace.editor.save_editor(editor, quiet=True, normalize=False):
+                raise ValueError("บันทึก Translator ไม่สำเร็จหรือมีการแก้ไขจากภายนอก")
+            # The existing Export handles backup, Context, progress, history and
+            # recovery journal. Its confirmation and preflight remain enabled.
+            if not self.owner.update_context_from_translator(workspace):
+                self.status.setText("นำเข้าแล้ว แต่ Export ยังไม่สำเร็จ · ผลลัพธ์ถูกเก็บไว้")
+                return
+            for job in self.jobs:
+                job.imported = True
+                job.status = "IMPORTED"
+            self._save()
+            self.status.setText("Import/Export สำเร็จผ่าน Workflow เดิม")
+        except (ValueError, TypeError, OSError) as exc:
+            self.status.setText(f"Import/Export ไม่สำเร็จ: {exc}")
 
     def shutdown(self):
         if self.worker and self.worker.isRunning():
