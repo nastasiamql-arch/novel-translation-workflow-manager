@@ -296,7 +296,11 @@ class GeminiBrowserWorker(QThread):
             if not job:
                 continue
             if command == "open" and job.get("page"):
-                job["page"].bring_to_front()
+                try:
+                    job["page"].bring_to_front()
+                except Exception as exc:
+                    self._emit(job, "TAB_OPEN_FAILED",
+                               f"เปิดแท็บไม่สำเร็จ: {type(exc).__name__}")
             elif command == "cancel":
                 job["cancelled"] = True
                 job["ready"] = False
