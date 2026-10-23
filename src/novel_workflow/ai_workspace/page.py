@@ -429,6 +429,9 @@ class AIWorkspacePage(QWidget):
         if not job:
             self.status.setText("เลือกงานก่อน")
             return
+        if job.status not in {"ATTACHMENT_READY", "SUBMITTED", "RECEIVED", "REVIEW_REQUIRED"}:
+            self.status.setText("กรุณายืนยันว่าไฟล์แนบและอัปโหลดครบก่อนยืนยันส่งงาน")
+            return
         confirm = QMessageBox.question(self, "ยืนยันส่งงานเอง",
             f"คุณเห็นข้อความที่ส่งแล้วจริงบน Gemini สำหรับงาน {job.submission_order} ใช่หรือไม่?")
         if confirm == QMessageBox.Yes:
@@ -459,10 +462,17 @@ class AIWorkspacePage(QWidget):
         if not job.raw_response:
             self.status.setText("งานนี้ยังไม่มีคำตอบดิบ")
             return
-        dialog = QMessageBox(self)
+        dialog = QDialog(self)
         dialog.setWindowTitle(f"คำตอบดิบ · งาน {job.submission_order}")
-        dialog.setText("คำตอบดิบถูกเก็บไว้ใน Job Store · เปิดรายละเอียดเพื่ออ่านทั้งหมด")
-        dialog.setDetailedText(job.raw_response)
+        dialog.resize(900, 650)
+        layout = QVBoxLayout(dialog)
+        viewer = QPlainTextEdit()
+        viewer.setReadOnly(True)
+        viewer.setPlainText(job.raw_response)
+        layout.addWidget(viewer)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
         dialog.exec()
 
     def view_vocabulary(self):
