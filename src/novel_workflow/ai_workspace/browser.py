@@ -185,6 +185,7 @@ class GeminiBrowserWorker(QThread):
         except Exception:
             raise BrowserFailure("SEND_UNCONFIRMED", "ไม่สามารถยืนยันการรับ Prompt ห้ามกดซ้ำอัตโนมัติ")
         job["sent"] = True
+        job["collect_started"] = time.monotonic()
         self._emit(job, "SUBMITTED", "เว็บไซต์แสดงข้อความที่ส่งแล้ว")
 
     def _collect(self, job):
@@ -266,6 +267,7 @@ class GeminiBrowserWorker(QThread):
             elif command == "sent":
                 if job.get("page"):
                     job["sent"] = True
+                    job["collect_started"] = time.monotonic()
                     active.add(job_id)
                     self._emit(job, "SUBMITTED", "ผู้ใช้ยืนยันการส่งด้วยตนเอง")
             elif command == "collect" and job.get("page"):
@@ -340,6 +342,12 @@ class GeminiBrowserWorker(QThread):
                             break
                         for job in self.jobs:
                             if job["job_id"] not in active or not job.get("sent"):
+                                continue
+                            if (time.monotonic() - job.get("collect_started", time.monotonic())
+                                    > job.get("response_timeout", 1800)):
+                                active.discard(job["job_id"])
+                                self._emit(job, "RESPONSE_TIMEOUT",
+                                           "เกินเวลารอคำตอบ กรุณารับผลเองจากแท็บเดิม")
                                 continue
                             try:
                                 if self._collect(job):
