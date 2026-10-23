@@ -51,3 +51,54 @@ def test_ten_tabs_one_browser_context(browser):
         assert len({page.context for page in pages}) == 1
     finally:
         context.close()
+
+def test_attachment_state_distinguishes_pending_failed_unknown(browser):
+    context = browser.new_context()
+    try:
+        page = context.new_page()
+        page.set_content(html(busy=True))
+        assert GeminiBrowserWorker._attachments_state(page, ["475.txt", "476.txt"]) == "pending"
+        page.set_content(html())
+        assert GeminiBrowserWorker._attachments_state(page, ["475.txt", "476.txt"]) == "ready"
+        assert GeminiBrowserWorker._attachments_state(page, ["475.txt", "missing.txt"]) == "unknown"
+        page.set_content(html(duplicate=True))
+        assert GeminiBrowserWorker._attachments_state(page, ["475.txt", "476.txt"]) == "unknown"
+        page.set_content(html().replace('aria-label="476.txt"', 'aria-label="476.txt error"'))
+        assert GeminiBrowserWorker._attachments_state(page, ["475.txt", "476.txt"]) == "failed"
+    finally:
+        context.close()
+
+
+def test_upload_polling_does_not_fail_while_busy(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    import time
+    worker = GeminiBrowserWorker([], tmp_path)
+    events = []
+    worker.event.connect(lambda jid, state, reason, url: events.append(state))
+    job = dict(job_id="one", page=SimpleNamespace(url="https://gemini.google.com/app"),
+               attachments=["475.txt"], upload_pending=True,
+               upload_started=time.monotonic(), upload_timeout=10)
+    monkeypatch.setattr(worker, "_attachments_state", lambda page, filenames: "pending")
+    worker._refresh_upload(job)
+    assert job["upload_pending"]
+    assert not job.get("ready")
+    assert events[-1] == "UPLOADING"
+    monkeypatch.setattr(worker, "_attachments_state", lambda page, filenames: "ready")
+    worker._refresh_upload(job)
+    assert job["ready"] and not job["upload_pending"]
+    assert events[-1] == "READY_TO_SEND"
+
+
+def test_upload_timeout_is_not_success(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    import time
+    worker = GeminiBrowserWorker([], tmp_path)
+    events = []
+    worker.event.connect(lambda jid, state, reason, url: events.append(state))
+    monkeypatch.setattr(worker, "_attachments_state", lambda page, filenames: "unknown")
+    job = dict(job_id="one", page=SimpleNamespace(url=""),
+               attachments=["475.txt"], upload_pending=True,
+               upload_started=time.monotonic() - 60, upload_timeout=1)
+    worker._refresh_upload(job)
+    assert not job["upload_pending"] and not job.get("ready")
+    assert events[-1] == "ATTACHMENT_TIMEOUT"
