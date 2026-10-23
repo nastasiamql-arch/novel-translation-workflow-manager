@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QTextEdit, QMessageBox,
     QCheckBox, QHeaderView, QInputDialog)
@@ -11,9 +11,45 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCombo
 from .core import JobStore, build_jobs, record_response, ordered_results
 from .browser import GeminiBrowserWorker
 from novel_workflow.translation_batches import load_translation_source, validate_translation_source
+from novel_workflow.translation_batch_clipboard import prepare_translation_batch
+from novel_workflow.vocabulary_batches import ChapterBatch, ChapterFile
+from .bindings import stage_attachments
 from novel_workflow.translation_source_binding import (
     enabled_translation_attachments, source_candidates, translation_reference_files,
 )
+
+
+class BundlePreparationWorker(QThread):
+    prepared = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, source, jobs, references, directory, *, as_zip=False):
+        super().__init__()
+        self.source = source
+        self.jobs = jobs
+        self.references = references
+        self.directory = directory
+        self.as_zip = as_zip
+
+    def run(self):
+        try:
+            chapters = {ch.number: ch for ch in self.source.chapters}
+            outputs = {}
+            for job in self.jobs:
+                if self.isInterruptionRequested():
+                    return
+                selected = tuple(ChapterFile(n, chapters[n].path or Path(chapters[n].filename))
+                                 for n in job.chapter_numbers)
+                group = ChapterBatch(job.submission_order, job.chapter_numbers[0],
+                                     job.chapter_numbers[-1], selected, ())
+                prepared = prepare_translation_batch(
+                    self.source, group, self.references,
+                    self.directory / job.batch_id / job.job_id,
+                    as_zip=self.as_zip)
+                outputs[job.job_id] = [str(path) for path in prepared]
+            self.prepared.emit(outputs)
+        except (OSError, ValueError, UnicodeError) as exc:
+            self.failed.emit(str(exc))
 
 
 class AIWorkspacePage(QWidget):
@@ -22,6 +58,7 @@ class AIWorkspacePage(QWidget):
         self.owner = owner
         self.setObjectName("aiWorkspacePage")
         self.worker = None
+        self.prepare_worker = None
         self.jobs = []
         self.store = None
         layout = QVBoxLayout(self)
@@ -38,6 +75,7 @@ class AIWorkspacePage(QWidget):
         controls.addWidget(self.profile, 2)
         self.stage = QComboBox()
         self.stage.addItems(["แปล", "หาศัพท์", "เกลา"])
+        self.stage.currentIndexChanged.connect(self._stage_changed)
         controls.addWidget(self.stage)
         self.source = QComboBox()
         controls.addWidget(self.source, 2)
@@ -57,6 +95,8 @@ class AIWorkspacePage(QWidget):
                               ("โมเดล (ตรวจบนเว็บ)", self.model)]:
             options.addWidget(QLabel(label))
             options.addWidget(widget)
+        self.zip_mode = QCheckBox("แนบเป็น ZIP")
+        options.addWidget(self.zip_mode)
         layout.addLayout(options)
         self.prompt = QTextEdit()
         self.prompt.setPlaceholderText("Prompt เพิ่มเติม (ใช้ไฟล์ Prompt ที่ผูกกับขั้นตอนอยู่แล้วด้วย)")
@@ -100,13 +140,29 @@ class AIWorkspacePage(QWidget):
         if self.store:
             try:
                 self.jobs = self.store.load()
-                self._source_entries = enabled_translation_attachments(
-                    self.owner.repo, self.owner.assembler, self._selected_profile())
-                for entry in source_candidates(self._source_entries):
-                    self.source.addItem(entry.label, entry.id)
+                self._stage_changed()
             except (OSError, ValueError, TypeError) as exc:
                 self.status.setText(f"ตรวจไฟล์ผูกไว้ไม่ได้: {exc}")
         self._render()
+
+    def _stage_changed(self, *_):
+        current = self.source.currentData()
+        self.source.blockSignals(True)
+        self.source.clear()
+        try:
+            self._source_entries = stage_attachments(
+                self.owner.repo, self.owner.assembler, self._selected_profile(),
+                self.stage.currentText())
+            for entry in source_candidates(self._source_entries):
+                self.source.addItem(entry.label, entry.id)
+            selected = self.source.findData(current)
+            if selected >= 0:
+                self.source.setCurrentIndex(selected)
+        except (OSError, ValueError, TypeError) as exc:
+            self._source_entries = ()
+            self.status.setText(f"ตรวจไฟล์ที่ผูกไว้ไม่ได้: {exc}")
+        finally:
+            self.source.blockSignals(False)
 
     def _selected_profile(self):
         return next((p for p in self.owner.repo.list_profiles()
@@ -135,6 +191,9 @@ class AIWorkspacePage(QWidget):
         return shown[row] if row < len(shown) else None
 
     def preview(self):
+        if self.prepare_worker is not None and self.prepare_worker.isRunning():
+            self.status.setText("กำลังเตรียมไฟล์อยู่ กรุณารอให้ตรวจครบก่อน")
+            return
         profile = self._selected_profile()
         entry = next((e for e in getattr(self, "_source_entries", ())
                       if e.id == self.source.currentData()), None)
@@ -151,13 +210,29 @@ class AIWorkspacePage(QWidget):
                               prompt=self.prompt.toPlainText())
             if self.jobs and any(j.status not in {"IMPORTED", "CANCELLED"} for j in self.jobs):
                 raise ValueError("มีงานเดิมที่ยังไม่จบ กรุณานำผลลัพธ์ออกก่อนสร้างงานใหม่")
-            self.jobs = jobs
-            self._save()
-            self.status.setText(f"เตรียม {len(jobs)} งาน / {len(source.chapters)} บท · ยังไม่ส่ง")
+            worker = BundlePreparationWorker(
+                source, jobs, refs, self.owner.repo.root / "cache" / "ai_workspace" / profile.id,
+                as_zip=self.zip_mode.isChecked())
+            self.prepare_worker = worker
+            self.status.setText(f"กำลังตรวจและจัดชุดไฟล์ {len(jobs)} งาน โดยไม่หยุด UI…")
+            def prepared(results):
+                for job in jobs:
+                    job.prepared_files = results[job.job_id]
+                self.jobs = jobs
+                self._save()
+                self.status.setText(
+                    f"ตรวจและเตรียมไฟล์ครบ {len(jobs)} งาน / {len(source.chapters)} บท · ยังไม่ส่ง")
+            worker.prepared.connect(prepared)
+            worker.failed.connect(lambda detail: self.status.setText(f"เตรียมไฟล์ไม่สำเร็จ: {detail}"))
+            worker.finished.connect(worker.deleteLater)
+            worker.start()
         except (OSError, ValueError) as exc:
             self.status.setText(f"สร้างงานไม่ได้: {exc}")
 
     def launch(self):
+        if self.prepare_worker and self.prepare_worker.isRunning():
+            self.status.setText("ต้องตรวจไฟล์ครบก่อนเริ่ม Chrome")
+            return
         if self.worker and self.worker.isRunning():
             self.status.setText("Chrome Workspace ทำงานอยู่แล้ว")
             return
@@ -171,7 +246,7 @@ class AIWorkspacePage(QWidget):
         entries = []
         try:
             for job in waiting:
-                attachments = [*job.source_files, *job.reference_files]
+                attachments = job.prepared_files
                 if not all(p and Path(p).is_file() for p in attachments):
                     raise ValueError(f"งาน {job.submission_order} มีไฟล์ต้นฉบับไม่พร้อม")
                 entries.append({**vars(job), "attachments": attachments})
@@ -304,5 +379,7 @@ class AIWorkspacePage(QWidget):
             self.status.setText(f"Import/Export ไม่สำเร็จ: {exc}")
 
     def shutdown(self):
+        if self.prepare_worker and self.prepare_worker.isRunning():
+            self.prepare_worker.requestInterruption()
         if self.worker and self.worker.isRunning():
             self.worker.enqueue("stop")

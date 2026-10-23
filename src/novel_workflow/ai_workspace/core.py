@@ -30,6 +30,7 @@ class AIJob:
     chapter_numbers: list[int]
     source_files: list[str]
     reference_files: list[str]
+    prepared_files: list[str] = field(default_factory=list)
     model: str = ""
     prompt: str = ""
     status: str = "PREPARED"
