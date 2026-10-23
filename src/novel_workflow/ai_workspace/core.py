@@ -103,7 +103,7 @@ def parse_translation(text: str, expected_numbers) -> tuple[dict[str, str], dict
                 vocabulary[number] = []
             else:
                 vocabulary[number] = [line.strip() for line in items.splitlines()
-                                      if line.strip() and line.strip() != "[-]"]
+                                      if line.strip()]
                 if any("[-]" in term for term in vocabulary[number]):
                     raise ValueError("RESULT_PARSE_FAILED: [-] ปะปนรายการคำศัพท์")
         else:
