@@ -95,6 +95,7 @@ class GeminiBrowserWorker(QThread):
             raise BrowserFailure("PROMPT_INSERT_FAILED", "ตรวจสอบข้อความ Prompt ไม่ตรง")
         if not self._attachments_ready(page, [p.name for p in attachments]):
             raise BrowserFailure("ATTACHMENT_NOT_READY", "ยังยืนยันไฟล์แนบครบทุกไฟล์ไม่ได้ กรุณาตรวจบน Chrome")
+        job["ready"] = True
         self._emit(job, "READY", f"ตรวจ {len(attachments)} ไฟล์")
         return True
 
@@ -240,9 +241,7 @@ class GeminiBrowserWorker(QThread):
                         self._drain_commands(active)
                         if self._stop_requested:
                             break
-                        if job.get("page") and job.get("sent"):
-                            continue
-                        if not job.get("page"):
+                        if not job.get("ready") or job.get("sent") or not job.get("page"):
                             continue
                         if not self._attachments_ready(job["page"], [Path(p).name for p in job.get("attachments", [])]):
                             continue
