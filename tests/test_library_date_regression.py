@@ -106,12 +106,15 @@ def test_library_card_text_is_in_exclusive_rectangles(app, title):
     app.processEvents()
     rect = view.visualItemRect(item)
     assert rect.width() >= 156 and rect.height() >= delegate.card_size().height()
-    areas = delegate.card_rects(rect)
+    areas = delegate.card_rects(rect, title_text=title)
     assert not areas["cover"].intersects(areas["title"])
     assert not areas["title"].intersects(areas["status"])
     assert rect.contains(areas["cover"]) and rect.contains(areas["title"])
     assert rect.contains(areas["status"])
-    assert areas["title"].height() >= 3 * (view.fontMetrics().lineSpacing() + 5)
+    expected_lines = min(delegate.MAX_TITLE_LINES, len(
+        delegate.title_lines(title, view.font(), areas["title"].width())))
+    assert areas["title"].height() == expected_lines * (
+        view.fontMetrics().lineSpacing() + 4)
     wrapped = delegate.title_lines(title, view.font(), areas["title"].width())
     assert wrapped
     assert item.data(Qt.AccessibleDescriptionRole) == title

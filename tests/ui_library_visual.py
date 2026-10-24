@@ -40,12 +40,13 @@ def create_cover(path, number):
     assert image.save(str(path))
 
 
-def render_screenshot(app, window, output, name, theme, mode, width, height):
+def render_screenshot(app, window, output, name, theme, mode, width, height,
+                      category=0, select_card=False):
     window.settings.appearance = theme
     window.apply_theme()
     window.resize(width, height)
     window.show_library()
-    window.library_status_tabs.setCurrentIndex(0)
+    window.library_status_tabs.setCurrentIndex(category)
     button = (window.library_list_view if mode == "list"
               else window.library_gallery_view)
     button.click()
@@ -54,12 +55,19 @@ def render_screenshot(app, window, output, name, theme, mode, width, height):
     cards = window.profile_cards
     visible = [cards.item(i) for i in range(cards.count())
                if not cards.item(i).isHidden()]
-    assert len(visible) == 5
+    assert len(visible) == (5 if category == 0 else 1)
+    if select_card:
+        cards.setCurrentItem(visible[0])
     for item in visible:
         rect = cards.visualItemRect(item)
-        regions = cards.itemDelegate().card_rects(rect)
+        regions = cards.itemDelegate().card_rects(
+            rect, title_text=item.text())
         assert not regions["title"].intersects(regions["status"])
         assert not regions["status"].intersects(regions["progress"])
+    tabs = window.library_status_tabs
+    selected = tabs.tabRect(category)
+    assert selected.width() >= tabs.tabSizeHint(category).width()
+    assert tabs.tabText(category).endswith(")")
     screenshot = window.grab()
     assert not screenshot.isNull()
     assert screenshot.save(str(output / f"{name}.png"))
@@ -99,10 +107,16 @@ def main():
             ("dark-list", "Dark", "list", 1440, 860),
             ("light-list", "Light", "list", 1440, 860),
             ("dark-narrow", "Dark", "gallery", 900, 600),
-            ("light-selected", "Light", "gallery", 1280, 720),
+            ("light-selected", "Light", "gallery", 1280, 720, 0, True),
+            ("light-narrow", "Light", "gallery", 900, 600),
+            ("dark-selected-tab", "Dark", "gallery", 900, 600),
+            ("dark-selected-card", "Dark", "gallery", 1280, 720, 0, True),
+            ("dark-long-thai", "Dark", "gallery", 1920, 1080),
+            ("dark-last-category", "Dark", "gallery", 900, 600, 3, False),
+            ("light-last-category", "Light", "gallery", 900, 600, 3, False),
         ]
-        for name, theme, mode, width, height in jobs:
-            render_screenshot(app, window, output, name, theme, mode, width, height)
+        for job in jobs:
+            render_screenshot(app, window, output, *job)
         window.close()
     print("Qt offscreen Library screenshot capture: PASS", flush=True)
 

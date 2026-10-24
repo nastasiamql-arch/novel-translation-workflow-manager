@@ -47,7 +47,8 @@ def test_responsive_visible_rectangles(app, count, mode, width):
         rectangle = view.visualItemRect(view.item(i))
         if rectangle.isEmpty() or not rectangle.intersects(view.viewport().rect()):
             continue
-        regions = delegate.card_rects(rectangle)
+        regions = delegate.card_rects(
+            rectangle, title_text=view.item(i).text())
         for name in ("cover", "title", "status", "progress"):
             assert rectangle.contains(regions[name]), (mode, name, rectangle, regions[name])
         for first, second in (("cover", "title"), ("title", "status"), ("status", "progress")):
@@ -74,7 +75,7 @@ def test_unicode_title_only_painted_inside_its_region(app, title, mode):
     view.show()
     app.processEvents()
     rect = view.visualItemRect(view.item(0))
-    areas = view.itemDelegate().card_rects(rect)
+    areas = view.itemDelegate().card_rects(rect, title_text=title)
     assert areas["title"].bottom() < areas["status"].top()
     assert areas["status"].bottom() < areas["progress"].top()
     assert view.item(0).data(Qt.AccessibleDescriptionRole) == title
@@ -147,3 +148,91 @@ def test_no_fabricated_fraction_when_unknown_total(app):
     assert not regions["bar"].intersects(regions["progress"])
     assert card.data(Qt.UserRole + 4) is None
     view.close()
+
+
+@pytest.mark.parametrize("title", [
+    "สั้น", "ก" * 120, "ไร้ช่องว่างภาษาไทย" * 9,
+    "ไทย English 2026 中文 日本語 😊 #[]!" * 3,
+])
+def test_compact_gallery_metadata_follows_visible_title(app, title):
+    view = make_library(1)
+    view.item(0).setText(title)
+    view.resize(900, 620)
+    view.show()
+    app.processEvents()
+    delegate = view.itemDelegate()
+    rect = view.visualItemRect(view.item(0))
+    regions = delegate.card_rects(rect, title_text=title)
+    assert rect.contains(regions["card"])
+    assert regions["card"].contains(regions["progress"])
+    assert regions["card"].contains(regions["bar"])
+    assert regions["title"].bottom() < regions["status"].top()
+    assert 0 < regions["status"].top() - regions["title"].bottom() <= 10
+    assert 0 < regions["progress"].top() - regions["status"].bottom() <= 9
+    assert regions["card"].bottom() - regions["bar"].bottom() >= 10
+    assert len(delegate.title_lines(title, view.font(), regions["title"].width())) >= 1
+    view.close()
+
+
+def test_gallery_cells_have_real_gutters_and_resize_without_overflow(app):
+    view = make_library(20)
+    for width in (610, 900, 1280):
+        view.resize(width, 720)
+        view.show()
+        app.processEvents()
+        assert view.gridSize().width() == (
+            view.itemDelegate().card_size().width() + view.itemDelegate().CELL_GAP)
+        visible = [(view.visualItemRect(view.item(i)),
+                    view.itemDelegate().card_rects(
+                        view.visualItemRect(view.item(i)),
+                        title_text=view.item(i).text())["card"])
+                   for i in range(view.count())]
+        visible = [(cell, card) for cell, card in visible
+                   if cell.intersects(view.viewport().rect())]
+        for index, (cell, card) in enumerate(visible):
+            assert cell.contains(card)
+            assert card.right() < view.viewport().width()
+            for other_cell, other_card in visible[index + 1:]:
+                if cell.top() == other_cell.top():
+                    assert abs(card.left() - other_card.right()) >= 16 or (
+                        abs(other_card.left() - card.right()) >= 16)
+                assert not card.intersects(other_card)
+    view.close()
+
+
+def test_status_tab_selected_label_never_elides_and_filters_keep_keys(app):
+    from PySide6.QtGui import QFont, QFontMetrics
+    from PySide6.QtWidgets import QTabBar
+    from novel_workflow.library_page import CompactLibraryTabBar
+    from novel_workflow.theme import application_stylesheet
+    bar = CompactLibraryTabBar()
+    bar.setObjectName("libraryStatusTabs")
+    bar.setStyleSheet(application_stylesheet("Dark"))
+    bar.setExpanding(False)
+    bar.setUsesScrollButtons(True)
+    bar.setElideMode(Qt.ElideNone)
+    names = [
+        ("translating", "กำลังแปล (5)"),
+        ("paused", "พักแปล (12)"),
+        ("caught_up", "ชนต้นฉบับแล้ว (123)"),
+        ("checking_web", "กำลังเช็กกับเว็บ (0)"),
+    ]
+    for key, label in names:
+        index = bar.addTab(label)
+        bar.setTabData(index, key)
+    for width in (330, 580, 1050):
+        bar.resize(width, 60)
+        bar.show()
+        app.processEvents()
+        for i, (key, label) in enumerate(names):
+            font = QFont(bar.font())
+            font.setBold(True)
+            assert bar.tabSizeHint(i).width() >= (
+                QFontMetrics(font).horizontalAdvance(label) + 48)
+            assert bar.tabText(i) == label
+            assert bar.tabData(i) == key
+            bar.setCurrentIndex(i)
+            app.processEvents()
+            assert bar.tabRect(i).width() >= bar.tabSizeHint(i).width()
+            assert not bar.tabRect(i).isEmpty()
+    bar.close()
