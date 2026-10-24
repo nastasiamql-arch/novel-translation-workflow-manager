@@ -197,3 +197,48 @@ def test_finish_goal_is_novel_scoped_across_days_and_rest(tmp_path):
     assert planner.summary("2026-10-24", profile_id=a.id)["status"] == "rest"
     assert planner.summary("2026-10-24", profile_id=b.id)["status"] == "empty"
     assert planner.summary("2026-10-25", profile_id=a.id)["plan"]["plan_type"] == "finish"
+
+
+
+def test_today_page_switches_novel_specific_plans(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    from novel_workflow.translation_planner_page import TodayPage
+    repo = ProjectRepository(tmp_path)
+    a, b = NovelProfile(name="A"), NovelProfile(name="B")
+    repo.save_profile(a); repo.save_profile(b)
+    planner = TranslationPlanner(repo)
+    planner.save(date.today(), a.id, "daily", target_chapters=3)
+    planner.save(date.today(), b.id, "daily", target_chapters=7)
+    page = TodayPage(repo)
+    try:
+        page.profile_combo.setCurrentIndex(page.profile_combo.findData(b.id))
+        assert page.target.value() == 7
+        assert "A" in page.day_plans.text() and "B" in page.day_plans.text()
+        page.profile_combo.setCurrentIndex(page.profile_combo.findData(a.id))
+        assert page.target.value() == 3
+    finally:
+        page.close()
+
+
+def test_five_primary_routes_keep_library_group_and_statistics(tmp_path):
+    from PySide6.QtWidgets import QApplication, QPushButton
+    from novel_workflow.workspace_window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path)
+    settings = repo.load_settings()
+    settings.last_update_check_date = date.today().isoformat()
+    repo.save_settings(settings)
+    window = MainWindow(repo)
+    try:
+        assert list(window.navigation.buttons) == [
+            "today", "library", "workspace", "novel-inspector", "settings"]
+        labels = [button.text() for button in window.library_page.findChildren(QPushButton)]
+        assert "สถิติ" in labels and "จัดการกลุ่ม" in labels
+        window.translation_dashboard()
+        assert window.navigation.buttons["library"].isChecked()
+        window.groups_dialog()
+        assert window.navigation.buttons["library"].isChecked()
+    finally:
+        window._automatic_update_timer.stop()
+        window.close()

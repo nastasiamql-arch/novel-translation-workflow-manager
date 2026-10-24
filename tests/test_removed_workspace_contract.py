@@ -22,8 +22,7 @@ def test_retired_feature_is_not_installed_or_navigable():
     sidebar = NavigationSidebar(False)
     try:
         assert list(sidebar.buttons) == [
-            "today", "library", "workspace", "progress", "groups",
-            "novel-inspector", "settings",
+            "today", "library", "workspace", "novel-inspector", "settings",
         ]
         sidebar.set_collapsed(True)
         assert sidebar.collapsed
