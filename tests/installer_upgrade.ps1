@@ -105,8 +105,13 @@ $unrelated = Join-Path $installDir 'user-note.txt'
 Set-Content -LiteralPath $unrelated -Value 'retain unrelated files' -Encoding UTF8
 $shortcut = Join-Path $env:APPDATA 'Microsoft/Windows/Start Menu/Programs/Palantir Novel.lnk'
 $newShortcut = Join-Path $env:APPDATA 'Microsoft/Windows/Start Menu/Programs/Valhalla.lnk'
-$shortcutBefore = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut).TargetPath
-if ($shortcutBefore -ne $executable) { throw 'Shortcut points to another installation.' }
+# v5.12.0 already ships the Valhalla shortcut; create the old link to verify cleanup.
+$shortcutBefore = (New-Object -ComObject WScript.Shell).CreateShortcut($newShortcut).TargetPath
+if ($shortcutBefore -ne $executable) { throw 'Previous release shortcut points to another installation.' }
+$legacyShortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
+$legacyShortcut.TargetPath = $executable
+$legacyShortcut.Save()
+if (-not (Test-Path -LiteralPath $shortcut)) { throw 'Could not create obsolete shortcut fixture.' }
 $exeBefore = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot '../dist/NovelWorkflow/NovelWorkflow.exe') -Algorithm SHA256).Hash
 # Make replacement observable without corrupting the executable used for the first probe.
 Set-Content -LiteralPath $executable -Value 'old executable placeholder' -Encoding UTF8
