@@ -61,6 +61,7 @@ def main():
             cards.visualItemRect(cards.item(0)))
         assert not regions["cover"].intersects(regions["title"])
         assert not regions["title"].intersects(regions["status"])
+        assert not regions["status"].intersects(regions["progress"])
         assert cards.gridSize().height() >= regions['status'].bottom() - regions['cover'].top()
 
         for name in ['ชื่อไฟล์ยาวภาษาไทย'*6+'.txt','中文文件名'*10+'.txt','日本語.txt','English.txt']:
@@ -76,6 +77,7 @@ def main():
                     assert card_rect.contains(regions["cover"])
                     assert card_rect.contains(regions["title"])
                     assert card_rect.contains(regions["status"])
+                    assert card_rect.contains(regions["progress"])
 
                 assert win.width()==width and win.height()==height,(win.size(),width,height)
                 ws.editor.tabs.setCurrentWidget(ws.editor.export_tab); app.processEvents()

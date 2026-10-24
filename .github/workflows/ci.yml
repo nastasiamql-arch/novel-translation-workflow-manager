@@ -35,6 +35,15 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "UI geometry failed at scale $scale" }
           }
           Remove-Item Env:QT_SCALE_FACTOR
+      - name: Capture PySide6 novel library screenshots
+        run: python tests/ui_library_visual.py
+      - name: Upload library visual QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NovelLibrary-Visual-QA
+          path: test-output/library-visuals/*.png
+          if-no-files-found: ignore
       - name: Run test suite
         timeout-minutes: 25
         run: python tests/run_suite_groups.py

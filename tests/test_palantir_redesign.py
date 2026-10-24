@@ -33,7 +33,7 @@ def test_export_tab_stays_last(tmp_path):
 
 def test_library_covers_and_card_spacing_are_slightly_smaller(window):
     from PySide6.QtCore import QSize
-    assert window.profile_cards.iconSize() == QSize(156, 208)
+    assert window.profile_cards.iconSize() == QSize(222, 296)
     # Theme fonts can change after construction; the delegate must retain
     # room for at least two full lines with no cover/status intersection.
     cards = window.profile_cards

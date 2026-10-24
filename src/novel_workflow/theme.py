@@ -191,17 +191,24 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QToolButton:pressed {{ background: {c['item_selection']}; }}
     QToolButton[keyboardFocus="true"] {{ border-bottom: 3px solid {c['focus']}; }}
     QListWidget, QTreeWidget, QTreeView, QTableWidget, QTableView {{ background: {c['surface']}; color: {c['text']}; border: 0; outline: none; selection-background-color: {c['selection']}; selection-color: {c['selection_text']}; }}
-    QListWidget#novelLibrary {{ background: {c['app']}; border: 0; padding: 9px 1px; }}
+    QListWidget#novelLibrary {{ background: {c['app']}; border: 0; padding: 9px 1px; outline: 0; }}
     QListWidget#novelLibrary::item {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 12px; padding: 8px 8px; }}
     QListWidget#novelLibrary::item:hover {{ background: {c['hover']}; }}
     QListWidget#novelLibrary::item:selected {{ background: {c['surface']}; border: 2px solid {c['accent']}; color: {c['text']}; }}
+    QLabel#librarySectionTitle {{ color: {c['text']}; font-size: 12pt; font-weight: 600; }}
+    QLabel#librarySectionCount {{ color: {c['secondary']}; font-size: 10pt; padding-left: 7px; }}
+    QLabel#libraryEmptyTitle {{ color: {c['text']}; font-size: 14pt; font-weight: 600; }}
+    QPushButton#libraryViewButton {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 8px; padding: 6px 12px; }}
+    QPushButton#libraryViewButton:hover {{ background: {c['hover']}; }}
+    QPushButton#libraryViewButton:checked {{ background: {c['item_selection']}; border: 1px solid {c['accent']}; color: {c['text']}; }}
+    QPushButton#libraryViewButton:focus {{ border: 2px solid {c['focus']}; }}
     QLabel#emptyStateIcon {{ color: {c['accent']}; font-size: 25pt; }}
     QLineEdit#librarySearch {{ background: {c['input']}; border: 1px solid {c['border']}; border-radius: 10px; padding: 8px 12px; min-height: 32px; }}
     QTabBar#libraryStatusTabs {{ background: transparent; border: 0; }}
     QTabBar#libraryStatusTabs::tab {{ color: {c['secondary']}; background: transparent; border: 0; border-bottom: 2px solid transparent; min-height: 38px; padding: 6px 14px; margin: 0; }}
     QTabBar#libraryStatusTabs::tab:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; }}
     QTabBar#libraryStatusTabs::tab:hover {{ color: {c['text']}; background: {c['hover']}; }}
-    QTabBar#libraryStatusTabs::tab:selected {{ color: {c['text']}; border-bottom: 3px solid {c['accent']}; font-weight: 600; }}
+    QTabBar#libraryStatusTabs::tab:selected {{ color: {c['text']}; background: {c['item_selection']}; border-bottom: 3px solid {c['accent']}; font-weight: 600; }}
     QTabBar#libraryStatusTabs[keyboardFocus="true"]::tab:selected {{ border-bottom: 3px solid {c['focus']}; }}
     QListWidget#workflowSteps {{ background: transparent; border: 0; outline: 0; }}
     QListWidget#workflowSteps::item, QListWidget#workflowSteps::item:selected {{ background: transparent; color: {c['text']}; border: 0; }}
