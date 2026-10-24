@@ -208,6 +208,8 @@ class ReorderableProfileList(QListWidget):
         self.setMovement(QListWidget.Static)
         self.setGridSize(QSize())
         self.setSpacing(18 if gallery else 9)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
         self._update_library_grid_size()
         self.doItemsLayout()
 
@@ -218,7 +220,7 @@ class ReorderableProfileList(QListWidget):
         if isinstance(delegate, ProfileItemDelegate):
             desired = delegate.card_size()
             if self.viewMode() == QListWidget.ListMode:
-                desired.setWidth(max(desired.width(), self.viewport().width() - 4))
+                desired.setWidth(max(desired.width(), self.viewport().width() - 20))
             if self.gridSize() != desired:
                 self.setGridSize(desired)
 
