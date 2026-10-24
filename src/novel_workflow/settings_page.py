@@ -101,7 +101,7 @@ class SettingsPage(QWidget):
         categories = AttachmentList()
         categories.setObjectName("preferencesCategory")
         categories.setAccessibleName("หมวดการตั้งค่า")
-        categories.addItems(["General", "Novel", "Program Updates"])
+        categories.addItems(["ทั่วไป", "การตั้งค่านิยาย", "อัปเดตโปรแกรม"])
         categories.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         sidebar_layout.addWidget(categories)
         owner.profiles.setMinimumHeight(400)
@@ -201,7 +201,7 @@ class SettingsPage(QWidget):
         workflow_frame = QFrame()
         workflow_frame.setObjectName("settingsCard")
         workflow_layout = QVBoxLayout(workflow_frame)
-        workflow_heading = QLabel("Workflow · จัดการขั้นตอน")
+        workflow_heading = QLabel("ขั้นตอนการแปล · จัดการขั้นตอน")
         workflow_layout.addWidget(workflow_heading)
         history_row = QHBoxLayout()
         history_row.addWidget(QLabel('ประวัติไฟล์ขั้นตอนเกลา'))
@@ -298,7 +298,7 @@ class SettingsPage(QWidget):
         work_layout = QVBoxLayout(work_frame)
         work_layout.setContentsMargins(16, 16, 16, 16)
         work_header = QHBoxLayout()
-        work_header.addWidget(QLabel("Working Tabs · ไฟล์สำหรับเปิดทำงาน"), 1)
+        work_header.addWidget(QLabel("แท็บทำงาน · ไฟล์สำหรับเปิดทำงาน"), 1)
         owner.working_files_hint = QLabel("เลือกไฟล์ที่ต้องการเปิดเป็นแท็บ โดยไม่ผูกกับขั้นตอน")
         owner.working_files_hint.setObjectName("mutedLabel")
         work_header.addWidget(owner.working_files_hint)
@@ -330,11 +330,12 @@ class SettingsPage(QWidget):
         general = QFrame()
         general.setObjectName("settingsCard")
         general_layout = QVBoxLayout(general)
-        general_layout.addWidget(QLabel("General · รูปลักษณ์และการคัดลอก"))
+        general_layout.addWidget(QLabel("ทั่วไป · รูปลักษณ์และการคัดลอก"))
         appearance = QComboBox()
-        appearance.addItems(["Light", "Dark", "System"])
+        for title, value in (("โหมดสว่าง", "Light"), ("โหมดมืด", "Dark"), ("ตามระบบ", "System")):
+            appearance.addItem(title, value)
         appearance.setObjectName("preferencesAppearance")
-        appearance.setCurrentText(owner.settings.appearance)
+        appearance.setCurrentIndex(max(0, appearance.findData(owner.settings.appearance)))
         general_layout.addWidget(appearance)
         zip_mode = QCheckBox("คัดลอกขั้นตอน Workflow เป็น ZIP")
         zip_mode.setObjectName("copyFilesAsZip")
@@ -357,9 +358,9 @@ class SettingsPage(QWidget):
             general_layout.addWidget(check)
             checks.append((check, attr))
         def save_general(*_args):
-            theme_changed = owner.settings.appearance != appearance.currentText()
+            theme_changed = owner.settings.appearance != appearance.currentData()
             zip_changed = owner.settings.copy_files_as_zip != zip_mode.isChecked()
-            owner.settings.appearance = appearance.currentText()
+            owner.settings.appearance = appearance.currentData()
             owner.settings.separator = separator.text()
             for check, attr in checks:
                 setattr(owner.settings, attr, check.isChecked())
@@ -378,7 +379,7 @@ class SettingsPage(QWidget):
         export_preferences = QFrame()
         export_preferences.setObjectName("settingsCard")
         export_layout = QVBoxLayout(export_preferences)
-        export_layout.addWidget(QLabel("TXT Export · ตั้งค่าแยกตามนิยาย"))
+        export_layout.addWidget(QLabel("ส่งออก TXT · ตั้งค่าแยกตามนิยาย"))
         export_layout.addWidget(QLabel("Prefix, เลขไฟล์, ช่วงเลข, ปลายทาง, Draft และประวัติ จำแยกตามเรื่อง"))
         open_export = QPushButton("เปิด TXT Export ของเรื่องนี้")
         open_export.setObjectName("openNovelTxtExport")
@@ -395,7 +396,7 @@ class SettingsPage(QWidget):
         updates = QFrame()
         updates.setObjectName("settingsCard")
         updates_layout = QVBoxLayout(updates)
-        updates_layout.addWidget(QLabel("Program Updates · GitHub Releases"))
+        updates_layout.addWidget(QLabel("อัปเดตโปรแกรม · GitHub Releases"))
         update = QPushButton("ตรวจสอบอัปเดตโปรแกรม")
         update.clicked.connect(lambda: owner.check_updates(manual=True))
         updates_layout.addWidget(update)
@@ -409,7 +410,10 @@ class SettingsPage(QWidget):
             "Novel": novel_settings,
             "Program Updates": [updates],
         }
+        category_labels = {"General": "ทั่วไป", "Novel": "การตั้งค่านิยาย", "Program Updates": "อัปเดตโปรแกรม"}
+        category_ids = {value: key for key, value in category_labels.items()}
         def select_category(name):
+            name = category_ids.get(name, name)
             # Keep old entry points working while presenting all story settings together.
             if name in ("Workflow", "Workflow Files", "Working Tabs", "TXT Export"):
                 name = "Novel"
@@ -420,18 +424,18 @@ class SettingsPage(QWidget):
             owner.settings_profile_heading.setVisible(name not in ("General", "Program Updates"))
             files_panel.setVisible(name == "Novel")
             step_actions_panel.setVisible(name == "Novel")
-            workflow_heading.setText("Workflow · ขั้นตอนและไฟล์แนบ")
+            workflow_heading.setText("ขั้นตอนการแปล · ขั้นตอนและไฟล์แนบ")
         def select_named_category(name):
             if name in ("Workflow", "Workflow Files", "Working Tabs", "TXT Export"):
                 name = "Novel"
             for index in range(categories.count()):
-                if categories.item(index).text() == name:
+                if categories.item(index).text() == category_labels.get(name, name):
                     categories.setCurrentRow(index)
                     return
         page.select_category = select_named_category
         categories.currentTextChanged.connect(select_category)
         initial_category = "Novel" if owner.profile else "General"
-        initial_index = next(i for i in range(categories.count()) if categories.item(i).text() == initial_category)
+        initial_index = next(i for i in range(categories.count()) if categories.item(i).text() == category_labels[initial_category])
         categories.setCurrentRow(initial_index)
         select_category(initial_category)
         detail.addStretch(1)

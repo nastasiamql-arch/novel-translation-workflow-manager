@@ -9,6 +9,24 @@ class ProfileItemDelegate(QStyledItemDelegate):
         super().initStyleOption(option, index)
         option.state &= ~QStyle.State_HasFocus
 
+    def paint(self, painter, option, index):
+        """Keep the cover/title while adding the verified progress footer."""
+        super().paint(painter, option, index)
+        status = index.data(Qt.UserRole + 2)
+        if not status:
+            return
+        painter.save()
+        font = painter.font()
+        font.setPointSize(max(8, font.pointSize() - 1))
+        painter.setFont(font)
+        painter.setPen(option.palette.color(option.palette.Text))
+        rect = option.rect.adjusted(8, 0, -8, -5)
+        line_height = painter.fontMetrics().height()
+        rect.setTop(rect.bottom() - line_height - 2)
+        caption = painter.fontMetrics().elidedText(str(status), Qt.ElideRight, rect.width())
+        painter.drawText(rect, Qt.AlignHCenter | Qt.AlignVCenter, caption)
+        painter.restore()
+
 
 class ReorderableProfileList(QListWidget):
     """Profile list with native click-and-drag reordering."""

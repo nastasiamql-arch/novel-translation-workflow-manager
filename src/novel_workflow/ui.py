@@ -328,7 +328,7 @@ class ManagementActionsMixin:
 
     def launcher_dialog(self):
         if not self.profile:return
-        dialog=QDialog(self);dialog.setWindowTitle("Launcher Items — "+self.profile.name);dialog.resize(760,560)
+        dialog=QDialog(self);dialog.setWindowTitle( "รายการเปิดพร้อมนิยาย — "+self.profile.name);dialog.resize(760,560)
         layout=QVBoxLayout(dialog);folder=QLineEdit(self.profile.main_folder);folder.setPlaceholderText("โฟลเดอร์หลักของนิยาย")
         def choose_main_folder():
             start=folder.text() if Path(folder.text()).is_dir() else str(self.profile_browse_directory())
@@ -336,9 +336,9 @@ class ManagementActionsMixin:
             if selected:
                 folder.setText(selected)
                 self.remember_profile_browse_directory(selected)
-        browse=QPushButton("Browse…");browse.clicked.connect(choose_main_folder)
+        browse=QPushButton("เลือก…");browse.clicked.connect(choose_main_folder)
         folder_row=QHBoxLayout();folder_row.addWidget(folder,1);folder_row.addWidget(browse)
-        layout.addWidget(QLabel("Main folder"));layout.addLayout(folder_row)
+        layout.addWidget(QLabel("โฟลเดอร์หลัก"));layout.addLayout(folder_row)
         listing=QListWidget();layout.addWidget(listing,1)
         targets=[LaunchTarget.from_dict(asdict_target(item)) for item in self.profile.launch_targets]
         def refresh():
@@ -363,7 +363,7 @@ class ManagementActionsMixin:
             elif kind=="folder":
                 path=QFileDialog.getExistingDirectory(dialog,"เลือกโฟลเดอร์",str(self.profile_browse_directory()))
             elif kind=="website":
-                path,ok=QInputDialog.getText(dialog,"Add Website","URL (http/https):")
+                path,ok=QInputDialog.getText(dialog,"เพิ่มเว็บไซต์","URL (http/https):")
                 if not ok:return
             else:
                 return
@@ -371,13 +371,13 @@ class ManagementActionsMixin:
             if kind=="folder":self.remember_profile_browse_directory(path)
             label=Path(path).stem if kind!="website" else path
             if kind=="website":
-                label,ok=QInputDialog.getText(dialog,"Website Name","ชื่อเว็บไซต์:",text=path)
+                label,ok=QInputDialog.getText(dialog,"ชื่อเว็บไซต์","ชื่อเว็บไซต์:",text=path)
                 if not ok:return
             targets.append(LaunchTarget(label=label,kind=kind,target=path,order=len(targets)));refresh()
         actions=QHBoxLayout()
-        for label,kind in (("Add App","application"),("Add File","file"),("Add Folder","folder"),("Add Website","website")):
+        for label,kind in (("Add App","application"),("Add File","file"),("Add Folder","folder"),("เพิ่มเว็บไซต์","website")):
             button=QPushButton(label);button.clicked.connect(lambda checked=False,k=kind:add_target(k));actions.addWidget(button)
-        remove=QPushButton("Remove");remove.clicked.connect(lambda:targets.__setitem__(slice(None),[target for target in targets if target.id!=listing.currentItem().data(Qt.UserRole)]) if listing.currentItem() else None);remove.clicked.connect(refresh)
+        remove=QPushButton("ลบรายการ");remove.clicked.connect(lambda:targets.__setitem__(slice(None),[target for target in targets if target.id!=listing.currentItem().data(Qt.UserRole)]) if listing.currentItem() else None);remove.clicked.connect(refresh)
         actions.addWidget(remove);layout.addLayout(actions)
         refresh()
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);layout.addWidget(buttons)
@@ -387,14 +387,14 @@ class ManagementActionsMixin:
                 target=next((entry for entry in targets if entry.id==row.data(Qt.UserRole)),None)
                 if target:target.enabled=row.checkState()==Qt.Checked;target.order=i
             self.profile.main_folder=folder.text().strip();self.profile.launch_targets=targets;self.save()
-            self.statusBar().showMessage("บันทึก Launcher Items แล้ว",2500)
+            self.statusBar().showMessage("บันทึกรายการเปิดพร้อมนิยายแล้ว",2500)
 
     def groups_dialog(self):
         groups=self.repo.load_groups();profiles=self.repo.list_profiles()
-        dialog=QDialog(self);dialog.setWindowTitle("Novel Groups");dialog.resize(560,560);layout=QVBoxLayout(dialog)
+        dialog=QDialog(self);dialog.setWindowTitle("กลุ่มนิยาย");dialog.resize(560,560);layout=QVBoxLayout(dialog)
         selector=QComboBox()
         for group in groups:selector.addItem(group.name,group.id)
-        name=QLineEdit();members=QListWidget();layout.addWidget(QLabel("Group"));layout.addWidget(selector);layout.addWidget(name);layout.addWidget(QLabel("นิยายในกลุ่ม"));layout.addWidget(members,1)
+        name=QLineEdit();members=QListWidget();layout.addWidget(QLabel("กลุ่ม"));layout.addWidget(selector);layout.addWidget(name);layout.addWidget(QLabel("นิยายในกลุ่ม"));layout.addWidget(members,1)
         def show_group(index):
             members.clear()
             current=next((group for group in groups if group.id==selector.itemData(index)),None)
@@ -409,13 +409,13 @@ class ManagementActionsMixin:
             current.profile_ids=[members.item(i).data(Qt.UserRole) for i in range(members.count()) if members.item(i).checkState()==Qt.Checked]
             self.repo.save_groups(groups);return current
         def create_group():
-            group_name,ok=QInputDialog.getText(dialog,"New Group","ชื่อกลุ่ม:")
+            group_name,ok=QInputDialog.getText(dialog,"สร้างกลุ่มใหม่","ชื่อกลุ่ม:")
             if not ok or not group_name.strip():return
             group=NovelGroup(name=group_name.strip(),order=len(groups));groups.append(group);selector.addItem(group.name,group.id);selector.setCurrentIndex(selector.count()-1)
         def delete_group():
             current=next((group for group in groups if group.id==selector.currentData()),None)
             if not current:return
-            if QMessageBox.question(dialog,"Delete Group",f"ลบกลุ่ม {current.name}?")!=QMessageBox.Yes:return
+            if QMessageBox.question(dialog,"ลบกลุ่ม",f"ลบกลุ่ม {current.name}?")!=QMessageBox.Yes:return
             groups.remove(current);selector.removeItem(selector.currentIndex());show_group(selector.currentIndex())
             self.repo.save_groups(groups)
         def open_group():
@@ -423,12 +423,12 @@ class ManagementActionsMixin:
             if not current:return
             results=self.launcher.launch_group(current,profiles);failures=[message for success,message in results if not success]
             succeeded=sum(1 for success,_ in results if success)
-            if failures:QMessageBox.warning(dialog,"Open Group",f"เปิดสำเร็จ {succeeded} รายการ\n\n"+"\n".join(failures))
+            if failures:QMessageBox.warning(dialog,"เปิดกลุ่ม",f"เปิดสำเร็จ {succeeded} รายการ\n\n"+"\n".join(failures))
             else:self.statusBar().showMessage(f"เปิดกลุ่ม {current.name} แล้ว",4000)
         selector.currentIndexChanged.connect(show_group)
         if groups:show_group(0)
         row=QHBoxLayout()
-        for label,fn in (("New Group",create_group),("Delete Group",delete_group),("Save",store_group),("Open Group",open_group)):
+        for label,fn in (("สร้างกลุ่มใหม่",create_group),("ลบกลุ่ม",delete_group),("Save",store_group),("เปิดกลุ่ม",open_group)):
             button=QPushButton(label);button.clicked.connect(fn);row.addWidget(button)
         layout.addLayout(row)
         close=QDialogButtonBox(QDialogButtonBox.Close);close.rejected.connect(dialog.reject);close.accepted.connect(dialog.accept);layout.addWidget(close)
@@ -491,45 +491,45 @@ class ManagementActionsMixin:
         self.statusBar().showMessage("เอารูปปกออกแล้ว",2500)
 
     def new_profile(self):
-        name,ok=QInputDialog.getText(self,"New Profile","Novel name:")
+        name,ok=QInputDialog.getText(self,"เพิ่มนิยาย","ชื่อนิยาย:")
         if not ok:return
-        ts=self.repo.load_templates();choice,ok=QInputDialog.getItem(self,"Workflow Template","Template:",[x.name for x in ts],0,False)
+        ts=self.repo.load_templates();choice,ok=QInputDialog.getItem(self,"แม่แบบขั้นตอนการแปล","แม่แบบ:",[x.name for x in ts],0,False)
         template=next((x for x in ts if x.name==choice),None) if ok else None
         created=self.ps.create(name,template.workflow if template else Workflow.defaults(),template.vocabulary_step if template else None,template.removed_vocabulary_data if template else None)
         self.refresh_profiles(created.id)
     def duplicate_profile(self):
         if not self.profile:return
-        name,ok=QInputDialog.getText(self,"Duplicate","New profile name:",text=self.profile.name+" Copy")
+        name,ok=QInputDialog.getText(self,"ทำสำเนานิยาย","ชื่อนิยายเรื่องใหม่:",text=self.profile.name+" Copy")
         if not ok:return
-        g=QMessageBox.question(self,"Optional files","Copy glossary and character files too?")==QMessageBox.Yes
+        g=QMessageBox.question(self,"คัดลอกไฟล์เพิ่มเติม","คัดลอกคลังคำศัพท์และไฟล์ตัวละครด้วยหรือไม่?")==QMessageBox.Yes
         self.refresh_profiles(self.ps.duplicate(self.profile,name,g,g).id)
     def rename_profile(self):
         if not self.profile:return
-        n,ok=QInputDialog.getText(self,"Rename","Name:",text=self.profile.name)
+        n,ok=QInputDialog.getText(self,"เปลี่ยนชื่อ","ชื่อ:",text=self.profile.name)
         if ok:self.profile.name=n.strip() or self.profile.name;self.save();self.refresh_profiles(self.profile.id)
     def delete_profile(self):
-        if self.profile and QMessageBox.question(self,"Delete","Delete this profile and all its files?")==QMessageBox.Yes:
+        if self.profile and QMessageBox.question(self,"ยืนยันการลบนิยาย","ลบนิยายเรื่องนี้และไฟล์ทั้งหมดในพื้นที่นิยายหรือไม่?")==QMessageBox.Yes:
             self.repo.delete_profile(self.profile.id);self.profile=None;self.refresh_profiles()
     def save_template(self):
         if not self.profile:return
-        name,ok=QInputDialog.getText(self,"Save Workflow Template","Template name:",text=self.profile.name+" workflow")
+        name,ok=QInputDialog.getText(self,"บันทึกแม่แบบขั้นตอนการแปล","ชื่อแม่แบบ:",text=self.profile.name+" workflow")
         if not ok or not name.strip():return
         from copy import deepcopy
         templates=self.repo.load_templates();templates.append(WorkflowTemplate(name.strip(),deepcopy(self.profile.workflow),deepcopy(self.profile.vocabulary_step),deepcopy(self.profile.removed_vocabulary_data)))
-        self.repo.save_templates(templates);self.statusBar().showMessage("Workflow template saved",2500)
+        self.repo.save_templates(templates);self.statusBar().showMessage("บันทึกแม่แบบขั้นตอนการแปลแล้ว",2500)
     def add_step(self):
         if not self.profile:return
-        n,ok=QInputDialog.getText(self,"Add Step","Name:")
+        n,ok=QInputDialog.getText(self,"เพิ่มขั้นตอน","ชื่อ:")
         if ok:WorkflowService.add_step(self.profile.workflow,n or "New step");self.save();self.refresh_steps();self.steps.setCurrentRow(len(self.profile.workflow.steps)-1)
     def rename_step(self):
         s=self.step()
         if s:
-            n,ok=QInputDialog.getText(self,"Rename Step","Name:",text=s.name)
+            n,ok=QInputDialog.getText(self,"เปลี่ยนชื่อขั้นตอน","ชื่อ:",text=s.name)
             if ok:s.name=n or s.name;self.save();self.refresh_steps()
     def duplicate_step(self):
         if self.step():WorkflowService.duplicate_step(self.profile.workflow,self.si);self.save();self.refresh_steps();self.steps.setCurrentRow(self.si+1)
     def delete_step(self):
-        if self.step() and QMessageBox.question(self,"Delete Step","Remove this workflow step?")==QMessageBox.Yes:self.profile.workflow.steps.pop(self.si);self.save();self.refresh_steps()
+        if self.step() and QMessageBox.question(self,"ลบขั้นตอน","ลบขั้นตอนการแปลนี้หรือไม่?")==QMessageBox.Yes:self.profile.workflow.steps.pop(self.si);self.save();self.refresh_steps()
     def move_step(self,d):
         if self.step():self.si=WorkflowService.move(self.profile.workflow.steps,self.si,d);self.save();self.refresh_steps();self.steps.setCurrentRow(self.si)
     def file(self):
@@ -537,7 +537,7 @@ class ManagementActionsMixin:
     def add_file(self):
         if not self.profile or not self.step():return
         root=self.repo.profile_dir(self.profile.id).resolve()
-        sources,_=QFileDialog.getOpenFileNames(self,"Link original files",str(self.profile_browse_directory()),"Text files (*.txt *.md *.json)")
+        sources,_=QFileDialog.getOpenFileNames(self,"เชื่อมไฟล์ต้นฉบับ",str(self.profile_browse_directory()),"Text files (*.txt *.md *.json)")
         if not sources:return
         self.remember_profile_browse_directory(sources[-1])
         added=0;updated=0;skipped=0
@@ -669,7 +669,7 @@ class ManagementActionsMixin:
             if not ok:return
             self.step().files.append(StepFile(label=label or path.stem,path=rel,file_type=path.parent.name,order=len(self.step().files)))
             self.save();self.refresh_files();self.statusBar().showMessage("File attached to selected step",2500)
-        for label,fn in (("New",create),("Import",import_file),("Add to Step",attach),("Edit",edit),("Rename",rename),("Delete",delete)):
+        for label,fn in (("New",create),("Import",import_file),("Add to Step",attach),("Edit",edit),("เปลี่ยนชื่อ",rename),("Delete",delete)):
             button=QPushButton(label);button.clicked.connect(fn);actions.addWidget(button)
         search.textChanged.connect(refresh);refresh();dialog.exec()
     def remove_file(self):

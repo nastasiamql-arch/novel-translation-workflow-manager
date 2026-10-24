@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QSpinBox,
     QDateEdit, QFormLayout, QPushButton, QMessageBox, QTableWidget,
-    QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QTableWidgetItem, QHeaderView, QAbstractItemView, QScrollArea, QCheckBox,
 )
 from .translation_planner import TranslationPlanner
 
@@ -15,7 +15,16 @@ class StoryPlannerPage(QWidget):
         super().__init__(parent)
         self.profile_id = profile_id
         self.planner = TranslationPlanner(repo)
-        layout = QVBoxLayout(self)
+        shell = QVBoxLayout(self)
+        shell.setContentsMargins(6, 6, 6, 6)
+        self.scroll = QScrollArea(self)
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        contents = QWidget()
+        layout = QVBoxLayout(contents)
+        layout.setSpacing(9)
+        shell.addWidget(self.scroll, 1)
+        self.scroll.setWidget(contents)
         self.heading = QLabel("แผนการแปล")
         self.heading.setObjectName("pageTitle")
         layout.addWidget(self.heading)
@@ -44,6 +53,15 @@ class StoryPlannerPage(QWidget):
         self.rest = QComboBox()
         self.rest.addItems(("ไม่มีวันพัก", "เสาร์–อาทิตย์", "วันอาทิตย์", "วันเสาร์"))
         form.addRow("พักประจำ", self.rest)
+        self.weekdays = []
+        weekday_row = QHBoxLayout()
+        for index, label in enumerate(("จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา.")):
+            check = QCheckBox(label)
+            check.setObjectName(f"plannerRestDay{index}")
+            check.setToolTip("เลือกให้เป็นวันพักประจำ")
+            self.weekdays.append(check)
+            weekday_row.addWidget(check)
+        form.addRow("วันพักเพิ่มเติม", weekday_row)
         layout.addLayout(form)
         self.mode.currentIndexChanged.connect(self._update_mode)
         save = QPushButton("บันทึกแผน")
@@ -57,6 +75,7 @@ class StoryPlannerPage(QWidget):
         self.table.setHorizontalHeaderLabels(("วันที่", "เป้าหมาย", "สำเร็จจริง", "สถานะ"))
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setMinimumHeight(250)
         layout.addWidget(self.table, 1)
         controls = QHBoxLayout()
         self.target = QSpinBox()
@@ -78,7 +97,7 @@ class StoryPlannerPage(QWidget):
         self.deadline.setEnabled(mode == "deadline")
 
     def _save(self):
-        rest = ((), (5, 6), (6,), (5,))[self.rest.currentIndex()]
+        rest = tuple(sorted(set(((), (5, 6), (6,), (5,))[self.rest.currentIndex()]) | {i for i, check in enumerate(self.weekdays) if check.isChecked()}))
         mode = self.mode.currentData()
         try:
             self.planner.save_story_schedule(
@@ -124,6 +143,8 @@ class StoryPlannerPage(QWidget):
         rest = tuple(plan.get("rest_weekdays", ()))
         choices = ((), (5, 6), (6,), (5,))
         self.rest.setCurrentIndex(choices.index(rest) if rest in choices else 0)
+        for index, check in enumerate(self.weekdays):
+            check.setChecked(index in rest and (rest not in choices))
         self.summary.setText(
             f"แปลแล้ว {info['completed']} / {plan['final_chapter']} บท · "
             f"เหลือ {info['remaining']} บท · {info['percent']}%")
@@ -131,5 +152,17 @@ class StoryPlannerPage(QWidget):
         for index, item in enumerate(info["rows"]):
             for col, value in enumerate((item["date"], item["target"], item["actual"], item["status"])):
                 self.table.setItem(index, col, QTableWidgetItem(str(value)))
-        self.history.setText(f"ประวัติการแก้ไขแผน {len(plan.get('history', []))} รายการ")
+        history = plan.get("history", [])
+        lines = []
+        for item in history[-4:]:
+            stamp = str(item.get("changed_at", ""))[:16].replace("T", " ")
+            if "date" in item:
+                lines.append(f"{stamp} · {item['date']}: เป้าหมาย {item.get('previous_target', 'อัตโนมัติ')} → {item.get('new_target')} บท")
+            else:
+                previous = item.get("previous", {})
+                lines.append(f"{stamp} · ปรับแผนจาก {previous.get('mode', 'เดิม')}")
+        self.history.setText(
+            f"ประวัติการปรับแผน {len(history)} รายการ\n" +
+            ("\n".join(lines) if lines else "ยังไม่มีการแก้ไขแผน")
+        )
         self._update_mode()
