@@ -545,7 +545,8 @@ def test_library_drop_changes_persistent_order_and_preserves_active_profile(wind
     cards = window.profile_cards
     first = cards.item(0).data(Qt.UserRole)
     cards.setCurrentRow(0); cards._drag_profile_id = first
-    point = cards.visualItemRect(cards.item(2)).topRight()
+    # In ListMode the drop indicator is positioned vertically, not horizontally.
+    point = cards.visualItemRect(cards.item(2)).bottomRight()
     event = QDropEvent(QPointF(point), Qt.MoveAction,
                        cards.mimeData([cards.item(0)]), Qt.LeftButton, Qt.NoModifier)
     cards.dropEvent(event)

@@ -57,7 +57,8 @@ def test_library_always_opens_in_list_and_has_no_gallery_toggle(library):
     assert not hasattr(window, "library_gallery_view")
     assert not hasattr(window, "library_list_view")
     assert not window.findChildren(QPushButton, "libraryViewButton")
-    assert repo.load_settings().library_view_mode == "gallery"
+    # Existing gallery settings migrate through normal settings persistence.
+    assert repo.load_settings().library_view_mode == "list"
 
     window.navigate("library")
     app.processEvents()
@@ -80,7 +81,8 @@ def test_list_keeps_search_selection_reordering_and_novel_open(library):
     app.processEvents()
     visible = [cards.item(i).data(Qt.UserRole) for i in range(cards.count())
                if not cards.item(i).isHidden()]
-    assert visible == [original_ids[1]]
+    assert visible == [next(id_ for id_, name, _ in before_profiles
+                       if name == "นิยายเรื่องที่สอง")]
     window.library_search.clear()
     app.processEvents()
 
