@@ -1,5 +1,5 @@
 """Desktop dragging shared by novel covers and settings rows."""
-from PySide6.QtCore import Qt, Signal, QPoint, QTimer, QRect, QSize
+from PySide6.QtCore import Qt, Signal, QPoint, QTimer, QRect, QSize, QEvent
 from PySide6.QtGui import QDrag, QPainter, QPen, QPalette, QIcon, QFontMetrics, QTextLayout, QTextOption
 from PySide6.QtWidgets import QListWidget, QApplication, QAbstractItemView, QStyledItemDelegate, QStyle, QStyleOptionViewItem
 
@@ -137,6 +137,20 @@ class ReorderableProfileList(QListWidget):
         self._edge_scroll.setInterval(16)
         self._edge_scroll.timeout.connect(self._scroll_drag_edge)
         self.setItemDelegate(ProfileItemDelegate(self))
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() in (QEvent.FontChange, QEvent.StyleChange):
+            QTimer.singleShot(0, self._update_library_grid_size)
+
+    def _update_library_grid_size(self):
+        if self.objectName() != "novelLibrary":
+            return
+        delegate = self.itemDelegate()
+        if isinstance(delegate, ProfileItemDelegate):
+            desired = delegate.card_size()
+            if self.gridSize() != desired:
+                self.setGridSize(desired)
 
     selectionCommitted = Signal(int)
 
