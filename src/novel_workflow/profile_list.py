@@ -22,7 +22,7 @@ class ProfileItemDelegate(QStyledItemDelegate):
             return QSize(210, 310)
         height = (12 + view.iconSize().height() + 10
                   + self.MAX_TITLE_LINES * (view.fontMetrics().lineSpacing() + 5)
-                  + 8 + view.fontMetrics().height() + 7 + 12)
+                  + 8 + view.fontMetrics().height() + 7 + 15)
         return QSize(max(210, view.iconSize().width() + 24), height)
 
     def sizeHint(self, option, index):
