@@ -58,7 +58,8 @@ def main():
         cards = win.profile_cards
         delegate = cards.itemDelegate()
         regions = delegate.card_rects(
-            cards.visualItemRect(cards.item(0)))
+            cards.visualItemRect(cards.item(0)),
+            title_text=cards.item(0).text())
         assert not regions["cover"].intersects(regions["title"])
         assert not regions["title"].intersects(regions["status"])
         assert not regions["status"].intersects(regions["progress"])
@@ -73,11 +74,20 @@ def main():
                 cards = win.profile_cards
                 if cards.count():
                     card_rect = cards.visualItemRect(cards.item(0))
-                    regions = cards.itemDelegate().card_rects(card_rect)
+                    regions = cards.itemDelegate().card_rects(
+                        card_rect, title_text=cards.item(0).text())
                     assert card_rect.contains(regions["cover"])
                     assert card_rect.contains(regions["title"])
                     assert card_rect.contains(regions["status"])
                     assert card_rect.contains(regions["progress"])
+                    tabs = win.library_status_tabs
+                    for index in range(tabs.count()):
+                        required = tabs.tabSizeHint(index).width()
+                        font = tabs.font()
+                        assert required >= __import__("PySide6.QtGui", fromlist=[
+                            "QFontMetrics"]).QFontMetrics(font).horizontalAdvance(
+                                tabs.tabText(index)) + 30
+                    assert not regions["title"].intersects(regions["status"])
 
                 assert win.width()==width and win.height()==height,(win.size(),width,height)
                 ws.editor.tabs.setCurrentWidget(ws.editor.export_tab); app.processEvents()

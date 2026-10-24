@@ -7,8 +7,9 @@ from PySide6.QtWidgets import QListWidget, QApplication, QAbstractItemView, QSty
 class ProfileItemDelegate(QStyledItemDelegate):
     """Paint one gallery/list item; every field owns a non-overlapping region."""
 
-    MAX_TITLE_LINES = 3
+    MAX_TITLE_LINES = 2
     CARD_WIDTH = 250
+    CELL_GAP = 16
     COVER_SIZE = QSize(222, 296)
     LIST_HEIGHT = 112
 
@@ -32,20 +33,31 @@ class ProfileItemDelegate(QStyledItemDelegate):
             return QSize(self.CARD_WIDTH, 460)
         metrics = view.fontMetrics()
         cover = view.iconSize()
-        # Use actual font metrics, not a fixed guessed title rectangle height.
-        title_height = self.MAX_TITLE_LINES * (metrics.lineSpacing() + 5)
-        height = 14 + cover.height() + 14 + title_height + 10
-        height += (metrics.lineSpacing() + 7) * 2 + 22
+        # Maximum two title lines; one-line titles place metadata immediately
+        # after the painted line (without a reserved empty title slot).
+        line = metrics.lineSpacing() + 4
+        height = (14 + cover.height() + 10 + self.MAX_TITLE_LINES * line
+                  + 8 + line + 7 + line + 7 + 4 + 14)
         return QSize(max(self.CARD_WIDTH, cover.width() + 28), height)
 
     def sizeHint(self, option, index):
         if self._library():
             if self._list_mode():
                 return QSize(max(self.CARD_WIDTH, option.rect.width()), self.LIST_HEIGHT)
-            return self.card_size()
+            size = self.card_size()
+            return QSize(size.width() + self.CELL_GAP,
+                         size.height() + self.CELL_GAP)
         return super().sizeHint(option, index)
 
-    def card_rects(self, item_rect, metrics=None):
+    def _card_bounds(self, item_rect):
+        if self._list_mode():
+            return QRect(item_rect)
+        size = self.card_size()
+        inset = self.CELL_GAP // 2
+        return QRect(item_rect.left() + inset, item_rect.top() + inset,
+                     size.width(), size.height())
+
+    def card_rects(self, item_rect, metrics=None, title_text=None):
         view = self.parent()
         metrics = metrics or view.fontMetrics()
         if self._list_mode():
@@ -55,20 +67,24 @@ class ProfileItemDelegate(QStyledItemDelegate):
             title = QRect(x, item_rect.top() + 13, width, metrics.lineSpacing() + 9)
             status = QRect(x, title.bottom() + 6, width, metrics.lineSpacing() + 4)
             progress = QRect(x, status.bottom() + 5, width, metrics.lineSpacing() + 4)
-            return {"cover": cover, "title": title, "status": status,
-                    "progress": progress, "bar": QRect()}
+            return {"card": QRect(item_rect), "cover": cover, "title": title,
+                    "status": status, "progress": progress, "bar": QRect()}
+        card = self._card_bounds(item_rect)
         icon = view.iconSize()
-        cover = QRect(item_rect.center().x() - icon.width() // 2,
-                      item_rect.top() + 14, icon.width(), icon.height())
-        title_top = cover.bottom() + 15
-        title = QRect(item_rect.left() + 14, title_top, item_rect.width() - 28,
-                      self.MAX_TITLE_LINES * (metrics.lineSpacing() + 5))
-        status = QRect(title.left(), title.bottom() + 11,
-                       title.width(), metrics.lineSpacing() + 5)
-        progress = QRect(title.left(), status.bottom() + 9,
-                         title.width(), metrics.lineSpacing() + 5)
-        bar = QRect(title.left(), progress.bottom() + 6, title.width(), 4)
-        return {"cover": cover, "title": title, "status": status,
+        cover = QRect(card.center().x() - icon.width() // 2,
+                      card.top() + 14, icon.width(), icon.height())
+        title_top = cover.bottom() + 11
+        title_width = card.width() - 28
+        line_step = metrics.lineSpacing() + 4
+        lines = self.title_lines(title_text or "", view.font(), title_width)
+        title_height = min(self.MAX_TITLE_LINES, len(lines)) * line_step
+        title = QRect(card.left() + 14, title_top, title_width, title_height)
+        status = QRect(title.left(), title.bottom() + 8,
+                       title.width(), line_step)
+        progress = QRect(title.left(), status.bottom() + 7,
+                         title.width(), line_step)
+        bar = QRect(title.left(), progress.bottom() + 7, title.width(), 4)
+        return {"card": card, "cover": cover, "title": title, "status": status,
                 "progress": progress, "bar": bar}
 
     @staticmethod
@@ -99,14 +115,17 @@ class ProfileItemDelegate(QStyledItemDelegate):
         surface.text = ""
         surface.icon = QIcon()
         surface.widget = self.parent()
+        if not self._list_mode():
+            surface.rect = self._card_bounds(option.rect)
         if surface.widget is not None:
             surface.widget.style().drawPrimitive(
                 QStyle.PE_PanelItemViewItem, surface, painter, surface.widget)
         painter.save()
         try:
-            painter.setClipRect(option.rect)
+            painter.setClipRect(surface.rect)
             metrics = QFontMetrics(option.font)
-            regions = self.card_rects(option.rect, metrics)
+            regions = self.card_rects(
+                option.rect, metrics, index.data(Qt.DisplayRole) or "")
             icon = index.data(Qt.DecorationRole)
             if isinstance(icon, QIcon) and not icon.isNull():
                 # QIcon retains scaled pixmaps: hover never reopens a cover file.
@@ -117,7 +136,7 @@ class ProfileItemDelegate(QStyledItemDelegate):
             title = regions["title"]
             lines = self.title_lines(index.data(Qt.DisplayRole) or "", option.font,
                                      title.width())
-            line_step = metrics.lineSpacing() + 5
+            line_step = metrics.lineSpacing() + (5 if self._list_mode() else 4)
             visible = 1 if self._list_mode() else min(
                 self.MAX_TITLE_LINES, max(1, title.height() // max(1, line_step)))
             painter.save()
@@ -135,6 +154,10 @@ class ProfileItemDelegate(QStyledItemDelegate):
             from .theme import theme_colors
             dark = self.parent().palette().color(QPalette.Window).lightness() < 128
             colors = theme_colors("Dark" if dark else "Light")
+            if option.state & QStyle.State_HasFocus:
+                painter.setPen(QPen(QColor(colors["focus"]), 2))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRoundedRect(regions["card"].adjusted(2, 2, -3, -3), 10, 10)
             status = str(index.data(Qt.UserRole + 1) or "translating")
             label = {"translating": "กำลังแปล", "paused": "พักแปล",
                      "caught_up": "ชนต้นฉบับแล้ว",
@@ -207,7 +230,9 @@ class ReorderableProfileList(QListWidget):
         self.setResizeMode(QListWidget.Adjust)
         self.setMovement(QListWidget.Static)
         self.setGridSize(QSize())
-        self.setSpacing(18 if gallery else 9)
+        # QListView's explicit gridSize overrides gallery item spacing.
+        # Reserve an actual 16px gutter *inside each grid cell*.
+        self.setSpacing(0 if gallery else 9)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self._update_library_grid_size()
@@ -221,6 +246,8 @@ class ReorderableProfileList(QListWidget):
             desired = delegate.card_size()
             if self.viewMode() == QListWidget.ListMode:
                 desired.setWidth(max(desired.width(), self.viewport().width() - 20))
+            else:
+                desired += QSize(delegate.CELL_GAP, delegate.CELL_GAP)
             if self.gridSize() != desired:
                 self.setGridSize(desired)
 

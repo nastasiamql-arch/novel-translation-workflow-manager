@@ -1,11 +1,32 @@
 """Modern novel library: one ordered model, two responsive presentations."""
 from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTabBar, QListWidget, QComboBox, QMenu,
 )
 
 from .profile_list import ReorderableProfileList, ProfileItemDelegate as LibraryCardDelegate
+
+
+class CompactLibraryTabBar(QTabBar):
+    """Keep status labels intact at every selected state and font scale."""
+
+    def tabSizeHint(self, index):
+        size = super().tabSizeHint(index)
+        selected_font = QFont(self.font())
+        selected_font.setBold(True)
+        metrics = QFontMetrics(selected_font)
+        # Qt styles may measure an unselected (lighter) font. Reserve the
+        # selected label width plus both paddings, margins and a border.
+        size.setWidth(max(size.width(), metrics.horizontalAdvance(
+            self.tabText(index)) + 48))
+        size.setHeight(max(size.height(), metrics.height() + 24, 44))
+        return size
+
+    def minimumTabSizeHint(self, index):
+        # Never elide a Thai status or the final closing parenthesis.
+        return self.tabSizeHint(index)
 
 
 class LibraryPage(QWidget):
@@ -58,19 +79,22 @@ class LibraryPage(QWidget):
         filters_row.addWidget(statistics)
         library_layout.addLayout(filters_row)
 
-        owner.library_status_tabs = QTabBar()
+        owner.library_status_tabs = CompactLibraryTabBar()
         owner.library_status_tabs.setObjectName("libraryStatusTabs")
         owner.library_status_tabs.setAccessibleName("หมวดนิยาย")
         owner.library_status_tabs.setMovable(False)
         owner.library_status_tabs.setExpanding(False)
         owner.library_status_tabs.setUsesScrollButtons(True)
+        owner.library_status_tabs.setElideMode(Qt.ElideNone)
+        owner.library_status_tabs.setFocusPolicy(Qt.StrongFocus)
         for status, label in statuses:
             index = owner.library_status_tabs.addTab(f"{label} (0)")
             owner.library_status_tabs.setTabData(index, status)
         owner.library_status_tabs.currentChanged.connect(
             lambda _index: owner.filter_profiles(owner.library_search.text()))
         status_row = QHBoxLayout()
-        status_row.addWidget(owner.library_status_tabs)
+        status_row.setContentsMargins(6, 0, 6, 0)
+        status_row.addWidget(owner.library_status_tabs, 0)
         status_row.addStretch(1)
         library_layout.addLayout(status_row)
 

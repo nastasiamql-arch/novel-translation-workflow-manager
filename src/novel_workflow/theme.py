@@ -205,11 +205,12 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QLabel#emptyStateIcon {{ color: {c['accent']}; font-size: 25pt; }}
     QLineEdit#librarySearch {{ background: {c['input']}; border: 1px solid {c['border']}; border-radius: 10px; padding: 8px 12px; min-height: 32px; }}
     QTabBar#libraryStatusTabs {{ background: transparent; border: 0; }}
-    QTabBar#libraryStatusTabs::tab {{ color: {c['secondary']}; background: transparent; border: 0; border-bottom: 2px solid transparent; min-height: 38px; padding: 6px 14px; margin: 0; }}
+    QTabBar#libraryStatusTabs::tab {{ color: {c['secondary']}; background: {c['surface2']}; border: 1px solid {c['border']}; border-radius: 8px; min-height: 36px; padding: 8px 15px; margin: 0 4px; }}
     QTabBar#libraryStatusTabs::tab:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; }}
     QTabBar#libraryStatusTabs::tab:hover {{ color: {c['text']}; background: {c['hover']}; }}
-    QTabBar#libraryStatusTabs::tab:selected {{ color: {c['text']}; background: {c['item_selection']}; border-bottom: 3px solid {c['accent']}; font-weight: 600; }}
-    QTabBar#libraryStatusTabs[keyboardFocus="true"]::tab:selected {{ border-bottom: 3px solid {c['focus']}; }}
+    QTabBar#libraryStatusTabs::tab:selected {{ color: {c['text']}; background: {c['item_selection']}; border: 1px solid {c['accent']}; font-weight: 600; }}
+    QTabBar#libraryStatusTabs::tab:focus {{ border: 2px solid {c['focus']}; }}
+    QTabBar#libraryStatusTabs QToolButton {{ min-width: 24px; min-height: 26px; border: 1px solid {c['border']}; border-radius: 6px; background: {c['surface2']}; }}
     QListWidget#workflowSteps {{ background: transparent; border: 0; outline: 0; }}
     QListWidget#workflowSteps::item, QListWidget#workflowSteps::item:selected {{ background: transparent; color: {c['text']}; border: 0; }}
     QListWidget#workflowSteps::item:hover {{ background: {c['hover']}; }}
