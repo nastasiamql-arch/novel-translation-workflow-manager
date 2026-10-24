@@ -1,5 +1,5 @@
 """Desktop dragging shared by novel covers and settings rows."""
-from PySide6.QtCore import Qt, Signal, QPoint, QTimer, QRect, QSize
+from PySide6.QtCore import Qt, Signal, QPoint, QTimer, QRect, QSize, QEvent
 from PySide6.QtGui import QDrag, QPainter, QPen, QPalette, QIcon, QColor, QFontMetrics, QTextLayout, QTextOption
 from PySide6.QtWidgets import QListWidget, QApplication, QAbstractItemView, QStyledItemDelegate, QStyle, QStyleOptionViewItem
 
@@ -250,6 +250,13 @@ class ReorderableProfileList(QListWidget):
                 desired += QSize(delegate.CELL_GAP, delegate.CELL_GAP)
             if self.gridSize() != desired:
                 self.setGridSize(desired)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        # Styles and application font changes may arrive after an initial
+        # geometry pass. Recompute the gallery cell when metrics change.
+        if event.type() in (QEvent.FontChange, QEvent.StyleChange):
+            self._update_library_grid_size()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
