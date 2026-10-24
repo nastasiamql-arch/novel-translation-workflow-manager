@@ -14,7 +14,7 @@ def test_preferences_sidebar_and_consolidated_general(tmp_path):
     categories = page.findChild(QListWidget, 'preferencesCategory')
     assert categories is not None
     assert [categories.item(i).text() for i in range(categories.count())] == [
-        'General', 'Novel', 'Program Updates'
+        'ทั่วไป', 'การตั้งค่านิยาย', 'อัปเดตโปรแกรม'
     ]
     assert categories.currentRow() == 1
     assert not any(b.text() == 'ตั้งค่าโปรแกรม' for b in page.findChildren(QPushButton))
