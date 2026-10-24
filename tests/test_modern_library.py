@@ -174,6 +174,35 @@ def test_compact_gallery_metadata_follows_visible_title(app, title):
     view.close()
 
 
+def test_gallery_title_is_one_line_and_metadata_aligns_for_every_card(app):
+    view = make_library(3)
+    titles = [
+        "เรื่องสั้น",
+        "ย้อนเวลากลับมาปี 2010 คราวนี้ผมจะกุมเกมเศรษฐกิจโลก",
+        "มหากาพย์แห่งดวงดาว" * 12,
+    ]
+    for item, title in zip((view.item(i) for i in range(3)), titles):
+        item.setText(title)
+        item.setToolTip(title)
+    view.resize(1500, 700)
+    view.show()
+    app.processEvents()
+
+    delegate = view.itemDelegate()
+    assert delegate.MAX_TITLE_LINES == 1
+    assert delegate.card_size().width() == 320
+    regions = [delegate.card_rects(view.visualItemRect(view.item(i)), title_text=titles[i])
+               for i in range(3)]
+    line_height = view.fontMetrics().lineSpacing() + 4
+    assert all(region["title"].height() == line_height for region in regions)
+    assert len({region["title"].top() for region in regions}) == 1
+    assert len({region["status"].top() for region in regions}) == 1
+    assert len({region["progress"].top() for region in regions}) == 1
+    assert len(delegate.title_lines(titles[2], view.font(), regions[2]["title"].width())) > 1
+    assert view.item(2).toolTip() == titles[2]
+    view.close()
+
+
 def test_gallery_cells_have_real_gutters_and_resize_without_overflow(app):
     view = make_library(20)
     for width in (610, 900, 1280):

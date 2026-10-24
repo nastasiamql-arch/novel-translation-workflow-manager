@@ -7,8 +7,8 @@ from PySide6.QtWidgets import QListWidget, QApplication, QAbstractItemView, QSty
 class ProfileItemDelegate(QStyledItemDelegate):
     """Paint one gallery/list item; every field owns a non-overlapping region."""
 
-    MAX_TITLE_LINES = 2
-    CARD_WIDTH = 250
+    MAX_TITLE_LINES = 1
+    CARD_WIDTH = 320
     CELL_GAP = 16
     COVER_SIZE = QSize(222, 296)
     LIST_HEIGHT = 112
@@ -33,8 +33,8 @@ class ProfileItemDelegate(QStyledItemDelegate):
             return QSize(self.CARD_WIDTH, 460)
         metrics = view.fontMetrics()
         cover = view.iconSize()
-        # Maximum two title lines; one-line titles place metadata immediately
-        # after the painted line (without a reserved empty title slot).
+        # Reserve one fixed title line so every card's status and chapter count
+        # stay aligned, even when a title is elided.
         line = metrics.lineSpacing() + 4
         height = (14 + cover.height() + 10 + self.MAX_TITLE_LINES * line
                   + 8 + line + 7 + line + 7 + 4 + 14)
@@ -76,8 +76,7 @@ class ProfileItemDelegate(QStyledItemDelegate):
         title_top = cover.bottom() + 11
         title_width = card.width() - 28
         line_step = metrics.lineSpacing() + 4
-        lines = self.title_lines(title_text or "", view.font(), title_width)
-        title_height = min(self.MAX_TITLE_LINES, len(lines)) * line_step
+        title_height = line_step
         title = QRect(card.left() + 14, title_top, title_width, title_height)
         status = QRect(title.left(), title.bottom() + 8,
                        title.width(), line_step)

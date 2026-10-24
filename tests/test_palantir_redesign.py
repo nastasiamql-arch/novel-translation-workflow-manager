@@ -34,21 +34,19 @@ def test_export_tab_stays_last(tmp_path):
 def test_library_covers_and_card_spacing_are_slightly_smaller(window):
     from PySide6.QtCore import QSize
     assert window.profile_cards.iconSize() == QSize(222, 296)
-    # Compact cards adapt the painted title height to the actual number of
-    # lines: short Thai titles may not reserve an empty second/third row.
+    # Gallery titles use one fixed line so metadata aligns across cards.
     cards = window.profile_cards
     delegate = cards.itemDelegate()
     from PySide6.QtCore import QRect
     rect = QRect(0, 0, cards.gridSize().width(), cards.gridSize().height())
-    for name, expected in (("สั้น", 1), ("ราชันย์มังกร" * 30, 2)):
+    for name in ("สั้น", "ราชันย์มังกร" * 30):
         regions = delegate.card_rects(rect, title_text=name)
         assert not regions["title"].intersects(regions["cover"])
         assert not regions["title"].intersects(regions["status"])
         assert not regions["status"].intersects(regions["progress"])
         assert rect.contains(regions["card"])
         assert regions["card"].contains(regions["progress"])
-        assert regions["title"].height() == expected * (
-            cards.fontMetrics().lineSpacing() + 4)
+        assert regions["title"].height() == cards.fontMetrics().lineSpacing() + 4
     assert window.profile_cards.wordWrap()
 
 
