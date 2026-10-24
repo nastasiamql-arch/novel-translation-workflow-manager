@@ -1356,6 +1356,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.utility_stack.setCurrentWidget(page)
         self._active_utility_page = key
         self.main_pages.setCurrentWidget(self.utility_page)
+        self._sync_navigation()
 
     def return_from_utility_page(self):
         if self._settings_page_state:
@@ -2330,7 +2331,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         page = self.main_pages.currentWidget()
         key = "today" if page is self.today_page else ("library" if page is self.library_page else "workspace")
         if page is self.utility_page:
-            key = {"progress":"progress", "groups":"groups", "settings":"settings", "novel-inspector":"novel-inspector"}.get(self._active_utility_page, "workspace")
+            key = {"progress":"library", "groups":"library", "settings":"settings", "novel-inspector":"novel-inspector"}.get(self._active_utility_page, "workspace")
         self.navigation.select(key)
         # Keep the native window titlebar and menu, without a custom title strip.
         self.brand_toolbar.hide()

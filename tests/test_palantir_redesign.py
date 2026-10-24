@@ -364,7 +364,7 @@ def test_navigation_can_expand_to_readable_labels(legacy_collapsed):
     app.processEvents()
     assert sidebar.width() == (60 if legacy_collapsed else 196)
     assert sidebar.collapsed == legacy_collapsed
-    assert len(sidebar.findChildren(QToolButton)) == 8  # brand toggle + seven remaining routes
+    assert len(sidebar.findChildren(QToolButton)) == 6  # brand toggle + five primary routes
     for button in sidebar.buttons.values():
         expected = Qt.ToolButtonIconOnly if legacy_collapsed else Qt.ToolButtonTextBesideIcon
         assert button.toolButtonStyle() == expected
@@ -373,8 +373,8 @@ def test_navigation_can_expand_to_readable_labels(legacy_collapsed):
     app.processEvents()
     assert sidebar.collapsed != legacy_collapsed
     assert sidebar.width() == (196 if legacy_collapsed else 60)
-    sidebar.select('groups')
-    assert sidebar.buttons['groups'].isChecked()
+    sidebar.select('library')
+    assert sidebar.buttons['library'].isChecked()
     sidebar.close()
 
 

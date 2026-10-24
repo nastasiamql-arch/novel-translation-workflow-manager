@@ -31,6 +31,9 @@ class TodayPage(QWidget):
         self.summary.setWordWrap(True)
         self.summary.setObjectName("sectionHeading")
         layout.addWidget(self.summary)
+        self.day_plans = QLabel()
+        self.day_plans.setWordWrap(True)
+        layout.addWidget(self.day_plans)
         self.progress = QProgressBar()
         self.progress.setTextVisible(True)
         layout.addWidget(self.progress)
@@ -69,6 +72,7 @@ class TodayPage(QWidget):
         self.final.setRange(0, 2147483647)
         self.final.setSpecialValueText("ยังไม่ทราบ")
         form.addRow("บทสุดท้าย", self.final)
+        self.profile_combo.currentIndexChanged.connect(self._change_profile)
         self.save_button = QPushButton("บันทึกแผน")
         self.save_button.clicked.connect(self._save)
         form.addRow(self.save_button)
@@ -90,11 +94,18 @@ class TodayPage(QWidget):
         mode = self.kind.currentData()
         self.target.setEnabled(mode == "daily")
         self.final.setEnabled(mode == "finish")
-        self.profile_combo.setEnabled(mode != "rest")
+        self.profile_combo.setEnabled(True)
+
+    def _change_profile(self, *_):
+        self._load_day()
+        self.refresh()
 
     def _load_day(self, *_):
-        plan = self.planner.get(self.day.date().toPython())
+        plan = self.planner.get(self.day.date().toPython(), self.profile_combo.currentData())
         if not plan:
+            self.kind.setCurrentIndex(self.kind.findData("focus"))
+            self.target.setValue(20)
+            self.final.setValue(0)
             return
         self.kind.setCurrentIndex(max(0, self.kind.findData(plan.get("plan_type"))))
         idx = self.profile_combo.findData(plan.get("profile_id"))
@@ -158,7 +169,11 @@ class TodayPage(QWidget):
         if not self.editor.isVisible():
             self.day.setDate(QDate.currentDate())
         self.heading.setText(f"วันนี้ — {today.strftime('%d/%m/%Y')}")
-        info = self.planner.summary(today, profiles)
+        selected_profile = self.profile_combo.currentData()
+        info = self.planner.summary(today, profiles, profile_id=selected_profile)
+        names = {profile.id: profile.name for profile in profiles}
+        descriptions = [f"{names.get(plan.get('profile_id'), 'ทุกเรื่อง')} · {'วันพัก' if plan.get('plan_type') == 'rest' else 'แผนการแปล'}" for plan in self.planner.plans_for_day(today)]
+        self.day_plans.setText("แผนวันนี้ทุกเรื่อง: " + ("  |  ".join(descriptions) if descriptions else "ยังไม่มีแผน"))
         self._selected_profile_id = None
         self.progress.hide()
         self.finish_button.hide()
@@ -209,11 +224,11 @@ class TodayPage(QWidget):
                 self.progress.show()
         self.open_button.setEnabled(self._selected_profile_id is not None)
         rows = []
-        for day, plan in self.planner.week(today + timedelta(days=1)):
-            if plan:
-                name = next((p.name for p in profiles if p.id == plan.get("profile_id")), "ไม่พบนิยาย")
+        for day, plans in self.planner.week_all(today + timedelta(days=1)):
+            for plan in plans:
+                name = names.get(plan.get("profile_id"), "ทุกเรื่อง")
                 if plan["plan_type"] == "rest":
-                    name = "วันพัก"
+                    name += " · วันพัก"
                 rows.append(f"{day}  ·  {name}")
         self.weekly.setText("แผน 7 วันถัดไป\n" + ("\n".join(rows) if rows else "ยังไม่มีแผนล่วงหน้า"))
         self._update_fields()
