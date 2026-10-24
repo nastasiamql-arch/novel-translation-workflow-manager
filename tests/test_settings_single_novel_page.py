@@ -63,7 +63,7 @@ def test_novel_settings_are_one_page_and_profile_selection_stays_in_it(tmp_path)
     second_index = next(i for i, item in enumerate(window.ps_list) if item.id == second.id)
     window.profiles.selectionCommitted.emit(second_index)
     assert window.profile.id == second.id
-    assert categories.currentItem().text() == 'Novel'
+    assert categories.currentItem().text() == 'การตั้งค่านิยาย'
     assert window.auto_open_working_tabs.isVisible()
     assert not window.auto_open_working_tabs.isChecked()
     window.close()
