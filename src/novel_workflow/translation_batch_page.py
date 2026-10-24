@@ -97,7 +97,17 @@ class TranslationBatchPage(QWidget):
         title = QLabel("แปลหลายบท · เลือกชุดแล้วคัดลอก")
         title.setObjectName("sectionHeading")
         heading.addWidget(title, 1)
-        back = QPushButton("กลับไป Workspace")
+        # Both modes keep the existing batch services and source handling.
+        vocabulary = QPushButton("จัดชุดคำศัพท์")
+        vocabulary.setObjectName("vocabularyBatchMode")
+        vocabulary.clicked.connect(
+            lambda checked=False: (
+                parent.owner.open_txt_vocabulary(parent.profile_id)
+                if parent is not None and hasattr(parent, "owner") else None
+            )
+        )
+        heading.addWidget(vocabulary)
+        back = QPushButton("กลับไปแปลนิยาย")
         back.setObjectName("translationBatchBack")
         back.clicked.connect(on_close)
         heading.addWidget(back)

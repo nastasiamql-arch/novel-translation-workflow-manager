@@ -1,7 +1,7 @@
 """Novel library surface and profile navigation controls."""
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QTabBar, QListWidget, QStyledItemDelegate, QStyle, QComboBox)
+    QPushButton, QTabBar, QListWidget, QStyledItemDelegate, QStyle, QComboBox, QMenu)
 
 
 from .profile_list import ReorderableProfileList, ProfileItemDelegate as LibraryCardDelegate
@@ -11,9 +11,11 @@ class LibraryPage(QWidget):
     def __init__(self, owner, statuses):
         super().__init__(owner)
         library_layout = QVBoxLayout(self)
-        library_layout.setContentsMargins(32, 28, 32, 24)
+        library_layout.setContentsMargins(20, 16, 20, 16)
         library_layout.setSpacing(16)
-        library_header = QHBoxLayout()
+        library_header = QVBoxLayout()
+        title_row = QHBoxLayout()
+        filters_row = QHBoxLayout()
         library_title = QLabel("คลังนิยาย")
         library_title.setObjectName("pageTitle")
         heading = QVBoxLayout()
@@ -22,29 +24,31 @@ class LibraryPage(QWidget):
         subtitle = QLabel("เลือกนิยายเพื่อเข้าสู่พื้นที่ทำงาน")
         subtitle.setObjectName("librarySubtitle")
         heading.addWidget(subtitle)
-        library_header.addLayout(heading, 1)
+        title_row.addLayout(heading, 1)
         owner.library_search = QLineEdit()
         owner.library_search.setObjectName("librarySearch")
         owner.library_search.setPlaceholderText("ค้นหานิยาย…")
-        owner.library_search.setMaximumWidth(340)
+        owner.library_search.setMaximumWidth(420)
         owner.library_search.textChanged.connect(owner.filter_profiles)
-        library_header.addWidget(owner.library_search)
+        filters_row.addWidget(owner.library_search, 1)
         owner.library_group_filter = QComboBox()
         owner.library_group_filter.setObjectName("libraryGroupFilter")
         owner.library_group_filter.setAccessibleName("กรองคลังนิยายตามกลุ่ม")
-        owner.library_group_filter.setMinimumWidth(130)
+        owner.library_group_filter.setMinimumWidth(110)
         owner.library_group_filter.addItem("ทุกกลุ่ม", None)
-        library_header.addWidget(owner.library_group_filter)
+        filters_row.addWidget(owner.library_group_filter)
         manage_groups = QPushButton("จัดการกลุ่ม")
         manage_groups.clicked.connect(owner.groups_dialog)
-        library_header.addWidget(manage_groups)
+        filters_row.addWidget(manage_groups)
         statistics = QPushButton("สถิติ")
         statistics.clicked.connect(owner.translation_dashboard)
-        library_header.addWidget(statistics)
+        filters_row.addWidget(statistics)
         add_story = QPushButton("＋ เพิ่มนิยาย")
         add_story.setObjectName("primaryButton")
         add_story.clicked.connect(owner.new_profile)
-        library_header.addWidget(add_story)
+        title_row.addWidget(add_story)
+        library_header.addLayout(title_row)
+        library_header.addLayout(filters_row)
         library_layout.addLayout(library_header)
         owner.library_status_tabs = QTabBar()
         owner.library_status_tabs.setObjectName("libraryStatusTabs")
@@ -77,6 +81,28 @@ class LibraryPage(QWidget):
         owner.profile_cards.setWordWrap(True)
         owner.profile_cards.setUniformItemSizes(True)
         owner.profile_cards.setTextElideMode(Qt.ElideRight)
+        owner.profile_cards.setContextMenuPolicy(Qt.CustomContextMenu)
+        def show_card_menu(point):
+            card = owner.profile_cards.itemAt(point)
+            if card is None:
+                return
+            profile_id = card.data(Qt.UserRole)
+            menu = QMenu(owner.profile_cards)
+            menu.addAction("เปิดนิยาย", lambda: owner.open_planned_novel(profile_id))
+            menu.addAction("แผนการแปล", lambda: (
+                owner.open_planned_novel(profile_id),
+                owner.open_story_planner(profile_id)
+            ))
+            menu.addSeparator()
+            def with_selected(callback):
+                owner.open_planned_novel(profile_id)
+                if owner.profile and owner.profile.id == profile_id:
+                    callback()
+            menu.addAction("เปลี่ยนชื่อ", lambda: with_selected(owner.rename_profile))
+            menu.addAction("เปลี่ยนปก", lambda: with_selected(owner.set_cover))
+            menu.addAction("ลบนิยาย…", lambda: with_selected(owner.delete_profile))
+            menu.exec(owner.profile_cards.viewport().mapToGlobal(point))
+        owner.profile_cards.customContextMenuRequested.connect(show_card_menu)
         owner.profile_cards.selectionCommitted.connect(
             lambda row: owner._open_profile_card(owner.profile_cards.item(row)) if row >= 0 else None)
         library_layout.addWidget(owner.profile_cards, 1)

@@ -168,6 +168,221 @@ class TranslationPlanner:
             write_json(self.path, data)
         return dict(plan)
 
+
+    def save_story_schedule(self, profile_id: str, mode: str, *,
+                            final_chapter: int, start_day: str | date,
+                            duration_days: int | None = None,
+                            daily_target: int | None = None,
+                            deadline: str | date | None = None,
+                            rest_weekdays=()):
+        """Save one novel's dated plan, never write to its export ledger.
+
+        'duration' means N working days, not N calendar days. Date overrides
+        and edit history are preserved across subsequent schedule changes.
+        """
+        if mode not in ("duration", "daily", "deadline"):
+            raise ValueError("Unknown story schedule mode")
+        if not isinstance(profile_id, str) or not profile_id:
+            raise ValueError("Select an existing novel")
+        final = _positive(final_chapter)
+        start = _date(start_day)
+        days = _positive(duration_days) if mode == "duration" else None
+        target = _positive(daily_target) if mode == "daily" else None
+        due = _date(deadline) if mode == "deadline" and deadline is not None else None
+        if mode == "deadline" and (due is None or due < start):
+            raise ValueError("Deadline must be on or after the start day")
+        weekdays = sorted(set(rest_weekdays))
+        if any(type(day) is not int or day < 0 or day > 6 for day in weekdays):
+            raise ValueError("Invalid rest weekday")
+        if len(weekdays) == 7:
+            raise ValueError("At least one working day is required")
+        beginning = date.fromisoformat(start)
+        if mode == "deadline" and not any(
+            (beginning + timedelta(days=offset)).weekday() not in weekdays
+            for offset in range((date.fromisoformat(due) - beginning).days + 1)
+        ):
+            raise ValueError("No working days before the deadline")
+        profile = next((p for p in self.repo.list_profiles() if p.id == profile_id), None)
+        if profile is None:
+            raise ValueError("Select an existing novel")
+        chapters = completed_chapters(profile)
+        completed = len([n for n in chapters if 1 <= n <= final])
+        # Count the same confirmed unique chapters used by Progress and Export.
+        fields = {
+            "profile_id": profile_id, "mode": mode, "final_chapter": final,
+            "start_day": start, "duration_days": days, "daily_target": target,
+            "deadline": due, "rest_weekdays": weekdays,
+        }
+        with self.repo.profile_lock:
+            data = self._load()
+            schedules = data.setdefault("story_schedules", {})
+            if not isinstance(schedules, dict):
+                raise ValueError("Invalid story schedules")
+            previous = schedules.get(profile_id, {})
+            if not isinstance(previous, dict):
+                raise ValueError("Invalid story schedule")
+            now = _now()
+            history = list(previous.get("history", []))
+            if previous and any(previous.get(k) != v for k, v in fields.items()):
+                history.append({"changed_at": now, "previous": {
+                    k: previous.get(k) for k in fields}})
+            schedule = {**previous, **fields,
+                        "baseline_completed": (previous.get("baseline_completed", completed)
+                                               if previous.get("start_day") == start
+                                               and previous.get("final_chapter") == final
+                                               else completed),
+                        "overrides": dict(previous.get("overrides", {})),
+                        "history": history, "updated_at": now}
+            schedule.setdefault("created_at", now)
+            schedules[profile_id] = schedule
+            # Reuse the long-term goal record so older Progress views agree.
+            goals = data.setdefault("finish_goals", {})
+            prior_goal = goals.get(profile_id, {})
+            if not isinstance(prior_goal, dict):
+                prior_goal = {}
+            goals[profile_id] = {
+                **prior_goal, "profile_id": profile_id, "final_chapter": final,
+                "confirmed_finished": (prior_goal.get("confirmed_finished", False)
+                                       if prior_goal.get("final_chapter") == final else False),
+                "updated_at": now,
+            }
+            data["schema_version"] = max(3, data.get("schema_version", 0))
+            write_json(self.path, data)
+        return dict(schedule)
+
+    def story_schedule(self, profile_id: str):
+        schedule = self._load().get("story_schedules", {}).get(profile_id)
+        return dict(schedule) if isinstance(schedule, dict) else None
+
+    def override_story_day(self, profile_id: str, day: str | date, target: int):
+        """Zero is a rest day; positive values override one day's chapter goal."""
+        local_day = _date(day)
+        if type(target) is not int or target < 0:
+            raise ValueError("Day goal must be a nonnegative integer")
+        with self.repo.profile_lock:
+            data = self._load()
+            schedule = data.get("story_schedules", {}).get(profile_id)
+            if not isinstance(schedule, dict):
+                raise ValueError("No schedule for this novel")
+            # Reject editing days outside the plan, including foreign novel IDs.
+            dates = self._story_dates(schedule, date.fromisoformat(local_day),
+                                      max_days=3660)
+            if local_day not in {d.isoformat() for d in dates}:
+                raise ValueError("Day is outside the schedule")
+            overrides = schedule.setdefault("overrides", {})
+            if not isinstance(overrides, dict):
+                raise ValueError("Invalid day overrides")
+            old = overrides.get(local_day)
+            if old != target:
+                schedule.setdefault("history", []).append({
+                    "changed_at": _now(), "date": local_day, "previous_target": old,
+                    "new_target": target})
+                overrides[local_day] = target
+                schedule["updated_at"] = _now()
+                write_json(self.path, data)
+        return target
+
+    @staticmethod
+    def _story_dates(schedule, today: date, *, max_days=3660):
+        start = date.fromisoformat(schedule["start_day"])
+        rest = set(schedule.get("rest_weekdays", ()))
+        mode = schedule["mode"]
+        dates = []
+        working = 0
+        final_working = schedule.get("duration_days")
+        if mode == "daily":
+            # Daily quota can extend beyond the original estimated finish date.
+            quota = schedule["daily_target"]
+            outstanding = max(0, schedule["final_chapter"] -
+                              schedule.get("baseline_completed", 0))
+            final_working = max(1, (outstanding + quota - 1) // quota)
+        deadline = (date.fromisoformat(schedule["deadline"])
+                    if mode == "deadline" else None)
+        for offset in range(max_days):
+            day = start + timedelta(days=offset)
+            if deadline is not None and day > deadline:
+                break
+            dates.append(day)
+            if day.weekday() not in rest and schedule.get("overrides", {}).get(day.isoformat()) != 0:
+                working += 1
+            if final_working is not None and working >= final_working:
+                # For an uncapped daily plan, show today's work even if it has
+                # taken longer than the initial estimate.
+                if mode != "daily" or day >= today:
+                    break
+        return dates
+
+    def story_day_rows(self, profile_id: str, today: str | date | None = None):
+        """Return date targets dynamically recalculated from verified exports.
+
+        Past targets are computed using past export activity; missing or extra
+        completions alter only the remaining allocation. No export is written.
+        """
+        local_today = date.fromisoformat(_date(today or date.today()))
+        schedule = self.story_schedule(profile_id)
+        if schedule is None:
+            return None
+        profile = next((p for p in self.repo.list_profiles() if p.id == profile_id), None)
+        if profile is None:
+            return None
+        final = schedule["final_chapter"]
+        chapters = {n for n in completed_chapters(profile) if 1 <= n <= final}
+        activity = confirmed_daily_activity(profile)
+        dates = self._story_dates(schedule, local_today)
+        overrides = schedule.get("overrides", {})
+        rest = set(schedule.get("rest_weekdays", ()))
+        active = [day for day in dates if day.weekday() not in rest
+                  and overrides.get(day.isoformat()) != 0]
+        if not active:
+            return {"profile": profile, "schedule": schedule, "rows": [],
+                    "completed": len(chapters), "remaining": max(0, final - len(chapters)),
+                    "percent": min(100, round(len(chapters) * 100 / final))}
+        baseline_remaining = max(0, final - schedule.get("baseline_completed", 0))
+        past_remaining = baseline_remaining
+        # Today's already exported chapters still count against today's fixed
+        # target. They are subtracted from *tomorrow's* distribution.
+        today_actual = len(activity.get(local_today.isoformat(), set()) & chapters)
+        current_remaining = max(0, final - len(chapters) + today_actual)
+        future_remaining = current_remaining
+        rows = []
+        for day in dates:
+            key = day.isoformat()
+            actual = len(activity.get(key, set()) & chapters)
+            override = overrides.get(key)
+            is_rest = override == 0 or (override is None and day.weekday() in rest)
+            work_left = sum(1 for other in active if other >= day)
+            if is_rest:
+                target = 0
+            elif override is not None:
+                target = override
+            elif schedule["mode"] == "daily":
+                target = min(schedule["daily_target"],
+                             past_remaining if day < local_today else future_remaining)
+            elif day < local_today:
+                target = (past_remaining + work_left - 1) // work_left if work_left else 0
+            else:
+                target = (future_remaining + work_left - 1) // work_left if work_left else 0
+            if day < local_today:
+                past_remaining = max(0, past_remaining - actual)
+            else:
+                future_remaining = max(0, future_remaining - target)
+            if is_rest:
+                status = "วันพัก"
+            elif day < local_today:
+                status = "เกินเป้า" if actual > target else (
+                    "ตามแผน" if actual == target else "ต่ำกว่าแผน")
+            elif actual > target and target:
+                status = "เกินเป้า"
+            elif actual >= target and target:
+                status = "ตามแผน"
+            else:
+                status = "กำลังแปล" if day == local_today else "รอดำเนินการ"
+            rows.append({"date": key, "target": target, "actual": actual,
+                         "status": status, "rest": is_rest})
+        return {"profile": profile, "schedule": schedule, "rows": rows,
+                "completed": len(chapters), "remaining": max(0, final - len(chapters)),
+                "percent": min(100, round(len(chapters) * 100 / final))}
+
     def finish_goal(self, profile_id):
         return self._load().get("finish_goals", {}).get(profile_id)
 

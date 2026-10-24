@@ -1,6 +1,6 @@
 """Desktop dragging shared by novel covers and settings rows."""
 from PySide6.QtCore import Qt, Signal, QPoint, QTimer
-from PySide6.QtGui import QDrag, QPainter, QPen
+from PySide6.QtGui import QDrag, QPainter, QPen, QPalette
 from PySide6.QtWidgets import QListWidget, QApplication, QAbstractItemView, QStyledItemDelegate, QStyle
 
 
@@ -8,6 +8,24 @@ class ProfileItemDelegate(QStyledItemDelegate):
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
         option.state &= ~QStyle.State_HasFocus
+
+    def paint(self, painter, option, index):
+        """Keep the cover/title while adding the verified progress footer."""
+        super().paint(painter, option, index)
+        status = index.data(Qt.UserRole + 2)
+        if not status:
+            return
+        painter.save()
+        font = painter.font()
+        font.setPointSize(max(8, font.pointSize() - 1))
+        painter.setFont(font)
+        painter.setPen(option.palette.color(QPalette.Text))
+        rect = option.rect.adjusted(8, 0, -8, -5)
+        line_height = painter.fontMetrics().height()
+        rect.setTop(rect.bottom() - line_height - 2)
+        caption = painter.fontMetrics().elidedText(str(status), Qt.ElideRight, rect.width())
+        painter.drawText(rect, Qt.AlignHCenter | Qt.AlignVCenter, caption)
+        painter.restore()
 
 
 class ReorderableProfileList(QListWidget):

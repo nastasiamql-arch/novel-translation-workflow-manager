@@ -412,8 +412,8 @@ class WorkspacePage(QWidget):
         self.context_button.hide()
         self.update_context_button = QToolButton(self.editor_header)
         self.update_context_button.setText("Export")
-        self.update_context_button.setToolTip("Export Translator to TXT and update Context")
-        self.update_context_button.setAccessibleName("Export Translator to TXT and update Context")
+        self.update_context_button.setToolTip("ส่งออก Translator เป็น TXT และอัปเดต Context")
+        self.update_context_button.setAccessibleName("ส่งออก Translator เป็น TXT และอัปเดต Context")
         self.update_context_button.clicked.connect(
             lambda: self.owner.update_context_from_translator(self)
         )
@@ -427,7 +427,7 @@ class WorkspacePage(QWidget):
         self.chapter_number_button.hide()
         header_layout.addWidget(self.chapter_number_button)
         header_layout.addWidget(self.update_context_button)
-        self.export_status_label = QLabel("Export Status Unknown", self.editor_header)
+        self.export_status_label = QLabel("ยังไม่ทราบสถานะการส่งออก", self.editor_header)
         self.export_status_label.setObjectName("exportStatusLabel")
         self.export_status_label.setMinimumWidth(132)
         self.export_status_label.hide()
@@ -475,13 +475,14 @@ class WorkspacePage(QWidget):
             "คืนสถานะย้อนแปล",
             lambda: self.owner.undo_context_retranslation(self.profile_id),
         )
+        self.more_menu.addAction("แผนการแปล", lambda: self.owner.open_story_planner(self.profile_id))
         self.more_menu.addAction("เปิดรายการของเรื่อง", self.owner.launch_profile)
-        self.more_menu.addAction("History / กู้ไฟล์", self.show_recovery)
+        self.more_menu.addAction("ประวัติและกู้คืนไฟล์", self.show_recovery)
         more = QToolButton(); more.setText("..."); more.setAccessibleName("คำสั่งเพิ่มเติม")
         more.setMenu(self.more_menu); more.setPopupMode(QToolButton.InstantPopup)
         header_layout.addWidget(more)
-        self.undo_button = QToolButton(); self.undo_button.setText("Undo"); self.undo_button.setToolTip("Undo · Ctrl+Z"); self.undo_button.setAccessibleName("Undo")
-        self.redo_button = QToolButton(); self.redo_button.setText("Redo"); self.redo_button.setToolTip("Redo · Ctrl+Y / Ctrl+Shift+Z"); self.redo_button.setAccessibleName("Redo")
+        self.undo_button = QToolButton(); self.undo_button.setText("เลิกทำ"); self.undo_button.setToolTip("เลิกทำ · Ctrl+Z"); self.undo_button.setAccessibleName("เลิกทำ")
+        self.redo_button = QToolButton(); self.redo_button.setText("ทำซ้ำ"); self.redo_button.setToolTip("ทำซ้ำ · Ctrl+Y / Ctrl+Shift+Z"); self.redo_button.setAccessibleName("ทำซ้ำ")
         self.undo_button.clicked.connect(lambda: self.editor._current_editor().undo())
         self.redo_button.clicked.connect(lambda: self.editor._current_editor().redo())
         header_layout.insertWidget(1, self.undo_button); header_layout.insertWidget(2, self.redo_button)
@@ -581,10 +582,44 @@ class WorkspacePage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
+        self.workspace_sections = QTabBar(self)
+        self.workspace_sections.setObjectName("workspaceSections")
+        self.workspace_sections.setAccessibleName("ส่วนต่าง ๆ ของนิยายปัจจุบัน")
+        self.workspace_sections.setExpanding(False)
+        self.workspace_sections.setUsesScrollButtons(True)
+        for title in ("แปลนิยาย", "แผนการแปล", "ไฟล์และคำศัพท์",
+                      "แปลหลายบท", "ส่งออกไฟล์", "ความคืบหน้า", "ประวัติการเกลา"):
+            self.workspace_sections.addTab(title)
+        layout.addWidget(self.workspace_sections)
         layout.addWidget(self.content_stack, 1)
+        self.workspace_sections.currentChanged.connect(self._open_section)
 
         self.configure(profile)
         self.set_mode(0)
+
+    def _open_section(self, index):
+        """Keep the editor in place and route novel-specific tools by ID."""
+        if index < 0:
+            return
+        if index == 0:
+            self.editor_content_stack.setCurrentWidget(self.editor)
+        elif index == 1:
+            self.owner.open_story_planner(self.profile_id)
+        elif index == 2:
+            self.owner.open_novel_resources(self.profile_id)
+        elif index == 3:
+            self.owner.open_translation_batches(self.profile_id)
+        elif index == 4:
+            self.editor_content_stack.setCurrentWidget(self.editor)
+            self.editor.tabs.setCurrentWidget(self.editor.export_tab)
+        elif index == 5:
+            self.owner.open_novel_progress(self.profile_id)
+        elif index == 6:
+            self.owner.open_polish_history()
+        if index not in (0, 3, 4):
+            self.workspace_sections.blockSignals(True)
+            self.workspace_sections.setCurrentIndex(0)
+            self.workspace_sections.blockSignals(False)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1345,7 +1380,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.utility_stack.addWidget(page)
         elif key == "progress":
             page.set_profiles(self.ps_list)
-        elif key in {"groups", "launcher", "file-manager", "preview"}:
+        elif key.startswith(("resources:", "novel-progress:")):
+            page.refresh()
+        elif key in {"groups", "launcher", "file-manager", "preview", "story-planner"}:
             self.utility_stack.removeWidget(page)
             page.deleteLater()
             page = factory()
@@ -1389,6 +1426,32 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             return TranslationDashboardDialog(self, profiles, self.repo, self.refresh_translation_progress)
 
         self._show_utility_page("progress", "ความคืบหน้าการแปล", create_dashboard)
+
+    def open_story_planner(self, profile_id):
+        """Show the plan only for the currently selected novel."""
+        from .story_planner_page import StoryPlannerPage
+        if not any(profile.id == profile_id for profile in self.repo.list_profiles()):
+            return
+        self._show_utility_page("story-planner", "แผนการแปล",
+                                lambda: StoryPlannerPage(self.repo, profile_id, self))
+
+    def open_novel_resources(self, profile_id):
+        """Show working files, Context, glossary and workflow for this novel."""
+        from .novel_pages import NovelResourcesPage
+        if not self.profile or self.profile.id != profile_id:
+            return
+        key = "resources:" + profile_id
+        self._show_utility_page(
+            key, "ไฟล์และคำศัพท์", lambda: NovelResourcesPage(self, profile_id, self))
+
+    def open_novel_progress(self, profile_id):
+        """Use confirmed Translator Export events without mixing novel ledgers."""
+        from .novel_pages import NovelProgressPage
+        if not self.profile or self.profile.id != profile_id:
+            return
+        key = "novel-progress:" + profile_id
+        self._show_utility_page(
+            key, "ความคืบหน้า", lambda: NovelProgressPage(self.repo, profile_id, self))
 
     def novel_inspector_dialog(self):
         """Standalone inspector; does not change translation stages."""
@@ -2130,7 +2193,17 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 # Library cards are strictly visual book shelves: title + cover.
                 # Progress and verified information remain stored in profile data.
                 card.setText(profile.name)
-                card.setToolTip('')
+                final_goal = getattr(self, "_progress_goals", None)
+                from .translation_planner import TranslationPlanner
+                final = (TranslationPlanner(self.repo).finish_goal(profile.id) or {}).get("final_chapter")
+                status = _profile_status_label(_profile_status(profile))
+                if type(final) is int and final > 0:
+                    within = len({n for n in completed_chapters(profile) if 1 <= n <= final})
+                    footer = f"{status} · {within}/{final} บท"
+                else:
+                    footer = f"{status} · สำเร็จ {completed_chapter_count(profile)} บท"
+                card.setData(Qt.UserRole + 2, footer)
+                card.setToolTip(f"{profile.name}\n{footer}")
         if self.profile:
             fresh = next((item for item in profiles if item.id == self.profile.id), None)
             if fresh:
@@ -2527,7 +2600,17 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             card = QListWidgetItem(QIcon(pixmap), profile.name)
             card.setData(Qt.UserRole, profile.id)
             card.setData(Qt.UserRole + 1, status)
-            card.setToolTip(profile.name)
+            from .translation_planner import TranslationPlanner
+            final_goal = TranslationPlanner(self.repo).finish_goal(profile.id) or {}
+            last_chapter = final_goal.get("final_chapter")
+            done = completed_chapter_count(profile)
+            if type(last_chapter) is int and last_chapter > 0:
+                done_within = len({n for n in completed_chapters(profile) if 1 <= n <= last_chapter})
+                footnote = f"{_profile_status_label(status)} · {done_within}/{last_chapter} บท"
+            else:
+                footnote = f"{_profile_status_label(status)} · สำเร็จ {done} บท"
+            card.setData(Qt.UserRole + 2, footnote)
+            card.setToolTip(f"{profile.name}\n{footnote}")
             self.profile_cards.addItem(card)
         self._library_cover_cache = updated_cache
 
