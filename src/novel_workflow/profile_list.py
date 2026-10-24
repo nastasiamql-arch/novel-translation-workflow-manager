@@ -217,8 +217,14 @@ class ReorderableProfileList(QListWidget):
         delegate = self.itemDelegate()
         if isinstance(delegate, ProfileItemDelegate):
             desired = delegate.card_size()
+            if self.viewMode() == QListWidget.ListMode:
+                desired.setWidth(max(desired.width(), self.viewport().width() - 4))
             if self.gridSize() != desired:
                 self.setGridSize(desired)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_library_grid_size()
 
     selectionCommitted = Signal(int)
 
