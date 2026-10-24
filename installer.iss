@@ -36,6 +36,11 @@ Source: "dist\NovelWorkflow\*"; DestDir: "{app}"; Flags: ignoreversion recursesu
 ; Only application package metadata, never user documents/settings or all app files.
 Type: filesandordirs; Name: "{app}\_internal\novelworkflow-*.dist-info"
 Type: filesandordirs; Name: "{app}\novelworkflow-*.dist-info"
+; Remove only obsolete AI Web Workspace payloads from previous installed bundles.
+; Never touch per-user profiles, session caches or any other application package.
+Type: filesandordirs; Name: "{app}\_internal\playwright"
+Type: filesandordirs; Name: "{app}\_internal\playwright-*.dist-info"
+Type: filesandordirs; Name: "{app}\_internal\novel_workflow\ai_workspace"
 ; Purge third-party web-downloader/browser packages left by older bundled builds.
 ; All targets are within the application install directory, never user data.
 Type: filesandordirs; Name: "{app}\_internal\selectolax"

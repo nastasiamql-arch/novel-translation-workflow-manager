@@ -2312,11 +2312,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.settings.navigation_collapsed = bool(collapsed)
         self._schedule_workspace_session_save()
 
-    def open_ai_workspace(self):
-        from .ai_workspace.page import AIWorkspacePage
-        self._show_utility_page("ai-workspace", "AI Web Workspace", lambda: AIWorkspacePage(self))
-        self._utility_pages["ai-workspace"].reload()
-
     def navigate(self, key):
         if key == "today":
             self.today_page.refresh()
@@ -2329,14 +2324,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         elif key == "groups": self.groups_dialog()
         elif key == "novel-inspector": self.novel_inspector_dialog()
         elif key == "settings": self.settings_dialog()
-        elif key == "ai-workspace": self.open_ai_workspace()
         self._sync_navigation()
 
     def _sync_navigation(self, *_args):
         page = self.main_pages.currentWidget()
         key = "today" if page is self.today_page else ("library" if page is self.library_page else "workspace")
         if page is self.utility_page:
-            key = {"progress":"progress", "groups":"groups", "settings":"settings", "novel-inspector":"novel-inspector", "ai-workspace":"ai-workspace"}.get(self._active_utility_page, "workspace")
+            key = {"progress":"progress", "groups":"groups", "settings":"settings", "novel-inspector":"novel-inspector"}.get(self._active_utility_page, "workspace")
         self.navigation.select(key)
         # Keep the native window titlebar and menu, without a custom title strip.
         self.brand_toolbar.hide()
@@ -4387,17 +4381,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 event.ignore()
                 return
             self._close_export_reminder_accepted = True
-        ai_page = self._utility_pages.get("ai-workspace")
-        if ai_page is not None:
-            ai_page.shutdown()
-            ai_workers = [getattr(ai_page, "prepare_worker", None), getattr(ai_page, "worker", None)]
-            for ai_worker in ai_workers:
-                if ai_worker is not None and ai_worker.isRunning():
-                    if not getattr(ai_worker, "_close_resume_connected", False):
-                        ai_worker._close_resume_connected = True
-                        ai_worker.finished.connect(lambda: QTimer.singleShot(0, self.close))
-                    event.ignore()
-                    return
         self._automatic_update_timer.stop()
         timer = getattr(self, "_session_save_timer", None)
         if timer is not None:

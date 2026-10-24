@@ -1,5 +1,15 @@
 # Palantir: Novel
 
+## Version 6.0.0 — Restore original workflow
+
+The optional AI Web Workspace / Gemini browser automation added in v5.x was retired.
+Its UI, browser worker, Chrome integration and Playwright dependency are no longer shipped.
+Original multi-chapter translation, COPY STEP, COPY ZIP, Vocabulary, Glossary,
+Translator, Context, Export, Polish History, Planner, Inspector and in-app updates
+remain available. Existing AI jobs and browser profiles in user data are **not deleted**;
+users can archive or remove those private files themselves after reviewing them.
+
+
 ## Translation Planner / Today Dashboard
 
 หน้า **วันนี้** ใช้วางแผนแบบเลือกเอง มีโหมดโฟกัสวันนี้, เป้าหมายรายวัน, แปลจนจบเรื่อง และวันพัก เลือกวันและนิยายได้ล่วงหน้าโดยไม่เปิดนิยายหรือคัดลอกอัตโนมัติ แผนเก็บใน `%LOCALAPPDATA%\NovelWorkflow\translation_planner.json` แยกจาก Profile และเก็บประวัติการแก้แผนเดิม

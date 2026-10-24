@@ -15,7 +15,7 @@ def app():
 def test_navigation_order_and_inspector_route(app):
     nav = NavigationSidebar(False)
     try:
-        assert list(nav.buttons) == ["today", "library", "workspace", "progress", "groups", "novel-inspector", "ai-workspace", "settings"]
+        assert list(nav.buttons) == ["today", "library", "workspace", "progress", "groups", "novel-inspector", "settings"]
         out = []
         nav.selected.connect(out.append)
         nav.buttons["novel-inspector"].click()

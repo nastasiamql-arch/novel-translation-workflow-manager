@@ -15,7 +15,7 @@ function Install-TestBuild([bool]$First, [string]$SetupPath) {
     if ($process.ExitCode -ne 0) { throw "Setup failed: $($process.ExitCode)" }
 }
 
-$previousVersion = '3.20.2'
+$previousVersion = '5.12.0'
 $previousName = "NovelWorkflow-Setup-$previousVersion.exe"
 gh release download "v$previousVersion" --repo nastasiamql-arch/novel-translation-workflow-manager --pattern $previousName --dir $taskRoot
 if ($LASTEXITCODE -ne 0) { throw 'Could not download previous published installer.' }
@@ -26,11 +26,17 @@ $expectedHash = $previousAsset.digest -replace '^sha256:', ''
 if (-not $expectedHash -or (Get-FileHash -LiteralPath $previousInstaller -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) { throw 'Previous installer SHA-256 verification failed.' }
 Install-TestBuild $true $previousInstaller
 $executable = Join-Path $installDir 'NovelWorkflow.exe'
-# Ensure install-over cleanup removes the obsolete downloader, while retaining
-# the new Playwright runtime required by AI Workspace.
+# Upgrade specifically from the released build containing AI Web Workspace.
+# Keep existing downloader cleanup coverage alongside the AI payload removal.
 $legacyDriverDir = Join-Path $installDir '_internal/novel_workflow/downloader'
 New-Item -ItemType Directory -Path $legacyDriverDir -Force | Out-Null
-Set-Content -LiteralPath (Join-Path $legacyDriverDir 'old-browser-driver.test') -Value 'stale playwright' -Encoding UTF8
+Set-Content -LiteralPath (Join-Path $legacyDriverDir 'old-browser-driver.test') -Value 'stale downloader' -Encoding UTF8
+$obsoleteAIPackage = Join-Path $installDir '_internal/novel_workflow/ai_workspace'
+New-Item -ItemType Directory -Path $obsoleteAIPackage -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $obsoleteAIPackage 'obsolete.test') -Value 'legacy AI module' -Encoding UTF8
+$obsoleteAIMetadata = Join-Path $installDir '_internal/playwright-1.55.0.dist-info'
+New-Item -ItemType Directory -Path $obsoleteAIMetadata -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $obsoleteAIMetadata 'METADATA') -Value 'Name: playwright' -Encoding UTF8
 $oldMetadata = @(
     (Join-Path $installDir '_internal/novelworkflow-1.12.0.dist-info'),
     (Join-Path $installDir '_internal/novelworkflow-99.9.9.dist-info'),
@@ -81,7 +87,18 @@ $fixturePython = Join-Path $PSScriptRoot '../.venv/Scripts/python.exe'
 if ($LASTEXITCODE -ne 0) { throw 'Could not create a real Polish History upgrade fixture.' }
 $historyFiles = @(Get-ChildItem -LiteralPath (Join-Path $taskRoot 'Polish History') -File -Recurse | ForEach-Object { $_.FullName })
 $legacySnapshot = (Get-ChildItem -LiteralPath (Join-Path $taskRoot 'Polish History') -Filter 'manifest.json' -Recurse).Directory.FullName
-$preservedFiles = @($profilePath, $settingsPath, $contextPath, $novelPath, $recoveryPath) + $historyFiles
+# Legacy job data, responses and Chrome profile belong to the user, never the installer.
+$oldAIJobs = Join-Path $profileDir 'ai_workspace_jobs.json'
+Set-Content -LiteralPath $oldAIJobs -Value '{"jobs":[{"raw_response":"keep user data"}]}' -Encoding UTF8
+$oldAICache = Join-Path $dataDir 'cache/ai_workspace'
+New-Item -ItemType Directory -Path $oldAICache -Force | Out-Null
+$oldAIResponse = Join-Path $oldAICache 'unexported.raw.txt'
+Set-Content -LiteralPath $oldAIResponse -Value 'preserve unexported response' -Encoding UTF8
+$oldChromeProfile = Join-Path $dataDir 'chrome-ai-profile'
+New-Item -ItemType Directory -Path $oldChromeProfile -Force | Out-Null
+$oldChromeData = Join-Path $oldChromeProfile 'KeepMe.test'
+Set-Content -LiteralPath $oldChromeData -Value 'preserve local Chrome profile' -Encoding UTF8
+$preservedFiles = @($profilePath, $settingsPath, $contextPath, $novelPath, $recoveryPath, $oldAIJobs, $oldAIResponse, $oldChromeData) + $historyFiles
 $preservedHashes = @{}
 foreach ($path in $preservedFiles) { $preservedHashes[$path] = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
 $unrelated = Join-Path $installDir 'user-note.txt'
@@ -110,9 +127,10 @@ foreach ($module in @('selectolax','httpx','httpcore','novel_workflow/downloader
         throw "Obsolete web downloader module remains: $module"
     }
 }
-if (-not (Test-Path -LiteralPath (Join-Path $installDir '_internal/playwright/driver/node.exe')) -or
-    -not (Test-Path -LiteralPath (Join-Path $installDir '_internal/playwright/driver/package/cli.js'))) {
-    throw 'Required AI Workspace Playwright driver missing after installer upgrade.'
+foreach ($obsoletePath in @('_internal/playwright','_internal/playwright-1.55.0.dist-info','_internal/novel_workflow/ai_workspace')) {
+    if (Test-Path -LiteralPath (Join-Path $installDir $obsoletePath)) {
+        throw "Removed AI Workspace component remains after upgrade: $obsoletePath"
+    }
 }
 $metadata = @(Get-ChildItem -LiteralPath (Join-Path $installDir '_internal') -Directory -Filter 'novelworkflow-*.dist-info')
 if ($metadata.Count -ne 1 -or $metadata[0].Name -ne "novelworkflow-$Version.dist-info") { throw 'Incorrect installed metadata.' }

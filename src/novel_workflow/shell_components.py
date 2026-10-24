@@ -154,7 +154,6 @@ class NavigationSidebar(QFrame):
             ('progress', '◷', 'สถิติ'),
             ('groups', '▧', 'กลุ่มนิยาย'),
             ('novel-inspector', '☷', 'ตรวจสอบไฟล์นิยาย'),
-            ('ai-workspace', '◇', 'AI Web Workspace'),
             ('settings', '⚙', 'ตั้งค่า'),
         ]:
             if key == 'settings':

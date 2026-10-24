@@ -22,7 +22,7 @@ local_settings.json
 secrets.json
 **/Polish History/
 
-# AI Web Workspace local browser/session and private generated content
+# Keep legacy browser sessions and generated AI responses private after feature removal
 chrome-ai-profile/
 **/chrome-ai-profile/
 **/ai_workspace_jobs.json

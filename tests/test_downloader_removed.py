@@ -48,7 +48,6 @@ def test_deprecated_downloader_not_in_ui_or_dependencies():
     from novel_workflow.shell_components import NavigationSidebar
     sidebar = NavigationSidebar()
     assert "downloader" not in sidebar.buttons
-    assert set(sidebar.buttons) == {"today", "library", "workspace", "progress", "groups", "settings", "novel-inspector", "ai-workspace"}
-    # Playwright was reintroduced for the isolated AI Web Workspace; downloader stays removed.
-    assert "playwright" in (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert set(sidebar.buttons) == {"today", "library", "workspace", "progress", "groups", "settings", "novel-inspector"}
+    assert "playwright" not in (root / "pyproject.toml").read_text(encoding="utf-8")
     assert "downloader" not in (root / "src/novel_workflow/workspace_window.py").read_text(encoding="utf-8").lower().replace("download_update","").replace("_update_download","").replace("finished_download","")

@@ -26,8 +26,6 @@ jobs:
         run: python tests/ui_smoke.py
       - name: Verify native Windows file clipboard
         run: python tests/windows_clipboard.py
-      - name: Verify real standard Chrome launch on Windows
-        run: python tests/windows_standard_chrome.py
       - name: Run DPI geometry matrix
         shell: pwsh
         run: |
