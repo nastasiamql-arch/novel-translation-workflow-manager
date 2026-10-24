@@ -420,7 +420,7 @@ def test_translator_button_is_hidden_for_unbound_and_other_tabs(tmp_path):
     assert workspace.update_context_button.isHidden()
     assert all(action.text() != "Export" for action in workspace.more_menu.actions())
     assert workspace.update_context_button.text() == "Export"
-    assert workspace.update_context_button.toolTip() == "Export Translator to TXT and update Context"
+    assert workspace.update_context_button.toolTip() == "ส่งออก Translator เป็น TXT และอัปเดต Context"
     window.close()
 
 
