@@ -73,7 +73,9 @@ class ProfileItemDelegate(QStyledItemDelegate):
         self.initStyleOption(surface, index)
         surface.text = ""
         surface.icon = QIcon()
-        super().paint(painter, surface, index)
+        surface.widget = self.parent()
+        if surface.widget is not None:
+            surface.widget.style().drawPrimitive(QStyle.PE_PanelItemViewItem, surface, painter, surface.widget)
         painter.save()
         try:
             painter.setClipRect(option.rect)
