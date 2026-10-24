@@ -101,3 +101,31 @@ def test_story_planner_page_is_bound_to_one_novel(tmp_path):
         assert page.table.rowCount() == 3
     finally:
         page.close()
+
+
+def test_manual_future_target_is_reserved_from_automatic_distribution(tmp_path):
+    repo = ProjectRepository(tmp_path)
+    novel = NovelProfile(name="เรื่องทดสอบ")
+    repo.save_profile(novel)
+    planner = TranslationPlanner(repo)
+    planner.save_story_schedule(novel.id, "duration", final_chapter=90,
+                                start_day="2026-10-26", duration_days=3)
+    planner.override_story_day(novel.id, "2026-10-28", 80)
+    rows = planner.story_day_rows(novel.id, "2026-10-26")["rows"]
+    assert [row["target"] for row in rows] == [5, 5, 80]
+    assert sum(row["target"] for row in rows) == 90
+
+
+def test_manual_positive_target_on_weekly_rest_day_is_working_day(tmp_path):
+    repo = ProjectRepository(tmp_path)
+    novel = NovelProfile(name="Rest override")
+    repo.save_profile(novel)
+    planner = TranslationPlanner(repo)
+    planner.save_story_schedule(novel.id, "duration", final_chapter=12,
+                                start_day="2026-10-24", duration_days=2,
+                                rest_weekdays=(5, 6))
+    planner.override_story_day(novel.id, "2026-10-24", 4)
+    rows = planner.story_day_rows(novel.id, "2026-10-24")["rows"]
+    assert [row["target"] for row in rows] == [4, 0, 8]
+    assert [row["rest"] for row in rows] == [False, True, False]
+    assert sum(row["target"] for row in rows) == 12
