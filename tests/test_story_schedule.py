@@ -54,3 +54,50 @@ def test_invalid_schedule_does_not_write(tmp_path):
         planner.save_story_schedule(p.id, "deadline", final_chapter=10,
                                     start_day="2026-10-26", deadline="2026-10-25")
     assert planner.story_schedule(p.id) is None
+
+
+def test_today_cards_open_exact_novel(tmp_path):
+    from PySide6.QtWidgets import QApplication, QPushButton, QFrame
+    from novel_workflow.translation_planner_page import TodayPage
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path)
+    a, b = NovelProfile(name="เรื่อง A"), NovelProfile(name="เรื่อง B")
+    repo.save_profile(a)
+    repo.save_profile(b)
+    planner = TranslationPlanner(repo)
+    planner.save_story_schedule(a.id, "duration", final_chapter=12,
+                                start_day=date.today(), duration_days=3)
+    planner.save_story_schedule(b.id, "daily", final_chapter=20,
+                                start_day=date.today(), daily_target=2)
+    page = TodayPage(repo)
+    opened = []
+    page.openNovel.connect(opened.append)
+    try:
+        cards = page.story_cards.findChildren(QFrame, "plannerStoryCard")
+        assert {card.property("profileId") for card in cards} == {a.id, b.id}
+        for card in cards:
+            button = card.findChild(QPushButton)
+            button.click()
+            assert opened[-1] == card.property("profileId")
+    finally:
+        page.close()
+
+
+def test_story_planner_page_is_bound_to_one_novel(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    from novel_workflow.story_planner_page import StoryPlannerPage
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path)
+    a, b = NovelProfile(name="A"), NovelProfile(name="B")
+    repo.save_profile(a)
+    repo.save_profile(b)
+    page = StoryPlannerPage(repo, a.id)
+    try:
+        page.final.setValue(90)
+        page.days.setValue(3)
+        page._save()
+        assert TranslationPlanner(repo).story_schedule(a.id)["final_chapter"] == 90
+        assert TranslationPlanner(repo).story_schedule(b.id) is None
+        assert page.table.rowCount() == 3
+    finally:
+        page.close()
