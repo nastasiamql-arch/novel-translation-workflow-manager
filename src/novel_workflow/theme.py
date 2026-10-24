@@ -175,7 +175,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QPushButton#progressAction:hover {{ background: {c['hover']}; }}
     QFrame#storyStrip, QFrame#modeStrip, QFrame#bottomBar, QFrame#goalPanel,
     QFrame#metricCard, QFrame#editorPanel,
-    QFrame#plannerStoryCard { background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 12px; padding: 8px; }
+    QFrame#plannerStoryCard {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 12px; padding: 8px; }}
     QFrame#settingsCard, QFrame#libraryEmptyState {{ background: transparent; border: 0; border-radius: 0; }}
     QFrame#settingsCard, QFrame#metricCard {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 10px; }}
     QFrame#explorerPanel, QFrame#workflowSidebar, QFrame#editorHeader,
