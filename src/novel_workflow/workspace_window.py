@@ -475,6 +475,7 @@ class WorkspacePage(QWidget):
             "คืนสถานะย้อนแปล",
             lambda: self.owner.undo_context_retranslation(self.profile_id),
         )
+        self.more_menu.addAction("แผนการแปล", lambda: self.owner.open_story_planner(self.profile_id))
         self.more_menu.addAction("เปิดรายการของเรื่อง", self.owner.launch_profile)
         self.more_menu.addAction("History / กู้ไฟล์", self.show_recovery)
         more = QToolButton(); more.setText("..."); more.setAccessibleName("คำสั่งเพิ่มเติม")
@@ -1345,7 +1346,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.utility_stack.addWidget(page)
         elif key == "progress":
             page.set_profiles(self.ps_list)
-        elif key in {"groups", "launcher", "file-manager", "preview"}:
+        elif key in {"groups", "launcher", "file-manager", "preview", "story-planner"}:
             self.utility_stack.removeWidget(page)
             page.deleteLater()
             page = factory()
@@ -1389,6 +1390,14 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             return TranslationDashboardDialog(self, profiles, self.repo, self.refresh_translation_progress)
 
         self._show_utility_page("progress", "ความคืบหน้าการแปล", create_dashboard)
+
+    def open_story_planner(self, profile_id):
+        """Show the plan only for the currently selected novel."""
+        from .story_planner_page import StoryPlannerPage
+        if not any(profile.id == profile_id for profile in self.repo.list_profiles()):
+            return
+        self._show_utility_page("story-planner", "แผนการแปล",
+                                lambda: StoryPlannerPage(self.repo, profile_id, self))
 
     def novel_inspector_dialog(self):
         """Standalone inspector; does not change translation stages."""

@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, Signal, QDate
 from PySide6.QtGui import QPixmap
 from pathlib import Path
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QSpinBox, QDateEdit, QProgressBar, QFormLayout, QGroupBox, QMessageBox)
+    QComboBox, QSpinBox, QDateEdit, QProgressBar, QFormLayout, QGroupBox, QMessageBox, QScrollArea, QFrame)
 from .translation_planner import TranslationPlanner
 
 
@@ -81,7 +81,12 @@ class TodayPage(QWidget):
         self.weekly = QLabel()
         self.weekly.setWordWrap(True)
         layout.addWidget(self.weekly)
-        layout.addStretch()
+        self.story_cards = QWidget()
+        self.story_cards_layout = QVBoxLayout(self.story_cards)
+        self.story_scroll = QScrollArea()
+        self.story_scroll.setWidgetResizable(True)
+        self.story_scroll.setWidget(self.story_cards)
+        layout.addWidget(self.story_scroll, 1)
         self._selected_profile_id = None
         self.refresh()
 
@@ -231,4 +236,67 @@ class TodayPage(QWidget):
                     name += " · วันพัก"
                 rows.append(f"{day}  ·  {name}")
         self.weekly.setText("แผน 7 วันถัดไป\n" + ("\n".join(rows) if rows else "ยังไม่มีแผนล่วงหน้า"))
+        self._refresh_cards(profiles, today)
         self._update_fields()
+
+    def _refresh_cards(self, profiles, today):
+        while self.story_cards_layout.count():
+            item = self.story_cards_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        total_target = total_done = count = 0
+        for profile in profiles:
+            scheduled = self.planner.story_day_rows(profile.id, today)
+            if scheduled:
+                day = next((row for row in scheduled["rows"] if row["date"] == today.isoformat()), None)
+                target = day["target"] if day else 0
+                actual = day["actual"] if day else 0
+                status = day["status"] if day else "ไม่มีแผนวันนี้"
+            else:
+                info = self.planner.summary(today, profiles, profile_id=profile.id)
+                if info["status"] == "empty":
+                    continue
+                target = info["plan"].get("target_chapters") or 0
+                actual = info.get("today_count", 0)
+                status = "วันพัก" if info["status"] == "rest" else ("ตามแผน" if actual >= target and target else "กำลังแปล")
+            count += 1
+            total_target += target
+            total_done += actual
+            card = QFrame()
+            card.setObjectName("plannerStoryCard")
+            card.setProperty("profileId", profile.id)
+            inner = QHBoxLayout(card)
+            cover = QLabel("▤")
+            cover.setFixedSize(48, 64)
+            cover.setAlignment(Qt.AlignCenter)
+            if profile.cover_image_path:
+                try:
+                    cover_path = self.repo.resolve_project_path(profile.id, profile.cover_image_path)
+                    pixmap = QPixmap(str(cover_path))
+                    if not pixmap.isNull():
+                        cover.setPixmap(pixmap.scaled(cover.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                except (OSError, ValueError):
+                    pass
+            inner.addWidget(cover)
+            details = QVBoxLayout()
+            name = QLabel(profile.name)
+            name.setWordWrap(True)
+            name.setObjectName("sectionHeading")
+            details.addWidget(name)
+            info_label = QLabel(f"เป้าหมาย {target} · สำเร็จจริง {actual} · เหลือ {max(0, target - actual)} บท · {status}")
+            info_label.setWordWrap(True)
+            details.addWidget(info_label)
+            if target:
+                bar = QProgressBar()
+                bar.setValue(min(100, round(100 * actual / target)))
+                details.addWidget(bar)
+            inner.addLayout(details, 1)
+            button = QPushButton("เปิดนิยาย")
+            button.setProperty("profileId", profile.id)
+            button.clicked.connect(lambda _checked=False, pid=profile.id: self.openNovel.emit(pid))
+            inner.addWidget(button)
+            self.story_cards_layout.addWidget(card)
+        if not count:
+            self.story_cards_layout.addWidget(QLabel("ยังไม่มีแผนของนิยาย"))
+        self.story_cards_layout.addStretch()
+        self.heading.setText(f"วันนี้ — {today.strftime('%d/%m/%Y')} · {count} เรื่อง · เป้า {total_target} บท · สำเร็จ {total_done} บท")
