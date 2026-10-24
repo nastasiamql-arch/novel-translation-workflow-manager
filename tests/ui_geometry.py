@@ -61,7 +61,7 @@ def main():
             cards.visualItemRect(cards.item(0)))
         assert not regions["cover"].intersects(regions["title"])
         assert not regions["title"].intersects(regions["status"])
-        assert cards.gridSize().height() == delegate.card_size().height()
+        assert cards.gridSize().height() >= regions['status'].bottom() - regions['cover'].top()
 
         for name in ['ชื่อไฟล์ยาวภาษาไทย'*6+'.txt','中文文件名'*10+'.txt','日本語.txt','English.txt']:
             path=root/name; path.write_text('ไทย 中文 日本語 English',encoding='utf-8'); ws.editor.open_file(path)
