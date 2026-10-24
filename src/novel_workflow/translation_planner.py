@@ -49,33 +49,72 @@ class TranslationPlanner:
         self.path = Path(repository.root) / "translation_planner.json"
 
     def _load(self):
+        """Normalize legacy days in memory; persist migration only when editing."""
         data = read_json(self.path, {})
         if not isinstance(data, dict):
             raise ValueError("Invalid planner data")
         if not isinstance(data.get("days", {}), dict) or not isinstance(data.get("finish_goals", {}), dict):
             raise ValueError("Invalid planner collections")
+        days = data.setdefault("days", {})
+        for day, item in list(days.items()):
+            _date(day)
+            if not isinstance(item, dict):
+                raise ValueError("Invalid planner day")
+            if "plans" in item:
+                if not isinstance(item["plans"], dict) or not all(
+                    isinstance(key, str) and isinstance(plan, dict)
+                    for key, plan in item["plans"].items()
+                ):
+                    raise ValueError("Invalid per-novel plans")
+            elif "plan_type" in item:
+                key = item.get("profile_id") or "__global__"
+                if not isinstance(key, str):
+                    raise ValueError("Invalid legacy plan profile")
+                days[day] = {"plans": {key: item}}
+            else:
+                raise ValueError("Unrecognized planner day structure")
         return data
 
-    def get(self, day: str | date):
-        value = self._load().get("days", {}).get(_date(day))
-        return dict(value) if isinstance(value, dict) else None
+    def plans_for_day(self, day: str | date):
+        bucket = self._load().get("days", {}).get(_date(day), {})
+        return [dict(item) for item in bucket.get("plans", {}).values()]
 
-    def active_for_day(self, day: str | date):
-        """A finish goal carries across dates unless a new explicit plan overrides it."""
+    def get(self, day: str | date, profile_id: str | None = None):
+        bucket = self._load().get("days", {}).get(_date(day), {})
+        plans = bucket.get("plans", {})
+        plan = plans.get(profile_id) if profile_id is not None else next(iter(plans.values()), None)
+        return dict(plan) if isinstance(plan, dict) else None
+
+    def active_for_day(self, day: str | date, profile_id: str | None = None):
+        """A finish goal carries for its novel even if other novels have plans."""
         local_date = _date(day)
         data = self._load()
         days = data.get("days", {})
-        explicit = days.get(local_date)
+        plans = days.get(local_date, {}).get("plans", {})
+        if profile_id is None:
+            explicit = next(iter(plans.values()), None)
+        else:
+            explicit = plans.get(profile_id)
+            if explicit is None:
+                global_rest = plans.get("__global__")
+                if isinstance(global_rest, dict) and global_rest.get("plan_type") == "rest":
+                    explicit = global_rest
         if isinstance(explicit, dict):
             return dict(explicit)
-        # Never make a newer finish goal active on an earlier date.
-        eligible = ((key, value) for key, value in days.items()
-                    if isinstance(key, str) and key <= local_date
-                    and isinstance(value, dict) and value.get("plan_type") == "finish")
-        for _key, value in sorted(eligible, key=lambda pair: pair[0], reverse=True):
-            goal = data.get("finish_goals", {}).get(value.get("profile_id"), {})
+        eligible = []
+        for key, bucket in days.items():
+            if key > local_date:
+                continue
+            for plan in bucket.get("plans", {}).values():
+                if plan.get("plan_type") != "finish":
+                    continue
+                if profile_id is not None and plan.get("profile_id") != profile_id:
+                    continue
+                eligible.append((key, plan))
+        for _key, plan in sorted(eligible, key=lambda pair: pair[0], reverse=True):
+            goal = data.get("finish_goals", {}).get(plan.get("profile_id"), {})
             if isinstance(goal, dict) and goal.get("confirmed_finished") is not True:
-                return {**value, "carried_from": value.get("local_date")}
+                return {**plan, "carried_from": plan.get("local_date")}
         return None
 
     def save(self, day: str | date, profile_id: str | None, plan_type: str,
@@ -83,19 +122,21 @@ class TranslationPlanner:
         local_date = _date(day)
         if plan_type not in PLAN_TYPES:
             raise ValueError("Unknown plan type")
-        if plan_type != "rest":
+        # None remains a supported global rest for migrated old documents.
+        if plan_type != "rest" or profile_id is not None:
             known = {profile.id for profile in self.repo.list_profiles()}
             if not profile_id or profile_id not in known:
                 raise ValueError("Select an existing novel")
-        else:
-            profile_id = None
         target = _positive(target_chapters) if plan_type == "daily" else None
         final = _positive(final_chapter, optional=True) if plan_type == "finish" else None
-        # Serialize edits with other repository writes, protecting concurrent UI jobs.
         with self.repo.profile_lock:
             data = self._load()
+            data["schema_version"] = 2
             days = data.setdefault("days", {})
-            previous = days.get(local_date)
+            bucket = days.setdefault(local_date, {"plans": {}})
+            plans = bucket["plans"]
+            key = profile_id or "__global__"
+            previous = plans.get(key)
             previous = previous if isinstance(previous, dict) else {}
             now = _now()
             history = list(previous.get("history", [])) if isinstance(previous.get("history", []), list) else []
@@ -104,16 +145,16 @@ class TranslationPlanner:
                 "plan_type": plan_type, "target_chapters": target,
                 "final_chapter": final,
             }
-            if previous and any(previous.get(key) != value for key, value in fields.items()):
+            if previous and any(previous.get(field) != value for field, value in fields.items()):
                 history.append({"changed_at": now, "previous": {
-                    key: previous.get(key) for key in fields
+                    field: previous.get(field) for field in fields
                 }})
             plan = {**previous, **fields}
             plan.setdefault("id", uuid4().hex)
             plan.setdefault("created_at", now)
             plan["updated_at"] = now
             plan["history"] = history
-            days[local_date] = plan
+            plans[key] = plan
             if plan_type == "finish":
                 goals = data.setdefault("finish_goals", {})
                 previous_goal = goals.get(profile_id, {})
@@ -147,9 +188,16 @@ class TranslationPlanner:
             for day in (start + timedelta(days=offset) for offset in range(7))
         ]
 
-    def summary(self, day: str | date, profiles=None):
+    def week_all(self, first_day: date | None = None):
+        start = first_day or date.today()
+        return [
+            (day.isoformat(), self.plans_for_day(day))
+            for day in (start + timedelta(days=offset) for offset in range(7))
+        ]
+
+    def summary(self, day: str | date, profiles=None, *, profile_id=None):
         local_date = _date(day)
-        plan = self.active_for_day(local_date)
+        plan = self.active_for_day(local_date, profile_id=profile_id)
         if plan is None:
             return {"status": "empty", "day": local_date}
         if plan.get("plan_type") == "rest":
