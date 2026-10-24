@@ -1,48 +1,75 @@
 """Desktop dragging shared by novel covers and settings rows."""
 from PySide6.QtCore import Qt, Signal, QPoint, QTimer, QRect, QSize
-from PySide6.QtGui import QDrag, QPainter, QPen, QPalette, QIcon, QFontMetrics, QTextLayout, QTextOption
+from PySide6.QtGui import QDrag, QPainter, QPen, QPalette, QIcon, QColor, QFontMetrics, QTextLayout, QTextOption
 from PySide6.QtWidgets import QListWidget, QApplication, QAbstractItemView, QStyledItemDelegate, QStyle, QStyleOptionViewItem
 
 
 class ProfileItemDelegate(QStyledItemDelegate):
-    """Use exclusive cover/title/status rectangles for icon-mode library cards."""
+    """Paint one gallery/list item; every field owns a non-overlapping region."""
 
     MAX_TITLE_LINES = 3
+    CARD_WIDTH = 250
+    COVER_SIZE = QSize(222, 296)
+    LIST_HEIGHT = 112
 
     def _library(self):
         return self.parent() is not None and self.parent().objectName() == "novelLibrary"
 
+    def _list_mode(self):
+        return self._library() and self.parent().viewMode() == QListWidget.ListMode
+
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
+        # A painted focus outline is drawn by the library item background.
+        # Other legacy profile lists keep their existing focus behaviour.
         option.state &= ~QStyle.State_HasFocus
 
     def card_size(self):
         view = self.parent()
+        if self._list_mode():
+            return QSize(self.CARD_WIDTH, self.LIST_HEIGHT)
         if view is None:
-            return QSize(210, 310)
-        height = (12 + view.iconSize().height() + 10
-                  + self.MAX_TITLE_LINES * (view.fontMetrics().lineSpacing() + 5)
-                  + 8 + view.fontMetrics().height() + 7 + 15)
-        return QSize(max(210, view.iconSize().width() + 24), height)
+            return QSize(self.CARD_WIDTH, 460)
+        metrics = view.fontMetrics()
+        cover = view.iconSize()
+        # Use actual font metrics, not a fixed guessed title rectangle height.
+        title_height = self.MAX_TITLE_LINES * (metrics.lineSpacing() + 5)
+        height = 14 + cover.height() + 14 + title_height + 10
+        height += (metrics.lineSpacing() + 7) * 2 + 22
+        return QSize(max(self.CARD_WIDTH, cover.width() + 28), height)
 
     def sizeHint(self, option, index):
         if self._library():
+            if self._list_mode():
+                return QSize(max(self.CARD_WIDTH, option.rect.width()), self.LIST_HEIGHT)
             return self.card_size()
         return super().sizeHint(option, index)
 
     def card_rects(self, item_rect, metrics=None):
         view = self.parent()
         metrics = metrics or view.fontMetrics()
+        if self._list_mode():
+            cover = QRect(item_rect.left() + 13, item_rect.top() + 12, 65, 88)
+            x = cover.right() + 17
+            width = max(0, item_rect.right() - 16 - x)
+            title = QRect(x, item_rect.top() + 13, width, metrics.lineSpacing() + 9)
+            status = QRect(x, title.bottom() + 6, width, metrics.lineSpacing() + 4)
+            progress = QRect(x, status.bottom() + 5, width, metrics.lineSpacing() + 4)
+            return {"cover": cover, "title": title, "status": status,
+                    "progress": progress, "bar": QRect()}
         icon = view.iconSize()
         cover = QRect(item_rect.center().x() - icon.width() // 2,
-                      item_rect.top() + 12, icon.width(), icon.height())
-        status_height = metrics.height() + 7
-        status = QRect(item_rect.left() + 12, item_rect.bottom() - 12 - status_height,
-                       item_rect.width() - 24, status_height)
-        title_top = cover.bottom() + 11
-        title = QRect(item_rect.left() + 12, title_top,
-                      item_rect.width() - 24, max(0, status.top() - 8 - title_top))
-        return {"cover": cover, "title": title, "status": status}
+                      item_rect.top() + 14, icon.width(), icon.height())
+        title_top = cover.bottom() + 15
+        title = QRect(item_rect.left() + 14, title_top, item_rect.width() - 28,
+                      self.MAX_TITLE_LINES * (metrics.lineSpacing() + 5))
+        status = QRect(title.left(), title.bottom() + 11,
+                       title.width(), metrics.lineSpacing() + 5)
+        progress = QRect(title.left(), status.bottom() + 9,
+                         title.width(), metrics.lineSpacing() + 5)
+        bar = QRect(title.left(), progress.bottom() + 6, title.width(), 4)
+        return {"cover": cover, "title": title, "status": status,
+                "progress": progress, "bar": bar}
 
     @staticmethod
     def title_lines(text, font, width):
@@ -67,15 +94,14 @@ class ProfileItemDelegate(QStyledItemDelegate):
         if not self._library():
             super().paint(painter, option, index)
             return
-        # Draw the styled item surface ONLY. Standard text/icon painting would
-        # place Qt's wrapped title in the same space as our status footer.
         surface = QStyleOptionViewItem(option)
         self.initStyleOption(surface, index)
         surface.text = ""
         surface.icon = QIcon()
         surface.widget = self.parent()
         if surface.widget is not None:
-            surface.widget.style().drawPrimitive(QStyle.PE_PanelItemViewItem, surface, painter, surface.widget)
+            surface.widget.style().drawPrimitive(
+                QStyle.PE_PanelItemViewItem, surface, painter, surface.widget)
         painter.save()
         try:
             painter.setClipRect(option.rect)
@@ -83,40 +109,68 @@ class ProfileItemDelegate(QStyledItemDelegate):
             regions = self.card_rects(option.rect, metrics)
             icon = index.data(Qt.DecorationRole)
             if isinstance(icon, QIcon) and not icon.isNull():
+                # QIcon retains scaled pixmaps: hover never reopens a cover file.
                 pixmap = icon.pixmap(regions["cover"].size())
                 painter.drawPixmap(regions["cover"].topLeft(), pixmap)
             painter.setFont(option.font)
             painter.setPen(option.palette.color(QPalette.Text))
-            lines = self.title_lines(index.data(Qt.DisplayRole) or "", option.font,
-                                     regions["title"].width())
-            line_step = metrics.lineSpacing() + 5
             title = regions["title"]
+            lines = self.title_lines(index.data(Qt.DisplayRole) or "", option.font,
+                                     title.width())
+            line_step = metrics.lineSpacing() + 5
+            visible = 1 if self._list_mode() else min(
+                self.MAX_TITLE_LINES, max(1, title.height() // max(1, line_step)))
             painter.save()
             painter.setClipRect(title)
-            # Qt may apply a larger theme font after the initial grid sizing.
-            # Only draw complete lines and elide the actual final visible line.
-            visible_lines = max(1, min(self.MAX_TITLE_LINES,
-                                      title.height() // max(1, line_step)))
-            for number, line in enumerate(lines[:visible_lines]):
-                if number == visible_lines - 1 and len(lines) > visible_lines:
-                    line = metrics.elidedText("".join(lines[number:]), Qt.ElideRight, title.width())
+            for number, line in enumerate(lines[:visible]):
+                if number == visible - 1 and len(lines) > visible:
+                    line = metrics.elidedText("".join(lines[number:]), Qt.ElideRight,
+                                              title.width())
                 bounds = QRect(title.left(), title.top() + number * line_step,
                                title.width(), line_step)
-                painter.drawText(bounds, Qt.AlignLeft | Qt.AlignVCenter | Qt.TextSingleLine, line)
-            painter.restore()
-            footer = index.data(Qt.UserRole + 2)
-            if footer:
-                small = option.font
-                if small.pointSizeF() > 0:
-                    small.setPointSizeF(max(8, small.pointSizeF() - 1))
-                painter.setFont(small)
-                footer_text = QFontMetrics(small).elidedText(
-                    str(footer), Qt.ElideRight, regions["status"].width())
-                painter.drawText(regions["status"], Qt.AlignLeft | Qt.AlignVCenter |
-                                 Qt.TextSingleLine, footer_text)
-        finally:
+                painter.drawText(bounds, Qt.AlignLeft | Qt.AlignVCenter |
+                                 Qt.TextSingleLine, line)
             painter.restore()
 
+            from .theme import theme_colors
+            dark = self.parent().palette().color(QPalette.Window).lightness() < 128
+            colors = theme_colors("Dark" if dark else "Light")
+            status = str(index.data(Qt.UserRole + 1) or "translating")
+            label = {"translating": "กำลังแปล", "paused": "พักแปล",
+                     "caught_up": "ชนต้นฉบับแล้ว",
+                     "checking_web": "กำลังเช็กกับเว็บ"}.get(status, "กำลังแปล")
+            color_token = {"translating": "success", "paused": "warning",
+                           "caught_up": "accent", "checking_web": "warning"}.get(
+                               status, "success")
+            status_rect = regions["status"]
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(colors[color_token]))
+            dot_y = status_rect.center().y()
+            painter.drawEllipse(QRect(status_rect.left(), dot_y - 4, 8, 8))
+            painter.setPen(option.palette.color(QPalette.Text))
+            painter.drawText(status_rect.adjusted(15, 0, 0, 0),
+                             Qt.AlignLeft | Qt.AlignVCenter | Qt.TextSingleLine,
+                             label)
+            progress_text = str(index.data(Qt.UserRole + 3) or "")
+            progress_rect = regions["progress"]
+            painter.setPen(QColor(colors["secondary"]))
+            painter.drawText(progress_rect, Qt.AlignLeft | Qt.AlignVCenter |
+                             Qt.TextSingleLine,
+                             metrics.elidedText(progress_text, Qt.ElideRight,
+                                                progress_rect.width()))
+            fraction = index.data(Qt.UserRole + 4)
+            bar = regions["bar"]
+            if fraction is not None and bar.isValid() and not bar.isEmpty():
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(colors["surface2"]))
+                painter.drawRoundedRect(bar, 2, 2)
+                painter.setBrush(QColor(colors["accent"]))
+                filled = QRect(bar)
+                filled.setWidth(round(bar.width() * max(0.0, min(1.0, float(fraction)))))
+                if filled.width() > 0:
+                    painter.drawRoundedRect(filled, 2, 2)
+        finally:
+            painter.restore()
 
 class ReorderableProfileList(QListWidget):
     """Profile list with native click-and-drag reordering."""
@@ -141,6 +195,21 @@ class ReorderableProfileList(QListWidget):
         self._edge_scroll.setInterval(16)
         self._edge_scroll.timeout.connect(self._scroll_drag_edge)
         self.setItemDelegate(ProfileItemDelegate(self))
+
+    def set_library_view(self, mode):
+        """Switch presentation only; model items and their persisted IDs stay put."""
+        if self.objectName() != "novelLibrary":
+            return
+        gallery = mode != "list"
+        self.setViewMode(QListWidget.IconMode if gallery else QListWidget.ListMode)
+        self.setFlow(QListWidget.LeftToRight if gallery else QListWidget.TopToBottom)
+        self.setWrapping(gallery)
+        self.setResizeMode(QListWidget.Adjust)
+        self.setMovement(QListWidget.Static)
+        self.setGridSize(QSize())
+        self.setSpacing(18 if gallery else 9)
+        self._update_library_grid_size()
+        self.doItemsLayout()
 
     def _update_library_grid_size(self):
         if self.objectName() != "novelLibrary":
@@ -261,26 +330,39 @@ class ReorderableProfileList(QListWidget):
             painter.setPen(QPen(color,2));painter.drawLine(*self._marker);painter.end()
 
     def dropEvent(self, event):
-        # Explicit model order also works in IconMode; native QListWidget moves
-        # can otherwise move grid positions without changing the stored order.
+        """Reorder visible slots without changing hidden profiles' relative slots."""
         source = next((i for i in range(self.count())
                        if self.item(i).data(Qt.UserRole) == self._drag_profile_id), -1)
-        if self._drag_profile_id is None or source < 0:
+        if self._drag_profile_id is None or source < 0 or self.item(source).isHidden():
             event.ignore()
+            self._clear_drag_target()
             return
-        target = self._drop_row(event.position().toPoint())
-        target -= int(source < target)
-        target = max(0, min(target, self.count()-1))
-        if source != target:
+        visible = [i for i in range(self.count()) if not self.item(i).isHidden()]
+        insertion = self._drop_row(event.position().toPoint())
+        destination = sum(i < insertion for i in visible)
+        origin = visible.index(source)
+        if origin < destination:
+            destination -= 1
+        destination = max(0, min(destination, len(visible) - 1))
+        if origin != destination:
+            items = [self.item(i) for i in range(self.count())]
+            ordered = [items[i] for i in visible]
+            moved = ordered.pop(origin)
+            ordered.insert(destination, moved)
+            for slot, item in zip(visible, ordered):
+                items[slot] = item
             previous = self.blockSignals(True)
             try:
-                item = self.takeItem(source)
-                self.insertItem(target, item)
-                self.setCurrentItem(item)
+                for i in range(self.count() - 1, -1, -1):
+                    self.takeItem(i)
+                for item in items:
+                    self.addItem(item)
+                self.setCurrentItem(moved)
                 self.doItemsLayout()
             finally:
                 self.blockSignals(previous)
-            self.orderChanged.emit([self.item(i).data(Qt.UserRole) for i in range(self.count())])
+            self.orderChanged.emit([self.item(i).data(Qt.UserRole)
+                                    for i in range(self.count())])
         event.setDropAction(Qt.MoveAction)
         event.accept()
         self._clear_drag_target()

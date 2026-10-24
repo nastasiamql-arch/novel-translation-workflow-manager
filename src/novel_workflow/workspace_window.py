@@ -2595,8 +2595,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             else:
                 pixmap = QPixmap(str(candidate))
                 if not pixmap.isNull():
-                    pixmap = pixmap.scaled(156, 208, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                    pixmap = pixmap.copy((pixmap.width()-156)//2, (pixmap.height()-208)//2, 156, 208)
+                    pixmap = pixmap.scaled(222, 296, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                    pixmap = pixmap.copy((pixmap.width()-222)//2, (pixmap.height()-296)//2, 222, 296)
             updated_cache[profile.id] = (signature, pixmap)
             status = _profile_status(profile)
             card = QListWidgetItem(QIcon(pixmap), profile.name)
@@ -2606,12 +2606,17 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             final_goal = TranslationPlanner(self.repo).finish_goal(profile.id) or {}
             last_chapter = final_goal.get("final_chapter")
             done = completed_chapter_count(profile)
+            fraction = None
             if type(last_chapter) is int and last_chapter > 0:
                 done_within = len({n for n in completed_chapters(profile) if 1 <= n <= last_chapter})
-                footnote = f"{_profile_status_label(status)} · {done_within}/{last_chapter} บท"
+                progress_text = f"แปลสำเร็จ {done_within} / {last_chapter} บท"
+                fraction = done_within / last_chapter
             else:
-                footnote = f"{_profile_status_label(status)} · สำเร็จ {done} บท"
+                progress_text = f"แปลสำเร็จ {done} บท"
+            footnote = f"{_profile_status_label(status)} · {progress_text}"
             card.setData(Qt.UserRole + 2, footnote)
+            card.setData(Qt.UserRole + 3, progress_text)
+            card.setData(Qt.UserRole + 4, fraction)
             card.setToolTip(f"{profile.name}\n{footnote}")
             card.setData(Qt.AccessibleDescriptionRole, f"{profile.name}\n{footnote}")
             self.profile_cards.addItem(card)
@@ -2671,13 +2676,25 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             item.setHidden(not matches)
             visible += int(matches)
         self.profile_cards.setVisible(visible > 0)
-        self.library_empty_label.setText(
-            f"ยังไม่มีนิยายในหมวด{_profile_status_label(selected_status)}"
-            if not query and group_id is None else "ไม่พบนิยายที่ตรงกับตัวกรอง"
-        )
-        self.library_empty_label.setVisible(visible == 0)
+        self.library_section_title.setText(_profile_status_label(selected_status))
+        self.library_section_count.setText(f"{visible} เรื่อง")
+        if not self.ps_list:
+            empty_title = "ยังไม่มีนิยายในคลัง"
+            empty_hint = "เพิ่มนิยายเรื่องแรกเพื่อเริ่มจัดการงานแปล"
+        elif query or group_id is not None:
+            empty_title = "ไม่พบนิยายที่ตรงกับคำค้นหา" if query else "ไม่พบนิยายในกลุ่มนี้"
+            empty_hint = "ลองเปลี่ยนคำค้นหาหรือตัวกรอง"
+        else:
+            empty_title = "ยังไม่มีนิยายในหมวดนี้"
+            empty_hint = "เลือกหมวดอื่นหรือเพิ่มนิยายใหม่"
+        self.library_empty_label.setText(empty_title)
+        self.library_empty_hint.setText(empty_hint)
+        self.library_empty_action.setText("ล้างคำค้นหา" if query else "＋ เพิ่มนิยาย")
+        self.library_empty_box.setVisible(visible == 0)
 
     def _open_profile_card(self, item):
+        if item is None:
+            return
         profile_id = item.data(Qt.UserRole)
         index = next((i for i, profile in enumerate(self.ps_list) if profile.id == profile_id), -1)
         if index >= 0:

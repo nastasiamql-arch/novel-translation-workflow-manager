@@ -288,6 +288,7 @@ class AppSettings:
     editor_positions: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
     navigation_width: int = 180
     navigation_collapsed: bool = False
+    library_view_mode: str = "gallery"
     sidebar_width: int = 290
     sidebar_visible: bool = True
     editor_font_size: float = 11.0
