@@ -93,8 +93,12 @@ class ProfileItemDelegate(QStyledItemDelegate):
             title = regions["title"]
             painter.save()
             painter.setClipRect(title)
-            for number, line in enumerate(lines[:self.MAX_TITLE_LINES]):
-                if number == self.MAX_TITLE_LINES - 1 and len(lines) > self.MAX_TITLE_LINES:
+            # Qt may apply a larger theme font after the initial grid sizing.
+            # Only draw complete lines and elide the actual final visible line.
+            visible_lines = max(1, min(self.MAX_TITLE_LINES,
+                                      title.height() // max(1, line_step)))
+            for number, line in enumerate(lines[:visible_lines]):
+                if number == visible_lines - 1 and len(lines) > visible_lines:
                     line = metrics.elidedText("".join(lines[number:]), Qt.ElideRight, title.width())
                 bounds = QRect(title.left(), title.top() + number * line_step,
                                title.width(), line_step)
