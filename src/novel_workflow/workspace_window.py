@@ -1356,6 +1356,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.utility_stack.setCurrentWidget(page)
         self._active_utility_page = key
         self.main_pages.setCurrentWidget(self.utility_page)
+        self._sync_navigation()
 
     def return_from_utility_page(self):
         if self._settings_page_state:
