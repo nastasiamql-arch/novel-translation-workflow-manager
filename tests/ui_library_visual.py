@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFontDatabase, QPainter, QPixmap
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QListWidget, QPushButton
 
 from novel_workflow.main import _configure_font
 from novel_workflow.models import NovelProfile
@@ -40,17 +40,16 @@ def create_cover(path, number):
     assert image.save(str(path))
 
 
-def render_screenshot(app, window, output, name, theme, mode, width, height,
+def render_screenshot(app, window, output, name, theme, width, height,
                       category=0, select_card=False):
     window.settings.appearance = theme
     window.apply_theme()
     window.resize(width, height)
     window.show_library()
     window.library_status_tabs.setCurrentIndex(category)
-    button = (window.library_list_view if mode == "list"
-              else window.library_gallery_view)
-    button.click()
     app.processEvents()
+    assert window.profile_cards.viewMode() == QListWidget.ListMode
+    assert not window.findChildren(QPushButton, "libraryViewButton")
     QTest.qWait(60)
     cards = window.profile_cards
     visible = [cards.item(i) for i in range(cards.count())
@@ -102,18 +101,15 @@ def main():
         window = MainWindow(repo)
         window.show()
         jobs = [
-            ("dark-gallery", "Dark", "gallery", 1440, 860),
-            ("light-gallery", "Light", "gallery", 1440, 860),
-            ("dark-list", "Dark", "list", 1440, 860),
-            ("light-list", "Light", "list", 1440, 860),
-            ("dark-narrow", "Dark", "gallery", 900, 600),
-            ("light-selected", "Light", "gallery", 1280, 720, 0, True),
-            ("light-narrow", "Light", "gallery", 900, 600),
-            ("dark-selected-tab", "Dark", "gallery", 900, 600),
-            ("dark-selected-card", "Dark", "gallery", 1280, 720, 0, True),
-            ("dark-long-thai", "Dark", "gallery", 1920, 1080),
-            ("dark-last-category", "Dark", "gallery", 900, 600, 3, False),
-            ("light-last-category", "Light", "gallery", 900, 600, 3, False),
+            ("dark-list", "Dark", 1440, 860),
+            ("light-list", "Light", 1440, 860),
+            ("dark-narrow-list", "Dark", 900, 600),
+            ("light-narrow-list", "Light", 900, 600),
+            ("light-selected-list", "Light", 1280, 720, 0, True),
+            ("dark-selected-list", "Dark", 1280, 720, 0, True),
+            ("dark-long-thai-list", "Dark", 1920, 1080),
+            ("dark-last-category-list", "Dark", 900, 600, 3, False),
+            ("light-last-category-list", "Light", 900, 600, 3, False),
         ]
         for job in jobs:
             render_screenshot(app, window, output, *job)

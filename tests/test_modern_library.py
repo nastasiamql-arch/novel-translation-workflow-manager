@@ -129,11 +129,12 @@ def test_reorder_filtered_view_keeps_hidden_profile_slots(app):
 def test_library_view_preference_roundtrip_in_legacy_settings(tmp_path):
     repo = ProjectRepository(tmp_path)
     original = repo.load_settings()
-    assert original.library_view_mode == "gallery"
-    original.library_view_mode = "list"
+    assert original.library_view_mode == "list"
+    original.library_view_mode = "gallery"
     repo.save_settings(original)
-    assert repo.load_settings().library_view_mode == "list"
-    assert AppSettings().library_view_mode == "gallery"
+    # Old preferences can be read without removing or mutating user data.
+    assert repo.load_settings().library_view_mode == "gallery"
+    assert AppSettings().library_view_mode == "list"
 
 
 def test_no_fabricated_fraction_when_unknown_total(app):

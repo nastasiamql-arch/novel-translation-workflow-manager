@@ -1,3 +1,9 @@
+## v6.4.2 — Library list-only presentation
+
+- Open the novel library in list mode, including for saved legacy gallery preferences.
+- Remove gallery/list toggle buttons without changing stored covers, novel profiles, search, filtering or drag ordering.
+- Add list-only and legacy-preference regression tests; capture only list layouts in Windows Light/Dark visual QA.
+
 ## v5.9.0 — Palantir Slate Blue / Translation Planner
 
 - Add Today dashboard with manual focus, daily goals, finish goals, rest days and seven-day scheduling.

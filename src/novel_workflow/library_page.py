@@ -1,4 +1,4 @@
-"""Modern novel library: one ordered model, two responsive presentations."""
+"""Modern novel library: a single ordered list presentation."""
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtWidgets import (
@@ -98,26 +98,15 @@ class LibraryPage(QWidget):
         status_row.addStretch(1)
         library_layout.addLayout(status_row)
 
-        gallery_header = QHBoxLayout()
+        section_header = QHBoxLayout()
         owner.library_section_title = QLabel("กำลังแปล")
         owner.library_section_title.setObjectName("librarySectionTitle")
-        gallery_header.addWidget(owner.library_section_title)
+        section_header.addWidget(owner.library_section_title)
         owner.library_section_count = QLabel("0 เรื่อง")
         owner.library_section_count.setObjectName("librarySectionCount")
-        gallery_header.addWidget(owner.library_section_count)
-        gallery_header.addStretch(1)
-
-        owner.library_gallery_view = QPushButton("▦ มุมมองปก")
-        owner.library_gallery_view.setObjectName("libraryViewButton")
-        owner.library_gallery_view.setCheckable(True)
-        owner.library_gallery_view.setAccessibleName("แสดงคลังนิยายแบบปก")
-        owner.library_list_view = QPushButton("☷ มุมมองรายการ")
-        owner.library_list_view.setObjectName("libraryViewButton")
-        owner.library_list_view.setCheckable(True)
-        owner.library_list_view.setAccessibleName("แสดงคลังนิยายแบบรายการ")
-        gallery_header.addWidget(owner.library_gallery_view)
-        gallery_header.addWidget(owner.library_list_view)
-        library_layout.addLayout(gallery_header)
+        section_header.addWidget(owner.library_section_count)
+        section_header.addStretch(1)
+        library_layout.addLayout(section_header)
 
         owner.profile_cards = ReorderableProfileList()
         owner.profile_cards.orderChanged.connect(owner._persist_profile_order)
@@ -131,18 +120,11 @@ class LibraryPage(QWidget):
         owner.profile_cards.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         owner.profile_cards.setAccessibleName("รายการนิยายในคลัง")
 
-        def set_view(mode, save=True):
-            mode = "list" if mode == "list" else "gallery"
-            owner.profile_cards.set_library_view(mode)
-            owner.library_gallery_view.setChecked(mode == "gallery")
-            owner.library_list_view.setChecked(mode == "list")
-            if save and owner.settings.library_view_mode != mode:
-                owner.settings.library_view_mode = mode
-                owner.repo.save_settings(owner.settings)
-
-        owner.library_gallery_view.clicked.connect(lambda: set_view("gallery"))
-        owner.library_list_view.clicked.connect(lambda: set_view("list"))
-        set_view(getattr(owner.settings, "library_view_mode", "gallery"), save=False)
+        # The Library no longer has a gallery toggle. Normalize legacy
+        # gallery preferences in memory; existing covers and profiles remain
+        # untouched, and normal settings persistence migrates the preference.
+        owner.profile_cards.set_library_view("list")
+        owner.settings.library_view_mode = "list"
 
         owner.library_group_filter.currentIndexChanged.connect(
             lambda _index: owner.filter_profiles(owner.library_search.text()))

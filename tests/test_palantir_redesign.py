@@ -34,8 +34,10 @@ def test_export_tab_stays_last(tmp_path):
 def test_library_covers_and_card_spacing_are_slightly_smaller(window):
     from PySide6.QtCore import QSize
     assert window.profile_cards.iconSize() == QSize(222, 296)
-    # Gallery titles use one fixed line so metadata aligns across cards.
+    # Library always uses the compact list geometry now.
+    from PySide6.QtWidgets import QListWidget
     cards = window.profile_cards
+    assert cards.viewMode() == QListWidget.ListMode
     delegate = cards.itemDelegate()
     from PySide6.QtCore import QRect
     rect = QRect(0, 0, cards.gridSize().width(), cards.gridSize().height())
@@ -46,7 +48,7 @@ def test_library_covers_and_card_spacing_are_slightly_smaller(window):
         assert not regions["status"].intersects(regions["progress"])
         assert rect.contains(regions["card"])
         assert regions["card"].contains(regions["progress"])
-        assert regions["title"].height() == cards.fontMetrics().lineSpacing() + 4
+        assert regions["title"].height() == cards.fontMetrics().lineSpacing() + 9
     assert window.profile_cards.wordWrap()
 
 
