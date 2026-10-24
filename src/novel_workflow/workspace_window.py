@@ -1222,6 +1222,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
     def apply_theme(self):
         super().apply_theme()
+        if hasattr(self, "profile_cards"):
+            self.profile_cards._update_library_grid_size()
         if hasattr(self, "navigation"):
             self.navigation.refresh_icons(self.settings.appearance)
         for workspace in getattr(self, "workspaces", {}).values():
