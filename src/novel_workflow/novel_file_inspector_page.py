@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from .novel_file_inspector import Inspection, inspect, read_source, decode_text
 from .novel_file_inspector_history import InspectorStore
+from .services import ProfileService
 from .novel_file_inspector_renumber import (
     plan_renumber, plan_heading_repair, execute_new, execute_in_place, restore_backup,
 )
@@ -394,11 +395,13 @@ class NovelFileInspectorPage(QWidget):
     def choose_folder(self):
         path = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์ TXT", self.source or str(Path.home()))
         if path:
+            self._remember_selected_novel_folder(path)
             self.set_source(path, "folder")
 
     def choose_zip(self):
         path, _ = QFileDialog.getOpenFileName(self, "เลือก ZIP", self.source or str(Path.home()), "ZIP (*.zip)")
         if path:
+            self._remember_selected_novel_folder(path)
             self.set_source(path, "zip")
 
     def choose_profile(self):
@@ -409,11 +412,20 @@ class NovelFileInspectorPage(QWidget):
         profile = next((p for p in self.repo.list_profiles() if p.id == pid), None)
         if not profile:
             return
-        base = Path(profile.main_folder).expanduser() if profile.main_folder else self.repo.profile_dir(pid)
+        base = ProfileService.browse_directory(self.repo, profile)
         preferred = base / "source" if (base / "source").is_dir() else base
         path = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์ต้นฉบับของนิยาย", str(preferred))
         if path:
+            ProfileService.remember_browse_directory(self.repo, profile, path)
             self.set_source(path, "folder")
+
+    def _remember_selected_novel_folder(self, path):
+        pid = self.profile_combo.currentData()
+        if not pid:
+            return
+        profile = next((p for p in self.repo.list_profiles() if p.id == pid), None)
+        if profile is not None:
+            ProfileService.remember_browse_directory(self.repo, profile, path)
 
     def set_source(self, path, kind):
         if self.write_worker and self.write_worker.isRunning():

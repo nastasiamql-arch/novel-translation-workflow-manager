@@ -155,7 +155,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QToolBar#mainToolbar QToolButton {{ color: {c['text']}; min-height: 36px; padding: 6px 12px; border: 0; border-radius: 0; }}
     QToolBar#mainToolbar QToolButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; }}
     QToolBar#mainToolbar QToolButton[keyboardFocus="true"] {{ border-bottom: 3px solid {c['focus']}; }}
-    QToolBar#mainToolbar QToolButton:hover, QToolButton:hover {{ background: transparent; }}
+    QToolBar#mainToolbar QToolButton:hover, QToolButton:hover {{ background: {c['hover']}; }}
     QLabel#brandTitle {{ color: {c['text']}; font-size: 12pt; font-weight: 600; padding: 0 8px; }}
     QLabel#toolbarStory {{ color: {c['muted']}; padding-left: 12px; border-left: 1px solid {c['border']}; }}
     QLabel#sectionHeading {{ color: {c['secondary']}; font-size: 11pt; font-weight: 600; padding: 4px 0 7px; }}
@@ -183,7 +183,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QFrame#editorHeader, QFrame#utilityHeader {{ border-bottom: 1px solid {c['border']}; }}
     QFrame#editorHeader QToolButton {{ color: {c['text']}; background: transparent; border: 0; min-height: 36px; padding: 6px 10px; }}
     QFrame#editorHeader QToolButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; }}
-    QFrame#editorHeader QToolButton:hover {{ color: {c['text']}; background: transparent; }}
+    QFrame#editorHeader QToolButton:hover {{ color: {c['text']}; background: {c['hover']}; }}
     QFrame#editorHeader QToolButton[keyboardFocus="true"] {{ border-bottom: 3px solid {c['focus']}; }}
     QFrame#editorHeader QLabel#mutedLabel {{ color: {c['secondary']}; }}
     QToolButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-width: 30px; min-height: 30px; padding: 6px 9px; }}
@@ -219,7 +219,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QPushButton#workflowStageButton[workflowActive="true"], QPushButton#vocabularyButton[workflowActive="true"] {{ background: {c['item_selection']}; color: {c['text']}; font-weight: 600; }}
     QPushButton#workflowStageButton[keyboardFocus="true"], QPushButton#vocabularyButton[keyboardFocus="true"] {{ border-bottom: 2px solid {c['focus']}; }}
     QPushButton#copyStepButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 34px; padding: 7px 14px; font-weight: 600; }}
-    QPushButton#copyStepButton:hover {{ color: {c['muted']}; background: transparent; text-decoration: none; }}
+    QPushButton#copyStepButton:hover {{ color: {c['text']}; background: {c['hover']}; text-decoration: none; }}
     QPushButton#copyStepButton[keyboardFocus="true"] {{ color: {c['focus']}; background: transparent; border: 0; text-decoration: none; }}
     QPushButton#copyStepButton:disabled {{ color: {c['disabled_text']}; background: transparent; }}
     QLabel#editorStatusBar, QLabel#progressStatusBar, QLabel#goalStatusBar, QLabel#contextStatusBar {{ color: {c['status_text']}; background: transparent; border: 0; padding: 3px 9px; min-height: 24px; font-size: 9pt; }}
@@ -246,12 +246,12 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QPushButton[batchCopyPrimary="true"] {{ background: {c['primary']}; color: {c['primary_text']}; border-color: {c['primary']}; font-weight: 600; }}
     QPushButton[batchCopyPrimary="true"]:hover {{ background: {c['primary_hover']}; }}
     QPushButton {{ min-height: 34px; background: {c['surface2']}; color: {c['text']}; border: 1px solid {c['control_border']}; border-radius: 8px; padding: 6px 12px; }}
-    QPushButton:hover {{ background: {c['surface2']}; }}
+    QPushButton:hover {{ background: {c['hover']}; }}
     QPushButton:pressed {{ background: {c['hover']}; }}
     QPushButton[keyboardFocus="true"] {{ border: 2px solid {c['focus']}; }}
     QPushButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; border-color: {c['border']}; }}
     QPushButton#primaryButton {{ background: {c['primary']}; color: {c['primary_text']}; border: 0; border-radius: 8px; font-weight: 600; padding: 7px 16px; }}
-    QPushButton#primaryButton:hover {{ background: {c['primary']}; }}
+    QPushButton#primaryButton:hover {{ background: {c['primary_hover']}; }}
     QPushButton#primaryButton:pressed {{ background: {c['primary_hover']}; }}
     QPushButton#primaryButton[keyboardFocus="true"] {{ border: 2px solid {c['focus']}; }}
     QPushButton#primaryButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; border: 1px solid {c['border']}; }}

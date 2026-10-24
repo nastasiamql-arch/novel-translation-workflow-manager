@@ -6,15 +6,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+import unicodedata
 
 _MAX = 2_147_483_647
 _NUMBER = r"[0-9０-９零〇○一二两兩三四五六七八九十百千万萬亿億]+"
 _HEADING = re.compile(
     rf"(?im)^[ \t]*(?:#{{1,6}}[ \t]+)?(?:"
-    rf"第[ \t]*(?P<chinese>{_NUMBER})[ \t]*章"
+    # Chinese source titles often start immediately after 章 (第25章月薪40万).
+    # Reject common grammatical continuations so prose such as 第25章的故事... is
+    # not promoted to a heading merely because it starts at the beginning of a line.
+    rf"第[ \t\u3000]*(?P<chinese>{_NUMBER})[ \t\u3000]*章(?=$|[ \t\u3000：:、.\-—]|(?!(?:的|之|有|是|在|将|把|與|与|和|中|后|後|前|时|時|内容|內容))[^\s])"
     rf"|chapter[ \t]+(?P<english>[0-9０-９]+)\b"
     rf"|(?:บทที่|ตอนที่)[ \t]*(?P<thai>[0-9０-９]+)"
-    rf")(?=[ \t：:、.\-—]|$)"
+    rf")"
 )
 
 
@@ -81,13 +85,37 @@ def scan_chapters(text: str) -> list[ChapterHeading]:
     return result
 
 
-def chapter_issues(headings: list[ChapterHeading]) -> list[str]:
+def _normalized_title(value: str) -> str:
+    value = unicodedata.normalize("NFKC", value)
+    return "".join(char for char in value if not char.isspace())
+
+
+def chapter_issues(headings: list[ChapterHeading], text: str | None = None) -> list[str]:
+    """Describe numbering problems and safely distinguish likely duplicate rows.
+
+    When source text is supplied, identical consecutive headings with no nonblank
+    content between them are called likely copies. Repeated numbers with differing
+    titles or intervening story text remain warnings and are never removed here.
+    """
     issues, seen = [], set()
     previous = None
+    lines = text.splitlines() if text is not None else None
+    previous_heading = None
     for heading in headings:
         number = heading.number
         if number in seen:
             status = "เลขซ้ำ"
+            if lines is not None and previous_heading is not None and previous_heading.number == number:
+                same_title = _normalized_title(previous_heading.title) == _normalized_title(heading.title)
+                no_story_between = not any(
+                    line.strip() for line in lines[previous_heading.line:heading.line - 1]
+                )
+                if same_title and no_story_between:
+                    status = "หัวบทซ้ำที่น่าจะเป็นรายการเดียวกัน"
+                elif same_title:
+                    status = "เลข/ชื่อบทซ้ำ แต่มีเนื้อหาคั่น · ตรวจเนื้อเรื่อง"
+                else:
+                    status = "เลขบทซ้ำ แต่ชื่อบทต่างกัน"
         elif previous is not None and number < previous:
             status = "เลขย้อนกลับ"
         elif previous is not None and number > previous + 1:
@@ -97,7 +125,30 @@ def chapter_issues(headings: list[ChapterHeading]) -> list[str]:
         issues.append(status)
         seen.add(number)
         previous = number
+        previous_heading = heading
     return issues
+
+
+def duplicate_heading_removal_plan(text: str) -> tuple[str, list[int]]:
+    """Plan removal of only adjacent, identical duplicate heading lines.
+
+    Whitespace-only separators are retained. A repeated heading with intervening
+    story text or a different title is never included in this plan.
+    """
+    headings = scan_chapters(text)
+    issues = chapter_issues(headings, text)
+    remove_lines = [
+        heading.line for heading, issue in zip(headings, issues)
+        if issue == "หัวบทซ้ำที่น่าจะเป็นรายการเดียวกัน"
+    ]
+    if not remove_lines:
+        return text, []
+    removed = set(remove_lines)
+    result = "".join(
+        line for line_no, line in enumerate(text.splitlines(keepends=True), 1)
+        if line_no not in removed
+    )
+    return result, remove_lines
 
 
 

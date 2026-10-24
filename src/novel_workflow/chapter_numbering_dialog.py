@@ -14,7 +14,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .chapter_numbering import chapter_issues, preview_renumber, scan_chapters, format_heading_number
+from .chapter_numbering import (
+    chapter_issues, duplicate_heading_removal_plan, preview_renumber,
+    scan_chapters, format_heading_number,
+)
 from .chapter_number_reference import resolve_translator_reference, should_auto_propose
 from .storage import read_json, write_json
 
@@ -177,7 +180,17 @@ class ChapterNumberDialog(QDialog):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.checks = []
         self.spins = []
-        issues = chapter_issues(self.headings)
+        issues = chapter_issues(self.headings, self.original)
+        duplicate_count = sum("ซ้ำ" in issue for issue in issues)
+        likely_duplicate_count = sum("น่าจะเป็นรายการเดียวกัน" in issue for issue in issues)
+        gap_count = sum("กระโดด" in issue for issue in issues)
+        reverse_count = sum("ย้อนกลับ" in issue for issue in issues)
+        duplicate_summary = (
+            f"สรุปผลตรวจ · หัวบท {len(self.headings)} · เลขซ้ำ {duplicate_count} "
+            f"(หัวบทที่น่าจะซ้ำติดกัน {likely_duplicate_count}) · "
+            f"เลขกระโดด {gap_count} · เลขย้อนกลับ {reverse_count}\n"
+            "ระบบไม่ลบหัวบทหรือเปลี่ยนเลขให้อัตโนมัติ กรุณาดูเนื้อหาและตัวอย่างก่อนยืนยัน"
+        )
         for i, heading in enumerate(self.headings):
             checkbox = QCheckBox()
             checkbox.setAccessibleName(f"แก้บทบรรทัด {heading.line}")
@@ -199,7 +212,7 @@ class ChapterNumberDialog(QDialog):
             spin.valueChanged.connect(lambda _value, check=checkbox: check.setChecked(True))
         layout.addWidget(self.table, 1)
         self.result = QLabel(
-            "กดเรียงเลขต่อเนื่องเพื่อเสนอเลขใหม่ หรือแก้เลขทีละบท แล้วเลือกยืนยัน"
+            duplicate_summary + "\nกดเรียงเลขต่อเนื่องเพื่อเสนอเลขใหม่ หรือแก้เลขทีละบท แล้วเลือกยืนยัน"
         )
         self.result.setWordWrap(True)
         layout.addWidget(self.result)
@@ -215,6 +228,13 @@ class ChapterNumberDialog(QDialog):
         self.all_button = QPushButton("แก้ทั้งหมด")
         self.all_button.clicked.connect(self.apply_all)
         actions.addWidget(self.all_button)
+        self.remove_duplicates_button = QPushButton("ลบหัวบทซ้ำ")
+        self.remove_duplicates_button.setToolTip(
+            "ลบเฉพาะหัวบทเลขและชื่อซ้ำที่อยู่ติดกัน โดยมี Preview และสำรองก่อนบันทึก"
+        )
+        self.remove_duplicates_button.setEnabled(likely_duplicate_count > 0)
+        self.remove_duplicates_button.clicked.connect(self.remove_duplicate_headings)
+        actions.addWidget(self.remove_duplicates_button)
         self.restore_button = QPushButton("ย้อนคืนการแก้ล่าสุด")
         self.restore_button.clicked.connect(self.restore_latest)
         actions.addWidget(self.restore_button)
@@ -234,6 +254,75 @@ class ChapterNumberDialog(QDialog):
         self.sequence_button.setEnabled(bool(self.headings))
         self.selected_button.setEnabled(bool(self.headings))
         self.all_button.setEnabled(bool(self.headings))
+
+    def remove_duplicate_headings(self):
+        try:
+            if self.editor.toPlainText() != self.original:
+                raise ValueError("ข้อความเปลี่ยนหลังตรวจ กรุณาปิดแล้วตรวจใหม่")
+            expected, removed_lines = duplicate_heading_removal_plan(self.original)
+            if not removed_lines:
+                QMessageBox.information(self, "ไม่พบหัวบทซ้ำที่ปลอดภัย", "ไม่มีหัวบทซ้ำติดกันที่เลขและชื่อบทตรงกัน")
+                return
+            if not self._file_unchanged():
+                raise ValueError("ไฟล์ถูกแก้จากภายนอก · กรุณาตรวจความต่างก่อน")
+            lines = self.original.splitlines()
+            removed_text = "\n".join(f"บรรทัด {line}: {lines[line - 1]}" for line in removed_lines)
+            kept = []
+            removed = set(removed_lines)
+            for heading in self.headings:
+                if heading.line in removed and heading.line > 1:
+                    previous = next((item for item in reversed(self.headings)
+                                     if item.line < heading.line and item.line not in removed
+                                     and item.number == heading.number
+                                     and "".join(item.title.split()) == "".join(heading.title.split())), None)
+                    if previous is not None:
+                        kept.append(f"บรรทัด {previous.line}: {lines[previous.line - 1]}")
+            preview = (
+                f"ไฟล์: {self.path}\n\nก่อนแก้ · คงหัวบทแรกไว้:\n"
+                + "\n".join(kept + ["ลบ: " + item.split(": ", 1)[1] for item in removed_text.splitlines()])
+                + "\n\nหลังแก้:\n" + "\n".join(kept)
+                + "\n\nลบเฉพาะบรรทัดหัวบทที่ระบุไว้ เนื้อหาบรรทัดอื่นจะคงเดิมและมีสำเนาสำรองสำหรับย้อนคืน."
+            )
+            if QMessageBox.question(
+                self, "ตรวจ Preview ก่อนลบหัวบทซ้ำ", preview,
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            ) != QMessageBox.Yes:
+                return
+            history = self._read_history()
+            event = self._save_snapshot(self.original, expected, [])
+            event["operation"] = "remove-duplicate-headings"
+            event["removed_lines"] = removed_lines
+            cursor = QTextCursor(self.editor.document())
+            cursor.beginEditBlock()
+            try:
+                raw_lines = self.original.splitlines(keepends=True)
+                offsets = []
+                offset = 0
+                for line in raw_lines:
+                    offsets.append((offset, len(line)))
+                    offset += len(line)
+                for line_number in reversed(removed_lines):
+                    start, length = offsets[line_number - 1]
+                    cursor.setPosition(_qt_position(self.original, start))
+                    cursor.setPosition(_qt_position(self.original, start + length), QTextCursor.KeepAnchor)
+                    cursor.removeSelectedText()
+            finally:
+                cursor.endEditBlock()
+            if self.editor.toPlainText() != expected:
+                self.editor.undo()
+                raise ValueError("ข้อความหลังแก้ไม่ตรงกับ Preview · ย้อนการแก้แล้ว")
+            if not self.workspace.editor.save_editor(self.editor, quiet=True, normalize=False):
+                self.editor.undo()
+                raise ValueError("บันทึกการแก้หัวบทซ้ำไม่สำเร็จ · คืนข้อความใน Editor แล้ว")
+            history["events"].append(event)
+            write_json(self.history_path, history)
+            QMessageBox.information(
+                self, "แก้หัวบทซ้ำสำเร็จ",
+                f"ลบหัวบทซ้ำ {len(removed_lines)} บรรทัดแล้ว · สำรองข้อความก่อนแก้ไว้สำหรับย้อนคืน",
+            )
+            self.accept()
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            QMessageBox.warning(self, "ลบหัวบทซ้ำไม่ได้", str(exc))
 
     def _remember_manual_start(self, value):
         profile = next(

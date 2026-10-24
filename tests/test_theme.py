@@ -77,7 +77,7 @@ def test_theme_styles_disabled_controls_and_keyboard_focus_explicitly():
         assert "font-size: 9pt" in stylesheet
 
 
-def test_button_hover_keeps_base_surface_and_press_is_subtle():
+def test_button_hover_is_visible_and_primary_actions_have_distinct_hover_state():
     for appearance, tokens in (("Dark", _DARK), ("Light", _LIGHT)):
         stylesheet = application_stylesheet(appearance)
         hover = stylesheet.split("QPushButton:hover {", 1)[1].split("}", 1)[0]
@@ -88,13 +88,13 @@ def test_button_hover_keeps_base_surface_and_press_is_subtle():
         primary_pressed = stylesheet.split(
             "QPushButton#primaryButton:pressed {", 1
         )[1].split("}", 1)[0]
-        assert f"background: {tokens['surface2']}" in hover
+        assert f"background: {tokens['hover']}" in hover
         assert f"background: {tokens['hover']}" in pressed
-        assert f"background: {tokens['primary']}" in primary_hover
+        assert f"background: {tokens['primary_hover']}" in primary_hover
         assert f"background: {tokens['primary_hover']}" in primary_pressed
         assert (
             "QToolBar#mainToolbar QToolButton:hover, QToolButton:hover "
-            "{ background: transparent; }"
+            f"{{ background: {tokens['hover']}; }}"
         ) in stylesheet
         assert (
             "QListWidget::item:hover, QTreeWidget::item:hover, "

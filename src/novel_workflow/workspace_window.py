@@ -1645,6 +1645,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             start = str(self.profile_browse_directory())
         selected = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์หลักของนิยาย", start)
         if selected:
+            self.remember_profile_browse_directory(selected)
             self.settings_main_folder.setText(selected)
             self.save_settings_main_folder()
 
@@ -1675,6 +1676,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         targets = [target for target in targets if target]
         if not targets:
             return
+        if kind in {"folder", "file", "application"}:
+            self.remember_profile_browse_directory(targets[-1])
         if kind == "website":
             label, accepted = QInputDialog.getText(self, "ชื่อเว็บไซต์", "ชื่อ:", text=targets[0])
             if not accepted:
@@ -1709,6 +1712,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         )
         if not sources:
             return
+        self.remember_profile_browse_directory(sources[-1])
         profile_root = self.repo.profile_dir(self.profile.id).resolve()
         existing = {(item.reference_type, item.path) for item in self.profile.working_files}
         for source_value in sources:

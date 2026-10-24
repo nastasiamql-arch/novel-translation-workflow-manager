@@ -1,7 +1,8 @@
 import pytest
 
 from novel_workflow.chapter_numbering import (
-    chapter_issues, parse_number, preview_renumber, scan_chapters,
+    chapter_issues, duplicate_heading_removal_plan, parse_number,
+    preview_renumber, scan_chapters,
 )
 
 
@@ -52,6 +53,56 @@ def test_multi_language_and_fenced_examples():
     txt = ("Chapter 10: Title\nbody\nบทที่ 11 เนื้อหา\n"
            "ตอนที่ 12 เรื่อง\n\x60\x60\x60text\n第900章 示例\n\x60\x60\x60\n第十三章 標題\n")
     assert [h.number for h in scan_chapters(txt)] == [10, 11, 12, 13]
+
+
+@pytest.mark.parametrize(("heading", "title"), [
+    ("第25章月薪40万", "月薪40万"),
+    ("第25章 月薪40万", "月薪40万"),
+    ("第25章　月薪40万", "月薪40万"),
+    ("第二十五章月薪40万", "月薪40万"),
+    ("第２５章月薪40万", "月薪40万"),
+])
+def test_chinese_heading_titles_can_touch_zhang(heading, title):
+    found = scan_chapters(heading + "\n正文\n")
+    assert len(found) == 1
+    assert found[0].number == 25
+    assert found[0].title == title
+
+
+def test_duplicate_heading_classification_requires_same_title_and_no_story_between():
+    duplicate = "第25章月薪40万\n第25章 月薪40万\n"
+    headings = scan_chapters(duplicate)
+    assert chapter_issues(headings, duplicate) == [
+        "ปกติ", "หัวบทซ้ำที่น่าจะเป็นรายการเดียวกัน"
+    ]
+
+    different_title = "第25章月薪40万\n第25章 新的交易\n"
+    assert chapter_issues(scan_chapters(different_title), different_title)[1] == (
+        "เลขบทซ้ำ แต่ชื่อบทต่างกัน"
+    )
+
+    with_story = "第25章月薪40万\n\nเนื้อเรื่อง\n第25章 月薪40万\n"
+    assert chapter_issues(scan_chapters(with_story), with_story)[1] == (
+        "เลข/ชื่อบทซ้ำ แต่มีเนื้อหาคั่น · ตรวจเนื้อเรื่อง"
+    )
+
+
+def test_duplicate_heading_removal_plan_only_removes_safe_duplicate_header_lines():
+    text = "第25章月薪40万\n第25章 月薪40万\n正文仍อยู่ครบ\n第25章 新的交易\n"
+    planned, removed = duplicate_heading_removal_plan(text)
+    assert removed == [2]
+    assert planned == "第25章月薪40万\n正文仍อยู่ครบ\n第25章 新的交易\n"
+
+    with_story = "第25章 月薪40万\nเนื้อเรื่อง\n第25章月薪40万\n"
+    assert duplicate_heading_removal_plan(with_story) == (with_story, [])
+
+    different_title = "第25章 月薪40万\n第25章 新的交易\n"
+    assert duplicate_heading_removal_plan(different_title) == (different_title, [])
+
+
+def test_narrative_sentence_starting_with_chapter_number_is_not_a_heading():
+    text = "第25章的故事在这一刻才刚刚开始。\n第26章真正的标题\n"
+    assert [heading.number for heading in scan_chapters(text)] == [26]
 
 
 def test_invalid_or_unrecognized_are_not_modified():

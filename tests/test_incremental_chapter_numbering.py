@@ -6,7 +6,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from novel_workflow.chapter_numbering import scan_chapters
 from novel_workflow.incremental_chapter_numbering import (
@@ -157,4 +157,31 @@ def test_acknowledged_review_is_really_removed_from_profile_json(tmp_path):
     assert json.loads(profile_file.read_text(encoding="utf-8"))[
         "chapter_number_pending_files"
     ] == {}
+    _close(window)
+
+
+def test_duplicate_heading_removal_previews_saves_backup_and_can_restore(tmp_path, monkeypatch):
+    repo, profile, window, ws, editor, source, translator, messages = _window(tmp_path)
+    original = "第646章月薪40万\n第646章 月薪40万\nเนื้อเรื่องต้องอยู่ครบ"
+    editor.setPlainText(original)
+    assert ws.editor.save_editor(editor, quiet=True)
+    dialog = ChapterNumberDialog(ws, editor, source)
+    confirmations = []
+    def confirm(_parent, title, text, *_args):
+        confirmations.append((title, text))
+        return QMessageBox.Yes
+    monkeypatch.setattr(QMessageBox, "question", confirm)
+    monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
+    dialog.remove_duplicate_headings()
+    expected = "第646章月薪40万\nเนื้อเรื่องต้องอยู่ครบ"
+    assert editor.toPlainText() == expected
+    assert source.read_text(encoding="utf-8") == expected
+    assert "ลบ: 第646章 月薪40万" in confirmations[0][1]
+    history_path = repo.profile_dir(profile.id) / "chapter_numbering" / "history.json"
+    event = json.loads(history_path.read_text(encoding="utf-8"))["events"][-1]
+    assert event["operation"] == "remove-duplicate-headings"
+    assert event["removed_lines"] == [2]
+    dialog.restore_latest()
+    assert editor.toPlainText() == original
+    assert source.read_text(encoding="utf-8") == original
     _close(window)

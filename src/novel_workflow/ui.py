@@ -641,7 +641,7 @@ class ManagementActionsMixin:
         def delete():
             path=selected()
             if not path:return
-            if QMessageBox.question(dialog,"Delete File",f"Permanently delete {path.name}?")==QMessageBox.Yes:
+            if QMessageBox.question(dialog,"ลบไฟล์",f"ลบไฟล์ {path.name} ออกจากนิยายถาวรหรือไม่?")==QMessageBox.Yes:
                 path.unlink()
                 all_steps=list(self.profile.workflow.steps)
                 if self.profile.vocabulary_step:all_steps.append(self.profile.vocabulary_step)
@@ -649,15 +649,15 @@ class ManagementActionsMixin:
                     step.files=[item for item in step.files if item.reference_type=="external_file" or not item.path or self.repo.resolve_project_path(self.profile.id,item.path)!=path]
                 self.save();refresh();self.refresh_files()
         def import_file():
-            source,_=QFileDialog.getOpenFileName(dialog,"Import file",str(self.profile_browse_directory()),"Text files (*.txt *.md *.json)")
+            source,_=QFileDialog.getOpenFileName(dialog,"เลือกไฟล์ต้นฉบับที่จะนำเข้าเป็นสำเนา",str(self.profile_browse_directory()),"ไฟล์ข้อความ (*.txt *.md *.json)")
             if not source:return
             src=Path(source)
-            if src.suffix.lower() not in (".txt",".md",".json"):QMessageBox.warning(dialog,"Unsupported","Use .txt, .md, or .json.");return
+            if src.suffix.lower() not in (".txt",".md",".json"):QMessageBox.warning(dialog,"ชนิดไฟล์ไม่รองรับ","รองรับเฉพาะ .txt, .md หรือ .json");return
             self.remember_profile_browse_directory(src)
-            rel,ok=QInputDialog.getText(dialog,"Import File","Destination relative path:",text="reference/"+src.name)
+            rel,ok=QInputDialog.getText(dialog,"นำเข้าเป็นสำเนา","ตำแหน่งเก็บไฟล์ภายในนิยาย:",text="reference/"+src.name)
             if not ok:return
             dest=self.repo.resolve_project_path(self.profile.id,rel)
-            if dest.exists():QMessageBox.warning(dialog,"Exists","Destination already exists.");return
+            if dest.exists():QMessageBox.warning(dialog,"มีไฟล์อยู่แล้ว",f"ยกเลิกการนำเข้าเพื่อป้องกันการเขียนทับ:\n{dest}");return
             import shutil;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(src,dest);refresh()
         def attach():
             path=selected()
@@ -665,11 +665,11 @@ class ManagementActionsMixin:
             rel=path.relative_to(self.repo.profile_dir(self.profile.id)).as_posix()
             if any(item.path==rel for item in self.step().files):
                 QMessageBox.information(dialog,"Already added","This file is already attached to the selected step.");return
-            label,ok=QInputDialog.getText(dialog,"Attach File","Display label:",text=path.stem)
+            label,ok=QInputDialog.getText(dialog,"เพิ่มไฟล์ในขั้นตอน","ชื่อที่แสดง:",text=path.stem)
             if not ok:return
             self.step().files.append(StepFile(label=label or path.stem,path=rel,file_type=path.parent.name,order=len(self.step().files)))
-            self.save();self.refresh_files();self.statusBar().showMessage("File attached to selected step",2500)
-        for label,fn in (("New",create),("Import",import_file),("Add to Step",attach),("Edit",edit),("เปลี่ยนชื่อ",rename),("Delete",delete)):
+            self.save();self.refresh_files();self.statusBar().showMessage("เพิ่มไฟล์ในขั้นตอนแล้ว",2500)
+        for label,fn in (("สร้างไฟล์",create),("นำเข้าเป็นสำเนา",import_file),("เพิ่มในขั้นตอน",attach),("เปิด/แก้ไข",edit),("เปลี่ยนชื่อ",rename),("ลบ",delete)):
             button=QPushButton(label);button.clicked.connect(fn);actions.addWidget(button)
         search.textChanged.connect(refresh);refresh();dialog.exec()
     def remove_file(self):
