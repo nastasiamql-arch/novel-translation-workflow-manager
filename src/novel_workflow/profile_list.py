@@ -1,6 +1,6 @@
 """Desktop dragging shared by novel covers and settings rows."""
 from PySide6.QtCore import Qt, Signal, QPoint, QTimer
-from PySide6.QtGui import QDrag, QPainter, QPen
+from PySide6.QtGui import QDrag, QPainter, QPen, QPalette
 from PySide6.QtWidgets import QListWidget, QApplication, QAbstractItemView, QStyledItemDelegate, QStyle
 
 
@@ -19,7 +19,7 @@ class ProfileItemDelegate(QStyledItemDelegate):
         font = painter.font()
         font.setPointSize(max(8, font.pointSize() - 1))
         painter.setFont(font)
-        painter.setPen(option.palette.color(option.palette.Text))
+        painter.setPen(option.palette.color(QPalette.Text))
         rect = option.rect.adjusted(8, 0, -8, -5)
         line_height = painter.fontMetrics().height()
         rect.setTop(rect.bottom() - line_height - 2)
