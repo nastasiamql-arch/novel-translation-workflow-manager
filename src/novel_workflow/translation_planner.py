@@ -303,7 +303,8 @@ class TranslationPlanner:
             if deadline is not None and day > deadline:
                 break
             dates.append(day)
-            if day.weekday() not in rest and schedule.get("overrides", {}).get(day.isoformat()) != 0:
+            override = schedule.get("overrides", {}).get(day.isoformat())
+            if override != 0 and (day.weekday() not in rest or override is not None):
                 working += 1
             if final_working is not None and working >= final_working:
                 # For an uncapped daily plan, show today's work even if it has
@@ -331,8 +332,10 @@ class TranslationPlanner:
         dates = self._story_dates(schedule, local_today)
         overrides = schedule.get("overrides", {})
         rest = set(schedule.get("rest_weekdays", ()))
-        active = [day for day in dates if day.weekday() not in rest
-                  and overrides.get(day.isoformat()) != 0]
+        active = [day for day in dates
+                  if overrides.get(day.isoformat()) != 0
+                  and (day.weekday() not in rest
+                       or overrides.get(day.isoformat()) is not None)]
         if not active:
             return {"profile": profile, "schedule": schedule, "rows": [],
                     "completed": len(chapters), "remaining": max(0, final - len(chapters)),
@@ -343,14 +346,25 @@ class TranslationPlanner:
         # target. They are subtracted from *tomorrow's* distribution.
         today_actual = len(activity.get(local_today.isoformat(), set()) & chapters)
         current_remaining = max(0, final - len(chapters) + today_actual)
-        future_remaining = current_remaining
+        # Reserve manually assigned future targets before distributing the
+        # unassigned chapters. Otherwise a 90-chapter, three-day plan with
+        # an 80-chapter override on day three would incorrectly total 140.
+        flexible_future = [day for day in active
+                           if day >= local_today
+                           and overrides.get(day.isoformat()) is None]
+        manual_future = sum(overrides[day.isoformat()] for day in active
+                            if day >= local_today
+                            and overrides.get(day.isoformat()) is not None)
+        future_remaining = max(0, current_remaining - manual_future)
         rows = []
         for day in dates:
             key = day.isoformat()
             actual = len(activity.get(key, set()) & chapters)
             override = overrides.get(key)
             is_rest = override == 0 or (override is None and day.weekday() in rest)
-            work_left = sum(1 for other in active if other >= day)
+            work_left = sum(1 for other in (
+                active if day < local_today else flexible_future
+            ) if other >= day)
             if is_rest:
                 target = 0
             elif override is not None:
@@ -364,7 +378,8 @@ class TranslationPlanner:
                 target = (future_remaining + work_left - 1) // work_left if work_left else 0
             if day < local_today:
                 past_remaining = max(0, past_remaining - actual)
-            else:
+            elif override is None:
+                # Fixed manual quotas were already reserved above.
                 future_remaining = max(0, future_remaining - target)
             if is_rest:
                 status = "วันพัก"

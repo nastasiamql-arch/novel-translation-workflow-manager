@@ -57,7 +57,7 @@ def main():
             path=root/name; path.write_text('ไทย 中文 日本語 English',encoding='utf-8'); ws.editor.open_file(path)
         for theme in ('Light','Dark'):
             win.settings.appearance=theme; win.apply_theme()
-            for width,height in ((900,600),(1440,860)):
+            for width,height in ((900,600),(1280,720),(1440,860),(1920,1080)):
                 win.resize(width,height); app.processEvents(); QTest.qWait(30)
                 assert win.width()==width and win.height()==height,(win.size(),width,height)
                 ws.editor.tabs.setCurrentWidget(ws.editor.export_tab); app.processEvents()
@@ -116,7 +116,7 @@ def main():
             if key == "settings":
                 for appearance in ("Light", "Dark"):
                     win.settings.appearance=appearance; win.apply_theme()
-                    for dimensions in ((900,600),(1440,860)):
+                    for dimensions in ((900,600),(1280,720),(1440,860),(1920,1080)):
                         win.resize(*dimensions); app.processEvents(); QTest.qWait(30)
                         page = win.utility_stack.currentWidget()
                         for category in ("General", "Novel", "Workflow", "Workflow Files", "Working Tabs", "TXT Export", "Program Updates"):
@@ -145,7 +145,7 @@ def main():
         history = win.utility_stack.currentWidget()
         for appearance in ('Light', 'Dark'):
             win.settings.appearance = appearance; win.apply_theme()
-            for dimensions in ((900,600), (1440,860)):
+            for dimensions in ((900,600), (1280,720), (1440,860), (1920,1080)):
                 win.resize(*dimensions); app.processEvents(); QTest.qWait(30)
                 assert_layout(win.utility_page)
                 assert_layout(history)
