@@ -4,10 +4,11 @@ from datetime import date
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QSpinBox,
-    QDateEdit, QFormLayout, QPushButton, QMessageBox, QTableWidget,
+    QFormLayout, QPushButton, QMessageBox, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QScrollArea, QCheckBox,
 )
 from .translation_planner import TranslationPlanner
+from .thai_date_picker import ThaiDatePicker
 
 
 class StoryPlannerPage(QWidget):
@@ -42,12 +43,10 @@ class StoryPlannerPage(QWidget):
         self.daily = QSpinBox()
         self.daily.setRange(1, 100000)
         form.addRow("บทต่อวัน", self.daily)
-        self.start = QDateEdit()
-        self.start.setCalendarPopup(True)
+        self.start = ThaiDatePicker()
         self.start.setDate(QDate.currentDate())
         form.addRow("เริ่มวันที่", self.start)
-        self.deadline = QDateEdit()
-        self.deadline.setCalendarPopup(True)
+        self.deadline = ThaiDatePicker()
         self.deadline.setDate(QDate.currentDate().addDays(7))
         form.addRow("วันครบกำหนด", self.deadline)
         self.rest = QComboBox()

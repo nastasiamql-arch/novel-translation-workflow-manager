@@ -2611,6 +2611,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 footnote = f"{_profile_status_label(status)} · สำเร็จ {done} บท"
             card.setData(Qt.UserRole + 2, footnote)
             card.setToolTip(f"{profile.name}\n{footnote}")
+            card.setData(Qt.AccessibleDescriptionRole, f"{profile.name}\n{footnote}")
             self.profile_cards.addItem(card)
         self._library_cover_cache = updated_cache
 

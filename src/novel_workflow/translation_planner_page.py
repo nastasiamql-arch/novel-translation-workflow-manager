@@ -5,8 +5,9 @@ from PySide6.QtCore import Qt, Signal, QDate
 from PySide6.QtGui import QPixmap
 from pathlib import Path
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QSpinBox, QDateEdit, QProgressBar, QFormLayout, QGroupBox, QMessageBox, QScrollArea, QFrame)
+    QComboBox, QSpinBox, QProgressBar, QFormLayout, QGroupBox, QMessageBox, QScrollArea, QFrame)
 from .translation_planner import TranslationPlanner
+from .thai_date_picker import ThaiDatePicker
 
 
 class TodayPage(QWidget):
@@ -52,8 +53,7 @@ class TodayPage(QWidget):
         layout.addLayout(actions)
         self.editor = QGroupBox("แผนการแปล")
         form = QFormLayout(self.editor)
-        self.day = QDateEdit()
-        self.day.setCalendarPopup(True)
+        self.day = ThaiDatePicker()
         self.day.setDate(QDate.currentDate())
         self.day.dateChanged.connect(self._load_day)
         form.addRow("วันที่", self.day)

@@ -66,7 +66,8 @@ class LibraryPage(QWidget):
         owner.library_group_filter.currentIndexChanged.connect(
             lambda _index: owner.filter_profiles(owner.library_search.text())
         )
-        owner.profile_cards.setItemDelegate(LibraryCardDelegate(owner.profile_cards))
+        delegate = LibraryCardDelegate(owner.profile_cards)
+        owner.profile_cards.setItemDelegate(delegate)
         owner.profile_cards.setObjectName("novelLibrary")
         owner.profile_cards.setViewMode(QListWidget.IconMode)
         owner.profile_cards.setFlow(QListWidget.LeftToRight)
@@ -77,7 +78,7 @@ class LibraryPage(QWidget):
         owner.profile_cards.setAcceptDrops(True)
         owner.profile_cards.setSpacing(18)
         owner.profile_cards.setIconSize(QSize(156, 208))
-        owner.profile_cards.setGridSize(QSize(210, 292))
+        owner.profile_cards.setGridSize(delegate.card_size())
         owner.profile_cards.setWordWrap(True)
         owner.profile_cards.setUniformItemSizes(True)
         owner.profile_cards.setTextElideMode(Qt.ElideRight)

@@ -53,12 +53,30 @@ def main():
         repo.save_profile(p)
         win=MainWindow(repo); win.show()
         ws=win.workspaces[p.id]
+        # Check the same card rectangles at each CI QT_SCALE_FACTOR, not just
+        # main-window layout widgets.
+        cards = win.profile_cards
+        delegate = cards.itemDelegate()
+        regions = delegate.card_rects(
+            cards.visualItemRect(cards.item(0)))
+        assert not regions["cover"].intersects(regions["title"])
+        assert not regions["title"].intersects(regions["status"])
+        assert cards.gridSize().height() == delegate.card_size().height()
+
         for name in ['ชื่อไฟล์ยาวภาษาไทย'*6+'.txt','中文文件名'*10+'.txt','日本語.txt','English.txt']:
             path=root/name; path.write_text('ไทย 中文 日本語 English',encoding='utf-8'); ws.editor.open_file(path)
         for theme in ('Light','Dark'):
             win.settings.appearance=theme; win.apply_theme()
             for width,height in ((900,600),(1280,720),(1440,860),(1920,1080)):
                 win.resize(width,height); app.processEvents(); QTest.qWait(30)
+                cards = win.profile_cards
+                if cards.count():
+                    card_rect = cards.visualItemRect(cards.item(0))
+                    regions = cards.itemDelegate().card_rects(card_rect)
+                    assert card_rect.contains(regions["cover"])
+                    assert card_rect.contains(regions["title"])
+                    assert card_rect.contains(regions["status"])
+
                 assert win.width()==width and win.height()==height,(win.size(),width,height)
                 ws.editor.tabs.setCurrentWidget(ws.editor.export_tab); app.processEvents()
                 assert_layout(ws.editor.export_tab)

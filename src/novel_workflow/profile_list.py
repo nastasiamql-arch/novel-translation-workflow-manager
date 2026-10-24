@@ -1,31 +1,115 @@
 """Desktop dragging shared by novel covers and settings rows."""
-from PySide6.QtCore import Qt, Signal, QPoint, QTimer
-from PySide6.QtGui import QDrag, QPainter, QPen, QPalette
-from PySide6.QtWidgets import QListWidget, QApplication, QAbstractItemView, QStyledItemDelegate, QStyle
+from PySide6.QtCore import Qt, Signal, QPoint, QTimer, QRect, QSize
+from PySide6.QtGui import QDrag, QPainter, QPen, QPalette, QIcon, QFontMetrics, QTextLayout, QTextOption
+from PySide6.QtWidgets import QListWidget, QApplication, QAbstractItemView, QStyledItemDelegate, QStyle, QStyleOptionViewItem
 
 
 class ProfileItemDelegate(QStyledItemDelegate):
+    """Use exclusive cover/title/status rectangles for icon-mode library cards."""
+
+    MAX_TITLE_LINES = 3
+
+    def _library(self):
+        return self.parent() is not None and self.parent().objectName() == "novelLibrary"
+
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
         option.state &= ~QStyle.State_HasFocus
 
+    def card_size(self):
+        view = self.parent()
+        if view is None:
+            return QSize(210, 310)
+        height = (12 + view.iconSize().height() + 10
+                  + self.MAX_TITLE_LINES * (view.fontMetrics().lineSpacing() + 5)
+                  + 8 + view.fontMetrics().height() + 7 + 12)
+        return QSize(max(210, view.iconSize().width() + 24), height)
+
+    def sizeHint(self, option, index):
+        if self._library():
+            return self.card_size()
+        return super().sizeHint(option, index)
+
+    def card_rects(self, item_rect, metrics=None):
+        view = self.parent()
+        metrics = metrics or view.fontMetrics()
+        icon = view.iconSize()
+        cover = QRect(item_rect.center().x() - icon.width() // 2,
+                      item_rect.top() + 12, icon.width(), icon.height())
+        status_height = metrics.height() + 7
+        status = QRect(item_rect.left() + 12, item_rect.bottom() - 12 - status_height,
+                       item_rect.width() - 24, status_height)
+        title_top = cover.bottom() + 11
+        title = QRect(item_rect.left() + 12, title_top,
+                      item_rect.width() - 24, max(0, status.top() - 8 - title_top))
+        return {"cover": cover, "title": title, "status": status}
+
+    @staticmethod
+    def title_lines(text, font, width):
+        """Qt text shaping/wrap decides breaks for Thai, CJK and emoji."""
+        text = str(text).replace("\r", " ").replace("\n", " ")
+        layout = QTextLayout(text, font)
+        options = QTextOption()
+        options.setWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+        layout.setTextOption(options)
+        lines = []
+        layout.beginLayout()
+        while True:
+            line = layout.createLine()
+            if not line.isValid():
+                break
+            line.setLineWidth(max(1, width))
+            lines.append(text[line.textStart():line.textStart() + line.textLength()])
+        layout.endLayout()
+        return lines or [""]
+
     def paint(self, painter, option, index):
-        """Keep the cover/title while adding the verified progress footer."""
-        super().paint(painter, option, index)
-        status = index.data(Qt.UserRole + 2)
-        if not status:
+        if not self._library():
+            super().paint(painter, option, index)
             return
+        # Draw the styled item surface ONLY. Standard text/icon painting would
+        # place Qt's wrapped title in the same space as our status footer.
+        surface = QStyleOptionViewItem(option)
+        self.initStyleOption(surface, index)
+        surface.text = ""
+        surface.icon = QIcon()
+        super().paint(painter, surface, index)
         painter.save()
-        font = painter.font()
-        font.setPointSize(max(8, font.pointSize() - 1))
-        painter.setFont(font)
-        painter.setPen(option.palette.color(QPalette.Text))
-        rect = option.rect.adjusted(8, 0, -8, -5)
-        line_height = painter.fontMetrics().height()
-        rect.setTop(rect.bottom() - line_height - 2)
-        caption = painter.fontMetrics().elidedText(str(status), Qt.ElideRight, rect.width())
-        painter.drawText(rect, Qt.AlignHCenter | Qt.AlignVCenter, caption)
-        painter.restore()
+        try:
+            painter.setClipRect(option.rect)
+            metrics = QFontMetrics(option.font)
+            regions = self.card_rects(option.rect, metrics)
+            icon = index.data(Qt.DecorationRole)
+            if isinstance(icon, QIcon) and not icon.isNull():
+                pixmap = icon.pixmap(regions["cover"].size())
+                painter.drawPixmap(regions["cover"].topLeft(), pixmap)
+            painter.setFont(option.font)
+            painter.setPen(option.palette.color(QPalette.Text))
+            lines = self.title_lines(index.data(Qt.DisplayRole) or "", option.font,
+                                     regions["title"].width())
+            line_step = metrics.lineSpacing() + 5
+            title = regions["title"]
+            painter.save()
+            painter.setClipRect(title)
+            for number, line in enumerate(lines[:self.MAX_TITLE_LINES]):
+                if number == self.MAX_TITLE_LINES - 1 and len(lines) > self.MAX_TITLE_LINES:
+                    line = metrics.elidedText("".join(lines[number:]), Qt.ElideRight, title.width())
+                bounds = QRect(title.left(), title.top() + number * line_step,
+                               title.width(), line_step)
+                painter.drawText(bounds, Qt.AlignLeft | Qt.AlignVCenter | Qt.TextSingleLine, line)
+            painter.restore()
+            footer = index.data(Qt.UserRole + 2)
+            if footer:
+                small = option.font
+                if small.pointSizeF() > 0:
+                    small.setPointSizeF(max(8, small.pointSizeF() - 1))
+                painter.setFont(small)
+                footer_text = QFontMetrics(small).elidedText(
+                    str(footer), Qt.ElideRight, regions["status"].width())
+                painter.drawText(regions["status"], Qt.AlignLeft | Qt.AlignVCenter |
+                                 Qt.TextSingleLine, footer_text)
+        finally:
+            painter.restore()
 
 
 class ReorderableProfileList(QListWidget):

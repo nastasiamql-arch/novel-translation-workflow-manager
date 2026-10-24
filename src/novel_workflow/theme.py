@@ -248,6 +248,12 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QPushButton#primaryButton[keyboardFocus="true"] {{ border: 2px solid {c['focus']}; }}
     QPushButton#primaryButton:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; border: 1px solid {c['border']}; }}
     QPushButton#dangerButton {{ background: transparent; color: {c['danger']}; border: 1px solid {c['border']}; }}
+    QLineEdit#thaiDateDisplay {{ color: {c['text']}; background: {c['input']}; border: 1px solid {c['control_border']}; border-radius: 8px; padding: 5px 12px; font-size: 11pt; font-weight: 600; }}
+    QLineEdit#thaiDateDisplay:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; }}
+    QToolButton#thaiDateButton {{ color: {c['text']}; background: {c['surface2']}; border: 1px solid {c['control_border']}; border-radius: 8px; font-size: 13pt; padding: 0; }}
+    QToolButton#thaiDateButton:hover {{ background: {c['hover']}; border-color: {c['accent']}; }}
+    QToolButton#thaiDateButton:focus {{ border: 2px solid {c['focus']}; }}
+    QToolButton#thaiDateButton:disabled {{ color: {c['disabled_text']}; border-color: {c['border']}; }}
     QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{ background: {c['input']}; color: {c['text']}; border: 1px solid {c['control_border']}; border-radius: 8px; padding: 7px 9px; selection-background-color: {c['selection']}; selection-color: {c['selection_text']}; min-height: 28px; }}
     QLineEdit:disabled, QTextEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {{ color: {c['disabled_text']}; background: {c['surface2']}; }}
     QPlainTextEdit {{ background: {c['surface']}; color: {c['text']}; border: 0; selection-background-color: {c['selection']}; selection-color: {c['selection_text']}; }}
