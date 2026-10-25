@@ -15,12 +15,13 @@ class Editor(QDialog):
     def __init__(self,parent,title,text="",path=None):
         super().__init__(parent);self.setWindowTitle(title);self.resize(760,560);lay=QVBoxLayout(self)
         from .workspace_editor import CodeEditor
-        from .text_normalization import cleans_editor_text, normalize_editor_text, is_vocabulary
+        from .text_normalization import cleans_file_text, normalize_editor_text, is_vocabulary
         self.edit=CodeEditor()
         if path:
             self.edit.setProperty('documentPath', str(path))
             self.edit.vocabulary_mode = is_vocabulary(Path(path), text)
-            self.edit.clean_empty_lines = cleans_editor_text(Path(path))
+            self.edit.clean_empty_lines = cleans_file_text(Path(path))
+            self.edit.compact_pasted_empty_lines = self.edit.clean_empty_lines
             self.edit.compact_pasted_empty_lines = self.edit.clean_empty_lines
             text = normalize_editor_text(Path(path), text)
         self.edit.setPlainText(text);lay.addWidget(self.edit)

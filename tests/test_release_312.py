@@ -34,6 +34,20 @@ def test_external_change_with_same_timestamp_is_pending(window):
     assert w._translator_export_status(p.id, path, editor) == 'not_exported'
 
 
+def test_invalid_export_status_is_reported_without_overwriting_original(window):
+    w, p, ws, errors = window
+    path = w.repo.profile_dir(p.id) / 'a.txt'
+    status_path = w._export_status_path(p.id)
+    status_path.write_bytes(b'{"broken":')
+    original = status_path.read_bytes()
+    w._export_status_cache.pop(p.id, None)
+    w._export_status_errors.pop(p.id, None)
+    assert w._translator_export_status(p.id, path) == 'error'
+    assert w._export_status_errors[p.id]
+    w._mark_export_pending(p.id, path)
+    assert status_path.read_bytes() == original
+
+
 def test_normalization_open_and_undo_export_status(window):
     w, p, ws, errors = window
     path = w.repo.profile_dir(p.id) / 'a.txt'

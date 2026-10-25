@@ -21,7 +21,7 @@ from .models import AppSettings
 from .recovery import commit_staged, translator_chapter_range
 from .storage import data_root, write_json
 from .text_normalization import (normalize_novel_text, normalize_editor_text,
-    cleans_editor_text, is_vocabulary, vocabulary_warnings, detect_newline,
+    cleans_file_text, is_vocabulary, vocabulary_warnings, detect_newline,
     deleted_ranges, LINE_SEPARATOR)
 
 
@@ -125,6 +125,7 @@ class TxtExportTab(QWidget):
         self.editor = CodeEditor(font_size=font_size, appearance=appearance, parent=self)
         self.editor.clean_empty_lines = True
         self.editor.compact_pasted_empty_lines = True
+        self.editor.setProperty("autoNewlineOnPaste", True)
         self.filename = QLineEdit(str(settings.txt_export_filename or "segverified"))
         self.filename.setObjectName("txtExportFilename")
         self.mode = QComboBox()
@@ -641,6 +642,13 @@ class CodeEditor(QPlainTextEdit):
             text = source.text()
             if self.compact_pasted_empty_lines:
                 text = self.normalized_text(text)
+            if (self.property("autoNewlineOnPaste") and text
+                    and source.text().endswith(('\n', '\r', '\u2028', '\u2029', '\u0085'))
+                    and not text.endswith(('\n', '\r', '\u2028', '\u2029', '\u0085'))):
+                # Keep the user's explicit paste terminator even when content
+                # normalization removes trailing blank lines.
+                text += '\n'
+                self.setProperty("autoNewlineAtEnd", True)
             if self.compact_pasted_empty_lines and text and text != source.text():
                 # Preserve supplied boundary separators next to existing text.
                 before = QTextCursor(self.document()); before.setPosition(cursor.selectionStart())
@@ -664,6 +672,7 @@ class CodeEditor(QPlainTextEdit):
                     cursor.insertText('\n')
                 cursor.insertText(text)
                 if (self.property("autoNewlineOnPaste") and text
+                        and not source.text().endswith(('\n', '\r', '\u2028', '\u2029', '\u0085'))
                         and not text.endswith(('\n', '\r', '\u2028', '\u2029', '\u0085'))
                         and cursor.position() == self.document().characterCount() - 1):
                     cursor.insertText('\n')
@@ -1141,8 +1150,8 @@ class EditorTabs(QWidget):
         editor.destructive_paste_callback = self.destructive_paste_callback
         editor.setProperty("autoNewlineOnPaste", path.suffix.casefold() in {".txt", ".md", ".markdown"})
         editor.vocabulary_mode = is_vocabulary(path, text)
-        editor.clean_empty_lines = cleans_editor_text(path)
-        editor.compact_pasted_empty_lines = cleans_editor_text(path)
+        editor.clean_empty_lines = cleans_file_text(path)
+        editor.compact_pasted_empty_lines = editor.clean_empty_lines
         original_text = text
         text = normalize_editor_text(path, text)
         editor.setProperty('displayNormalization', text != original_text)
@@ -1321,8 +1330,8 @@ class EditorTabs(QWidget):
             raw = path.read_bytes()
             normalized = normalize_editor_text(path, text)
             editor.vocabulary_mode = is_vocabulary(path, text)
-            editor.clean_empty_lines = cleans_editor_text(path)
-            editor.compact_pasted_empty_lines = cleans_editor_text(path)
+            editor.clean_empty_lines = cleans_file_text(path)
+            editor.compact_pasted_empty_lines = editor.clean_empty_lines
             editor.setPlainText(normalized)
             editor.disk_digest = hashlib.sha256(raw).digest()
             editor.disk_bom = raw.startswith(b'\xef\xbb\xbf')
@@ -1438,7 +1447,7 @@ class EditorTabs(QWidget):
     def prioritize_paths(self, paths: list[str]) -> None:
         """Put preferred file tabs first while retaining other tabs and pinning export last."""
         keys = self.tab_order()
-        ordered = [str(Path(path).resolve()) for path in paths]
+        ordered = list(dict.fromkeys(str(Path(path).resolve()) for path in paths))
         ordered = [key for key in ordered if key in keys]
         ordered.extend(key for key in keys if key not in ordered and key != "txt-export")
         if "txt-export" in keys:

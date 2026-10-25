@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 import re
 
-from PySide6.QtCore import Qt, QThread, Signal, QUrl
+from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QEvent
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QScrollArea, QFrame, QMenu, QInputDialog, QMessageBox, QApplication, QStyle,
@@ -45,14 +45,19 @@ class PolishHistoryPage(QWidget):
         self.progress_summary.setObjectName('historyProgressSummary')
         self.progress_summary.setWordWrap(True)
         layout.addWidget(self.progress_summary)
-        self.go_latest_button = QPushButton('ไปยังรายการล่าสุด')
-        self.go_latest_button.setObjectName('goToLatestHistory')
-        self.go_latest_button.clicked.connect(self.go_to_latest)
-        layout.addWidget(self.go_latest_button)
-        self.copy_recommended = QPushButton('คัดลอก ZIP ของช่วงที่แนะนำ')
-        self.copy_recommended.setObjectName('copyRecommendedHistory')
-        self.copy_recommended.clicked.connect(self._copy_recommended)
-        layout.addWidget(self.copy_recommended)
+        navigation = QHBoxLayout()
+        self.previous_button = QPushButton('← ชุดก่อนหน้า')
+        self.previous_button.setObjectName('previousHistoryBatch')
+        self.previous_button.clicked.connect(self.go_to_previous)
+        navigation.addWidget(self.previous_button)
+        self.resume_button = QPushButton('ไปจุดทำงานต่อ')
+        self.resume_button.setObjectName('goToRecommendedHistory')
+        self.resume_button.clicked.connect(self.go_to_resume)
+        navigation.addWidget(self.resume_button)
+        navigation.addStretch(1)
+        layout.addLayout(navigation)
+        self._navigation_snapshot_id = None
+        self._user_navigated = False
         tools = QHBoxLayout()
         self.search = QLineEdit(); self.search.setPlaceholderText('ค้นหาเลขบทหรือช่วงบท…')
         self.search.setAccessibleName('ค้นหาประวัติช่วงบท')
@@ -83,10 +88,32 @@ class PolishHistoryPage(QWidget):
         self.status = QLabel(); self.status.setWordWrap(True); layout.addWidget(self.status)
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
         self.history_scroll = scroll
+        scroll.viewport().installEventFilter(self)
+        scroll.verticalScrollBar().sliderPressed.connect(self._mark_user_navigation)
+        scroll.verticalScrollBar().valueChanged.connect(self._sync_navigation_from_scroll)
         self.cards = QWidget(); self.cards.setObjectName('polishHistoryCards')
         self.card_layout = QVBoxLayout(self.cards)
         self.card_layout.setContentsMargins(0, 2, 0, 2); self.card_layout.setSpacing(4)
         scroll.setWidget(self.cards); layout.addWidget(scroll, 1)
+
+    def _mark_user_navigation(self, *_args):
+        self._user_navigated = True
+        QTimer.singleShot(0, self._sync_navigation_from_scroll)
+
+    def _sync_navigation_from_scroll(self, *_args):
+        if getattr(self, '_programmatic_scroll', False):
+            return
+        position = self.history_scroll.verticalScrollBar().value()
+        for snapshot in self._ordered_snapshots():
+            card = self._cards_by_id.get(self._snapshot_id(snapshot))
+            if card is not None and card.y() + card.height() > position:
+                self._navigation_snapshot_id = self._snapshot_id(snapshot)
+                break
+
+    def eventFilter(self, watched, event):
+        if watched is self.history_scroll.viewport() and event.type() == QEvent.Wheel:
+            self._mark_user_navigation()
+        return super().eventFilter(watched, event)
 
     def _change_zip_mode(self, enabled):
         previous = self.owner.settings.history_copy_as_zip
@@ -130,63 +157,147 @@ class PolishHistoryPage(QWidget):
         self.status.setText(f'{len(snapshots)} ประวัติ · {count} ไฟล์ · {size / (1024 * 1024):,.2f} MB')
         self._update_progress_summary()
         self.render()
+        if not self._user_navigated:
+            QTimer.singleShot(0, self.go_to_resume)
 
     def _progress_key(self):
         step_id = self.profile.polish_history_step_id or 'all'
         return f'{self.profile.id}:{step_id}'
 
     def _update_progress_summary(self):
+        events = self._copy_events()
         state = self.owner.settings.history_copy_state.get(self._progress_key(), {})
-        last = state.get('chapter_range')
-        resume_state = self.owner.settings.history_resume_positions.get(self._progress_key(), {})
-        resume = resume_state.get('chapter_range') if isinstance(resume_state, dict) else resume_state
+        last_event = max(events, key=lambda item: str(item.get('timestamp') or ''), default=state)
+        last = last_event.get('chapter_range')
+        forward = self._forward_progress_end(events)
+        legacy_end = self._legacy_resume_end()
+        if legacy_end is not None:
+            forward = max(forward, legacy_end) if forward is not None else legacy_end
+        candidate = self._recommended_snapshot(forward)
+        self._recommended = candidate
+        copied = self._copied_snapshot_ids(events)
+        if not copied and state.get('snapshot_id'):
+            copied.add(str(state['snapshot_id']))
+        skipped = self._skipped_ranges(copied, forward)
         timestamp = state.get('timestamp')
+        timestamp = last_event.get('timestamp')
         if timestamp:
             try: timestamp = datetime.fromisoformat(timestamp).astimezone().strftime('%d/%m/%Y %H:%M')
             except (ValueError, TypeError): pass
         self.progress_summary.setText(
+            f"ประวัติทั้งหมด {len(self.snapshots)} ชุด · เคยคัดลอกแล้ว {len(copied)} ชุด\n"
             f"คัดลอกล่าสุด: {'บท ' + str(last).replace('-', '–') if last else 'ไม่มีข้อมูล'}"
             f"{(' · ' + str(timestamp)) if timestamp else ''}    "
-            f"จุดทำงานต่อ: {'บท ' + str(resume).replace('-', '–') if resume else 'ยังไม่ได้กำหนด'}"
+            f"ชุดถัดไป: {'บท ' + str(candidate.manifest.get('chapter_range')).replace('-', '–') if candidate else 'ถึงรายการสุดท้ายแล้ว'}"
+            f"    รายการที่ข้ามไว้: {skipped} ชุด"
         )
-        candidate = self._recommended_snapshot()
-        self._recommended = candidate
-        self.copy_recommended.setEnabled(candidate is not None)
-        self.copy_recommended.setText(
-            'คัดลอก ZIP ของช่วงที่แนะนำ' if self.owner.settings.history_copy_as_zip
-            else 'คัดลอกไฟล์ของช่วงที่แนะนำ'
+        self.resume_button.setEnabled(candidate is not None)
+        self.previous_button.setEnabled(bool(self._chapter_ordered_snapshots()))
+
+    def _copy_events(self):
+        events = self.owner.settings.history_copy_events.get(self._progress_key(), [])
+        if not isinstance(events, list):
+            return []
+        return [item for item in events if isinstance(item, dict) and item.get('result') == 'clipboard_set']
+
+    @staticmethod
+    def _copied_snapshot_ids(events):
+        return {str(item.get('snapshot_id')) for item in events if item.get('snapshot_id')}
+
+    def _forward_progress_end(self, events):
+        ends = [bounds[1] for event in events
+                if (bounds := self._chapter_range(type('RangeValue', (), {
+                    'manifest': {'chapter_range': event.get('chapter_range')}
+                })()))]
+        return max(ends) if ends else None
+
+    def _legacy_resume_end(self):
+        legacy = self.owner.settings.history_resume_positions.get(self._progress_key(), {})
+        span = legacy.get('chapter_range') if isinstance(legacy, dict) else legacy
+        if not span:
+            return None
+        bounds = self._chapter_range(type('RangeValue', (), {'manifest': {'chapter_range': span}})())
+        return bounds[1] if bounds else None
+
+    def _chapter_ordered_snapshots(self):
+        return sorted(
+            (item for item in self.snapshots if not item.error and self._chapter_range(item)),
+            key=lambda item: (self._chapter_range(item)[0], self._chapter_range(item)[1], self._snapshot_id(item)),
         )
 
-    def _recommended_snapshot(self):
-        resume_state = self.owner.settings.history_resume_positions.get(self._progress_key(), {})
-        resume = resume_state.get('chapter_range') if isinstance(resume_state, dict) else resume_state
-        if not resume:
-            return None
-        bounds = self._chapter_range(type('RangeValue', (), {'manifest': {'chapter_range': resume}})())
-        if not bounds:
-            return None
-        next_start = bounds[1] + 1
-        return next((item for item in sorted(self.snapshots, key=lambda s: self._chapter_range(s) or (10**18, 10**18))
-                     if self._chapter_range(item) and self._chapter_range(item)[0] >= next_start), None)
+    def _skipped_ranges(self, copied_ids, forward):
+        if forward is None:
+            return 0
+        seen = set()
+        for item in self._chapter_ordered_snapshots():
+            bounds = self._chapter_range(item)
+            if bounds[1] >= forward:
+                continue
+            marker = (bounds, self._snapshot_id(item))
+            if self._snapshot_id(item) not in copied_ids:
+                seen.add(marker)
+        return len(seen)
 
-    def _copy_recommended(self):
-        if getattr(self, '_recommended', None):
-            self.copy_snapshot(self._recommended)
-
-    def go_to_latest(self):
+    def _recommended_snapshot(self, forward=None):
+        if forward is None:
+            forward = self._forward_progress_end(self._copy_events())
+        legacy_end = self._legacy_resume_end()
+        if legacy_end is not None:
+            forward = max(forward, legacy_end) if forward is not None else legacy_end
+        copied = self._copied_snapshot_ids(self._copy_events())
         state = self.owner.settings.history_copy_state.get(self._progress_key(), {})
-        target_id = str(state.get('snapshot_id') or '')
-        snapshot = next((item for item in self.snapshots if self._snapshot_id(item) == target_id), None)
-        if snapshot is None and self.snapshots:
-            snapshot = self.snapshots[0]
+        if state.get('snapshot_id'):
+            copied.add(str(state['snapshot_id']))
+        candidates = [item for item in self._chapter_ordered_snapshots()
+                      if self._snapshot_id(item) not in copied
+                      and (forward is None or self._chapter_range(item)[0] > forward)]
+        return candidates[0] if candidates else None
+
+    def _scroll_to_snapshot(self, snapshot):
         if snapshot is None:
-            self.status.setText('ยังไม่มีรายการประวัติให้ไปยัง')
             return
+        self._navigation_snapshot_id = self._snapshot_id(snapshot)
+        card = getattr(self, '_cards_by_id', {}).get(self._navigation_snapshot_id)
+        if card:
+            self._programmatic_scroll = True
+            self.history_scroll.ensureWidgetVisible(card, 0, 24)
+            QTimer.singleShot(0, lambda: setattr(self, '_programmatic_scroll', False))
+
+    def go_to_resume(self):
+        self._user_navigated = True
+        snapshot = self._recommended_snapshot()
+        if snapshot is None:
+            ordered = self._chapter_ordered_snapshots()
+            if not ordered:
+                self.status.setText('ยังไม่มีชุดประวัติที่พร้อมใช้งาน')
+                return
+            snapshot = ordered[-1]
+            self.status.setText('ถึงรายการสุดท้ายแล้ว · แสดงชุดล่าสุดที่มีเลขบท')
         self.search.clear()
         self.render()
-        card = getattr(self, '_cards_by_id', {}).get(self._snapshot_id(snapshot))
-        if card:
-            self.history_scroll.ensureWidgetVisible(card)
+        QTimer.singleShot(0, lambda s=snapshot: self._scroll_to_snapshot(s))
+
+    def go_to_previous(self):
+        self._user_navigated = True
+        ordered = self._chapter_ordered_snapshots()
+        if not ordered:
+            return
+        current_id = self._navigation_snapshot_id
+        current_index = next((i for i, item in enumerate(ordered) if self._snapshot_id(item) == current_id), None)
+        if current_index is None:
+            target = ordered[-1]
+        else:
+            target = ordered[max(0, current_index - 1)]
+        self.search.clear()
+        self.render()
+        QTimer.singleShot(0, lambda s=target: self._scroll_to_snapshot(s))
+
+    def on_copy_success(self, snapshot, *, advanced=False):
+        self._update_progress_summary()
+        self.render()
+        if advanced:
+            self._user_navigated = False
+            QTimer.singleShot(0, self.go_to_resume)
 
     def set_resume_position(self, snapshot):
         span = snapshot.manifest.get('chapter_range')
@@ -311,7 +422,13 @@ class PolishHistoryPage(QWidget):
         # presentation order. The immutable manifest ID is never modified.
         for index, snapshot in enumerate(found):
             card = QFrame(); card.setObjectName('polishHistoryRow')
-            rows = QHBoxLayout(card); rows.setContentsMargins(8, 4, 8, 4); rows.setSpacing(6)
+            snapshot_id = self._snapshot_id(snapshot)
+            recommended = getattr(self, '_recommended', None)
+            is_recommended = bool(recommended and self._snapshot_id(recommended) == snapshot_id)
+            if is_recommended:
+                card.setProperty('recommendedNext', True)
+                card.setStyleSheet('QFrame#polishHistoryRow[recommendedNext="true"] { border: 2px solid #4386d8; border-radius: 7px; }')
+            rows = QHBoxLayout(card); rows.setContentsMargins(8, 0, 8, 0); rows.setSpacing(6)
             card.setMinimumHeight(54)
             # Keep number → chapter/details → copy as one left-aligned group.
             # Destructive actions stay isolated on the far right.
@@ -330,21 +447,21 @@ class PolishHistoryPage(QWidget):
             title.setWordWrap(True)
             text_column.addWidget(title)
             copy_state = self.owner.settings.history_copy_state.get(self._progress_key(), {})
-            snapshot_id = self._snapshot_id(snapshot)
-            resume = self.owner.settings.history_resume_positions.get(self._progress_key())
+            copied_ids = self._copied_snapshot_ids(self._copy_events())
+            if copy_state.get('snapshot_id'):
+                copied_ids.add(str(copy_state['snapshot_id']))
             row_status = []
-            if copy_state.get('snapshot_id') == snapshot_id:
-                row_status.append('✓ คัดลอกล่าสุด')
-            resume_range = resume.get('chapter_range') if isinstance(resume, dict) else resume
-            if resume_range and str(snapshot.manifest.get('chapter_range') or '') == str(resume_range):
-                row_status.append('จุดทำงานต่อ')
-            if row_status:
-                badge = QLabel(' · '.join(row_status))
-                badge.setObjectName('mutedLabel')
-                text_column.addWidget(badge)
+            copied = snapshot_id in copied_ids
+            badge_text = ('✓  คัดลอกแล้ว' if copied else ('→  ชุดถัดไป' if is_recommended else '○  ยังไม่ได้คัดลอก'))
+            badge = QLabel(badge_text)
+            badge.setObjectName('historyCopyState')
+            badge.setStyleSheet('font-size: 16px; font-weight: 700; color: #24834a;' if copied else
+                                ('font-size: 16px; font-weight: 700; color: #2868b2;' if is_recommended else
+                                 'font-size: 14px; color: palette(mid);'))
             zipped = self.owner.settings.history_copy_as_zip
             copy = QPushButton('คัดลอก ZIP' if zipped else 'คัดลอก')
             copy.setObjectName('polishHistoryCopy')
+            copy.setFixedHeight(32)
             copy.setToolTip('รวมไฟล์ทั้งหมดของรายการนี้เป็น ZIP เดียว · วางด้วย Ctrl+V' if zipped
                             else 'คัดลอกไฟล์ทั้งหมดของรายการนี้ · วางด้วย Ctrl+V')
             changed_payload = snapshot.error.startswith('ไฟล์ในประวัติถูกแก้ไขหรือ Hash ไม่ตรง:')
@@ -354,10 +471,6 @@ class PolishHistoryPage(QWidget):
             copy.setAccessibleName(f'ลำดับ {index + 1} ' + title.text() + ' คัดลอกไฟล์ทั้งหมด')
             copy.clicked.connect(lambda _=False, s=snapshot: self.copy_snapshot(s))
             rows.addWidget(copy)
-            resume_button = QPushButton('ตั้งเป็นจุดทำงานต่อ')
-            resume_button.setObjectName('setHistoryResumePosition')
-            resume_button.clicked.connect(lambda _=False, s=snapshot: self.set_resume_position(s))
-            rows.addWidget(resume_button)
             if self._sort_mode == 'manual':
                 up = QToolButton()
                 up.setObjectName('polishHistoryMoveUp')
@@ -365,6 +478,7 @@ class PolishHistoryPage(QWidget):
                 up.setToolTip('เลื่อนประวัติขึ้น')
                 up.setAccessibleName(f'เลื่อนบท {span} ขึ้น')
                 up.setFixedWidth(25)
+                up.setFixedHeight(28)
                 up.setEnabled(index > 0 and not self.search.text().strip())
                 up.clicked.connect(lambda _=False, s=snapshot: self._move_snapshot(s, -1))
                 rows.addWidget(up)
@@ -374,6 +488,7 @@ class PolishHistoryPage(QWidget):
                 down.setToolTip('เลื่อนประวัติลง')
                 down.setAccessibleName(f'เลื่อนบท {span} ลง')
                 down.setFixedWidth(25)
+                down.setFixedHeight(28)
                 down.setEnabled(index < len(found) - 1 and not self.search.text().strip())
                 down.clicked.connect(lambda _=False, s=snapshot: self._move_snapshot(s, 1))
                 rows.addWidget(down)
@@ -383,17 +498,23 @@ class PolishHistoryPage(QWidget):
             delete.setToolTip('ลบประวัตินี้ไปยังถังรีไซเคิล')
             delete.setAccessibleName(f'ลำดับ {index + 1} ' + title.text() + ' ลบประวัตินี้ไปยังถังรีไซเคิล')
             delete.setFixedWidth(32)
+            delete.setFixedHeight(32)
             delete.setStyleSheet('QPushButton:hover { background: #f6caca; color: #782020; }')
             delete.clicked.connect(lambda _=False, s=snapshot, b=delete: self.delete_snapshot(s, b))
             rows.addWidget(delete)
             more = QPushButton('⋯'); more.setAccessibleName(f'ลำดับ {index + 1} ' + title.text() + ' ตัวเลือกเพิ่มเติม')
             more.clicked.connect(lambda _=False, s=snapshot, b=more: self.more_menu(s, b))
-            more.setFixedWidth(28); rows.addWidget(more)
+            more.setFixedSize(28, 32); rows.addWidget(more)
             try: stamp = datetime.fromisoformat(snapshot.manifest['created_at']).astimezone().strftime('%H:%M')
             except (KeyError, ValueError, TypeError): stamp = snapshot.path.name
             review_status = snapshot.manifest.get('review_status', 'รอตรวจ')
-            detail = QLabel(f'{stamp} · {snapshot.manifest.get("file_count", 0) if not snapshot.error else "?"} ไฟล์ · {review_status}')
-            detail.setWordWrap(True); detail.setObjectName('mutedLabel'); text_column.addWidget(detail)
+            detail = QLabel(
+                f'{badge_text} · {stamp} · '
+                f'{snapshot.manifest.get("file_count", 0) if not snapshot.error else "?"} ไฟล์ · '
+                f'สถานะตรวจคำแปล: {review_status}'
+            )
+            detail.setWordWrap(True); detail.setObjectName('historyCopyState')
+            detail.setStyleSheet(badge.styleSheet()); text_column.addWidget(detail)
             if snapshot.error:
                 error = QLabel('ตรวจพบข้อผิดพลาด: ' + snapshot.error); error.setWordWrap(True)
                 text_column.addWidget(error)
@@ -442,7 +563,12 @@ class PolishHistoryPage(QWidget):
             return paths, count, modified
         def success(result):
             paths, count, modified = result
-            self.owner._history_clipboard(paths, count, zipped)
+            try:
+                self.owner._history_clipboard(paths, count, zipped)
+            except Exception as exc:
+                self.failed('ส่งไฟล์ไปยัง Clipboard ไม่สำเร็จ: ' + str(exc))
+                return
+            self.owner._record_history_copy_success(self.profile, snapshot, count, zipped)
             self.refresh()
         self.owner.run_history_job(operation, success, self.failed)
 

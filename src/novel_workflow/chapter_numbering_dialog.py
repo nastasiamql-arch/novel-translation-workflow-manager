@@ -220,7 +220,7 @@ class ChapterNumberDialog(QDialog):
         actions = QHBoxLayout()
         reviewed = QPushButton("ตรวจแล้ว")
         reviewed.setToolTip("ยืนยันว่าได้ตรวจเลขบทแล้ว โดยไม่แก้เนื้อหา")
-        reviewed.clicked.connect(self.accept)
+        reviewed.clicked.connect(self.mark_reviewed)
         actions.addWidget(reviewed)
         self.selected_button = QPushButton("แก้ที่เลือก")
         self.selected_button.clicked.connect(self.apply_selected)
@@ -254,6 +254,51 @@ class ChapterNumberDialog(QDialog):
         self.sequence_button.setEnabled(bool(self.headings))
         self.selected_button.setEnabled(bool(self.headings))
         self.all_button.setEnabled(bool(self.headings))
+
+    def mark_reviewed(self):
+        """Persist explicit human confirmation against the exact source bytes."""
+        try:
+            if self.editor.toPlainText() != self.original:
+                raise ValueError("เนื้อหาใน Editor เปลี่ยนหลังเปิดหน้าตรวจ กรุณาปิดแล้วตรวจใหม่")
+            if not self._file_unchanged():
+                raise ValueError("ต้นฉบับเปลี่ยนหลังเปิดหน้าตรวจ กรุณาตรวจความต่างแล้วเปิดใหม่")
+            raw = self.path.read_bytes()
+            profile = self.workspace.owner.profile
+            if profile is None or profile.id != self.workspace.profile_id:
+                profile = next((item for item in self.workspace.owner.repo.list_profiles()
+                                if item.id == self.workspace.profile_id), None)
+            if profile is None:
+                raise ValueError("ไม่พบ Novel Profile ที่เป็นเจ้าของไฟล์นี้")
+            from datetime import datetime
+            stat = self.path.stat()
+            key = str(self.path.resolve())
+            previous = profile.chapter_review_state.get(key)
+            profile.chapter_review_state[key] = {
+                "profile_id": profile.id,
+                "source_file_path": key,
+                "source_fingerprint": hashlib.sha256(raw).hexdigest(),
+                "verified_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "detected_chapter_count": len(self.headings),
+                "review_result": "ผู้ใช้ยืนยันตรวจเลขบทแล้ว",
+                "source_size": stat.st_size,
+                "source_mtime_ns": stat.st_mtime_ns,
+            }
+            try:
+                self.workspace.owner.repo.save_profile(profile)
+            except Exception:
+                if previous is None:
+                    profile.chapter_review_state.pop(key, None)
+                else:
+                    profile.chapter_review_state[key] = previous
+                raise
+            self.workspace.owner.profile = profile
+            self.result.setText(
+                f"ยืนยันตรวจเลขบทแล้ว · พบหัวบท {len(self.headings)} บท · "
+                + datetime.now().astimezone().strftime("%d/%m/%Y %H:%M")
+            )
+            self.accept()
+        except Exception as exc:
+            QMessageBox.warning(self, "บันทึกผลตรวจไม่ได้", str(exc))
 
     def remove_duplicate_headings(self):
         try:

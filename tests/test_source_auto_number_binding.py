@@ -52,6 +52,33 @@ def test_start_number_is_remembered_only_as_manual_fallback(tmp_path):
     window.close()
 
 
+def test_manual_chapter_review_persists_exact_source_fingerprint(tmp_path):
+    repo, profile, _ = setup_profile(tmp_path)
+    source = repo.profile_dir(profile.id) / 'source' / 'SEG.txt'
+    source.parent.mkdir(exist_ok=True)
+    source.write_text('第646章 开始\n第647章 继续', encoding='utf-8')
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(repo)
+    window.select_profile(next(i for i, p in enumerate(window.ps_list) if p.id == profile.id))
+    workspace = window.workspaces[profile.id]
+    editor = workspace.editor.open_file(source)
+    dialog = ChapterNumberDialog(workspace, editor, source)
+    assert not profile.chapter_review_state
+    dialog.mark_reviewed()
+    saved = next(p for p in repo.list_profiles() if p.id == profile.id)
+    state = saved.chapter_review_state[str(source.resolve())]
+    assert state['profile_id'] == profile.id
+    assert state['source_fingerprint'] == editor.disk_digest.hex()
+    assert state['detected_chapter_count'] == 2
+    assert state['review_result'] == 'ผู้ใช้ยืนยันตรวจเลขบทแล้ว'
+    assert window._chapter_review_status(saved, source)['current'] is True
+    source.write_text('第646章 开始\n第648章 แก้ไขภายหลัง', encoding='utf-8')
+    assert window._chapter_review_status(saved, source)['current'] is False
+    dialog.close()
+    window._close_export_reminder_accepted = True
+    window.close()
+
+
 def test_external_source_matches_explicit_bound_translator(tmp_path):
     repo, profile, _ = setup_profile(tmp_path)
     outside = tmp_path / "outside"

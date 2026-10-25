@@ -26,8 +26,8 @@ def cleans_editor_text(path: Path) -> bool:
 
 
 def normalize_editor_text(path: Path, text: str) -> str:
-    """Compact an opened text document; never scan or rewrite unopened files."""
-    return normalize_novel_text(text) if cleans_editor_text(path) else text
+    """Normalize novel prose only; preserve structured and auxiliary documents."""
+    return normalize_file_text(path, text)
 
 
 def is_vocabulary(path: Path, text: str = '') -> bool:
@@ -47,10 +47,9 @@ def cleans_file_text(path: Path) -> bool:
         return False
     if names & STRUCTURED_FOLDERS or is_vocabulary(path):
         return False
-    if re.search(r'^(prompt|style|config|settings)(?:[_. -]|$)', path.stem, re.I):
+    if re.search(r'(?:prompt|style|config|settings|glossary|characters?|vocab(?:ulary)?|translator)(?:[_. -]|$)', path.stem, re.I):
         return False
-    return (bool(names & NOVEL_FOLDERS) or path.stem.casefold() == 'context'
-            or bool(re.search(r'^(chapter|segverified|verified|novel|บทที่|第)', path.stem, re.I)))
+    return True
 
 
 def normalize_context_text(text: str) -> str:
@@ -114,7 +113,7 @@ def deleted_ranges(old: str, new: str):
 def normalize_file_text(path: Path, text: str) -> str:
     if not cleans_file_text(path) or is_vocabulary(path, text):
         return text
-    if path.stem.casefold() == 'context':
+    if path.stem.casefold().endswith('context'):
         return normalize_context_text(text)
     return normalize_novel_text(text)
 

@@ -235,6 +235,42 @@ def test_copying_older_history_updates_last_copied_without_moving_resume(window)
     assert (p.verified_goal_count, len(p.verified_export_history), p.txt_export_settings.current) == before_exports
 
 
+def test_history_auto_resume_uses_successful_snapshot_events_and_ignores_display_sort(window):
+    w, p, workspace, errors = window
+    step = w._history_step_for_profile(p)
+    older = w.polish_history.create(p, step, '101-104')
+    copied = w.polish_history.create(p, step, '137-140')
+    next_batch = w.polish_history.create(p, step, '141-144')
+    page_key = f'polish-history:{p.id}'
+    w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
+    page = w._utility_pages[page_key]
+    key = f'{p.id}:{step.id}'
+    w.settings.history_copy_events[key] = [
+        {'event_id': 'a', 'profile_id': p.id, 'step_id': step.id,
+         'snapshot_id': older.manifest['snapshot_id'], 'chapter_range': '101-104',
+         'timestamp': '2026-10-25T10:00:00+00:00', 'result': 'clipboard_set'},
+        {'event_id': 'b', 'profile_id': p.id, 'step_id': step.id,
+         'snapshot_id': copied.manifest['snapshot_id'], 'chapter_range': '137-140',
+         'timestamp': '2026-10-25T11:00:00+00:00', 'result': 'clipboard_set'},
+    ]
+    w.settings.history_copy_state[key] = w.settings.history_copy_events[key][-1]
+    page._sort_mode = 'manual'
+    w.settings.history_manual_order[p.id] = [
+        next_batch.manifest['snapshot_id'], copied.manifest['snapshot_id'], older.manifest['snapshot_id']
+    ]
+    page._update_progress_summary()
+    page.render()
+    assert page._recommended.manifest['snapshot_id'] == next_batch.manifest['snapshot_id']
+    assert 'เคยคัดลอกแล้ว 2 ชุด' in page.progress_summary.text()
+    assert page.findChildren(QPushButton, 'setHistoryResumePosition') == []
+    assert page.previous_button.text() == '← ชุดก่อนหน้า'
+    assert page.resume_button.text() == 'ไปจุดทำงานต่อ'
+    active_rows = [page.card_layout.itemAt(i).widget() for i in range(page.card_layout.count())
+                   if page.card_layout.itemAt(i).widget() is not None]
+    assert len(active_rows) == 3
+
+
 def test_successful_txt_export_creates_pending_snapshot_without_reexport(window, tmp_path):
     w, p, workspace, errors = window
     export = workspace.editor.export_tab

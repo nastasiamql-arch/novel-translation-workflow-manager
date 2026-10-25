@@ -45,11 +45,18 @@ def test_per_novel_working_tab_order_and_auto_open_restore(tmp_path):
     editor = window.workspaces[first.id].editor
     assert editor.open_paths() == [str(second_file.resolve()), str(first_file.resolve())]
     assert editor.tab_order() == [str(second_file.resolve()), str(first_file.resolve()), 'txt-export']
+    # Session order must override the profile's configured startup order.
+    editor.tabs.tabBar().moveTab(0, 1)
+    window._persist_workspace_session()
+    assert editor.tab_order() == [str(first_file.resolve()), str(second_file.resolve()), 'txt-export']
     window.close()
 
     restored = MainWindow(ProjectRepository(tmp_path))
     assert restored.workspaces[first.id].editor.open_paths() == [
-        str(second_file.resolve()), str(first_file.resolve())
+        str(first_file.resolve()), str(second_file.resolve())
+    ]
+    assert restored.workspaces[first.id].editor.tab_order() == [
+        str(first_file.resolve()), str(second_file.resolve()), 'txt-export'
     ]
     assert all('DRAGON.txt' not in path for path in restored.workspaces[first.id].editor.open_paths())
     select_novel(restored, second)

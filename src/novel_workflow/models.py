@@ -47,7 +47,7 @@ class Workflow:
     def from_dict(cls,d): return cls([WorkflowStep.from_dict(x) for x in d.get("steps",[])])
 
 _LEGACY_BASIC_STEP_NAMES = ("หาศัพท์","แปล","ตรวจคำแปล","เกลาสำนวน")
-PROFILE_SCHEMA_VERSION = 9
+PROFILE_SCHEMA_VERSION = 10
 
 def migrate_profile_schema(profile: "NovelProfile") -> bool:
     """Advance old profile documents after additive, non-destructive upgrades."""
@@ -167,6 +167,7 @@ class NovelProfile:
     auto_chapter_number_mode: str = "off"
     chapter_manual_start: int | None = None
     chapter_number_pending_files: dict[str, str] = field(default_factory=dict)
+    chapter_review_state: dict[str, dict] = field(default_factory=dict)
     auto_review_translation_step_id: str | None = None
     auto_review_step_id: str | None = None
     order: int = 0
@@ -231,6 +232,10 @@ class NovelProfile:
                 (d.get("chapter_number_pending_files") or {}).items()
                 if isinstance(k, str) and isinstance(v, str)
             } if isinstance(d.get("chapter_number_pending_files"), dict) else {},
+            chapter_review_state={
+                str(k): v for k, v in d.get("chapter_review_state", {}).items()
+                if isinstance(k, str) and isinstance(v, dict)
+            } if isinstance(d.get("chapter_review_state"), dict) else {},
             auto_chapter_number_mode=(
                 d.get("auto_chapter_number_mode")
                 if d.get("auto_chapter_number_mode") in {"off", "check", "fix"}

@@ -40,7 +40,7 @@ def test_paste_removes_only_empty_lines_and_can_undo(tmp_path):
     export.editor.setTextCursor(cursor)
     QApplication.clipboard().setText(RAW)
     export.editor.paste()
-    assert export.editor.toPlainText() == "existing\n" + CLEAN
+    assert export.editor.toPlainText() == "existing\n" + CLEAN + "\n"
     export.editor.undo()
     assert export.editor.toPlainText() == "existing\n"
     QTest.keyClick(export.editor, Qt.Key_Return)

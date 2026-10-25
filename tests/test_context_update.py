@@ -144,7 +144,7 @@ def test_bound_translator_updates_only_its_profile_context(tmp_path, monkeypatch
 
     editor.moveCursor(editor.textCursor().MoveOperation.End)
     editor.insertPlainText("x")
-    assert workspace.export_status_label.text() == "Not Exported"
+    assert workspace.export_status_label.text() == "Modified Since Export"
     editor.undo()
     workspace._confirm_export_digest()
     assert workspace.export_status_label.text() == "Exported"

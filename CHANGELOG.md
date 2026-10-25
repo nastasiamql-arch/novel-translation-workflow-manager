@@ -1,3 +1,12 @@
+## v6.7.0 — Workspace Restoration, Export State, and Polish History Resume
+
+- Restore the user's per-novel tab order after auto-opening working files; keep TXT Export pinned last and preserve the active tab.
+- Persist explicit chapter-number review confirmation against a source fingerprint and ask for review again after the source changes.
+- Show saved Translator Export history and modified-after-export state; preserve unreadable export status files and surface their errors.
+- Keep glossary, translator, prompt, style, and structured Context text intact while normalizing novel prose; give TXT Export the same end-of-paste editing line.
+- Derive Copy History completion and next-batch guidance from durable Snapshot copy events, record confirmed edited-snapshot copies, and add next/previous navigation with guarded smart scrolling.
+- Add persistence and restart regressions for tab order, chapter verification, export status, editor text formats, and history resume.
+
 ## v6.6.0 — Persistent Batch Copy History and Smart Resume
 
 - Persist per-novel copy events for vocabulary and translation batches only after Windows file Clipboard accepts the files.

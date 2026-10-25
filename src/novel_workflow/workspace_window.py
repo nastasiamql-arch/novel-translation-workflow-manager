@@ -4,7 +4,8 @@ import shutil
 import tempfile
 import hashlib
 import os
-from datetime import date, datetime
+import re
+from datetime import date, datetime, datetime as DateTime
 from pathlib import Path
 import subprocess
 
@@ -676,6 +677,7 @@ class WorkspacePage(QWidget):
             return
         if dialog.exec() == QDialog.Accepted and self.owner.profile and self.owner.profile.id == self.profile_id:
             self.owner._set_chapter_pending(self.owner.profile, self, Path(path), False)
+        self.refresh_context_update_button()
 
     def refresh_context_update_button(self):
         editor = self.editor._current_editor()
@@ -698,13 +700,22 @@ class WorkspacePage(QWidget):
             chapter_allowed and
             str(Path(path).resolve()) in self.owner.profile.chapter_number_pending_files
         )
-        self.chapter_number_button.setText(
-            "ตรวจเลขบท • รอตรวจ" if pending else "ตรวจเลขบท"
-        )
-        self.chapter_number_button.setToolTip(
-            "มีบทใหม่รอตรวจ · กดเพื่อตรวจเลขบทเอง" if pending
-            else "ตรวจและแก้เลขหัวบทในต้นฉบับ · ไม่มี Export"
-        )
+        review = (self.owner._chapter_review_status(self.owner.profile, path)
+                  if chapter_allowed else None)
+        if pending:
+            label = "ตรวจเลขบท • รอตรวจ"
+            tooltip = "มีบทใหม่รอตรวจ · กดเพื่อตรวจเลขบทเอง"
+        elif review and review.get('current'):
+            label = "✓ ตรวจเลขบทแล้ว"
+            tooltip = "ตรวจล่าสุด: " + str(review.get('verified_at') or '') + "\n" + str(review.get('review_result') or '')
+        elif review:
+            label = "ตรวจเลขบท • ต้องตรวจใหม่"
+            tooltip = "ต้นฉบับเปลี่ยนหลังตรวจครั้งล่าสุด · กรุณาตรวจเลขบทใหม่"
+        else:
+            label = "ตรวจเลขบท"
+            tooltip = "ตรวจและแก้เลขหัวบทในต้นฉบับ · ไม่มี Export"
+        self.chapter_number_button.setText(label)
+        self.chapter_number_button.setToolTip(tooltip)
         self.update_context_button.setVisible(allowed)
         self.export_status_label.setVisible(allowed)
         self._export_binding_editor = editor
@@ -734,13 +745,29 @@ class WorkspacePage(QWidget):
         self._export_status_editor = editor
         self._export_status_path = key
         status = self.owner._translator_export_status(self.profile_id, path, editor)
+        record = self.owner._export_records(self.profile_id).get(key, {})
+        export_detail = self.owner._export_status_errors.get(self.profile_id, "")
+        if status in {"exported", "not_exported"} and record:
+            try:
+                exported_at = DateTime.fromisoformat(str(record.get('exported_at') or '')).astimezone().strftime('%d/%m/%Y %H:%M')
+            except (ValueError, TypeError):
+                exported_at = str(record.get('exported_at') or '')
+            chapter_range = record.get('chapter_range')
+            if chapter_range:
+                export_detail = f"Export ล่าสุด: บท {chapter_range} · {exported_at}"
+            elif exported_at:
+                export_detail = f"Export ล่าสุด: {exported_at}"
+            if status == "not_exported":
+                export_detail += "\nTranslator เปลี่ยนหลัง Export · ต้อง Export เนื้อหาปัจจุบันใหม่"
         self.export_status_label.setText({
             "exported": "Exported",
-            "not_exported": "Not Exported",
+            "not_exported": "Modified Since Export" if record and record.get('digest') else "Not Exported",
             "unknown": "Export Status Unknown",
+            "error": "ตรวจสอบสถานะ Export ไม่สำเร็จ",
         }[status])
+        self.export_status_label.setToolTip(export_detail)
         colors = theme_colors(self.owner.settings.appearance)
-        if status == "not_exported":
+        if status in {"not_exported", "error"}:
             foreground, background = colors["warning"], colors["surface2"]
         elif status == "exported":
             foreground, background = colors["success"], colors["surface"]
@@ -1188,6 +1215,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
     def __init__(self, repo=None):
         self._export_status_cache = {}
+        self._export_status_errors = {}
         self._startup_export_reminder_shown = False
         self._startup_pending_export_ids = set()
         self._close_export_reminder_accepted = False
@@ -1313,36 +1341,56 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             except Exception as exc:
                 self.statusBar().showMessage('ส่งไฟล์ไปยัง Clipboard ไม่สำเร็จ: ' + str(exc), 8000)
                 return
-            from datetime import datetime, timezone
-            from uuid import uuid4
-            step_id = str(snapshot.manifest.get('step_id') or profile.polish_history_step_id or 'all')
-            key = f'{profile.id}:{step_id}'
-            previous = self.settings.history_copy_state.get(key)
-            event = {
-                'event_id': uuid4().hex,
-                'profile_id': profile.id, 'step_id': step_id,
-                'snapshot_id': str(snapshot.manifest.get('snapshot_id') or snapshot.path.name),
-                'chapter_range': str(snapshot.manifest.get('chapter_range') or ''),
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'file_count': result[1], 'mode': 'zip' if zipped else 'files', 'result': 'clipboard_set',
-            }
-            previous_events = list(self.settings.history_copy_events.get(key, []))
-            self.settings.history_copy_events[key] = [*previous_events, event]
-            self.settings.history_copy_state[key] = event
-            try:
-                self.repo.save_settings(self.settings)
-            except (OSError, ValueError) as exc:
-                if previous is None: self.settings.history_copy_state.pop(key, None)
-                else: self.settings.history_copy_state[key] = previous
-                if previous_events: self.settings.history_copy_events[key] = previous_events
-                else: self.settings.history_copy_events.pop(key, None)
-                self.statusBar().showMessage('คัดลอกสำเร็จ แต่บันทึกประวัติการคัดลอกไม่ได้: ' + str(exc), 8000)
-                return
-            page = self._utility_pages.get('polish-history:' + profile.id)
-            if isinstance(page, PolishHistoryPage):
-                page._update_progress_summary()
-                page.render()
+            self._record_history_copy_success(profile, snapshot, result[1], zipped)
         self.run_history_job(operation, publish)
+
+    def _record_history_copy_success(self, profile, snapshot, file_count, zipped):
+        """Persist one durable event after the file Clipboard operation succeeds."""
+        from datetime import datetime, timezone
+        from uuid import uuid4
+        step_id = str(snapshot.manifest.get('step_id') or profile.polish_history_step_id or 'all')
+        key = f'{profile.id}:{step_id}'
+        previous = self.settings.history_copy_state.get(key)
+        previous_events = list(self.settings.history_copy_events.get(key, []))
+        old_ends = []
+        for item in previous_events:
+            if not isinstance(item, dict) or item.get('result') != 'clipboard_set':
+                continue
+            match = re.fullmatch(r'\s*(\d+)(?:\s*[-–]\s*(\d+))?\s*', str(item.get('chapter_range') or ''))
+            if match:
+                old_ends.append(int(match.group(2) or match.group(1)))
+        if not old_ends and isinstance(previous, dict):
+            match = re.fullmatch(r'\s*(\d+)(?:\s*[-–]\s*(\d+))?\s*', str(previous.get('chapter_range') or ''))
+            if match:
+                old_ends.append(int(match.group(2) or match.group(1)))
+        current_range = str(snapshot.manifest.get('chapter_range') or '')
+        match = re.fullmatch(r'\s*(\d+)(?:\s*[-–]\s*(\d+))?\s*', current_range)
+        new_end = int(match.group(2) or match.group(1)) if match else None
+        old_forward = max(old_ends) if old_ends else None
+        event = {
+            'event_id': uuid4().hex, 'profile_id': profile.id, 'step_id': step_id,
+            'snapshot_id': str(snapshot.manifest.get('snapshot_id') or snapshot.path.name),
+            'chapter_range': current_range,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'file_count': int(file_count), 'mode': 'zip' if zipped else 'files',
+            'result': 'clipboard_set',
+        }
+        self.settings.history_copy_events[key] = [*previous_events, event]
+        self.settings.history_copy_state[key] = event
+        try:
+            self.repo.save_settings(self.settings)
+        except (OSError, ValueError) as exc:
+            if previous is None: self.settings.history_copy_state.pop(key, None)
+            else: self.settings.history_copy_state[key] = previous
+            if previous_events: self.settings.history_copy_events[key] = previous_events
+            else: self.settings.history_copy_events.pop(key, None)
+            self.statusBar().showMessage('คัดลอกสำเร็จ แต่บันทึกประวัติการคัดลอกไม่ได้: ' + str(exc), 8000)
+            return False
+        page = self._utility_pages.get('polish-history:' + profile.id)
+        if isinstance(page, PolishHistoryPage):
+            advanced = new_end is not None and (old_forward is None or new_end > old_forward)
+            page.on_copy_success(snapshot, advanced=advanced)
+        return True
 
     def _history_step_for_profile(self, profile):
         step_id = getattr(profile, 'polish_history_step_id', None)
@@ -2959,6 +3007,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         return workspace
 
     def _open_profile_working_tabs(self, profile, workspace):
+        # Session order is user-owned. Open any newly configured working files,
+        # then put the previous session order back ahead of the new additions.
+        session_order = [key for key in workspace.editor.tab_order() if key != "txt-export"]
+        active_key = workspace.editor.active_tab_key()
         preferred = []
         for item in sorted(profile.working_files, key=lambda value: value.order):
             try:
@@ -2969,7 +3021,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     preferred.append(str(path.resolve()))
             except (OSError, ValueError, TypeError):
                 continue
-        workspace.editor.prioritize_paths(preferred)
+        ordered_paths = list(dict.fromkeys([*session_order, *preferred]))
+        workspace.editor.prioritize_paths(ordered_paths)
+        if active_key and active_key in workspace.editor.tab_order():
+            workspace.editor.tabs.setCurrentIndex(workspace.editor.tab_order().index(active_key))
 
     def _workspace_signature(self, profile_id, workspace):
         """Invalidate a warm workspace if its profile or editor files changed outside Valhalla."""
@@ -3579,6 +3634,21 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         size = self.settings.editor_font_size + float(delta)
         self.set_editor_font_size(size)
 
+    def _chapter_review_status(self, profile, path):
+        """Return persisted manual review state and compare its exact source bytes."""
+        key = str(Path(path).expanduser().resolve())
+        records = getattr(profile, 'chapter_review_state', {})
+        record = records.get(key) if isinstance(records, dict) else None
+        if not isinstance(record, dict):
+            return None
+        if record.get('profile_id') != profile.id or record.get('source_file_path') != key:
+            return {**record, 'current': False}
+        try:
+            digest = hashlib.sha256(Path(key).read_bytes()).hexdigest()
+        except OSError:
+            return {**record, 'current': False}
+        return {**record, 'current': digest == record.get('source_fingerprint')}
+
     def _document_saved(self, saved_path):
         for workspace in self.workspaces.values():
             workspace.refresh_history()
@@ -3857,12 +3927,18 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if profile_id not in self._export_status_cache:
             try:
                 value = read_json(self._export_status_path(profile_id), {})
-                self._export_status_cache[profile_id] = value if isinstance(value, dict) else {}
-            except (OSError, ValueError, TypeError):
+                if not isinstance(value, dict):
+                    raise ValueError("รูปแบบ export_status.json ไม่ใช่ Object")
+                self._export_status_cache[profile_id] = value
+                self._export_status_errors.pop(profile_id, None)
+            except (OSError, ValueError, TypeError) as exc:
                 self._export_status_cache[profile_id] = {}
+                self._export_status_errors[profile_id] = str(exc)
         return self._export_status_cache[profile_id]
 
     def _save_export_records(self, profile_id):
+        if profile_id in self._export_status_errors:
+            raise ValueError("อ่านประวัติ Export เดิมไม่ได้ จึงไม่เขียนทับไฟล์เดิม")
         records = self._export_records(profile_id)
         write_json(self._export_status_path(profile_id), records)
 
@@ -3888,7 +3964,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             raise
 
     def _mark_export_pending(self, profile_id, path):
-        if profile_id in self.repo.export_recovery_errors: return
+        if profile_id in self.repo.export_recovery_errors:
+            return
+        self._export_records(profile_id)
+        if profile_id in self._export_status_errors:
+            return
         key = self._export_path_key(path)
         records = self._export_records(profile_id)
         record = records.get(key)
@@ -3907,9 +3987,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.statusBar().showMessage(f"บันทึกสถานะ Export ไม่สำเร็จ: {exc}", 6000)
 
     def _translator_export_status(self, profile_id, path, editor=None):
-        if profile_id in self.repo.export_recovery_errors: return 'not_exported'
+        if profile_id in self.repo.export_recovery_errors:
+            self._export_status_errors[profile_id] = str(self.repo.export_recovery_errors[profile_id])
+            return 'error'
         key = self._export_path_key(path)
         record = self._export_records(profile_id).get(key)
+        if profile_id in self._export_status_errors:
+            return 'error'
         if not record:
             if editor is not None and EditorTabs._dirty(editor) and not editor.property('normalizationPending'):
                 self._mark_export_pending(profile_id, path)
@@ -3919,7 +4003,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             from .workflow_archive import file_digest
             digest = file_digest(path)
         except OSError:
-            return "not_exported" if record.get('pending') else "unknown"
+            self._export_status_errors[profile_id] = f"อ่านไฟล์ Translator ไม่ได้: {path}"
+            return "error"
         matches = digest.hex() == record.get('digest')
         if editor is not None:
             text = editor.toPlainText()
@@ -4340,7 +4425,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 key = self._export_path_key(source)
                 records[key] = {'profile_id': profile_id, 'translator_path': key,
                     'digest': source_digest.hex(), 'exported_at': event['completed_at'],
-                    'exported_txt_path': str(target), 'pending': False, 'event_id': event['event_id']}
+                    'exported_txt_path': str(target), 'pending': False,
+                    'event_id': event['event_id'], 'chapter_range': event['chapter_range'],
+                    'context_updated': True, 'status': 'committed'}
                 status_path = self._export_status_path(profile_id)
                 status_before_digest = file_digest(status_path) if status_path.exists() else None
                 staged_status = _stage_bytes_file(status_path, b'')
@@ -4376,6 +4463,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                     create_backups=False, no_overwrite=(target,), journal_path=journal_path,
                     verify_before=verify_before, prepare_destination=prepare_destination)
                 self._export_status_cache.pop(profile_id, None)
+                self._export_status_errors.pop(profile_id, None)
         except (OSError, ValueError) as exc:
             self._export_status_cache.pop(profile_id, None)
             if snapshot_verified:
