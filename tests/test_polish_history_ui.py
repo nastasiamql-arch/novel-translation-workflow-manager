@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPoint
 from PySide6.QtTest import QTest
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import QApplication, QPushButton, QMessageBox, QLabel
@@ -228,6 +228,63 @@ def test_resume_and_previous_buttons_scroll_when_progress_is_at_last_snapshot(wi
     previous_id = page._snapshot_id(snapshots[-2])
     wait_until(lambda: page._navigation_snapshot_id == previous_id)
     assert bar.value() < last_position
+
+
+@pytest.mark.parametrize('zipped', [False, True])
+def test_history_copy_buttons_keep_position_for_repeat_and_advance_from_new_batch(window, zipped):
+    w, p, workspace, errors = window
+    step = w._history_step_for_profile(p)
+    snapshots = [w.polish_history.create(p, step, f'{start}-{start + 3}')
+                 for start in range(1, 101, 4)]
+    key = f'{p.id}:{step.id}'
+    first_event = {
+        'event_id': 'already-copied', 'profile_id': p.id, 'step_id': step.id,
+        'snapshot_id': snapshots[0].manifest['snapshot_id'], 'chapter_range': '1-4',
+        'timestamp': '2026-10-25T10:00:00+00:00', 'file_count': 1,
+        'mode': 'files', 'result': 'clipboard_set',
+    }
+    w.settings.history_copy_events[key] = [first_event]
+    w.settings.history_copy_state[key] = first_event
+    w.settings.history_sort_modes[p.id] = 'chapter_asc'
+    w.settings.history_copy_as_zip = zipped
+    w.repo.save_settings(w.settings)
+
+    w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
+    page = w._utility_pages[f'polish-history:{p.id}']
+    page.history_scroll.setFixedHeight(110)
+    QApplication.processEvents()
+    bar = page.history_scroll.verticalScrollBar()
+    wait_until(lambda: bar.maximum() > bar.minimum())
+    bar.setValue(bar.maximum() // 2)
+    QApplication.processEvents()
+    initial_scroll = bar.value()
+    assert initial_scroll > bar.minimum()
+
+    # Copying a previously copied range records the repeat, updates its badge,
+    # and must not dump a user who is browsing the middle of history at row 1.
+    repeat_button = page._cards_by_id[page._snapshot_id(snapshots[0])].findChild(
+        QPushButton, 'polishHistoryCopy')
+    repeat_button.click()
+    wait_until(lambda: len(w.repo.load_settings().history_copy_events[key]) == 2)
+    QApplication.processEvents()
+    assert abs(bar.value() - initial_scroll) <= 2
+    assert any(label.text() == '✓  คัดลอกแล้ว'
+               for label in page._cards_by_id[page._snapshot_id(snapshots[0])].findChildren(
+                   QLabel, 'historyCopyState'))
+
+    # A newly advanced range moves to the next real snapshot and marks it.
+    next_button = page._cards_by_id[page._snapshot_id(snapshots[1])].findChild(
+        QPushButton, 'polishHistoryCopy')
+    next_button.click()
+    wait_until(lambda: len(w.repo.load_settings().history_copy_events[key]) == 3)
+    next_id = page._snapshot_id(snapshots[2])
+    wait_until(lambda: page._navigation_snapshot_id == next_id)
+    next_row = page._cards_by_id[next_id]
+    row_top = next_row.mapTo(page.history_scroll.viewport(), QPoint(0, 0)).y()
+    assert -next_row.height() < row_top < page.history_scroll.viewport().height()
+    assert next_row.property('recommendedNext') is True
+    assert not errors
 
 
 def test_range_required_focus_and_no_false_success(window):

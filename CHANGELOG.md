@@ -1,3 +1,9 @@
+## v6.7.3 — Polish History Copy Scroll Hotfix
+
+- Preserve the visible history position when copy state refreshes rows, including when copying an older batch again.
+- After a forward-progress copy, reveal the actual next available snapshot and keep its copied/recommended status visible across standard and ZIP copy paths.
+- Add UI regressions for repeat copies, forward navigation, and both clipboard modes.
+
 ## v6.7.2 — Polish History Status and Navigation
 
 - Show the copy-complete badge on each history row after a successful Clipboard event.

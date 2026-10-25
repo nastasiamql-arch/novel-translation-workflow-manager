@@ -58,6 +58,8 @@ class PolishHistoryPage(QWidget):
         layout.addLayout(navigation)
         self._navigation_snapshot_id = None
         self._user_navigated = False
+        self._render_generation = 0
+        self._user_scroll_generation = 0
         tools = QHBoxLayout()
         self.search = QLineEdit(); self.search.setPlaceholderText('ค้นหาเลขบทหรือช่วงบท…')
         self.search.setAccessibleName('ค้นหาประวัติช่วงบท')
@@ -98,6 +100,7 @@ class PolishHistoryPage(QWidget):
 
     def _mark_user_navigation(self, *_args):
         self._user_navigated = True
+        self._user_scroll_generation += 1
         QTimer.singleShot(0, self._sync_navigation_from_scroll)
 
     def _sync_navigation_from_scroll(self, *_args):
@@ -424,6 +427,13 @@ class PolishHistoryPage(QWidget):
         self.render()
 
     def render(self, *_):
+        # Rebuilding every row after a copy used to collapse the scroll area to
+        # its first row. Keep the viewport where it was unless the caller has
+        # explicitly requested navigation (for example, to the next batch).
+        scroll_bar = self.history_scroll.verticalScrollBar()
+        prior_scroll_value = scroll_bar.value()
+        render_generation = self._render_generation = self._render_generation + 1
+        user_scroll_generation = self._user_scroll_generation
         self._cards_by_id = {}
         while self.card_layout.count():
             item = self.card_layout.takeAt(0)
@@ -554,6 +564,15 @@ class PolishHistoryPage(QWidget):
                            if not self.snapshots else 'ไม่พบช่วงบทที่ค้นหา')
             empty.setWordWrap(True); empty.setObjectName('emptyStateDescription'); self.card_layout.addWidget(empty)
         self.card_layout.addStretch()
+
+        def restore_viewport():
+            if (render_generation != self._render_generation
+                    or user_scroll_generation != self._user_scroll_generation):
+                return
+            self.card_layout.activate()
+            bar = self.history_scroll.verticalScrollBar()
+            bar.setValue(max(bar.minimum(), min(bar.maximum(), prior_scroll_value)))
+        QTimer.singleShot(0, restore_viewport)
 
     def copy_snapshot(self, snapshot):
         """Only explicitly confirmed historical edits may update stored hashes."""
