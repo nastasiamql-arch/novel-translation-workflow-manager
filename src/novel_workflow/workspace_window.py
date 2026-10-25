@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 60637)
-Total output lines: 4651
-
 from __future__ import annotations
 
 import shutil
@@ -1212,7 +1209,2375 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if logo.is_file():
             self.setWindowIcon(QIcon(str(logo)))
         # Mark historical cosmetic migrations without changing saved preferences.
-        changed = not all((self.settings.appearance_migrated, self.settings.flat_vsco…30637 tokens truncated…ile.id)
+        changed = not all((self.settings.appearance_migrated, self.settings.flat_vscode_theme_migrated, self.settings.editor_style_migrated))
+        self.settings.appearance_migrated = True
+        self.settings.flat_vscode_theme_migrated = True
+        self.settings.editor_style_migrated = True
+        if changed: self.repo.save_settings(self.settings)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.profile:
+            QTimer.singleShot(0, lambda pid=self.profile.id: self._show_startup_export_reminder(pid))
+
+    def apply_theme(self):
+        super().apply_theme()
+        if hasattr(self, "profile_cards"):
+            self.profile_cards._update_library_grid_size()
+        if hasattr(self, "navigation"):
+            self.navigation.refresh_icons(self.settings.appearance)
+        for workspace in getattr(self, "workspaces", {}).values():
+            workspace.editor.set_appearance(self.settings.appearance)
+            workspace.refresh_export_status()
+
+    def show_submit_toast(self, message):
+        self.submit_toast.show_message(message)
+
+    def history_busy(self):
+        return self._history_pending or any(w.isRunning() for w in self._history_workers)
+
+    def run_history_job(self, operation, success, failure=None):
+        if self._history_pending:
+            self.statusBar().showMessage('กำลังจัดการประวัติ กรุณารอสักครู่', 3000)
+            return
+        self._history_pending = True
+        self.statusBar().showMessage('กำลังตรวจสอบและบันทึกไฟล์ประวัติ…')
+        worker = HistoryWorker(operation, self)
+        self._history_workers.append(worker)
+        def complete(result):
+            self._history_pending = False
+            success(result)
+            QTimer.singleShot(0, self._drain_export_snapshot_queue)
+        def failed(error):
+            self._history_pending = False
+            self.statusBar().showMessage(str(error), 8000)
+            if failure: failure(error)
+            QTimer.singleShot(0, self._drain_export_snapshot_queue)
+        worker.succeeded.connect(complete)
+        worker.failed.connect(failed)
+        def cleanup():
+            self._history_workers.remove(worker)
+            worker.deleteLater()
+        worker.finished.connect(cleanup)
+        worker.start()
+
+    def open_polish_history(self):
+        if not self.profile: return
+        key = 'polish-history:' + self.profile.id
+        self._show_utility_page(key, 'ประวัติไฟล์ขั้นตอนเกลา', lambda: PolishHistoryPage(self, self.profile))
+        self._utility_pages[key].profile = self.profile
+        self._utility_pages[key].refresh()
+
+    def update_copy_mode_labels(self):
+        """Reflect the persisted clipboard mode without changing Export controls."""
+        zipped = self.settings.copy_files_as_zip
+        for workspace in self.workspaces.values():
+            workspace.copy_step_button.setText('COPY ZIP' if zipped else 'COPY STEP')
+            workspace.copy_step_button.setToolTip(
+                'รวมไฟล์ทั้งหมดของขั้นตอนที่เลือกเป็น ZIP เดียว · Ctrl+Shift+C' if zipped
+                else 'คัดลอกไฟล์ของขั้นตอนที่เลือก · Ctrl+Shift+C')
+        for page in self._utility_pages.values():
+            if isinstance(page, PolishHistoryPage):
+                # Update the existing buttons in place. Qt deleteLater() keeps old
+                # card widgets discoverable until the event loop processes them.
+                for button in page.findChildren(QPushButton, 'polishHistoryCopy'):
+                    history_zip = self.settings.history_copy_as_zip
+                    button.setText('คัดลอก ZIP' if history_zip else 'คัดลอก')
+                    button.setToolTip(
+                        'รวมไฟล์ทั้งหมดของรายการนี้เป็น ZIP เดียว · วางด้วย Ctrl+V' if history_zip
+                        else 'คัดลอกไฟล์ทั้งหมดของรายการนี้ · วางด้วย Ctrl+V')
+
+    def _history_clipboard(self, paths, count, zipped):
+        from .clipboard_files import copy_file_paths
+        copy_file_paths(paths)
+        message = f'คัดลอก ZIP 1 ไฟล์ · ภายใน {count} ไฟล์' if zipped else f'คัดลอก {count} ไฟล์แล้ว'
+        self.statusBar().showMessage(message + ' · วางด้วย Ctrl+V', 7000)
+
+    def copy_history_snapshot(self, profile, snapshot):
+        zipped = self.settings.history_copy_as_zip
+        def operation():
+            paths = self.polish_history.clipboard_paths(profile, snapshot.path, zipped=zipped)
+            count = len(paths)
+            if zipped:
+                import zipfile
+                with zipfile.ZipFile(paths[0]) as archive:
+                    count = sum(not item.is_dir() for item in archive.infolist())
+            return paths, count
+        def publish(result):
+            try:
+                self._history_clipboard(result[0], result[1], zipped)
+            except Exception as exc:
+                self.statusBar().showMessage('ส่งไฟล์ไปยัง Clipboard ไม่สำเร็จ: ' + str(exc), 8000)
+                return
+            from datetime import datetime, timezone
+            from uuid import uuid4
+            step_id = str(snapshot.manifest.get('step_id') or profile.polish_history_step_id or 'all')
+            key = f'{profile.id}:{step_id}'
+            previous = self.settings.history_copy_state.get(key)
+            event = {
+                'event_id': uuid4().hex,
+                'profile_id': profile.id, 'step_id': step_id,
+                'snapshot_id': str(snapshot.manifest.get('snapshot_id') or snapshot.path.name),
+                'chapter_range': str(snapshot.manifest.get('chapter_range') or ''),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'file_count': result[1], 'mode': 'zip' if zipped else 'files', 'result': 'clipboard_set',
+            }
+            previous_events = list(self.settings.history_copy_events.get(key, []))
+            self.settings.history_copy_events[key] = [*previous_events, event]
+            self.settings.history_copy_state[key] = event
+            try:
+                self.repo.save_settings(self.settings)
+            except (OSError, ValueError) as exc:
+                if previous is None: self.settings.history_copy_state.pop(key, None)
+                else: self.settings.history_copy_state[key] = previous
+                if previous_events: self.settings.history_copy_events[key] = previous_events
+                else: self.settings.history_copy_events.pop(key, None)
+                self.statusBar().showMessage('คัดลอกสำเร็จ แต่บันทึกประวัติการคัดลอกไม่ได้: ' + str(exc), 8000)
+                return
+            page = self._utility_pages.get('polish-history:' + profile.id)
+            if isinstance(page, PolishHistoryPage):
+                page._update_progress_summary()
+                page.render()
+        self.run_history_job(operation, publish)
+
+    def _history_step_for_profile(self, profile):
+        step_id = getattr(profile, 'polish_history_step_id', None)
+        return next((step for step in profile.workflow.steps if step.id == step_id), None)
+
+    def save_for_review(self):
+        workspace = self.workspaces.get(self.profile.id) if self.profile else None
+        if not self.profile or not workspace:
+            return
+        step = self._history_step_for_profile(self.profile)
+        if step is None:
+            self.statusBar().showMessage('เลือกขั้นตอนตรวจคำแปลใน Settings ก่อน', 6000)
+            return
+        if not workspace.editor.save_all(include_normalization=False):
+            self.statusBar().showMessage('บันทึกไฟล์ Editor ไม่สำเร็จ จึงสร้างประวัติไม่ได้', 6000)
+            return
+        span = workspace.history_range.text().strip()
+        from copy import deepcopy
+        profile_copy, step_copy = deepcopy(self.profile), deepcopy(step)
+        self.run_history_job(
+            lambda: self.polish_history.create(profile_copy, step_copy, span),
+            lambda snapshot: self.statusBar().showMessage(
+                f'บันทึกไว้รอตรวจสำเร็จ · {snapshot.manifest["file_count"]} ไฟล์', 7000),
+            lambda error: workspace.history_range.setFocus() if isinstance(error, RangeRequired) else None,
+        )
+
+    def snapshot_export_for_review(self, profile_id, chapter_range=None):
+        if self.history_busy():
+            self._pending_export_snapshots.append((profile_id, chapter_range))
+            return
+        from copy import deepcopy
+        profile = next((item for item in self.repo.list_profiles() if item.id == profile_id), None)
+        if profile is None:
+            profile = self.profile if self.profile and self.profile.id == profile_id else None
+        step = self._history_step_for_profile(profile) if profile else None
+        if profile is None or step is None:
+            message = 'Export สำเร็จ แต่บันทึกประวัติรอตรวจไม่สำเร็จ'
+            self.statusBar().showMessage(message, 8000)
+            return
+        profile_copy, step_copy = deepcopy(profile), deepcopy(step)
+        def operation():
+            return self.polish_history.create(profile_copy, step_copy, chapter_range, allow_unresolved=True, prefer_pre_export=True)
+        def success(snapshot):
+            span = snapshot.manifest.get('chapter_range')
+            label = f'บท {span}' if span else 'รอระบุช่วงบท'
+            message = f'Export สำเร็จ · บันทึกประวัติรอตรวจ {label} · {snapshot.manifest["file_count"]} ไฟล์'
+            self.statusBar().showMessage(message, 9000)
+        def failure(_error):
+            message = 'Export สำเร็จ แต่บันทึกประวัติรอตรวจไม่สำเร็จ'
+            self.statusBar().showMessage(message, 9000)
+        self.run_history_job(operation, success, failure)
+
+    def _drain_export_snapshot_queue(self):
+        if self.history_busy():
+            if self._pending_export_snapshots:
+                QTimer.singleShot(100, self._drain_export_snapshot_queue)
+            return
+        if self._pending_export_snapshots:
+            profile_id, chapter_range = self._pending_export_snapshots.pop(0)
+            self.snapshot_export_for_review(profile_id, chapter_range)
+
+    def save_settings_history_step(self, _index):
+        if not self.profile: return
+        self.profile.polish_history_step_id = self.settings_history_step.currentData()
+        self.save()
+
+    def _show_utility_page(self, key, title, factory):
+        if self._settings_page_state and key != "settings":
+            self._restore_settings_management()
+        if self.main_pages.currentWidget() is not self.utility_page and self._utility_return_page is None:
+            self._utility_return_page = self.main_pages.currentWidget()
+        page = self._utility_pages.get(key)
+        if page is None:
+            page = factory()
+            self._utility_pages[key] = page
+            self.utility_stack.addWidget(page)
+        elif key == "progress":
+            page.set_profiles(self.ps_list)
+        elif key.startswith(("resources:", "novel-progress:")):
+            page.refresh()
+        elif key in {"groups", "launcher", "file-manager", "preview", "story-planner"}:
+            self.utility_stack.removeWidget(page)
+            page.deleteLater()
+            page = factory()
+            self._utility_pages[key] = page
+            self.utility_stack.addWidget(page)
+        self.utility_title.setText(title)
+        self.utility_back.setText("← กลับไปทำงาน" if self.profile else "← คลังนิยาย")
+        self.utility_stack.setCurrentWidget(page)
+        self._active_utility_page = key
+        self.main_pages.setCurrentWidget(self.utility_page)
+        if key == "settings" and page.layout():
+            page.layout().activate()
+            sidebar = page.findChild(QFrame, "preferencesSidebar")
+            if sidebar and sidebar.layout():
+                sidebar.layout().activate()
+        self._sync_navigation()
+
+    def return_from_utility_page(self):
+        if self._settings_page_state:
+            self._restore_settings_management()
+        self._active_utility_page = None
+        return_page = self._utility_return_page
+        self._utility_return_page = None
+        if return_page is self.library_page:
+            self.main_pages.setCurrentWidget(self.library_page)
+            return
+        if self.profile:
+            workspace = self.workspaces.get(self.profile.id)
+            if workspace is None:
+                workspace = self._workspace(self.profile)
+            if workspace is None:
+                return
+            self.workspace_stack.setCurrentWidget(workspace)
+            self.main_pages.setCurrentWidget(self.workspace_stack)
+        else:
+            self.main_pages.setCurrentWidget(self.library_page)
+
+    def groups_dialog(self):
+        self._show_utility_page("groups", "กลุ่มนิยาย", lambda: NovelGroupsPage(self))
+
+    def translation_dashboard(self):
+        profiles = self.ps_list
+
+        def create_dashboard():
+            from .progress_dialog import TranslationDashboardDialog
+            return TranslationDashboardDialog(self, profiles, self.repo, self.refresh_translation_progress)
+
+        self._show_utility_page("progress", "ความคืบหน้าการแปล", create_dashboard)
+
+    def open_story_planner(self, profile_id):
+        """Show the plan only for the currently selected novel."""
+        from .story_planner_page import StoryPlannerPage
+        if not any(profile.id == profile_id for profile in self.repo.list_profiles()):
+            return
+        self._show_utility_page("story-planner", "แผนการแปล",
+                                lambda: StoryPlannerPage(self.repo, profile_id, self))
+
+    def open_novel_resources(self, profile_id):
+        """Show working files, Context, glossary and workflow for this novel."""
+        from .novel_pages import NovelResourcesPage
+        if not self.profile or self.profile.id != profile_id:
+            return
+        key = "resources:" + profile_id
+        self._show_utility_page(
+            key, "ไฟล์และคำศัพท์", lambda: NovelResourcesPage(self, profile_id, self))
+
+    def open_novel_progress(self, profile_id):
+        """Use confirmed Translator Export events without mixing novel ledgers."""
+        from .novel_pages import NovelProgressPage
+        if not self.profile or self.profile.id != profile_id:
+            return
+        key = "novel-progress:" + profile_id
+        self._show_utility_page(
+            key, "ความคืบหน้า", lambda: NovelProgressPage(self.repo, profile_id, self))
+
+    def novel_inspector_dialog(self):
+        """Standalone inspector; does not change translation stages."""
+        from .novel_file_inspector_page import NovelFileInspectorPage
+        self._show_utility_page("novel-inspector", "ตรวจสอบไฟล์นิยาย",
+                                lambda: NovelFileInspectorPage(self.repo, self))
+
+    def settings_dialog(self):
+        if self._settings_page_state is None:
+            self._build_settings_page()
+        self._show_utility_page("settings", "ตั้งค่าและจัดการ", lambda: self._settings_page_state["page"])
+
+    def delete_profile(self):
+        profile_id = self.profile.id if self.profile else None
+        super().delete_profile()
+        if profile_id and not any(item.id == profile_id for item in self.repo.list_profiles()):
+            self.settings.closed_workspace_profile_ids = [
+                pid for pid in self.settings.closed_workspace_profile_ids if pid != profile_id
+            ]
+            self._open_workspace_ids = [pid for pid in self._open_workspace_ids if pid != profile_id]
+            self._persist_workspace_session()
+
+    def _build_settings_page(self):
+        return SettingsPage.build(self, ReorderableProfileList)
+
+    def program_settings_dialog(self):
+        """Compatibility entry point into the single preferences page."""
+        self.settings_dialog()
+        self._settings_page_state["page"].select_category("General")
+
+    def edit_workspace_goal(self, profile_id):
+        """Edit this novel's goal in its own workspace, not in global settings."""
+        profile = next((p for p in self.repo.list_profiles() if p.id == profile_id), None)
+        if profile is None:
+            return
+        target, accepted = QInputDialog.getInt(
+            self, f"เป้าหมายการแปล · {profile.name}",
+            "จำนวนบทต่อรอบ (0 = ยกเลิกเป้าหมาย):",
+            profile.translation_goal_target or 10, 0, 100000, 1,
+        )
+        if not accepted:
+            return
+        if profile.translation_goal_target is None or profile.translator_goal_baseline is None:
+            profile.translator_goal_baseline = completed_chapter_count(profile)
+        profile.translation_goal_target = target or None
+        try:
+            self.repo.save_profile(profile)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "บันทึกเป้าหมายไม่สำเร็จ", str(exc))
+            return
+        self.refresh_translation_progress()
+        if self.profile and self.profile.id == profile_id and hasattr(self, "settings_goal_target"):
+            self.settings_goal_target.setValue(target)
+        self.statusBar().showMessage(
+            "บันทึกเป้าหมายการแปลแล้ว" if target else "ยกเลิกเป้าหมายการแปลแล้ว", 3500
+        )
+
+    def reset_workspace_goal(self, profile_id):
+        """Reset only this novel's goal baseline; keep its Export history intact."""
+        profile = next((p for p in self.repo.list_profiles() if p.id == profile_id), None)
+        if profile is None or goal_progress(profile) is None:
+            return
+        answer = QMessageBox.question(
+            self, "รีเซ็ตเป้าหมายการแปล",
+            f"เริ่มนับเป้าหมาย {profile.translation_goal_target} บทของ {profile.name} ใหม่จาก Translator Export ถัดไปใช่ไหม?\n\n"
+            "ประวัติ Export และจำนวนบทที่แปลรายวันจะยังอยู่",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        reset_goal_progress(profile)
+        try:
+            self.repo.save_profile(profile)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "รีเซ็ตเป้าหมายไม่สำเร็จ", str(exc))
+            return
+        self.refresh_translation_progress()
+        self.statusBar().showMessage("รีเซ็ตความคืบหน้าเป้าหมายแล้ว", 3500)
+
+    def save_settings_goal_target(self):
+        if not self.profile:
+            return
+        if self.profile.translation_goal_target is None or self.profile.translator_goal_baseline is None:
+            self.profile.translator_goal_baseline = completed_chapter_count(self.profile)
+        self.profile.translation_goal_target = self.settings_goal_target.value() or None
+        self.save()
+        self.refresh_translation_progress()
+        self.statusBar().showMessage("บันทึกเป้าหมายนิยายแล้ว", 2500)
+
+    def refresh_working_files(self):
+        if not hasattr(self, "working_files"):
+            return
+        self.working_files.clear()
+        if not self.profile:
+            self.working_files.addItem("เลือกนิยายก่อน")
+            return
+        for file_ref in sorted(self.profile.working_files, key=lambda item: item.order):
+            label = file_ref.label or Path(file_ref.path or "").name
+            row = QListWidgetItem()
+            row.setData(Qt.UserRole, file_ref.id)
+            row.setToolTip(file_ref.path or "")
+            row.setSizeHint(QSize(0, 38))
+            self.working_files.addItem(row)
+            row_widget = QWidget(self.working_files)
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(8, 2, 4, 2)
+            row_label = QLabel(label)
+            row_label.setToolTip(file_ref.path or "")
+            row_layout.addWidget(row_label, 1)
+            open_button = QPushButton("เปิด")
+            open_button.clicked.connect(
+                lambda checked=False, item_id=file_ref.id: self.open_working_file(item_id)
+            )
+            row_layout.addWidget(open_button)
+            self.working_files.setItemWidget(row, row_widget)
+        if not self.profile.working_files:
+            self.working_files.addItem("ยังไม่มีไฟล์ · กด “เลือกหลายไฟล์” เพื่อเพิ่ม")
+
+    def save_settings_auto_chapter_review(self, *_args):
+        if not self.profile or not hasattr(self, "settings_auto_review_enabled"):
+            return
+        enabled = self.settings_auto_review_enabled.isChecked()
+        self.profile.auto_review_enabled = enabled
+        self.profile.auto_chapter_number_mode = (
+            self.settings_auto_chapter_number_mode.currentData() if enabled else "off"
+        )
+        self.save()
+
+    def refresh_settings_launch_targets(self):
+        if not hasattr(self, "settings_launch_targets") or not self.profile:
+            return
+        self.settings_main_folder.setText(self.profile.main_folder)
+        if hasattr(self, "settings_auto_review_enabled"):
+            controls = (self.settings_auto_review_enabled, self.settings_auto_chapter_number_mode)
+            for control in controls:
+                control.blockSignals(True)
+            try:
+                self.settings_auto_review_enabled.setChecked(self.profile.auto_review_enabled)
+                self.settings_auto_chapter_number_mode.setCurrentIndex(
+                    1 if self.profile.auto_chapter_number_mode == "fix" else 0
+                )
+            finally:
+                for control in controls:
+                    control.blockSignals(False)
+        if hasattr(self, 'settings_history_step'):
+            self.settings_history_step.blockSignals(True)
+            self.settings_history_step.clear()
+            self.settings_history_step.addItem('ปิดการบันทึกประวัติ', None)
+            for step in self.profile.workflow.steps:
+                self.settings_history_step.addItem(step.name, step.id)
+            current = self.settings_history_step.findData(self.profile.polish_history_step_id)
+            self.settings_history_step.setCurrentIndex(max(0, current))
+            self.settings_history_step.blockSignals(False)
+        context = Path(self.profile.context_path).expanduser() if self.profile.context_path else None
+        if context and context.is_file():
+            self.settings_context_hint.setText(
+                f"✓ Context พร้อมใช้กับ Translator Export\n{context.name} · {context}"
+            )
+            self.settings_context_hint.setToolTip(str(context))
+        elif context:
+            self.settings_context_hint.setText(f"⚠ ไม่พบไฟล์ Context\n{context}")
+            self.settings_context_hint.setToolTip(str(context))
+        else:
+            self.settings_context_hint.setText("⚠ ยังไม่ได้เชื่อม Context")
+            self.settings_context_hint.setToolTip("")
+        self.settings_goal_target.setValue(self.profile.translation_goal_target or 0)
+        self.settings_launch_targets.blockSignals(True)
+        self.settings_launch_targets.clear()
+        for target in sorted(self.profile.launch_targets, key=lambda item: item.order):
+            row = QListWidgetItem(f"{target.label or target.target}  ·  {target.kind}")
+            row.setToolTip(target.target)
+            row.setData(Qt.UserRole, target.id)
+            row.setFlags(row.flags() | Qt.ItemIsUserCheckable)
+            row.setCheckState(Qt.Checked if target.enabled else Qt.Unchecked)
+            row.setSizeHint(QSize(0, 44))
+            self.settings_launch_targets.addItem(row)
+        self.settings_launch_targets.blockSignals(False)
+
+    def save_settings_launch_target_state(self, _row):
+        if not self.profile:
+            return
+        for index in range(self.settings_launch_targets.count()):
+            row = self.settings_launch_targets.item(index)
+            target = next((value for value in self.profile.launch_targets
+                           if value.id == row.data(Qt.UserRole)), None)
+            if target:
+                target.enabled = row.checkState() == Qt.Checked
+                target.order = index
+        self.save()
+
+    def choose_settings_main_folder(self):
+        if not self.profile:
+            return
+        start = self.settings_main_folder.text()
+        if not Path(start).is_dir():
+            start = str(self.profile_browse_directory())
+        selected = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์หลักของนิยาย", start)
+        if selected:
+            self.remember_profile_browse_directory(selected)
+            self.settings_main_folder.setText(selected)
+            self.save_settings_main_folder()
+
+    def save_settings_main_folder(self):
+        if not self.profile:
+            return
+        self.profile.main_folder = self.settings_main_folder.text().strip()
+        self.save()
+        self.statusBar().showMessage("บันทึกโฟลเดอร์หลักแล้ว", 2500)
+
+    def configure_smart_files(self):
+        """Preview bounded folder matches, then add confirmed links without clearing old ones."""
+        if not self.profile:
+            return
+        from .smart_folder import SmartFolderDialog
+        from copy import deepcopy
+        profile = self.profile
+        dialog = SmartFolderDialog(profile, self,
+                                   shared_instruction_path=self.settings.shared_vocabulary_instruction_path)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        selections = {role: combo.currentData() for role, combo in dialog.combos.items()}
+        # Validate the entire selection before mutating the active profile.
+        for role, path in selections.items():
+            if path and not Path(path).is_file():
+                QMessageBox.warning(self, "ไฟล์เปลี่ยนแปลง", f"ไม่พบไฟล์ {role}:\n{path}\n\nโปรดสแกนใหม่หรือเลือกไฟล์อื่น")
+                return
+        updated = deepcopy(profile)
+        updated.main_folder = str(Path(dialog.folder.text()).expanduser())
+        updated.last_browse_directory = str(Path(updated.main_folder).resolve())
+        updated.novel_code = dialog.code.text().strip()
+        translate = next((step for step in updated.workflow.steps if step.name.strip() == "แปล"), None)
+        review = next((step for step in updated.workflow.steps if step.name.strip() == "ตรวจคำแปล"), None)
+        if translate is None and updated.workflow.steps:
+            translate = updated.workflow.steps[0]
+        mappings = (
+            ("prompt", translate, "Prompt"), ("style", translate, "Style"),
+            ("guideline", translate, "ไกด์ไลน์การแปล"), ("main", translate, "ไฟล์หลัก"),
+            ("context", translate, "Context"), ("glossary", translate, "Glossary"),
+            ("context", review, "Context"), ("glossary", review, "Glossary"),
+            ("translator", review, "Translator"),
+            ("novel", updated.vocabulary_step, "Novel"),
+            ("vocab_instruction", updated.vocabulary_step, "คำสั่งหาศัพท์"),
+        )
+        for role, step, label in mappings:
+            path = selections.get(role)
+            if not step or not path:
+                continue
+            resolved = str(Path(path).expanduser().resolve())
+            if any(item.path and str(Path(item.path).expanduser().resolve()) == resolved
+                   for item in step.files if item.reference_type == "external_file"):
+                continue
+            step.files.append(StepFile(label=label, reference_type="external_file", path=resolved,
+                                       file_type=role, order=len(step.files)))
+        context = selections.get("context")
+        if context:
+            updated.context_path = str(Path(context).expanduser().resolve())
+            updated.translation_checkpoint_path = updated.context_path
+            try:
+                chapter = read_context_chapter(Path(context))
+                if chapter is not None:
+                    updated.chapter_state.current_chapter = chapter
+            except OSError:
+                pass
+        instruction = selections.get("vocab_instruction")
+        previous_settings = deepcopy(self.settings)
+        if instruction:
+            updated.vocabulary_instruction_path = str(Path(instruction).expanduser().resolve())
+            if dialog.shared_instruction.isChecked():
+                self.settings.shared_vocabulary_instruction_path = updated.vocabulary_instruction_path
+        try:
+            if instruction and dialog.shared_instruction.isChecked():
+                self.repo.save_settings(self.settings)
+            self.repo.save_profile(updated)
+        except (OSError, ValueError) as exc:
+            if instruction and dialog.shared_instruction.isChecked():
+                self.settings = previous_settings
+                try: self.repo.save_settings(self.settings)
+                except (OSError, ValueError): pass
+            QMessageBox.warning(self, "บันทึกการตั้งค่าไม่สำเร็จ", str(exc))
+            return
+        profile.__dict__.update(updated.__dict__)
+        self.refresh_profiles(updated.id)
+        self.refresh_steps()
+        self.refresh_files()
+        self.refresh_settings_launch_targets()
+        self.statusBar().showMessage("ตั้งค่าไฟล์นิยายแล้ว · รายการเดิมที่เชื่อมไว้ยังคงอยู่", 5000)
+
+    def add_settings_launch_target(self, kind):
+        if not self.profile:
+            return
+        if kind == "folder":
+            targets = [QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์", str(self.profile_browse_directory()))]
+        elif kind == "file":
+            targets, _ = QFileDialog.getOpenFileNames(
+                self, "เลือกไฟล์ที่จะเปิดพร้อมเรื่อง (เลือกได้หลายไฟล์)",
+                str(self.profile_browse_directory()), "ทุกไฟล์ (*)",
+            )
+        elif kind == "application":
+            targets, _ = QFileDialog.getOpenFileNames(self, "เลือกโปรแกรม (เลือกได้หลายรายการ)", str(Path.home()), "โปรแกรม (*.exe);;ทุกไฟล์ (*)")
+        else:
+            target, accepted = QInputDialog.getText(self, "เพิ่มเว็บไซต์", "URL (http/https):")
+            if not accepted:
+                return
+            targets = [target]
+        targets = [target for target in targets if target]
+        if not targets:
+            return
+        if kind in {"folder", "file", "application"}:
+            self.remember_profile_browse_directory(targets[-1])
+        if kind == "website":
+            label, accepted = QInputDialog.getText(self, "ชื่อเว็บไซต์", "ชื่อ:", text=targets[0])
+            if not accepted:
+                return
+            labels = [label]
+        else:
+            labels = [Path(target).name if kind != "website" else target for target in targets]
+        for target, label in zip(targets, labels):
+            self.profile.launch_targets.append(LaunchTarget(
+                label=label, kind=kind, target=target, order=len(self.profile.launch_targets),
+            ))
+        self.save()
+        self.refresh_settings_launch_targets()
+
+    def remove_settings_launch_target(self):
+        ids = {row.data(Qt.UserRole) for row in self.settings_launch_targets.selectedItems()}
+        if not ids or not self.profile:
+            return
+        self.profile.launch_targets = [item for item in self.profile.launch_targets if item.id not in ids]
+        for index, item in enumerate(self.profile.launch_targets):
+            item.order = index
+        self.save()
+        self.refresh_settings_launch_targets()
+
+    def add_working_files(self):
+        if not self.profile:
+            return
+        sources, _ = QFileDialog.getOpenFileNames(
+            self, "เลือกไฟล์สำหรับเปิดทำงาน (เลือกได้หลายไฟล์)",
+            str(self.profile_browse_directory()),
+            "ไฟล์ที่เปิดได้ (*.txt *.md *.markdown *.json *.yaml *.yml *.toml *.py *.js *.ts *.css *.html *.xml *.csv);;ทุกไฟล์ (*)",
+        )
+        if not sources:
+            return
+        self.remember_profile_browse_directory(sources[-1])
+        profile_root = self.repo.profile_dir(self.profile.id).resolve()
+        existing = {(item.reference_type, item.path) for item in self.profile.working_files}
+        for source_value in sources:
+            source = Path(source_value).expanduser().resolve()
+            try:
+                stored_path = source.relative_to(profile_root).as_posix()
+                reference_type = "repository_file"
+            except ValueError:
+                stored_path = str(source)
+                reference_type = "external_file"
+            key = (reference_type, stored_path)
+            if key in existing:
+                continue
+            self.profile.working_files.append(StepFile(
+                label=source.name, reference_type=reference_type, path=stored_path,
+                order=len(self.profile.working_files),
+            ))
+            existing.add(key)
+        self.remember_profile_browse_directory(sources[-1])
+        self.save()
+        self.refresh_working_files()
+
+    def _selected_working_file(self):
+        row = self.working_files.currentItem() if hasattr(self, "working_files") else None
+        if not row or not self.profile:
+            return None
+        return next((item for item in self.profile.working_files if item.id == row.data(Qt.UserRole)), None)
+
+    def open_selected_working_file(self, *_args):
+        ids = [row.data(Qt.UserRole) for row in self.working_files.selectedItems()]
+        for item_id in ids:
+            self.open_working_file(item_id)
+
+    def open_working_file(self, item_id):
+        item = next((value for value in self.profile.working_files if value.id == item_id), None) if self.profile else None
+        if not item or not self.profile:
+            return
+        try:
+            path = (Path(item.path).expanduser().resolve()
+                    if item.reference_type == "external_file"
+                    else self.repo.resolve_project_path(self.profile.id, item.path))
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.warning(self, "เปิดไฟล์ไม่ได้", str(exc))
+            return
+        workspace = self.workspaces.get(self.profile.id)
+        if not workspace:
+            return
+        if workspace.editor.open_file(path):
+            workspace.breadcrumb.setText(f"{self.profile.name}  ›  ไฟล์ทำงาน  ›  {path.name}")
+            self.return_from_utility_page()
+
+    def save_working_tabs_open_setting(self, enabled):
+        if not self.profile:
+            return
+        self.profile.open_working_tabs_on_open = bool(enabled)
+        self.repo.save_profile(self.profile)
+        self.statusBar().showMessage("บันทึกการตั้งค่าการเปิดไฟล์ของนิยายแล้ว", 2500)
+
+    def move_working_file(self, direction):
+        if not self.profile or not hasattr(self, "working_files"):
+            return
+        row = self.working_files.currentRow()
+        files = sorted(self.profile.working_files, key=lambda item: item.order)
+        target = row + int(direction)
+        if row < 0 or target < 0 or target >= len(files):
+            return
+        files[row], files[target] = files[target], files[row]
+        for index, item in enumerate(files):
+            item.order = index
+        self.profile.working_files = files
+        self.save()
+        self.refresh_working_files()
+        self.working_files.setCurrentRow(target)
+
+    def remove_working_file(self):
+        ids = {row.data(Qt.UserRole) for row in self.working_files.selectedItems()}
+        if not ids or not self.profile:
+            return
+        self.profile.working_files = [value for value in self.profile.working_files if value.id not in ids]
+        for index, value in enumerate(self.profile.working_files):
+            value.order = index
+        self.save()
+        self.refresh_working_files()
+
+    def show_vocabulary_files(self):
+        """Select the vocabulary step in the combined novel settings page."""
+        if not self._settings_page_state:
+            self.settings_dialog()
+        self._settings_page_state["page"].select_category("Workflow Files")
+        vocabulary_row = len(self.profile.workflow.steps) if self.profile else -1
+        if vocabulary_row >= 0:
+            self.steps.setCurrentRow(vocabulary_row)
+        self.refresh_files()
+
+    def _open_selected_step_files(self, item):
+        if item.data(Qt.UserRole) == "vocabulary-step" and self._settings_page_state:
+            self._management_vocabulary_mode = True
+
+    def _restore_settings_management(self):
+        state = self._settings_page_state
+        if not state:
+            return
+        profile_id = self.profile.id if self.profile else state["profile_id"]
+        self.profiles, self.steps, self.files = state["original_lists"]
+        self._settings_page_state = None
+        self._settings_open = False
+        self._management_vocabulary_mode = False
+        self.refresh_profiles(profile_id)
+        workspace = self.workspaces.get(profile_id) if profile_id else None
+        if workspace and state.get("vocabulary_mode"):
+            workspace.vocabulary_mode = True
+            self._sync_stage_buttons(workspace)
+            self.refresh_files()
+        elif self.profile and self.profile.workflow.steps:
+            row = next((index for index, step in enumerate(self.profile.workflow.steps)
+                        if step.id == state["step_id"]), self.si)
+            if 0 <= row < len(self.profile.workflow.steps):
+                self.steps.setCurrentRow(row)
+        page = state["page"]
+        self._utility_pages.pop("settings", None)
+        self.utility_stack.removeWidget(page)
+        page.deleteLater()
+
+    def _persist_profile_order(self, profile_ids):
+        """Persist profile order after a drag in Settings → Novels."""
+        profiles = {profile.id: profile for profile in self.repo.list_profiles()}
+        if len(profile_ids) != len(profiles) or set(profile_ids) != set(profiles):
+            return
+        for order, profile_id in enumerate(profile_ids):
+            profile = profiles[profile_id]
+            if profile.order != order:
+                profile.order = order
+                self.repo.save_profile(profile)
+        self.ps_list = [profiles[profile_id] for profile_id in profile_ids]
+        if self.profile and self.profile.id in profiles:
+            self.profile = profiles[self.profile.id]
+
+    def launcher_dialog(self):
+        """Compatibility action that now leads to the one-page novel settings."""
+        self.settings_dialog()
+        self._settings_page_state["page"].select_category("Novel")
+        if self.profile:
+            self.statusBar().showMessage(
+                "ตั้งค่าโฟลเดอร์และไฟล์ที่เปิดพร้อมเรื่องได้ในหน้านี้", 3500
+            )
+
+    def preview(self):
+        if not self.profile or not self.step():
+            return
+        try:
+            text = self.assembler.assemble(
+                self.profile, self.step(), self.settings.separator,
+                self.settings.show_filename_heading,
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "ดูตัวอย่างไม่ได้", str(exc))
+            return
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        preview = QTextEdit()
+        preview.setReadOnly(True)
+        preview.setPlainText(text)
+        layout.addWidget(preview, 1)
+        footer = QHBoxLayout()
+        footer.addWidget(QLabel(f"{len(text):,} อักขระ"), 1)
+        copy = QPushButton("คัดลอกเนื้อหา")
+        copy.clicked.connect(lambda: (QApplication.clipboard().setText(text), self.statusBar().showMessage("คัดลอกแล้ว", 2500)))
+        footer.addWidget(copy)
+        layout.addLayout(footer)
+        self._show_utility_page("preview", f"ตัวอย่าง · {self.step().name}", lambda: page)
+
+    def edit_file(self):
+        if not self.profile or not self.file():
+            return
+        item = self.file()
+        if item.reference_type == "dynamic":
+            return
+        path = (Path(item.path).expanduser().resolve()
+                if item.reference_type == "external_file"
+                else self.repo.resolve_project_path(self.profile.id, item.path))
+        editor = self.editor_for_profile(self.profile.id)
+        if editor and editor.open_file(path):
+            self.return_from_utility_page()
+
+    def editor_for_profile(self, profile_id):
+        workspace = self.workspaces.get(profile_id)
+        return workspace.editor if workspace else None
+
+    def file_manager(self):
+        if not self.profile:
+            return
+        profile = self.profile
+        root = self.repo.profile_dir(profile.id)
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        search = QLineEdit()
+        search.setPlaceholderText("ค้นหาชื่อไฟล์หรือโฟลเดอร์")
+        layout.addWidget(search)
+        listing = QListWidget()
+        listing.setObjectName("fileManagerList")
+        listing.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        layout.addWidget(listing, 1)
+
+        def refresh(query=""):
+            listing.clear()
+            folded = query.casefold()
+            for path in sorted(root.rglob("*")):
+                if path.is_file() and path.name != "profile.json":
+                    relative = path.relative_to(root).as_posix()
+                    if not folded or folded in relative.casefold():
+                        listing.addItem(relative)
+
+        def selected_path():
+            row = listing.currentItem()
+            return self.repo.resolve_project_path(profile.id, row.text()) if row else None
+
+        def selected_paths():
+            return [self.repo.resolve_project_path(profile.id,row.text()) for row in listing.selectedItems()]
+
+        def open_selected():
+            workspace = self.workspaces.get(profile.id)
+            opened = False
+            for path in selected_paths():
+                if workspace and workspace.editor.supports(path):
+                    opened = workspace.editor.open_file(path) or opened
+            if opened:self.return_from_utility_page()
+
+        actions = QHBoxLayout()
+        create = QPushButton("＋ ไฟล์ใหม่")
+        def create_file():
+            relative, accepted = QInputDialog.getText(self, "ไฟล์ใหม่", "ตำแหน่งสัมพัทธ์:", text="reference/new.txt")
+            if not accepted or not relative:
+                return
+            path = self.repo.resolve_project_path(profile.id, relative)
+            if path.suffix.lower() not in (".txt", ".md", ".json") or path.exists():
+                QMessageBox.warning(self, "สร้างไฟล์ไม่ได้", "เลือก .txt, .md หรือ .json และใช้ชื่อที่ยังไม่มี")
+                return
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("", encoding="utf-8")
+            refresh(search.text())
+            workspace = self.workspaces.get(profile.id)
+            if workspace:
+                workspace.editor.open_file(path)
+                self.return_from_utility_page()
+        create.clicked.connect(create_file)
+        actions.addWidget(create)
+
+        import_button = QPushButton("นำเข้าไฟล์")
+        def import_file():
+            sources, _ = QFileDialog.getOpenFileNames(
+                self,
+                "เลือกไฟล์ที่จะนำเข้า (เลือกหลายไฟล์ได้ด้วย Ctrl/Shift)",
+                str(self.profile_browse_directory()),
+                "ไฟล์ข้อความ (*.txt *.md *.json);;ทุกไฟล์ (*)",
+            )
+            if not sources:
+                return
+            self.remember_profile_browse_directory(sources[-1])
+            relative, accepted = QInputDialog.getText(
+                self,
+                "นำเข้าไฟล์",
+                f"โฟลเดอร์ปลายทางในเรื่องนี้ (เลือก {len(sources)} ไฟล์):",
+                text="reference",
+            )
+            if not accepted or not relative:
+                return
+            try:
+                destination = self.repo.resolve_project_path(profile.id, relative)
+            except (ValueError, OSError) as exc:
+                QMessageBox.warning(self, "นำเข้าไม่ได้", f"โฟลเดอร์ปลายทางไม่ถูกต้อง: {exc}")
+                return
+            if destination.exists() and not destination.is_dir():
+                QMessageBox.warning(self, "นำเข้าไม่ได้", "ตำแหน่งปลายทางต้องเป็นโฟลเดอร์")
+                return
+            try:
+                copied, skipped = import_files_into_directory(sources, destination)
+            except OSError as exc:
+                QMessageBox.warning(self, "นำเข้าไม่ได้", str(exc))
+                return
+            refresh(search.text())
+            message = f"นำเข้าแล้ว {copied} ไฟล์"
+            if skipped:
+                message += f" · ข้าม {skipped} ไฟล์ (ชนชื่อหรือไม่รองรับ)"
+            self.statusBar().showMessage(message, 6000)
+        import_button.clicked.connect(import_file)
+        actions.addWidget(import_button)
+
+        open_button = QPushButton("เปิด/แก้ไข")
+        open_button.clicked.connect(open_selected)
+        actions.addWidget(open_button)
+
+        attach = QPushButton("เพิ่มในขั้นตอน")
+        def attach_file():
+            step = self.step()
+            if not step:return
+            existing={file.path for file in step.files}
+            for path in selected_paths():
+                relative=path.relative_to(root).as_posix()
+                if relative not in existing:
+                    step.files.append(StepFile(label=path.stem,path=relative,file_type=path.parent.name,order=len(step.files)))
+                    existing.add(relative)
+            self.save();self.refresh_files()
+        attach.clicked.connect(attach_file)
+        actions.addWidget(attach)
+
+        rename = QPushButton("เปลี่ยนชื่อ")
+        def rename_file():
+            path = selected_path()
+            if not path:
+                return
+            relative, accepted = QInputDialog.getText(self, "เปลี่ยนชื่อไฟล์", "ชื่อใหม่:", text=path.relative_to(root).as_posix())
+            if not accepted:
+                return
+            destination = self.repo.resolve_project_path(profile.id, relative)
+            if destination.exists():
+                QMessageBox.warning(self, "เปลี่ยนชื่อไม่ได้", "มีปลายทางนี้แล้ว")
+                return
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            old_relative = path.relative_to(root).as_posix()
+            path.rename(destination)
+            new_relative = destination.relative_to(root).as_posix()
+            for step in profile.workflow.steps:
+                for file in step.files:
+                    if file.path == old_relative:
+                        file.path = new_relative
+            self.save()
+            refresh(search.text())
+        rename.clicked.connect(rename_file)
+        listing.itemSelectionChanged.connect(lambda: rename.setEnabled(len(listing.selectedItems()) == 1))
+        rename.setEnabled(False)
+        actions.addWidget(rename)
+
+        delete = QPushButton("ลบไฟล์")
+        def delete_file():
+            paths=selected_paths()
+            if not paths:return
+            names="\n".join(path.name for path in paths[:10])
+            if QMessageBox.question(self,"ลบไฟล์",f"ลบ {len(paths)} ไฟล์ถาวรใช่ไหม?\n{names}") != QMessageBox.Yes:return
+            removed=set();errors=[]
+            for path in paths:
+                try:path.unlink();removed.add(path)
+                except OSError as exc:errors.append(f"{path.name}: {exc}")
+            steps=list(profile.workflow.steps)
+            if profile.vocabulary_step:steps.append(profile.vocabulary_step)
+            for step in steps:
+                step.files=[file for file in step.files if file.reference_type == "external_file" or not file.path or self.repo.resolve_project_path(profile.id,file.path) not in removed]
+            profile.working_files=[file for file in profile.working_files if file.reference_type == "external_file" or not file.path or self.repo.resolve_project_path(profile.id,file.path) not in removed]
+            self.save();self.refresh_files();refresh(search.text())
+            if errors:QMessageBox.warning(self,"ลบบางไฟล์ไม่ได้","\n".join(errors))
+        delete.clicked.connect(delete_file)
+        actions.addWidget(delete)
+        layout.addLayout(actions)
+        search.textChanged.connect(refresh)
+        listing.itemDoubleClicked.connect(lambda _item: open_selected())
+        refresh()
+        self._show_utility_page("file-manager", "จัดการไฟล์โครงการ", lambda: page)
+
+    def _schedule_context_refresh(self, *_args):
+        self.context_refresh_timer.start()
+
+    def _watch_context_paths(self):
+        watcher = getattr(self, "context_watcher", None)
+        if watcher is None:
+            return
+        watched = watcher.files() + watcher.directories()
+        if watched:
+            watcher.removePaths(watched)
+        files = set()
+        directories = set()
+        for profile in getattr(self, "ps_list", []):
+            if not profile.context_path:
+                continue
+            path = Path(profile.context_path).expanduser()
+            try:
+                if path.is_file():
+                    files.add(str(path.resolve()))
+                    if path.parent.is_dir():
+                        directories.add(str(path.parent.resolve()))
+            except OSError:
+                continue
+        to_watch = list(files | directories)
+        if to_watch:
+            watcher.addPaths(to_watch)
+
+    def undo_context_retranslation(self, profile_id):
+        try:
+            profile = self.repo.load_profile(profile_id)
+            resets = [r for r in profile.translation_retranslation_resets
+                      if isinstance(r, dict) and r.get("active") is True]
+            if not resets:
+                QMessageBox.information(self, "คืนสถานะย้อนแปล", "ไม่มีการย้อนแปลที่ต้องคืนสถานะ")
+                return
+            last = resets[-1]
+            if QMessageBox.question(
+                self, "คืนสถานะการนับบท",
+                f"คืนสถานะก่อนย้อนแปลจากบท {last['start_chapter']}?\n"
+                "ประวัติและไฟล์ Export ทั้งหมดยังคงอยู่",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            ) != QMessageBox.Yes:
+                return
+            if undo_retranslation(profile, last.get("reset_id")):
+                self.repo.save_profile(profile)
+                self.refresh_translation_progress()
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "คืนสถานะไม่สำเร็จ", str(exc))
+
+    def review_context_retranslation(self, profile_id):
+        """Explicit preview and confirmation; Context never resets Export by itself."""
+        try:
+            profile = self.repo.load_profile(profile_id)
+            if not profile.context_path:
+                QMessageBox.information(self, "ตรวจ Context", "เลือกไฟล์ Context ของเรื่องนี้ก่อน")
+                return
+            path = Path(profile.context_path).expanduser().resolve()
+            if not path.is_file():
+                QMessageBox.warning(self, "ตรวจ Context", "ไม่พบไฟล์ Context ที่เลือก")
+                return
+            workspace = self.workspaces.get(profile_id)
+            if workspace:
+                for index in range(workspace.editor.tabs.count()):
+                    editor = workspace.editor.tabs.widget(index)
+                    if workspace.editor._path(editor) == path and workspace.editor._dirty(editor):
+                        if not workspace.editor.save_editor(editor, quiet=True):
+                            QMessageBox.warning(self, "ตรวจ Context", "บันทึก Context ไม่สำเร็จ")
+                            return
+            text = path.read_text(encoding="utf-8-sig")
+            chapter, detected = retranslation_context_candidate(text)
+            if chapter is None:
+                found = ", ".join(str(n) for n in detected[-12:]) if detected else "ไม่พบ"
+                value, ok = QInputDialog.getInt(
+                    self, "ยืนยันเลขบท",
+                    f"เลขบทใน Context ไม่ชัดเจน (ที่พบ: {found})\nกรอกบทล่าสุดที่ยืนยันด้วยตัวเอง:",
+                    value=detected[-1] if detected else 1, min=1, max=2147483646)
+                if not ok:
+                    return
+                chapter = value
+            start = chapter + 1
+            preview = retranslation_preview(profile, start)
+            if not preview['chapters']:
+                QMessageBox.information(self, "ย้อนแปลจาก Context",
+                                        f"Context ล่าสุด: บท {chapter}\nไม่มีบทที่ต้องยกเลิกการนับ")
+                return
+            display = (
+                f"Context ล่าสุด: บท {chapter}\nเสนอเริ่มแปล: บท {start}\n"
+                f"Export เดิมสูงสุด: บท {preview['latest_export']}\n"
+                f"ช่วงที่ได้รับผลกระทบ: บท {preview['chapters'][0]}–{preview['chapters'][-1]}\n"
+                f"จำนวน: {preview['count']} บท\n\n"
+                "ยกเลิกการนับเฉพาะบทเหล่านี้ โดยไม่ลบไฟล์และประวัติ Export?"
+            )
+            if QMessageBox.question(
+                self, "ยืนยันย้อนแปลจาก Context", display,
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            ) != QMessageBox.Yes:
+                return
+            fresh = self.repo.load_profile(profile_id)
+            record = confirm_retranslation(fresh, start, context_chapter=chapter,
+                                           reason="Context-based retranslation")
+            if record is not None:
+                self.repo.save_profile(fresh)
+                self.refresh_translation_progress()
+                self.statusBar().showMessage(
+                    f"เริ่มแปลใหม่บท {start} · ยกเลิกการนับ {preview['count']} บท", 8000)
+        except (OSError, ValueError, UnicodeError) as exc:
+            QMessageBox.warning(self, "ย้อนแปลไม่สำเร็จ", str(exc))
+
+    def refresh_translation_progress(self):
+        """Refresh confirmed Export activity plus informational Context state."""
+        if any(getattr(listing,"_dragging",False) for listing in (self.profile_cards,self.profiles)):
+            self.context_refresh_timer.start(250)
+            return self.ps_list
+        profiles = self.repo.list_profiles()
+        for profile in profiles:
+            if profile.id not in self.repo.export_recovery_errors and sync_profile_context(profile):
+                try:
+                    self.repo.save_profile(profile)
+                except OSError as exc:
+                    self.statusBar().showMessage(f"บันทึกความคืบหน้าไม่ได้: {exc}", 6000)
+        self.ps_list = profiles
+        by_id = {profile.id: profile for profile in profiles}
+        for index in range(self.profile_cards.count()):
+            card = self.profile_cards.item(index)
+            profile = by_id.get(card.data(Qt.UserRole))
+            if profile:
+                # Library cards are strictly visual book shelves: title + cover.
+                # Progress and verified information remain stored in profile data.
+                card.setText(profile.name)
+                final_goal = getattr(self, "_progress_goals", None)
+                from .translation_planner import TranslationPlanner
+                final = (TranslationPlanner(self.repo).finish_goal(profile.id) or {}).get("final_chapter")
+                status = _profile_status_label(_profile_status(profile))
+                if type(final) is int and final > 0:
+                    within = len({n for n in completed_chapters(profile) if 1 <= n <= final})
+                    footer = f"{status} · {within}/{final} บท"
+                else:
+                    footer = f"{status} · สำเร็จ {completed_chapter_count(profile)} บท"
+                card.setData(Qt.UserRole + 2, footer)
+                card.setToolTip(f"{profile.name}\n{footer}")
+        if self.profile:
+            fresh = next((item for item in profiles if item.id == self.profile.id), None)
+            if fresh:
+                self.profile = fresh
+        self._watch_context_paths()
+        if hasattr(self, 'today_page'):
+            self.today_page.refresh()
+        if self.profile:
+            self.refresh_goal_indicator()
+            self._update_editor_status()
+        dashboard = self._utility_pages.get("progress")
+        if dashboard is not None:
+            dashboard.set_profiles(profiles)
+        return profiles
+
+    def build(self):
+        self._settings_open = False
+        self.workspaces = {}
+        # Keep two recently visited workspaces warm without opening multiple novels.
+        self._workspace_cache = {}
+        self._workspace_cache_host = QWidget(self)
+        self._workspace_cache_host.hide()
+        # Old multi-novel sessions retain per-novel file state, not open tabs.
+        self._open_workspace_ids = []
+        self._session_save_timer = QTimer(self)
+        self._session_save_timer.setSingleShot(True)
+        self._session_save_timer.setInterval(250)
+        self._session_save_timer.timeout.connect(self._persist_workspace_session)
+        self.resize(1440, 860)
+
+        bar = self.addToolBar("Main")
+        self.brand_toolbar = bar
+        bar.setObjectName("mainToolbar")
+        bar.hide()
+        bar.setMovable(False)
+        bar.setIconSize(QSize(20, 20))
+
+        brand = QLabel("Valhalla")
+        brand.setObjectName("brandTitle")
+        bar.addWidget(brand)
+
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        bar.addWidget(spacer)
+
+        update_action = QAction("ตรวจสอบอัปเดต", self)
+        update_action.triggered.connect(self.check_updates)
+        self.menuBar().addMenu("โปรแกรม").addAction(update_action)
+        self.navigation = NavigationSidebar(self.settings.navigation_collapsed)
+        self.navigation.refresh_icons(self.settings.appearance)
+        self.navigation.selected.connect(self.navigate)
+        self.navigation.collapsedChanged.connect(self._navigation_collapsed_changed)
+
+        root = QWidget()
+        root.setObjectName("appShell")
+        root_layout = QVBoxLayout(root)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        self.main_pages = MainPageStack()
+        from .translation_planner_page import TodayPage
+        self.today_page = TodayPage(self.repo, self)
+        self.today_page.openNovel.connect(self.open_planned_novel)
+        self.main_pages.addWidget(self.today_page)
+        self.library_page = LibraryPage(self, PROFILE_STATUSES)
+        self.main_pages.addWidget(self.library_page)
+
+        self.workspace_stack = QStackedWidget()
+        self.empty_page = QLabel("ยังไม่มีนิยาย\nกด + เพื่อเพิ่มนิยาย")
+        self.empty_page.setAlignment(Qt.AlignCenter)
+        self.empty_page.setObjectName("mutedLabel")
+        self.workspace_stack.addWidget(self.empty_page)
+        self.main_pages.addWidget(self.workspace_stack)
+
+        self.utility_page = QWidget()
+        utility_layout = QVBoxLayout(self.utility_page)
+        utility_layout.setContentsMargins(28, 22, 28, 24)
+        utility_layout.setSpacing(14)
+        utility_header = QHBoxLayout()
+        self.utility_back = QPushButton("← กลับ")
+        self.utility_back.clicked.connect(self.return_from_utility_page)
+        utility_header.addWidget(self.utility_back)
+        self.utility_title = QLabel()
+        self.utility_title.setObjectName("pageTitle")
+        utility_header.addWidget(self.utility_title, 1)
+        utility_layout.addLayout(utility_header)
+        self.utility_stack = QStackedWidget()
+        utility_layout.addWidget(self.utility_stack, 1)
+        self.main_pages.addWidget(self.utility_page)
+        self._utility_pages = {}
+        self._active_utility_page = None
+        self._utility_return_page = None
+        self._settings_page_state = None
+        self.shell_splitter = QSplitter(Qt.Horizontal)
+        self.shell_splitter.addWidget(self.navigation); self.shell_splitter.addWidget(self.main_pages)
+        self.shell_splitter.setStretchFactor(1, 1)
+        self.shell_splitter.setChildrenCollapsible(False)
+        self.shell_splitter.setSizes([60 if self.navigation.collapsed else 196, 1200])
+        root_layout.addWidget(self.shell_splitter, 1)
+        self.main_pages.currentChanged.connect(self._sync_navigation)
+
+
+        self.setCentralWidget(root)
+
+        # Compatibility widgets let the existing management workflows
+        # services continue to operate without migrating stored data.
+        self.profiles = QListWidget()
+        self.profiles.currentRowChanged.connect(self.select_profile)
+        self.novel = QLabel()
+        self.steps = QListWidget()
+        self.files = QListWidget()
+        self.files.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.goal_label = QLabel()
+        self.goal_bar = QProgressBar()
+        self.latest_chapter_label = QLabel()
+
+        self.statusBar().showMessage("เลือกเรื่องเพื่อเริ่มทำงาน")
+        self.editor_status = ElidingStatusLabel("พร้อมใช้งาน  ·  0 คำ  ·  0 อักขระ")
+        self.editor_status.setObjectName("editorStatusBar")
+        self.editor_status.setMinimumWidth(0)
+        self.editor_status.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.editor_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.statusBar().addPermanentWidget(self.editor_status, 1)
+        self.progress_status = ElidingStatusLabel("วันนี้ +0 บท")
+        self.progress_status.setObjectName("progressStatusBar")
+        self.progress_status.setMinimumWidth(100)
+        self.progress_status.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
+        self.progress_status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.progress_status.hide()
+        self.context_status = ElidingStatusLabel("ยังไม่ได้เลือก Context")
+        self.context_status.setObjectName("contextStatusBar")
+        self.context_status.setMinimumWidth(150)
+        self.context_status.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
+        self.context_status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.context_status.hide()
+        self.goal_status = ElidingStatusLabel("ยังไม่ได้ตั้งเป้าหมาย")
+        self.goal_status.setObjectName("goalStatusBar")
+        self.goal_status.setMinimumWidth(150)
+        self.goal_status.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
+        self.goal_status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.goal_status.hide()
+        self.goal_status_bar = QProgressBar()
+        self.goal_status_bar.setObjectName("goalProgressStatusBar")
+        self.goal_status_bar.setRange(0, 100)
+        self.goal_status_bar.setFixedSize(92, 12)
+        self.goal_status_bar.setTextVisible(False)
+        self.goal_status_bar.hide()
+        self.shortcut("Ctrl+Shift+C", self.copy_step)
+        self.shortcut("Ctrl+P", self.preview)
+        self.shortcut("Ctrl+R", self.refresh)
+        self.shortcut("Ctrl+S", self.save_active_document)
+        self.shortcut("Ctrl+-", lambda: self.adjust_editor_font_size(-1))
+        self.shortcut("Ctrl++", lambda: self.adjust_editor_font_size(1))
+        self.shortcut("Ctrl+0", lambda: self.set_editor_font_size(11.0))
+
+        self.progress_timer = QTimer(self)
+        self.progress_timer.setInterval(60000)
+        self.progress_timer.timeout.connect(self.refresh_translation_progress)
+        self.progress_timer.start()
+
+        self.context_watcher = QFileSystemWatcher(self)
+        self.context_watcher.fileChanged.connect(self._schedule_context_refresh)
+        self.context_watcher.directoryChanged.connect(self._schedule_context_refresh)
+        self.context_refresh_timer = QTimer(self)
+        self.context_refresh_timer.setSingleShot(True)
+        self.context_refresh_timer.setInterval(250)
+        self.context_refresh_timer.timeout.connect(self.refresh_translation_progress)
+        self._watch_context_paths()
+
+        self._update_check_worker = None
+        self._update_download_worker = None
+        self._update_progress = None
+        self._automatic_update_timer = QTimer(self)
+        self._automatic_update_timer.setSingleShot(True)
+        self._automatic_update_timer.timeout.connect(lambda: self.check_updates(manual=False))
+        if self.settings.last_update_check_date != date.today().isoformat():
+            self._automatic_update_timer.start(2500)
+
+    def _navigation_collapsed_changed(self, collapsed):
+        self.settings.navigation_collapsed = bool(collapsed)
+        self._schedule_workspace_session_save()
+
+    def navigate(self, key):
+        if key == "today":
+            self.today_page.refresh()
+            self.main_pages.setCurrentWidget(self.today_page)
+        elif key == "library": self.show_library()
+        elif key == "workspace":
+            self._utility_return_page = self.workspace_stack
+            self.return_from_utility_page()
+        elif key == "progress": self.translation_dashboard()
+        elif key == "groups": self.groups_dialog()
+        elif key == "novel-inspector": self.novel_inspector_dialog()
+        elif key == "settings": self.settings_dialog()
+        self._sync_navigation()
+
+    def _sync_navigation(self, *_args):
+        page = self.main_pages.currentWidget()
+        key = "today" if page is self.today_page else ("library" if page is self.library_page else "workspace")
+        if page is self.utility_page:
+            key = {"progress":"library", "groups":"library", "settings":"settings", "novel-inspector":"novel-inspector"}.get(self._active_utility_page, "workspace")
+        self.navigation.select(key)
+        # Keep the native window titlebar and menu, without a custom title strip.
+        self.brand_toolbar.hide()
+
+    def check_updates(self, checked=False, manual=None):
+        manual = True if manual is None else manual
+        if self._update_check_worker and self._update_check_worker.isRunning():
+            if manual:
+                QMessageBox.information(self, "อัปเดต", "กำลังตรวจสอบอัปเดตอยู่ครับ")
+            return
+        worker = _UpdateCheckWorker(self)
+        self._update_check_worker = worker
+
+        def complete(update, error):
+            self._update_check_worker = None
+            if error:
+                if manual:
+                    QMessageBox.warning(self, "ตรวจสอบอัปเดตไม่ได้", error)
+                return
+            self.settings.last_update_check_date = date.today().isoformat()
+            self.repo.save_settings(self.settings)
+            if update is None:
+                if manual:
+                    QMessageBox.information(self, "อัปเดต", f"คุณใช้เวอร์ชันล่าสุดแล้ว (v{__version__})")
+                return
+            self._offer_update(update)
+
+        worker.finished_check.connect(complete)
+        worker.start()
+
+    def _offer_update(self, update: UpdateInfo):
+        notes = update.notes[:1600] if update.notes else "ไม่มีรายละเอียดการเปลี่ยนแปลง"
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("มีอัปเดตใหม่")
+        dialog.setText(
+            f"เวอร์ชันปัจจุบัน: v{__version__}\n"
+            f"เวอร์ชันใหม่: v{update.version}\n\nรายละเอียดการเปลี่ยนแปลง:\n{notes}"
+        )
+        install = dialog.addButton("อัปเดตเลย", QMessageBox.AcceptRole)
+        dialog.addButton("ไว้ทีหลัง", QMessageBox.RejectRole)
+        dialog.setDefaultButton(install)
+        dialog.exec()
+        if dialog.clickedButton() is install:
+            destination = Path(tempfile.gettempdir()) / f"NovelWorkflow-Setup-{update.version}.exe"
+            self._download_update(update, destination)
+
+    def _download_update(self, update: UpdateInfo, destination: Path):
+        dialog = QProgressDialog("กำลังดาวน์โหลดและตรวจสอบตัวติดตั้ง… 0%", "ยกเลิก", 0, 100, self)
+        dialog.setObjectName("updateProgressDialog")
+        dialog.setWindowTitle(f"อัปเดตเป็น v{update.version}")
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.setMinimumDuration(0)
+        dialog.setMinimumWidth(460)
+        dialog.resize(480, 132)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        progress_bar = dialog.findChild(QProgressBar)
+        if progress_bar is not None:
+            progress_bar.setObjectName("updateProgressBar")
+            progress_bar.setTextVisible(False)
+        progress_label = dialog.findChild(QLabel)
+        if progress_label is not None:
+            progress_label.setObjectName("updateProgressLabel")
+            progress_label.setWordWrap(True)
+            progress_label.setMinimumHeight(28)
+        worker = _UpdateDownloadWorker(update, destination, self)
+        self._update_download_worker = worker
+        self._update_progress = dialog
+        dialog.canceled.connect(worker.requestInterruption)
+        worker.progress.connect(self._update_download_progress)
+
+        def complete(path, error):
+            self._update_download_worker = None
+            self._update_progress = None
+            dialog.close()
+            dialog.deleteLater()
+            if error:
+                QMessageBox.warning(self, "ดาวน์โหลดอัปเดตไม่ได้", error)
+                return
+            try:
+                for workspace in self.workspaces.values():
+                    if not workspace.editor.save_all(include_normalization=False):
+                        raise OSError("บันทึกไฟล์ใน Editor ไม่สำเร็จ")
+                self.save()
+                self.repo.save_settings(self.settings)
+                launch_update(path, update, self.repo.root)
+                self.close()
+            except (OSError, UpdateError) as exc:
+                QMessageBox.warning(self, "เปิดตัวติดตั้งไม่ได้", str(exc))
+
+        worker.finished_download.connect(complete)
+        worker.start()
+
+    def _update_download_progress(self, value: int):
+        dialog = self._update_progress
+        if dialog is None:
+            return
+        dialog.setValue(value)
+        dialog.setLabelText(
+            f"กำลังดาวน์โหลดและตรวจสอบตัวติดตั้ง… {value}%"
+        )
+
+    def refresh_profiles(self, pid=None):
+        if getattr(self, "_settings_open", False):
+            result = super().refresh_profiles(pid)
+            for index, profile in enumerate(getattr(self, "ps_list", [])):
+                item = self.profiles.item(index)
+                if item:
+                    item.setData(Qt.UserRole, profile.id)
+            if self.profile:
+                if hasattr(self, "settings_profile_heading"):
+                    self.settings_profile_heading.setText(f"ตั้งค่านิยาย · {self.profile.name}")
+                self.refresh_working_files()
+                self.refresh_settings_launch_targets()
+            else:
+                if hasattr(self, "settings_profile_heading"):
+                    self.settings_profile_heading.setText("เลือกนิยายเพื่อจัดการการตั้งค่า")
+                self.refresh_working_files()
+                self.settings_launch_targets.clear()
+                self.settings_main_folder.clear()
+                self.settings_context_hint.setText("ยังไม่ได้เลือกไฟล์ Context")
+                self.settings_goal_target.setValue(0)
+            return result
+
+        self.ps_list = self.repo.list_profiles()
+        for profile in self.ps_list:
+            changed = migrate_legacy_basic_workflow(profile.workflow)
+            if migrate_legacy_vocabulary_step(profile):
+                changed = True
+            if profile.id not in self.repo.export_recovery_errors and sync_profile_context(profile):
+                changed = True
+            if changed:
+                self.repo.save_profile(profile)
+
+        known_ids = {profile.id for profile in self.ps_list}
+        for profile_id in list(self._workspace_cache):
+            if profile_id not in known_ids:
+                self._discard_workspace(profile_id)
+        for profile_id in list(self.workspaces):
+            if profile_id not in known_ids:
+                workspace = self.workspaces.pop(profile_id)
+                self.workspace_stack.removeWidget(workspace)
+                workspace.deleteLater()
+
+        self.profiles.blockSignals(True)
+        self.profiles.clear()
+        for profile in self.ps_list:
+            item = QListWidgetItem(profile.name)
+            item.setData(Qt.UserRole, profile.id)
+            self.profiles.addItem(item)
+        self.profiles.blockSignals(False)
+
+        self._refresh_library_groups()
+        self.profile_cards.clear()
+        status_counts = {
+            status: sum(1 for profile in self.ps_list if _profile_status(profile) == status)
+            for status, _label in PROFILE_STATUSES
+        }
+        for index, (status, label) in enumerate(PROFILE_STATUSES):
+            self.library_status_tabs.setTabText(
+                index, f"{label} ({status_counts[status]})"
+            )
+        placeholder = Path(__file__).resolve().parent / "resources" / "novelworkflow.png"
+        # Cache scaled covers until image identity changes.
+        cache = getattr(self, "_library_cover_cache", {})
+        updated_cache = {}
+        for profile in self.ps_list:
+            candidate = placeholder
+            if profile.cover_image_path:
+                try:
+                    cover = self.repo.resolve_project_path(
+                        profile.id, profile.cover_image_path
+                    )
+                    if cover.is_file():
+                        candidate = cover
+                except (OSError, ValueError):
+                    pass
+            try:
+                info = candidate.stat()
+                signature = (str(candidate), info.st_mtime_ns, info.st_size)
+            except OSError:
+                signature = (str(candidate), None, None)
+            cached = cache.get(profile.id)
+            if cached is not None and cached[0] == signature:
+                pixmap = cached[1]
+            else:
+                pixmap = QPixmap(str(candidate))
+                if not pixmap.isNull():
+                    pixmap = pixmap.scaled(222, 296, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                    pixmap = pixmap.copy((pixmap.width()-222)//2, (pixmap.height()-296)//2, 222, 296)
+            updated_cache[profile.id] = (signature, pixmap)
+            status = _profile_status(profile)
+            card = QListWidgetItem(QIcon(pixmap), profile.name)
+            card.setData(Qt.UserRole, profile.id)
+            card.setData(Qt.UserRole + 1, status)
+            from .translation_planner import TranslationPlanner
+            final_goal = TranslationPlanner(self.repo).finish_goal(profile.id) or {}
+            last_chapter = final_goal.get("final_chapter")
+            done = completed_chapter_count(profile)
+            fraction = None
+            if type(last_chapter) is int and last_chapter > 0:
+                done_within = len({n for n in completed_chapters(profile) if 1 <= n <= last_chapter})
+                progress_text = f"แปลสำเร็จ {done_within} / {last_chapter} บท"
+                fraction = done_within / last_chapter
+            else:
+                progress_text = f"แปลสำเร็จ {done} บท"
+            footnote = f"{_profile_status_label(status)} · {progress_text}"
+            card.setData(Qt.UserRole + 2, footnote)
+            card.setData(Qt.UserRole + 3, progress_text)
+            card.setData(Qt.UserRole + 4, fraction)
+            card.setToolTip(f"{profile.name}\n{footnote}")
+            card.setData(Qt.AccessibleDescriptionRole, f"{profile.name}\n{footnote}")
+            self.profile_cards.addItem(card)
+        self._library_cover_cache = updated_cache
+
+        target_id = pid or (
+            self.settings.last_profile_id
+            if self.settings.open_last_profile else None
+        )
+        index = next(
+            (i for i, profile in enumerate(self.ps_list) if profile.id == target_id),
+            0 if self.ps_list and not self.settings.closed_workspace_profile_ids else -1,
+        )
+        if index >= 0:
+            self.select_profile(index)
+        else:
+            self.profile = None
+            self.si = -1
+            self.workspace_stack.setCurrentWidget(self.empty_page)
+            self.main_pages.setCurrentWidget(self.library_page)
+        self.filter_profiles(self.library_search.text())
+        if self.repo.export_recovery_errors:
+            self.statusBar().showMessage(' · '.join(self.repo.export_recovery_errors.values()), 15000)
+
+    def _refresh_library_groups(self):
+        selector = self.library_group_filter
+        selected = selector.currentData()
+        selector.blockSignals(True)
+        try:
+            selector.clear()
+            selector.addItem("ทุกกลุ่ม", None)
+            self._library_group_ids = {}
+            for group in self.repo.load_groups():
+                selector.addItem(group.name, group.id)
+                self._library_group_ids[group.id] = set(group.profile_ids)
+            selector.setCurrentIndex(max(0, selector.findData(selected)))
+        finally:
+            selector.blockSignals(False)
+        if self.profile_cards.count():
+            self.filter_profiles(self.library_search.text())
+
+    def filter_profiles(self, query):
+        query = query.strip().casefold()
+        selected_status = self.library_status_tabs.tabData(
+            self.library_status_tabs.currentIndex()
+        )
+        group_id = self.library_group_filter.currentData()
+        group_members = getattr(self, "_library_group_ids", {}).get(group_id, set())
+        visible = 0
+        for index in range(self.profile_cards.count()):
+            item = self.profile_cards.item(index)
+            matches = (
+                item.data(Qt.UserRole + 1) == selected_status
+                and (group_id is None or item.data(Qt.UserRole) in group_members)
+                and (not query or query in item.text().casefold())
+            )
+            item.setHidden(not matches)
+            visible += int(matches)
+        self.profile_cards.setVisible(visible > 0)
+        self.library_section_title.setText(_profile_status_label(selected_status))
+        self.library_section_count.setText(f"{visible} เรื่อง")
+        if not self.ps_list:
+            empty_title = "ยังไม่มีนิยายในคลัง"
+            empty_hint = "เพิ่มนิยายเรื่องแรกเพื่อเริ่มจัดการงานแปล"
+        elif query or group_id is not None:
+            empty_title = "ไม่พบนิยายที่ตรงกับคำค้นหา" if query else "ไม่พบนิยายในกลุ่มนี้"
+            empty_hint = "ลองเปลี่ยนคำค้นหาหรือตัวกรอง"
+        else:
+            empty_title = "ยังไม่มีนิยายในหมวดนี้"
+            empty_hint = "เลือกหมวดอื่นหรือเพิ่มนิยายใหม่"
+        self.library_empty_label.setText(empty_title)
+        self.library_empty_hint.setText(empty_hint)
+        self.library_empty_action.setText("ล้างคำค้นหา" if query else "＋ เพิ่มนิยาย")
+        self.library_empty_box.setVisible(visible == 0)
+
+    def _open_profile_card(self, item):
+        if item is None:
+            return
+        profile_id = item.data(Qt.UserRole)
+        index = next((i for i, profile in enumerate(self.ps_list) if profile.id == profile_id), -1)
+        if index >= 0:
+            self.select_profile(index)
+
+    def set_profile_status(self, profile_id, status):
+        if status not in {value for value, _label in PROFILE_STATUSES}:
+            return
+        profile = next(
+            (item for item in getattr(self, "ps_list", []) if item.id == profile_id),
+            None,
+        )
+        if profile is None:
+            return
+        if _profile_status(profile) == status:
+            return
+        old_status = profile.status
+        profile.status = status
+        try:
+            self.repo.save_profile(profile)
+        except OSError as exc:
+            profile.status = old_status
+            QMessageBox.warning(self, "บันทึกสถานะไม่ได้", str(exc))
+            return
+        self.refresh_profiles(profile_id)
+        def undo():
+            current = next((item for item in self.repo.list_profiles() if item.id == profile_id), None)
+            if current is None or current.status != status: return
+            current.status = old_status
+            try: self.repo.save_profile(current)
+            except OSError as exc:
+                QMessageBox.warning(self, "ย้อนกลับไม่ได้", str(exc)); return
+            self.refresh_profiles(profile_id)
+        self.submit_toast.show_message(f"ย้าย {profile.name} ไป{_profile_status_label(status)}แล้ว", undo)
+
+
+    def open_planned_novel(self, profile_id):
+        index = next((i for i, p in enumerate(self.ps_list) if p.id == profile_id), -1)
+        if index >= 0:
+            self.select_profile(index)
+
+    def show_library(self):
+        if self._settings_page_state:
+            self._restore_settings_management()
+        self._active_utility_page = None
+        self._utility_return_page = None
+        if self.profile:
+            workspace = self.workspaces.get(self.profile.id)
+            if workspace and not workspace.editor.save_all(include_normalization=False):
+                self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนหน้าไม่ได้", 5000)
+                return
+        self.main_pages.setCurrentWidget(self.library_page)
+
+    def _workspace(self, profile):
+        if not self._prepare_workspace_switch(profile.id):
+            return None
+        closed_ids = list(self.settings.closed_workspace_profile_ids)
+        was_closed = profile.id in closed_ids
+        if was_closed:
+            self.settings.closed_workspace_profile_ids = [pid for pid in closed_ids if pid != profile.id]
+        self._open_workspace_ids = [profile.id]
+        workspace = self.workspaces.get(profile.id)
+        if workspace is None:
+            cached = self._workspace_cache.pop(profile.id, None)
+            if cached is not None:
+                candidate, signature = cached
+                if signature == self._workspace_signature(profile.id, candidate):
+                    workspace = candidate
+                    self.workspaces[profile.id] = workspace
+                    self.workspace_stack.addWidget(workspace)
+                    workspace.configure(profile)
+                else:
+                    candidate.deleteLater()
+            if workspace is None:
+                workspace = WorkspacePage(self, profile)
+                workspace.files.itemChanged.connect(
+                    lambda item, pid=profile.id: self._file_toggled(pid, item)
+                )
+                self.workspaces[profile.id] = workspace
+                self.workspace_stack.addWidget(workspace)
+
+                workspace.editor.statusChanged.connect(
+                    lambda text, editor=workspace.editor:
+                        self._workspace_editor_status_changed(editor, text)
+                )
+                workspace.editor.fontSizeChanged.connect(self.set_editor_font_size)
+                workspace.editor.documentSaved.connect(self._document_saved)
+                workspace.editor.restore_paths(
+                    self.settings.editor_tabs.get(profile.id, []),
+                    self.settings.editor_active_tabs.get(profile.id, 0),
+                    self.settings.editor_tab_order.get(profile.id),
+                    self.settings.editor_active_tab_keys.get(profile.id),
+                )
+                if profile.open_working_tabs_on_open:
+                    self._open_profile_working_tabs(profile, workspace)
+                workspace.editor.tabs.currentChanged.connect(self._schedule_workspace_session_save)
+                workspace.editor.tabs.tabBar().tabMoved.connect(
+                    lambda _from, _to: self._schedule_workspace_session_save()
+                )
+                workspace.editor.tabs.tabCloseRequested.connect(
+                    lambda _index: self._schedule_workspace_session_save()
+                )
+                workspace.step_index = int(self.settings.workspace_step_indices.get(profile.id, 0))
+                workspace.vocabulary_mode = bool(self.settings.workspace_vocabulary_modes.get(profile.id, False))
+                workspace.sync_vocabulary_source()
+                if self.settings.sidebar_visible:
+                    workspace.workspace_splitter.setSizes([
+                        max(220, int(self.settings.sidebar_width or 290)), 1000,
+                    ])
+                else:
+                    workspace.workspace_splitter.setSizes([0, 1000])
+                positions = self.settings.editor_positions.get(profile.id, {})
+                for editor_index in range(workspace.editor.tabs.count()):
+                    widget = workspace.editor.tabs.widget(editor_index)
+                    editor = widget.editor if hasattr(widget, "editor") else widget
+                    document_path = workspace.editor._path(editor)
+                    if document_path is None:
+                        continue
+                    path = str(document_path)
+                    position = positions.get(path, {})
+                    cursor = editor.textCursor()
+                    cursor.setPosition(min(int(position.get("cursor", 0)), len(editor.toPlainText())))
+                    editor.setTextCursor(cursor)
+                    editor.verticalScrollBar().setValue(int(position.get("scroll", 0)))
+        else:
+            workspace.configure(profile)
+            if was_closed and profile.open_working_tabs_on_open:
+                self._open_profile_working_tabs(profile, workspace)
+        return workspace
+
+    def _open_profile_working_tabs(self, profile, workspace):
+        preferred = []
+        for item in sorted(profile.working_files, key=lambda value: value.order):
+            try:
+                path = (Path(item.path).expanduser().resolve()
+                        if item.reference_type == "external_file"
+                        else self.repo.resolve_project_path(profile.id, item.path))
+                if path.is_file() and workspace.editor.open_file(path):
+                    preferred.append(str(path.resolve()))
+            except (OSError, ValueError, TypeError):
+                continue
+        workspace.editor.prioritize_paths(preferred)
+
+    def _workspace_signature(self, profile_id, workspace):
+        """Invalidate a warm workspace if its profile or editor files changed outside Valhalla."""
+        try:
+            paths = [self.repo.profile_dir(profile_id) / "profile.json"]
+            paths.extend(Path(path) for path in workspace.editor.open_paths())
+            return tuple(
+                (str(path.resolve()), path.stat().st_mtime_ns, path.stat().st_size)
+                for path in paths
+            )
+        except (OSError, ValueError):
+            return None
+
+    def _suspend_workspace(self, profile_id):
+        workspace = self.workspaces.pop(profile_id, None)
+        if workspace is None:
+            return
+        signature = self._workspace_signature(profile_id, workspace)
+        for timer in workspace.findChildren(QTimer):
+            timer.stop()
+        self.workspace_stack.removeWidget(workspace)
+        workspace.hide()
+        workspace.setParent(self._workspace_cache_host)
+        if signature is None:
+            workspace.deleteLater()
+            return
+        self._workspace_cache[profile_id] = (workspace, signature)
+        while len(self._workspace_cache) > 2:
+            _, (expired, _) = self._workspace_cache.popitem()
+            expired.deleteLater()
+
+    def _discard_workspace(self, profile_id):
+        """Dispose an already saved workspace without deleting its profile/session."""
+        workspace = self.workspaces.pop(profile_id, None)
+        cached = self._workspace_cache.pop(profile_id, None)
+        if workspace is None and cached is not None:
+            workspace = cached[0]
+        if workspace is not None:
+            for timer in workspace.findChildren(QTimer):
+                timer.stop()
+            self.workspace_stack.removeWidget(workspace)
+            workspace.hide()
+            workspace.deleteLater()
+
+    def _prepare_workspace_switch(self, target_id):
+        """Guard every workspace entry point, including launches from Settings."""
+        previous = [(pid, workspace) for pid, workspace in self.workspaces.items()
+                    if pid != target_id]
+        if not previous:
+            return True
+        for pid, workspace in previous:
+            pending_path = self._pending_export_for_profile(pid)
+            if pending_path is not None:
+                profile = next((item for item in self.repo.list_profiles() if item.id == pid), None)
+                name = profile.name if profile else "Novel"
+                choice = self._export_reminder_choice(
+                    "ยังไม่ได้ Export งานแปล!",
+                    f"{name}\nTranslator: {pending_path}\n\nTranslator มีเนื้อหาที่เปลี่ยนแปลงหลัง Export ครั้งล่าสุด",
+                )
+                if choice == "cancel":
+                    return False
+                if choice == "export" and not self._export_profile_translator(pid):
+                    return False
+            if not workspace.editor.save_all(include_normalization=False):
+                self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนนิยายไม่ได้", 5000)
+                return False
+        self._capture_sessions()
+        try:
+            self.repo.save_settings(self.settings)
+        except (OSError, ValueError) as exc:
+            self.statusBar().showMessage(f"บันทึกสถานะไม่สำเร็จ จึงยังเปลี่ยนนิยายไม่ได้: {exc}", 6000)
+            return False
+        for pid, _workspace in previous:
+            self._suspend_workspace(pid)
+        return True
+
+    def _close_novel_tab(self, profile_id):
+        if not profile_id or profile_id not in self._open_workspace_ids:
+            return
+        workspace = self.workspaces.get(profile_id)
+        pending_path = self._pending_export_for_profile(profile_id)
+        if pending_path is not None:
+            profile = next((item for item in self.repo.list_profiles() if item.id == profile_id), None)
+            name = profile.name if profile else "Novel"
+            choice = self._export_reminder_choice(
+                "ยังไม่ได้ Export งานแปล!",
+                f"{name}\nTranslator: {pending_path}\n\nTranslator มีเนื้อหาที่เปลี่ยนแปลงหลัง Export ครั้งล่าสุด",
+            )
+            if choice == "cancel":
+                return
+            if choice == "export" and not self._export_profile_translator(profile_id):
+                return
+        if workspace and not workspace.editor.save_all(include_normalization=False):
+            self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังปิดแท็บนิยายไม่ได้", 5000)
+            return
+        self._capture_sessions()
+        self._open_workspace_ids = []
+        if profile_id not in self.settings.closed_workspace_profile_ids:
+            self.settings.closed_workspace_profile_ids.append(profile_id)
+        if self.profile and self.profile.id == profile_id:
+            self.profile = None
+            self.si = -1
+            self.settings.last_profile_id = None
+            self.workspace_stack.setCurrentWidget(self.empty_page)
+            self.main_pages.setCurrentWidget(self.library_page)
+        self._discard_workspace(profile_id)
+        self._persist_workspace_session()
+
+    def select_profile(self, index):
+        if getattr(self, "_settings_open", False):
+            result = super().select_profile(index)
+            if self.profile:
+                self.settings_profile_heading.setText(f"ตั้งค่านิยาย · {self.profile.name}")
+                self.refresh_working_files()
+                self.refresh_settings_launch_targets()
+                if hasattr(self, "auto_open_working_tabs"):
+                    self.auto_open_working_tabs.blockSignals(True)
+                    self.auto_open_working_tabs.setChecked(self.profile.open_working_tabs_on_open)
+                    self.auto_open_working_tabs.blockSignals(False)
+            return result
+        if index < 0 or index >= len(getattr(self, "ps_list", [])):
+            return
+
+        target = self.ps_list[index]
+        if not self._prepare_workspace_switch(target.id):
+            # Settings may have selected another profile while the old editor
+            # remained open. Restore that editor's binding when switching fails.
+            active_id = getattr(self.workspace_stack.currentWidget(), 'profile_id', None)
+            active = next((p for p in self.ps_list if p.id == active_id), None)
+            if active is not None:
+                self.profile = active
+                self.settings.last_profile_id = active.id
+            return
+        self.profile = self.ps_list[index]
+        self.settings.last_profile_id = self.profile.id
+        workspace = self._workspace(self.profile)
+        workspace.update_profile_status(_profile_status(self.profile))
+
+        self.steps = workspace.steps
+        self.files = workspace.files
+        self.goal_label = workspace.goal_label
+        self.goal_bar = workspace.goal_bar
+        self.latest_chapter_label = workspace.latest_chapter_label
+
+        if self.profile.workflow.steps:
+            self.si = max(
+                0,
+                min(workspace.step_index, len(self.profile.workflow.steps) - 1),
+            )
+        else:
+            self.si = -1
+
+        self.profiles.blockSignals(True)
+        self.profiles.setCurrentRow(index)
+        self.profiles.blockSignals(False)
+
+        self.workspace_stack.setCurrentWidget(workspace)
+        self.main_pages.setCurrentWidget(self.workspace_stack)
+        workspace.copy_step_button.setEnabled(
+            bool(self.profile.workflow.steps or self.profile.vocabulary_step)
+        )
+        self._update_context_button(workspace)
+        workspace.refresh_context_update_button()
+        self.refresh_steps()
+        if self.si >= 0:
+            self.steps.setCurrentRow(self.si)
+        self.refresh_goal_indicator()
+        self.statusBar().showMessage(f"กำลังทำงาน: {self.profile.name}", 2500)
+        self._update_editor_status()
+        self._schedule_workspace_session_save()
+
+    def _schedule_workspace_session_save(self, *_args):
+        timer = getattr(self, "_session_save_timer", None)
+        if timer is not None:
+            timer.start()
+
+    def _persist_workspace_session(self):
+        """Persist tab/session changes promptly so a later crash loses little state."""
+        if not hasattr(self, "workspaces"):
+            return
+        try:
+            self._capture_sessions()
+            self.repo.save_settings(self.settings)
+        except (OSError, ValueError) as exc:
+            if hasattr(self, "statusBar"):
+                self.statusBar().showMessage(f"บันทึกสถานะหน้าทำงานไม่ได้: {exc}", 6000)
+
+    def refresh_steps(self):
+        if getattr(self, "_settings_open", False):
+            result = super().refresh_steps()
+            if self.profile and self.profile.vocabulary_step:
+                vocabulary = QListWidgetItem(self.profile.vocabulary_step.name)
+                vocabulary.setData(Qt.UserRole, "vocabulary-step")
+                vocabulary.setToolTip(
+                    "ดับเบิลคลิกเพื่อไปเพิ่มหรือจัดการไฟล์หาศัพท์"
+                )
+                vocabulary.setSizeHint(QSize(0, 42))
+                self.steps.addItem(vocabulary)
+            if hasattr(self, "settings_step_hint"):
+                active_step = self.step()
+                self.settings_step_hint.setText(
+                    f"{active_step.name} · {len(active_step.files)} ไฟล์"
+                    if active_step else "เลือกขั้นตอนเพื่อจัดการไฟล์"
+                )
+            return result
+
+        workspace = (
+            self.workspaces.get(self.profile.id) if self.profile else None
+        )
+        desired = workspace.step_index if workspace else 0
+        self.steps.blockSignals(True)
+        self.steps.clear()
+        if workspace:
+            workspace.stage_buttons = []
+
+        if self.profile:
+            for index, step in enumerate(self.profile.workflow.steps):
+                # With an item widget the list paints both the item's text and
+                # the button label. Keep the row text only when no button is used.
+                item = QListWidgetItem("" if workspace else step.name)
+                item.setSizeHint(QSize(0, 42))
+                self.steps.addItem(item)
+                if workspace:
+                    button = WorkflowStageButton(step.name)
+                    button.setObjectName("workflowStageButton")
+                    button.setAccessibleName(step.name)
+                    button.setProperty("workflowStageName", step.name)
+                    button.setWorkflowActive(False)
+                    button.setMinimumHeight(38)
+                    button.setCursor(Qt.PointingHandCursor)
+                    button.setToolTip(f"คลิกเพื่อเลือกและคัดลอกไฟล์ขั้นตอน{step.name}ทันที · หรือใช้ COPY STEP / Ctrl+Shift+C")
+                    button.clicked.connect(
+                        lambda checked=False, row=index, pid=self.profile.id:
+                            self.copy_named_stage(pid, row)
+                    )
+                    button.setContextMenuPolicy(Qt.CustomContextMenu)
+                    button.customContextMenuRequested.connect(
+                        lambda pos, b=button: self._workflow_copy_menu(b, pos))
+                    self.steps.setItemWidget(item, button)
+                    workspace.stage_buttons.append(button)
+
+        self.steps.blockSignals(False)
+        if self.profile and self.profile.workflow.steps:
+            if workspace:
+                workspace.copy_step_button.setEnabled(
+                    bool(self.profile.workflow.steps or self.profile.vocabulary_step)
+                )
+            self.si = max(
+                0, min(desired, len(self.profile.workflow.steps) - 1)
+            )
+            self.steps.setCurrentRow(self.si)
+        else:
+            self.si = -1
+            if workspace:
+                workspace.copy_step_button.setEnabled(False)
+        self.refresh_files()
+        if workspace:
+            self._sync_stage_buttons(workspace)
+
+    def refresh_files(self):
+        super().refresh_files()
+        workspace = self.workspaces.get(self.profile.id) if self.profile else None
+        if workspace:
+            workspace.filter_files(workspace.file_search.text())
+
+    def _step_changed(self, profile_id, row):
+        if not self.profile or self.profile.id != profile_id or row < 0:
+            return
+        workspace = self.workspaces.get(profile_id)
+        if workspace:
+            if not workspace.editor.save_all(include_normalization=False):
+                self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนขั้นตอนไม่ได้", 5000)
+                workspace.steps.blockSignals(True)
+                workspace.steps.setCurrentRow(workspace.step_index)
+                workspace.steps.blockSignals(False)
+                return
+            workspace.vocabulary_mode = False
+            workspace.vocabulary_button.setWorkflowActive(False)
+            workspace.vocabulary_button.update()
+            workspace.step_index = row
+            self.settings.workspace_step_indices[profile_id] = row
+        self.si = row
+        self.refresh_files()
+        if workspace:
+            self._sync_stage_buttons(workspace)
+
+    @staticmethod
+    def _sync_stage_buttons(workspace):
+        profile = workspace.owner.profile
+        workspace.history_range.setVisible(bool(profile and profile.polish_history_step_id))
+        workspace.save_for_review_button.setVisible(bool(profile and profile.polish_history_step_id))
+        for index, button in enumerate(workspace.stage_buttons):
+            active = (
+                not workspace.vocabulary_mode
+                and index == workspace.step_index
+            )
+            button.setWorkflowActive(active)
+        workspace.vocabulary_button.setWorkflowActive(workspace.vocabulary_mode)
+        workspace.sync_vocabulary_source()
+
+    def _workflow_copy_menu(self, button, position):
+        if not self.profile or not self.settings.copy_files_as_zip:
+            return
+        menu = QMenu(button)
+        choose = menu.addAction("เลือกหลายขั้นตอนแล้วคัดลอกเป็น ZIP…")
+        if menu.exec(button.mapToGlobal(position)) != choose:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("เลือกขั้นตอนสำหรับ ZIP")
+        layout = QVBoxLayout(dialog)
+        choices = []
+        steps = ([self.profile.vocabulary_step] if self.profile.vocabulary_step else []) + self.profile.workflow.steps
+        for step in steps:
+            check = QCheckBox(step.name)
+            check.setChecked(step is self.step())
+            layout.addWidget(check)
+            choices.append((check, step))
+        copy = QPushButton("COPY STEP")
+        copy.clicked.connect(dialog.accept)
+        layout.addWidget(copy)
+        if dialog.exec() == QDialog.Accepted:
+            selected = [step for check, step in choices if check.isChecked()]
+            if selected:
+                self.copy_step(advance=False, selected_steps=selected)
+
+    def copy_named_stage(self, profile_id, stage):
+        """Select and copy one stage immediately, without export, history, or advancing."""
+        if not self.profile or self.profile.id != profile_id:
+            return
+        workspace = self.workspaces.get(profile_id)
+        if not workspace:
+            self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงคัดลอกไฟล์ไม่ได้", 5000)
+            return
+        if stage == "vocabulary":
+            workspace.vocabulary_mode = True
+            self.si = workspace.step_index
+        else:
+            row = int(stage)
+            if not 0 <= row < len(self.profile.workflow.steps):
+                return
+            workspace.vocabulary_mode = False
+            workspace.step_index = row
+            self.si = row
+            self.settings.workspace_step_indices[profile_id] = row
+            self.steps.blockSignals(True)
+            self.steps.setCurrentRow(row)
+            self.steps.blockSignals(False)
+        self._sync_stage_buttons(workspace)
+        self.refresh_files()
+        self._schedule_workspace_session_save()
+        self.copy_step(advance=False)
+
+    def save_translation_batch_state(self, profile_id, state):
+        self.settings.translation_batch_profiles[profile_id] = dict(state)
+        self._schedule_workspace_session_save()
+
+    def open_translation_batches(self, profile_id):
+        if not self.profile or self.profile.id != profile_id:
+            return
+        workspace = self.workspaces.get(profile_id)
+        if workspace is None:
+            return
+        # Opening the batch page is navigation, NOT a COPY STEP action.
+        # Keep the sidebar in sync without triggering copy_named_stage().
+        translation_indices = [
+            index for index, step in enumerate(self.profile.workflow.steps)
+            if step.name.strip() == "แปล"
+        ]
+        if len(translation_indices) == 1:
+            index = translation_indices[0]
+            workspace.vocabulary_mode = False
+            workspace.step_index = index
+            self.si = index
+            self.settings.workspace_step_indices[profile_id] = index
+            workspace.steps.blockSignals(True)
+            workspace.steps.setCurrentRow(index)
+            workspace.steps.blockSignals(False)
+            self._sync_stage_buttons(workspace)
+            self.refresh_files()
+            workspace.copy_step_button.setEnabled(bool(self.step()))
+            self._schedule_workspace_session_save()
+        workspace.open_translation_batches()
+
+    def save_txt_vocabulary_state(self, profile_id, state):
+        self.settings.vocabulary_txt_profiles[profile_id] = dict(state)
+        self._schedule_workspace_session_save()
+
+    def open_txt_vocabulary(self, profile_id):
+        if not self.profile or self.profile.id != profile_id:
+            return
+        self.set_vocabulary_mode(profile_id, True)
+        workspace = self.workspaces.get(profile_id)
+        if workspace and workspace.vocabulary_mode:
+            workspace.set_vocabulary_source("files")
+
+    def step(self):
+        """Return the currently active vocabulary or translation step."""
+        if self.profile:
+            if getattr(self, "_settings_open", False):
+                selected = self.steps.currentItem() if self.steps else None
+                is_vocabulary_row = bool(
+                    selected and selected.data(Qt.UserRole) == "vocabulary-step"
+                )
+                if getattr(self, "_management_vocabulary_mode", False) or is_vocabulary_row:
+                    return self.profile.vocabulary_step
+            else:
+                workspace = self.workspaces.get(self.profile.id)
+                if workspace and workspace.vocabulary_mode:
+                    return self.profile.vocabulary_step
+        return super().step()
+
+    def set_vocabulary_mode(self, profile_id, enabled):
+        workspace = self.workspaces.get(profile_id)
+        if not workspace or not self.profile or self.profile.id != profile_id:
+            return
+        if not workspace.editor.save_all(include_normalization=False):
+            workspace.vocabulary_button.setWorkflowActive(not enabled)
+            workspace.vocabulary_button.update()
+            self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนขั้นตอนไม่ได้", 5000)
+            return
+        workspace.vocabulary_mode = enabled
+        self._schedule_workspace_session_save()
+        self.si = workspace.step_index
+        self.refresh_files()
+        self._sync_stage_buttons(workspace)
+        workspace.copy_step_button.setEnabled(bool(self.step()))
+        stage = "หาศัพท์" if enabled else self.profile.workflow.steps[self.si].name if self.si >= 0 else ""
+        self.statusBar().showMessage(f"ขั้นตอน: {stage}", 2500)
+
+    def _file_toggled(self, profile_id, item):
+        if self.profile and self.profile.id == profile_id:
+            super().toggle_file(item)
+
+    def select_step(self, index):
+        if getattr(self, "_settings_open", False):
+            selected = self.steps.currentItem() if self.steps else None
+            row_type = selected.data(Qt.UserRole) if selected else None
+            is_vocabulary_row = row_type == "vocabulary-step"
+            self._management_vocabulary_mode = is_vocabulary_row
+            if is_vocabulary_row:
+                self.refresh_files()
+                if hasattr(self, "settings_step_hint"):
+                    active_step = self.step()
+                    self.settings_step_hint.setText(f"{active_step.name} · ไฟล์ที่ใช้กับขั้นตอนนี้")
+                return
+            result = super().select_step(index)
+            if hasattr(self, "settings_step_hint"):
+                active_step = self.step()
+                self.settings_step_hint.setText(
+                    f"{active_step.name} · {len(active_step.files)} ไฟล์"
+                    if active_step else "เลือกขั้นตอนเพื่อจัดการไฟล์"
+                )
+            return result
+        if self.profile:
+            self._step_changed(self.profile.id, index)
+
+    def save_active_document(self):
+        if not self.profile:
+            return
+        workspace = self.workspaces.get(self.profile.id)
+        if workspace and workspace.editor.save_current():
+            self.statusBar().showMessage("บันทึกไฟล์แล้ว", 2000)
+
+    def open_workflow_file(self, profile_id, item):
+        profile = next((value for value in self.ps_list if value.id == profile_id), None)
+        workspace = self.workspaces.get(profile_id)
+        if not profile or not workspace:
+            return
+        step = profile.vocabulary_step if workspace.vocabulary_mode else (
+            profile.workflow.steps[workspace.step_index]
+            if 0 <= workspace.step_index < len(profile.workflow.steps) else None
+        )
+        if not step:
+            return
+        step_file = next((value for value in step.files if value.id == item.data(Qt.UserRole)), None)
+        if not step_file:
+            return
+        try:
+            if step_file.reference_type == "dynamic":
+                path = self.assembler.resolve(profile, step_file.dynamic_reference)
+            elif step_file.reference_type == "external_file":
+                path = Path(step_file.path).expanduser().resolve()
+            else:
+                path = self.repo.resolve_project_path(profile.id, step_file.path)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            QMessageBox.warning(self, "เปิดไฟล์ไม่ได้", str(exc))
+            return
+        if workspace.editor.open_file(path):
+            workspace.breadcrumb.setText(f"{profile.name}  ›  {step.name}  ›  {path.name}")
+
+
+
+    def _ensure_chapter_numbers_for_copy(self, workspace, profile, steps, *, zipped):
+        """Synchronously finalize eligible source files before freezing the clipboard."""
+        if (not workspace or not profile.auto_review_enabled
+                or profile.auto_chapter_number_mode != "fix"):
+            return
+        from .polish_history import _files
+        from .workflow_archive import resolve_attachment
+        attached = set()
+        for step in steps:
+            for item in step.files:
+                if not zipped and not item.enabled:
+                    continue
+                attached.update(_files(resolve_attachment(self.repo, self.assembler, profile, item)))
+
+        pending = getattr(workspace, "auto_chapter_review_paths", set())
+        blocked = getattr(workspace, "auto_chapter_review_failed_paths", set())
+        candidates = {path for path in set(pending) | set(blocked)
+                      if self._auto_original_source_eligible(profile, workspace, path)}
+        editors = {}
+        for index in range(workspace.editor.tabs.count()):
+            editor = workspace.editor.tabs.widget(index)
+            path = workspace.editor._path(editor)
+            if path is None:
+                continue
+            path = Path(path).expanduser().resolve()
+            editors[path] = editor
+            needs_review = workspace.editor._dirty(editor) or path in pending or path in blocked
+            if needs_review and self._auto_original_source_eligible(profile, workspace, path):
+                candidates.add(path)
+            elif (path in attached and workspace._source_file_eligible(path)
+                    and not is_auxiliary_document(path)
+                    and path.name.casefold() != "novel.txt"
+                    and scan_original_chapter_issues(editor.toPlainText())[0]
+                    and not self._auto_original_source_eligible(profile, workspace, path)):
+                raise ValueError(
+                    f"{path.name}: ไม่พบ Translator ที่จับคู่ได้แน่ชัด "
+                    "จึงไม่คัดลอกต้นฉบับที่ยังตรวจเลขบทไม่ได้"
+                )
+        for path in sorted(candidates):
+            editor = editors.get(path)
+            if editor is None:
+                raise ValueError(f"{path.name}: ปิดแท็บต้นฉบับก่อนตรวจเลขบทเสร็จ")
+            if workspace.editor._dirty(editor) and not workspace.editor.save_editor(
+                    editor, quiet=True, normalize=False):
+                raise ValueError(f"{path.name}: บันทึกต้นฉบับไม่สำเร็จ")
+            self.statusBar().showMessage(f"กำลังตรวจเลขบท {path.name} ก่อนคัดลอก…")
+            if not self._run_auto_chapter_review(profile.id, path=path, for_copy=True):
+                raise ValueError(
+                    f"{path.name}: ยังตรวจหรือแก้เลขบทอัตโนมัติไม่สำเร็จ "
+                    "กรุณาตรวจเลขบทในแท็บต้นฉบับก่อนคัดลอก"
+                )
+            pending.discard(path)
+            blocked.discard(path)
+        timer = getattr(workspace, "auto_chapter_review_timer", None)
+        if timer is not None and not pending:
+            timer.stop()
+
+    def copy_step(self, advance=False, selected_steps=None):
+        """Copy current stage files only; history snapshots require an explicit action.
+
+        Keep source chapter validation and unsaved-editor preparation in place,
+        but never create a review snapshot or advance the selected stage here.
+        """
+        if not self.profile or not self.step():
+            return
+        if self.history_busy():
+            self.statusBar().showMessage('กำลังจัดการไฟล์ กรุณารอสักครู่', 3000)
+            return
+        from copy import deepcopy
+        from .clipboard_bundle import prepare_bundle
+        from .workflow_archive import create_workflow_archive
+        workspace = self.workspaces.get(self.profile.id)
+        profile = deepcopy(self.profile)
+        selected = deepcopy(selected_steps or [self.step()])
+        zipped = self.settings.copy_files_as_zip
+        try:
+            # Qt/editor access stays on the GUI thread; clipboard is touched
+            # only after all input files have been validated and prepared.
+            self._ensure_chapter_numbers_for_copy(workspace, profile, selected, zipped=zipped)
+            bundle = prepare_bundle(
+                self.repo, self.assembler, profile, selected,
+                workspace.editor if workspace else None, all_files=zipped,
+            )
+            if zipped:
+                paths = [create_workflow_archive(
+                    self.repo, self.assembler, profile, selected, prepared=bundle,
+                )]
+                import zipfile
+                with zipfile.ZipFile(paths[0]) as archive:
+                    count = sum(not item.is_dir() for item in archive.infolist())
+            else:
+                paths = list(bundle.values())
+                count = len(paths)
+            self._history_clipboard(paths, count, zipped)
+        except (OSError, ValueError, KeyError) as exc:
+            # Failed preparation must leave the previous clipboard untouched.
+            QMessageBox.warning(self, 'คัดลอกไฟล์ไม่สำเร็จ', str(exc))
+            self.statusBar().showMessage('คัดลอกไฟล์ไม่สำเร็จ: ' + str(exc), 6000)
+            return
+
+    def set_editor_font_size(self, size):
+        size = max(8.0, min(28.0, float(size)))
+        self.settings.editor_font_size = size
+        for workspace in self.workspaces.values():
+            if workspace.editor.font_size() != size:
+                workspace.editor.set_font_size(size)
+            workspace.font_size_label.setText(f"{size:g}")
+        self.repo.save_settings(self.settings)
+
+    def adjust_editor_font_size(self, delta):
+        size = self.settings.editor_font_size + float(delta)
+        self.set_editor_font_size(size)
+
+    def _document_saved(self, saved_path):
+        for workspace in self.workspaces.values():
+            workspace.refresh_history()
+        self.refresh_translation_progress()
+        if not self.profile:
+            return
+        workspace = self.workspaces.get(self.profile.id)
         if workspace is not None:
             workspace.refresh_export_status()
         if self.profile.context_path:
