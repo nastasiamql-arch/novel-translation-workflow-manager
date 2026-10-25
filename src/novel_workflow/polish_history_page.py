@@ -60,6 +60,10 @@ class PolishHistoryPage(QWidget):
         self._user_navigated = False
         self._render_generation = 0
         self._user_scroll_generation = 0
+        self._pending_viewport_restore = None
+        self._viewport_restore_timer = QTimer(self)
+        self._viewport_restore_timer.setSingleShot(True)
+        self._viewport_restore_timer.timeout.connect(self._restore_viewport)
         tools = QHBoxLayout()
         self.search = QLineEdit(); self.search.setPlaceholderText('ค้นหาเลขบทหรือช่วงบท…')
         self.search.setAccessibleName('ค้นหาประวัติช่วงบท')
@@ -324,6 +328,19 @@ class PolishHistoryPage(QWidget):
             self._user_navigated = False
             QTimer.singleShot(0, self.go_to_resume)
 
+    def _restore_viewport(self):
+        pending = self._pending_viewport_restore
+        self._pending_viewport_restore = None
+        if pending is None:
+            return
+        render_generation, user_scroll_generation, prior_scroll_value = pending
+        if (render_generation != self._render_generation
+                or user_scroll_generation != self._user_scroll_generation):
+            return
+        self.card_layout.activate()
+        bar = self.history_scroll.verticalScrollBar()
+        bar.setValue(max(bar.minimum(), min(bar.maximum(), prior_scroll_value)))
+
     def set_resume_position(self, snapshot):
         span = snapshot.manifest.get('chapter_range')
         if not span:
@@ -565,14 +582,10 @@ class PolishHistoryPage(QWidget):
             empty.setWordWrap(True); empty.setObjectName('emptyStateDescription'); self.card_layout.addWidget(empty)
         self.card_layout.addStretch()
 
-        def restore_viewport():
-            if (render_generation != self._render_generation
-                    or user_scroll_generation != self._user_scroll_generation):
-                return
-            self.card_layout.activate()
-            bar = self.history_scroll.verticalScrollBar()
-            bar.setValue(max(bar.minimum(), min(bar.maximum(), prior_scroll_value)))
-        QTimer.singleShot(0, restore_viewport)
+        self._pending_viewport_restore = (
+            render_generation, user_scroll_generation, prior_scroll_value
+        )
+        self._viewport_restore_timer.start(0)
 
     def copy_snapshot(self, snapshot):
         """Only explicitly confirmed historical edits may update stored hashes."""
