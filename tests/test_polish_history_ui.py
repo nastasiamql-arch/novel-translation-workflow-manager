@@ -43,8 +43,18 @@ def window(tmp_path, monkeypatch):
     yield w, w.profile, w.workspaces[profile.id], errors
     w._close_export_reminder_accepted = True
     deadline = time.monotonic() + 15
-    while w.history_busy() and time.monotonic() < deadline:
+    workers = [w._update_check_worker, w._update_download_worker, *w._history_workers]
+    inspector = w._utility_pages.get('novel-inspector')
+    if inspector is not None:
+        workers.extend([inspector.worker, inspector.write_worker])
+    workers = [worker for worker in workers if worker is not None]
+    for worker in workers:
+        if worker.isRunning():
+            worker.requestInterruption()
+    while any(worker.isRunning() for worker in workers) and time.monotonic() < deadline:
         QApplication.processEvents(); time.sleep(0.01)
+    for worker in workers:
+        worker.wait(100)
     w.close(); QApplication.processEvents()
     while w.isVisible() and time.monotonic() < deadline:
         QApplication.processEvents(); time.sleep(0.01)
