@@ -22,7 +22,24 @@ def main() -> int:
     if not tests:
         print("No test modules found", file=sys.stderr, flush=True)
         return 2
-    chunks = [tests[i:i + 8] for i in range(0, len(tests), 8)]
+    # Keep the long-running Qt history page tests in their own interpreter.
+    # Their QThread-backed filesystem scans must not share Qt teardown state
+    # with unrelated test modules on Windows.
+    chunks = []
+    pending = []
+    for test in tests:
+        if test.name == "test_polish_history_ui.py":
+            if pending:
+                chunks.append(pending)
+                pending = []
+            chunks.append([test])
+            continue
+        pending.append(test)
+        if len(pending) == 8:
+            chunks.append(pending)
+            pending = []
+    if pending:
+        chunks.append(pending)
     print(f"Testing {len(tests)} modules in {len(chunks)} isolated processes", flush=True)
     for n, chunk in enumerate(chunks, 1):
         print(f"Group {n}/{len(chunks)}: {', '.join(p.name for p in chunk)}", flush=True)
