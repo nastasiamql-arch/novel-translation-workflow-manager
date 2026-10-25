@@ -440,7 +440,7 @@ class PolishHistoryPage(QWidget):
             sequence.setAccessibleName(f'ลำดับ {index + 1}')
             rows.addWidget(sequence)
             text_column = QVBoxLayout(); text_column.setSpacing(0)
-            rows.addLayout(text_column)
+            rows.addLayout(text_column, 1)
             span = snapshot.manifest.get('chapter_range')
             title = QLabel(('บท ' + str(span).replace('-', '–')) if span else 'รอระบุช่วงบท')
             title.setObjectName('historyRangeTitle')
@@ -580,7 +580,12 @@ class PolishHistoryPage(QWidget):
         urls = [u.toLocalFile() for u in mime.urls()] if mime else []
         if button: button.setEnabled(False)
         def failed(error):
-            if button: button.setEnabled(True)
+            if button:
+                try:
+                    button.setEnabled(True)
+                except RuntimeError:
+                    # A concurrent history refresh may already have rebuilt the row.
+                    pass
             self.failed('ลบประวัติไม่สำเร็จ: ' + str(error))
         def deleted(_):
             self.status.setText('ย้ายประวัติไปยังถังรีไซเคิลแล้ว · Clipboard คงเดิม')

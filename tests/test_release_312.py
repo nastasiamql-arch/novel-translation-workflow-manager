@@ -230,6 +230,7 @@ def test_recycle_failure_preserves_history_and_unrelated_clipboard(window, monke
     button = page.findChildren(QPushButton, 'polishHistoryDelete')[0]
     button.click(); wait_until(lambda: not w.history_busy())
     assert snapshot.path.exists() and len(page.snapshots) == 1
+    button = page.findChildren(QPushButton, 'polishHistoryDelete')[0]
     assert button.isEnabled()
     assert QApplication.clipboard().text() == 'unrelated'
     assert 'unavailable' in page.status.text()
