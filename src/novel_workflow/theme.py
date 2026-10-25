@@ -279,7 +279,7 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QSpinBox::up-button:pressed, QSpinBox::down-button:pressed,
     QDoubleSpinBox::up-button:pressed, QDoubleSpinBox::down-button:pressed {{ background: {c['selection']}; }}
     QListWidget#preferencesCategory {{ background: transparent; border: 0; }}
-    QListWidget#preferencesCategory::item {{ border-radius: 8px; padding: 8px 12px; min-height: 24px; margin: 2px 0; }}
+    QListWidget#preferencesCategory::item {{ border-radius: 8px; padding: 6px 10px; min-height: 20px; margin: 1px 0; }}
     QListWidget#preferencesCategory::item:selected {{ background: {c['item_selection']}; color: {c['selection_text']}; font-weight: 600; }}
     QToolButton#navigationItem {{ border-radius: 10px; }}
     QComboBox::drop-down {{ border: 0; width: 26px; }}

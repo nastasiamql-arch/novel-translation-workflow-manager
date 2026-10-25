@@ -2,7 +2,8 @@ import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QListWidget, QPushButton
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QFrame, QListWidget, QPushButton, QScrollArea
 from novel_workflow.models import LaunchTarget, NovelProfile
 from novel_workflow.storage import ProjectRepository
 from novel_workflow.workspace_window import MainWindow
@@ -32,19 +33,30 @@ def test_novel_settings_are_one_page_and_profile_selection_stays_in_it(tmp_path)
     app().processEvents()
     page = window._settings_page_state['page']
     categories = page.findChild(QListWidget, 'preferencesCategory')
+    sidebar = page.findChild(QFrame, 'preferencesSidebar')
     assert [categories.item(i).text() for i in range(categories.count())] == [
         'ข้อมูลนิยาย', 'ไฟล์และโฟลเดอร์', 'ขั้นตอนการแปล', 'แท็บทำงาน',
         'ส่งออก TXT', 'ทั่วไป', 'อัปเดตโปรแกรม'
     ]
     assert categories.currentItem().text() == 'ข้อมูลนิยาย'
+    assert sidebar is not None
+    assert sidebar.parentWidget() is page
+    parent = sidebar.parentWidget()
+    while parent is not page:
+        assert not isinstance(parent, QScrollArea)
+        parent = parent.parentWidget()
     assert window.profiles.wordWrap()
     assert window.profiles.textElideMode() == Qt.ElideNone
     assert window.profiles.iconSize().width() == 52
-    assert window.profiles.viewport().height() >= 360
+    assert window.profiles.viewport().height() > 0
+    assert window.profiles.minimumHeight() == 0
     first_row = next(i for i, profile in enumerate(window.ps_list) if profile.id == first.id)
     assert window.profiles.item(first_row).text() == first.name
     assert window.profiles.item(first_row).sizeHint().height() >= 76
-    assert window.profiles.viewport().height() // window.profiles.item(first_row).sizeHint().height() >= 4
+    assert window.profiles.viewport().height() > 0
+    window.profiles.setCurrentRow(first_row)
+    QTest.keyClick(window.profiles, Qt.Key_Down)
+    assert window.profile.id == second.id
     window.profiles.selectionCommitted.emit(first_row)
     app().processEvents()
     assert window.settings_launch_targets.wordWrap()

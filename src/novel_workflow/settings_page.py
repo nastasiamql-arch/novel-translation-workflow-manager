@@ -6,6 +6,16 @@ from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFrame, QLabel
 from .shell_components import ElidingLabel
 
 
+class SettingsSidebar(QFrame):
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._activate_layout)
+
+    def _activate_layout(self):
+        if self.layout():
+            self.layout().activate()
+
+
 class AttachmentList(QListWidget):
     """Show up to eight whole rows; let the surrounding page scroll."""
     def __init__(self):
@@ -52,7 +62,7 @@ class SettingsPage(QWidget):
         active_vocabulary_mode = bool(active_workspace and active_workspace.vocabulary_mode)
         page = cls(owner)
         root = QHBoxLayout(page)
-        root.setContentsMargins(12, 12, 12, 12)
+        root.setContentsMargins(12, 8, 12, 8)
         root.setSpacing(12)
 
         owner.profiles = profile_list_type()
@@ -62,6 +72,11 @@ class SettingsPage(QWidget):
         owner.profiles.setSpacing(6)
         owner.profiles.setCursor(Qt.ArrowCursor)
         owner.profiles.setAccessibleName("รายการนิยาย")
+        owner.profiles.setObjectName("settingsNovelList")
+        owner.profiles.setMinimumHeight(0)
+        owner.profiles.setMinimumSize(0, 0)
+        owner.profiles.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
+        owner.profiles.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         def select_profile_from_sidebar(index):
             owner.select_profile(index)
             page.select_category("Novel")
@@ -82,9 +97,15 @@ class SettingsPage(QWidget):
         profile_panel = QFrame()
         profile_panel.setObjectName("settingsCard")
         profile_layout = QVBoxLayout(profile_panel)
+        profile_layout.setContentsMargins(8, 8, 8, 8)
+        profile_layout.setSpacing(4)
+        profile_layout.setSizeConstraint(QLayout.SetNoConstraint)
         profile_layout.addWidget(QLabel("นิยายของฉัน"))
         profile_layout.addWidget(owner.profiles, 1)
         profile_actions = QGridLayout()
+        profile_actions.setContentsMargins(0, 0, 0, 0)
+        profile_actions.setHorizontalSpacing(6)
+        profile_actions.setVerticalSpacing(4)
         for index, (label, callback) in enumerate((
             ("＋ เพิ่มนิยาย", owner.new_profile), ("ทำสำเนา", owner.duplicate_profile),
             ("เลื่อนขึ้น", lambda: owner.move_profile(-1)), ("เลื่อนลง", lambda: owner.move_profile(1)),
@@ -94,29 +115,28 @@ class SettingsPage(QWidget):
             profile_actions.addWidget(button, index // 2, index % 2)
         profile_layout.addLayout(profile_actions)
         profile_panel.setMinimumWidth(0)
-        sidebar = QFrame()
+        profile_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        sidebar = SettingsSidebar()
         sidebar.setObjectName("preferencesSidebar")
         sidebar.setFixedWidth(310)
+        sidebar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
-        sidebar_layout.setSizeConstraint(QLayout.SetMinimumSize)
+        sidebar_layout.setSizeConstraint(QLayout.SetNoConstraint)
         categories = AttachmentList()
         categories.setObjectName("preferencesCategory")
         categories.setAccessibleName("หมวดการตั้งค่า")
         categories.addItems(["ข้อมูลนิยาย", "ไฟล์และโฟลเดอร์", "ขั้นตอนการแปล", "แท็บทำงาน",
                              "ส่งออก TXT", "ทั่วไป", "อัปเดตโปรแกรม"])
         categories.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        categories.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        categories.setFocusPolicy(Qt.StrongFocus)
+        categories.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         sidebar_layout.addWidget(categories)
-        owner.profiles.setMinimumHeight(400)
         owner.profiles.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         profile_panel.setMinimumWidth(0)
         sidebar_layout.addWidget(profile_panel, 1)
-        sidebar_scroll = QScrollArea()
-        sidebar_scroll.setWidgetResizable(True)
-        sidebar_scroll.setFixedWidth(330)
-        sidebar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        sidebar_scroll.setWidget(sidebar)
-        root.addWidget(sidebar_scroll)
+        root.addWidget(sidebar)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)

@@ -1,3 +1,9 @@
+## v6.5.1 — Fixed Settings Sidebar and Novel List Scrolling
+
+- Keep the seven Settings categories fixed while scrolling only the novel list.
+- Keep novel management buttons anchored below the list and let the list shrink to available height.
+- Verify Settings sidebar geometry at 100%, 125%, 150%, and 200% DPI across supported window sizes and Light/Dark themes.
+
 ## v6.5.0 — Smart File Setup and Polish Resume Tracking
 
 - Added bounded folder scanning for role-matched novel files, including nested `Project` files, Unicode names, multiple extensions, and exclusions for backup and recovery areas.

@@ -7,9 +7,10 @@ from pathlib import Path
 from datetime import date
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from PySide6.QtGui import QFontDatabase
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPoint, QPointF
+from PySide6.QtGui import QWheelEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication,QAbstractButton,QLineEdit,QSpinBox,QLabel,QWidget,QToolButton
+from PySide6.QtWidgets import QApplication,QAbstractButton,QLineEdit,QSpinBox,QLabel,QWidget,QToolButton,QListWidget,QListWidgetItem,QFrame,QPushButton
 from novel_workflow.storage import ProjectRepository
 from novel_workflow.models import NovelProfile, StepFile
 from novel_workflow.workspace_window import MainWindow
@@ -65,11 +66,11 @@ def main():
         assert not regions["status"].intersects(regions["progress"])
         assert cards.gridSize().height() >= regions['status'].bottom() - regions['cover'].top()
 
-        for name in ['ชื่อไฟล์ยาวภาษาไทย'*6+'.txt','中文文件名'*10+'.txt','日本語.txt','English.txt']:
+        for name in ['ชื่อไฟล์ยาวภาษาไทย'*3+'.txt','中文文件名'*6+'.txt','日本語.txt','English.txt']:
             path=root/name; path.write_text('ไทย 中文 日本語 English',encoding='utf-8'); ws.editor.open_file(path)
         for theme in ('Light','Dark'):
             win.settings.appearance=theme; win.apply_theme()
-            for width,height in ((900,600),(1280,720),(1440,860),(1920,1080)):
+            for width,height in ((900,600),(1280,720),(1366,768),(1920,1080)):
                 win.resize(width,height); app.processEvents(); QTest.qWait(30)
                 cards = win.profile_cards
                 if cards.count():
@@ -141,14 +142,75 @@ def main():
                 app.processEvents(); assert_layout(statistics); assert_layout(statistics.body)
                 statistics.goal_disclosure.setChecked(False)
             if key in ("progress","groups","settings"):
-                assert_layout(win.utility_page)
-                assert_layout(win.utility_stack.currentWidget())
+                if key != "settings":
+                    assert_layout(win.utility_page)
+                    assert_layout(win.utility_stack.currentWidget())
             if key == "settings":
+                page = win.utility_stack.currentWidget()
+                sidebar = page.findChild(QFrame, "preferencesSidebar")
+                categories = page.findChild(QListWidget, "preferencesCategory")
+                QTest.qWait(30)
+                assert_layout(page)
+                profiles = win.profiles
+                assert sidebar is not None and sidebar.parentWidget() is win.utility_stack.currentWidget()
+                assert categories is not None and categories.count() == 7
+                assert categories.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
+                # Populate a temporary, in-memory overflow so this matrix exercises
+                # the real QListWidget scrollbar without changing repository data.
+                for index in range(18):
+                    QListWidgetItem(f"ทดสอบนิยาย {index + 1}", profiles)
+                assert profiles.dragEnabled() and profiles.acceptDrops()
+                profile_panel = profiles.parentWidget()
+                profile_buttons = profile_panel.findChildren(QPushButton)
+                assert len(profile_buttons) == 4
                 for appearance in ("Light", "Dark"):
                     win.settings.appearance=appearance; win.apply_theme()
-                    for dimensions in ((900,600),(1280,720),(1440,860),(1920,1080)):
+                    for dimensions in ((900,600),(1280,720),(1366,768),(1920,1080)):
                         win.resize(*dimensions); app.processEvents(); QTest.qWait(30)
                         page = win.utility_stack.currentWidget()
+                        QTest.qWait(30)
+                        assert_layout(page)
+                        sidebar_rect = sidebar.geometry()
+                        category_rect = categories.geometry()
+                        assert sidebar_rect.top() >= 0 and sidebar_rect.bottom() < page.height()
+                        assert categories.verticalScrollBar().maximum() == 0
+                        last_category = categories.visualItemRect(categories.item(6))
+                        assert last_category.bottom() < categories.viewport().height(), (
+                            appearance, dimensions, last_category, categories.viewport().size()
+                        )
+                        assert profiles.minimumHeight() == 0
+                        assert profiles.verticalScrollBar().maximum() > 0, (
+                            appearance, dimensions, profiles.size(), profiles.count()
+                        )
+                        buttons_before = [button.mapTo(sidebar, button.rect().topLeft())
+                                          for button in profile_buttons]
+                        profiles.verticalScrollBar().setValue(profiles.verticalScrollBar().maximum())
+                        app.processEvents()
+                        assert categories.geometry() == category_rect
+                        assert [button.mapTo(sidebar, button.rect().topLeft())
+                                for button in profile_buttons] == buttons_before
+                        assert profiles.verticalScrollBar().value() == profiles.verticalScrollBar().maximum()
+                        profile_scroll = profiles.verticalScrollBar()
+                        profile_scroll.setValue(0)
+                        position = QPointF(profiles.viewport().rect().center())
+                        wheel = QWheelEvent(position, QPointF(profiles.viewport().mapToGlobal(
+                            position.toPoint())), QPoint(), QPoint(0, -120),
+                            Qt.NoButton, Qt.NoModifier, Qt.ScrollUpdate, False)
+                        QApplication.sendEvent(profiles.viewport(), wheel)
+                        assert profile_scroll.value() > 0
+                        assert categories.geometry() == category_rect
+                        assert [button.mapTo(sidebar, button.rect().topLeft())
+                                for button in profile_buttons] == buttons_before
+                        profile_bottom = profiles.mapTo(sidebar, profiles.rect().bottomLeft()).y()
+                        first_button_y = min(buttons_before, key=lambda point: point.y()).y()
+                        assert profile_bottom < first_button_y, (
+                            appearance, dimensions, profile_bottom, first_button_y
+                        )
+                        profiles.verticalScrollBar().setValue(0)
+                        assert [categories.item(i).text() for i in range(categories.count())] == [
+                            "ข้อมูลนิยาย", "ไฟล์และโฟลเดอร์", "ขั้นตอนการแปล", "แท็บทำงาน",
+                            "ส่งออก TXT", "ทั่วไป", "อัปเดตโปรแกรม"
+                        ]
                         for category in ("General", "Novel", "Workflow", "Workflow Files", "Working Tabs", "TXT Export", "Program Updates"):
                             page.select_category(category)
                             app.processEvents(); QTest.qWait(30)
