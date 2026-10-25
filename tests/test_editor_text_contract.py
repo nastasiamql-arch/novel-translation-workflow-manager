@@ -59,7 +59,8 @@ def test_novel_open_paste_save_copy_reopen_without_open_autosave(tmp_path, folde
     editor.selectAll(); editor.copy()
     assert QApplication.clipboard().text() == CLEAN
     assert tabs.save_editor(editor)
-    assert path.read_text(encoding='utf-8') == CLEAN + '\n'
+    assert path.read_text(encoding='utf-8') == CLEAN
+    assert editor.toPlainText() == CLEAN + '\n'
     tabs.apply_external_update(path, path.read_text(encoding='utf-8'))
     assert editor.toPlainText() == CLEAN
     assert EditorTabs().open_file(path).toPlainText() == CLEAN
@@ -88,9 +89,9 @@ def test_open_text_compacts_prose_but_preserves_structured_documents(tmp_path, r
     editor.selectAll(); editor.copy()
     assert QApplication.clipboard().text() == visible
     assert tabs.save_editor(editor, autosave=True)
-    assert path.read_text(encoding='utf-8') == visible + '\n'
+    assert path.read_text(encoding='utf-8') == visible
     assert unopened.read_text(encoding='utf-8') == RAW
-    assert EditorTabs().open_file(path).toPlainText() == (visible if compact else visible + '\n')
+    assert EditorTabs().open_file(path).toPlainText() == visible
 
 
 def test_autosave_normalizes_visible_text_preserving_undo_bom_cr(tmp_path):
@@ -123,8 +124,8 @@ def test_tsv_exact_plain_html_roundtrip_empty_columns(tmp_path, name):
     assert QApplication.clipboard().text() == expected
     assert editor.toPlainText() == expected_after_paste
     assert tabs.save_editor(editor, autosave=True)
-    assert path.read_text(encoding='utf-8') == expected_after_paste
-    assert EditorTabs().open_file(path).toPlainText() == expected_after_paste
+    assert path.read_text(encoding='utf-8') == expected
+    assert EditorTabs().open_file(path).toPlainText() == expected
     assert expected.count('\t') == text.count('\t')
     editor.autosave_timer.stop()
 
@@ -372,4 +373,4 @@ def test_txt_export_and_file_editor_paste_boundary_without_extra_blank_lines(tmp
         editor.insertFromMimeData(mime)
     assert editor.toPlainText() == "บทที่ 474\n正文\nบทที่ 475\nภาษาไทย\n"
     assert tabs.save_editor(editor)
-    assert path.read_text(encoding="utf-8") == editor.toPlainText()
+    assert path.read_text(encoding="utf-8") == editor.toPlainText()[:-1]

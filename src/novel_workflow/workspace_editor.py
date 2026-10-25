@@ -1271,6 +1271,11 @@ class EditorTabs(QWidget):
 
         staged_path = None
         text = editor.toPlainText()
+        saved_text = text
+        if editor.property("implicitPasteNewline") and text.endswith("\n"):
+            # The editor keeps a ready-to-type line after a paste, but that
+            # helper is not part of the source file until the user types there.
+            text = text[:-1]
         recovery_path = self._recovery_path(path)
         try:
             if self._dirty(editor):
@@ -1322,7 +1327,7 @@ class EditorTabs(QWidget):
             False,
             "บันทึกอัตโนมัติแล้ว" if autosave else "บันทึกแล้ว",
         )
-        editor.setProperty("documentSavedText", editor.toPlainText())
+        editor.setProperty("documentSavedText", saved_text)
         editor.disk_digest = hashlib.sha256(disk_text.encode("utf-8")).digest()
         try:
             recovery_path.unlink(missing_ok=True)
@@ -1351,6 +1356,7 @@ class EditorTabs(QWidget):
             editor.vocabulary_mode = is_vocabulary(path, text)
             editor.clean_empty_lines = cleans_file_text(path)
             editor.compact_pasted_empty_lines = editor.clean_empty_lines
+            editor.setProperty("implicitPasteNewline", False)
             editor.setPlainText(normalized)
             editor.disk_digest = hashlib.sha256(raw).digest()
             editor.disk_bom = raw.startswith(b'\xef\xbb\xbf')
