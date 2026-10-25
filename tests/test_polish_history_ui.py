@@ -218,6 +218,7 @@ def test_copying_older_history_updates_last_copied_without_moving_resume(window)
     older = w.polish_history.create(p, step, '21-24')
     newer = w.polish_history.create(p, step, '37-40')
     w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
     page = w._utility_pages['polish-history:' + p.id]
     key = f'{p.id}:{step.id}'
     page.set_resume_position(newer)
