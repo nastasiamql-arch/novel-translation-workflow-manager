@@ -1,11 +1,13 @@
 """Regressions for Windows Qt shutdown result interpretation."""
-import re
+import runpy
 from pathlib import Path
 
 
 def test_warning_only_pytest_result_remains_a_pass():
-    text = Path(__file__).with_name("run_suite_groups.py").read_text(encoding="utf-8")
-    pattern = re.search(r'and re.search\(r"([^"]+)", output\)', text).group(1)
-    assert re.search(pattern, "164 passed, 1 warning in 61.52s")
-    assert re.search(pattern, "90 passed in 29.06s")
-    assert not re.search(pattern, "163 passed, 1 failed, 1 warning in 61.52s")
+    runner = runpy.run_path(str(Path(__file__).with_name("run_suite_groups.py")))
+    clean = runner["pytest_passed_cleanly"]
+    assert clean("164 passed, 1 warning in 61.52s\nPytest completed; exit status: 0")
+    assert clean("90 passed in 29.06s\nPytest completed; exit status: 0")
+    assert clean("test_failed_save PASSED\n90 passed in 29.06s\nPytest completed; exit status: 0")
+    assert not clean("test_something FAILED\n1 failed, 89 passed in 10s")
+    assert not clean("= FAILURES =\n90 passed in 29s\nPytest completed; exit status: 0")

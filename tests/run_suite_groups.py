@@ -17,6 +17,16 @@ QT_SHUTDOWN_CODES = {3221225477, 3221226505}  # 0xC0000005, 0xC0000409
 SUCCESS_MARKER = "Pytest completed; exit status: 0"
 
 
+def pytest_passed_cleanly(output: str) -> bool:
+    summary = re.search(
+        r"(?m)^\d+ passed(?:, \d+ (?:skipped|xfailed|warnings?))* in ", output
+    )
+    failures = re.search(
+        r"(?im)^(?:FAILED|ERROR)\b|^=+ (?:FAILURES|ERRORS) =+", output
+    )
+    return SUCCESS_MARKER in output and summary is not None and failures is None
+
+
 def main() -> int:
     tests = sorted(Path(__file__).parent.glob("test_*.py"))
     if not tests:
@@ -59,11 +69,7 @@ def main() -> int:
         if result == 0:
             continue
         unsigned = result & 0xFFFFFFFF
-        clean_pytest = (
-            SUCCESS_MARKER in output
-            and re.search(r"(?m)^\d+ passed(?:, \d+ (?:skipped|xfailed|warnings?))* in ", output)
-            and not re.search(r"(?im)(?:\bFAILED\b|\bERRORS\b|\bfailed\b)", output)
-        )
+        clean_pytest = pytest_passed_cleanly(output)
         if unsigned in QT_SHUTDOWN_CODES and clean_pytest:
             print(
                 f"WARNING: Group {n} passed all pytest assertions; "

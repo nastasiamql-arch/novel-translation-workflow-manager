@@ -7,6 +7,7 @@
 - Wait for background workers and window teardown in UI tests so asynchronous work cannot leak into the next test.
 - Keep queued Export snapshots in the busy state until they start and finish, and drain them safely before application shutdown.
 - Run the QThread-heavy history UI regression module in its own Windows test process to avoid cross-module Qt teardown races.
+- Recognize clean pytest completion from result lines without confusing “failed” test names for assertion failures.
 - Add UI regressions for repeat copies, forward navigation, and both clipboard modes.
 
 ## v6.7.2 — Polish History Status and Navigation
