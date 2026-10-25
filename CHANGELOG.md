@@ -3,6 +3,7 @@
 - Preserve the visible history position when copy state refreshes rows, including when copying an older batch again.
 - After a forward-progress copy, reveal the actual next available snapshot and keep its copied/recommended status visible across standard and ZIP copy paths.
 - Run deferred viewport restoration through a page-owned timer so callbacks cannot outlive the history page.
+- Join history workers at the finished boundary before releasing their owner reference, avoiding a Windows filesystem thread race.
 - Add UI regressions for repeat copies, forward navigation, and both clipboard modes.
 
 ## v6.7.2 — Polish History Status and Navigation

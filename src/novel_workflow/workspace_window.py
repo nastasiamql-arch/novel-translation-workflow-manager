@@ -1288,6 +1288,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         worker.succeeded.connect(complete)
         worker.failed.connect(failed)
         def cleanup():
+            # ``finished`` is emitted at the very end of run(), but the native
+            # thread can remain alive for a brief finalization window. Join it
+            # before dropping the last owner reference so close/next tests do
+            # not race a worker still touching filesystem paths.
+            worker.wait()
             self._history_workers.remove(worker)
             worker.deleteLater()
         worker.finished.connect(cleanup)
