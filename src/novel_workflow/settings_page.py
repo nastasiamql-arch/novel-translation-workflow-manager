@@ -224,12 +224,19 @@ class SettingsPage(QWidget):
         owner.settings_history_step.currentIndexChanged.connect(owner.save_settings_history_step)
         history_row.addWidget(owner.settings_history_step, 1)
         workflow_layout.addLayout(history_row)
+        advanced_options = QGroupBox("ตัวเลือกขั้นสูง · ตรวจเลขบทต้นฉบับ")
+        advanced_options.setCheckable(True)
+        advanced_options.setChecked(False)
+        advanced_body = QWidget()
+        advanced_body.setVisible(False)
+        advanced_body_layout = QVBoxLayout(advanced_body)
+        advanced_body_layout.setContentsMargins(0, 0, 0, 0)
         owner.settings_auto_review_enabled = QCheckBox("เปิดระบบตรวจเลขบทต้นฉบับ (แยกแต่ละนิยาย)")
         owner.settings_auto_review_enabled.setObjectName("autoChapterReviewEnabled")
         owner.settings_auto_review_enabled.setToolTip(
             "เมื่อบันทึกไฟล์ต้นฉบับที่เปิดอยู่ จะตรวจเลขหัวบทอัตโนมัติและแจ้งปัญหา"
         )
-        workflow_layout.addWidget(owner.settings_auto_review_enabled)
+        advanced_body_layout.addWidget(owner.settings_auto_review_enabled)
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("เมื่อเปิดใช้"))
         owner.settings_auto_chapter_number_mode = QComboBox()
@@ -237,7 +244,7 @@ class SettingsPage(QWidget):
         owner.settings_auto_chapter_number_mode.addItem("ตรวจและแก้ด้วยตัวเอง · เตือนหลังวางบท", "check")
         owner.settings_auto_chapter_number_mode.addItem("ตรวจและแก้เลขบทอัตโนมัติ · วางต่อท้ายทีละบท", "fix")
         mode_row.addWidget(owner.settings_auto_chapter_number_mode, 1)
-        workflow_layout.addLayout(mode_row)
+        advanced_body_layout.addLayout(mode_row)
         auto_review_hint = QLabel(
             "หลังวางต้นฉบับและ Auto Save ระบบอ่านบทล่าสุดจาก Translator ของนิยายนี้ (+1) "
             "เลือกได้ 2 โหมด: ทำเอง (มีตัวเตือนค้างจนกดยืนยันว่าตรวจแล้ว) "
@@ -249,7 +256,11 @@ class SettingsPage(QWidget):
         )
         auto_review_hint.setObjectName("mutedLabel")
         auto_review_hint.setWordWrap(True)
-        workflow_layout.addWidget(auto_review_hint)
+        advanced_body_layout.addWidget(auto_review_hint)
+        advanced_options.toggled.connect(advanced_body.setVisible)
+        advanced_outer = QVBoxLayout(advanced_options)
+        advanced_outer.addWidget(advanced_body)
+        workflow_layout.addWidget(advanced_options)
         owner.settings_auto_review_enabled.toggled.connect(owner.save_settings_auto_chapter_review)
         owner.settings_auto_chapter_number_mode.currentIndexChanged.connect(owner.save_settings_auto_chapter_review)
         workflow_columns = QHBoxLayout()
