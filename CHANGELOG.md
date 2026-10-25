@@ -1,3 +1,10 @@
+## v6.7.5 — Translation Batch Copy Scroll Stability
+
+- Keep the visible translation batch row and scrollbar position unchanged after copying, including high-index batches such as batch 86.
+- Update the copied status in place instead of rebuilding the whole lazy list; refresh filtered results only after the copy worker has finished.
+- Retain previously rendered rows when a filter changes so the scroll range is not truncated to the initial 35 rows.
+- Add desktop regression coverage for repeat copies from a high-index batch and retained clipboard history.
+
 ## v6.7.4 — Copy Navigation and TXT Split Resume
 
 - Prevent delayed viewport restoration from overriding the requested next history batch after copying a late batch such as batch 86.
