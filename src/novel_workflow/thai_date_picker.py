@@ -60,7 +60,9 @@ class ThaiDatePicker(QWidget):
         widest = max(metrics.horizontalAdvance(f"28 {month} 2569")
                      for month in THAI_MONTHS)
         control_height = max(40, metrics.height() + 18)
-        self.display.setFixedWidth(widest + 30)
+        # Keep enough room for the longest month even when the platform font
+        # metrics settle after the picker has been constructed.
+        self.display.setFixedWidth(max(widest + 30, 260))
         self.display.setMinimumHeight(control_height)
         self.button.setFixedSize(control_height, control_height)
         self.updateGeometry()
