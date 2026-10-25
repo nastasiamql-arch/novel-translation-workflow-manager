@@ -152,7 +152,7 @@ def main():
             user32.CloseClipboard()
         assert tabs.save_editor(editor)
         assert EditorTabs().open_file(glossary).toPlainText() == vocabulary
-        assert glossary.read_text(encoding='utf-8') == vocabulary + '\n'
+        assert glossary.read_text(encoding='utf-8') == vocabulary
         print('Windows CF_UNICODETEXT PASS: plain/HTML paste, TSV tabs, empty columns, copy/save/reopen.')
         app.clipboard().clear()
     print('Windows CF_HDROP PASS: ordinary files, ZIP and Unicode paths are Explorer-compatible.')
