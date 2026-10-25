@@ -279,11 +279,18 @@ def test_history_copy_buttons_keep_position_for_repeat_and_advance_from_new_batc
     next_button.click()
     wait_until(lambda: len(w.repo.load_settings().history_copy_events[key]) == 3)
     next_id = page._snapshot_id(snapshots[2])
-    wait_until(lambda: page._navigation_snapshot_id == next_id)
+    def next_row_visible():
+        next_row = page._cards_by_id.get(next_id)
+        if next_row is None:
+            return False
+        row_top = next_row.mapTo(page.history_scroll.viewport(), QPoint(0, 0)).y()
+        return -next_row.height() < row_top < page.history_scroll.viewport().height()
+    wait_until(lambda: page._navigation_snapshot_id == next_id and next_row_visible())
     next_row = page._cards_by_id[next_id]
     row_top = next_row.mapTo(page.history_scroll.viewport(), QPoint(0, 0)).y()
     assert -next_row.height() < row_top < page.history_scroll.viewport().height()
     assert next_row.property('recommendedNext') is True
+    QTest.qWait(50)  # Drain the page's deferred layout/scroll callbacks before teardown.
     assert not errors
 
 

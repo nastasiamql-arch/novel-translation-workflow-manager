@@ -581,7 +581,6 @@ class PolishHistoryPage(QWidget):
                            if not self.snapshots else 'ไม่พบช่วงบทที่ค้นหา')
             empty.setWordWrap(True); empty.setObjectName('emptyStateDescription'); self.card_layout.addWidget(empty)
         self.card_layout.addStretch()
-
         self._pending_viewport_restore = (
             render_generation, user_scroll_generation, prior_scroll_value
         )
