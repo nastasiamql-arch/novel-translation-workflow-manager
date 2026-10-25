@@ -158,6 +158,36 @@ def test_history_page_copy_and_back_preserve_editor_and_stage(window):
     assert not errors
 
 
+def test_history_copy_button_stays_left_of_the_row(window):
+    w, p, workspace, errors = window
+    workspace.history_range.setText('6-10')
+    workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    wait_until(lambda: not w.history_busy())
+    w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
+    page = w._utility_pages['polish-history:' + p.id]
+    card = next(iter(page._cards_by_id.values()))
+    card.show(); QApplication.processEvents()
+    copy = card.findChild(QPushButton, 'polishHistoryCopy')
+    delete = card.findChild(QPushButton, 'polishHistoryDelete')
+    assert copy is not None and delete is not None
+    assert copy.geometry().center().x() < card.width() * 0.45
+    assert delete.geometry().center().x() > card.width() * 0.85
+
+
+def test_copy_event_storage_error_is_reported_without_escaping_callback(window, monkeypatch):
+    w, p, workspace, errors = window
+    workspace.history_range.setText('6-10')
+    workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    wait_until(lambda: not w.history_busy())
+    snapshot = w.polish_history.list(p)[0]
+    monkeypatch.setattr(w, '_record_history_copy_success', lambda *args: (_ for _ in ()).throw(OSError('disk full')))
+    w.copy_history_snapshot(p, snapshot)
+    wait_until(lambda: not w.history_busy())
+    assert 'บันทึกประวัติการคัดลอกไม่สำเร็จ' in w.statusBar().currentMessage()
+    assert QApplication.clipboard().mimeData().urls()
+
+
 def test_range_required_focus_and_no_false_success(window):
     w, p, workspace, errors = window
     assert hasattr(workspace, 'history_range')

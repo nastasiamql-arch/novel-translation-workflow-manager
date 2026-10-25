@@ -441,7 +441,10 @@ class PolishHistoryPage(QWidget):
             sequence.setAccessibleName(f'ลำดับ {index + 1}')
             rows.addWidget(sequence)
             text_column = QVBoxLayout(); text_column.setContentsMargins(0, 0, 0, 0); text_column.setSpacing(0)
-            rows.addLayout(text_column, 1)
+            # Keep the chapter details and copy action grouped at the left.
+            # Giving this layout a stretch factor pushed the copy button to the
+            # horizontal center on wide windows.
+            rows.addLayout(text_column)
             span = snapshot.manifest.get('chapter_range')
             title = QLabel(('บท ' + str(span).replace('-', '–')) if span else 'รอระบุช่วงบท')
             title.setObjectName('historyRangeTitle')
@@ -568,7 +571,11 @@ class PolishHistoryPage(QWidget):
             except Exception as exc:
                 self.failed('ส่งไฟล์ไปยัง Clipboard ไม่สำเร็จ: ' + str(exc))
                 return
-            self.owner._record_history_copy_success(self.profile, snapshot, count, zipped)
+            try:
+                self.owner._record_history_copy_success(self.profile, snapshot, count, zipped)
+            except Exception as exc:
+                self.failed('คัดลอกไฟล์แล้ว แต่บันทึกประวัติการคัดลอกไม่สำเร็จ: ' + str(exc))
+                return
             self.refresh()
         self.owner.run_history_job(operation, success, self.failed)
 

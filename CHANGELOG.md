@@ -1,3 +1,9 @@
+## v6.7.1 — Polish History Copy Hotfix
+
+- Keep each history copy button next to its chapter details on the left side of the row at wide window sizes.
+- Report post-copy history persistence errors without letting an exception escape the GUI callback; retain the successful Clipboard result and show the storage error.
+- Add copy-button layout and persistence-callback regression coverage.
+
 ## v6.7.0 — Workspace Restoration, Export State, and Polish History Resume
 
 - Restore the user's per-novel tab order after auto-opening working files; keep TXT Export pinned last and preserve the active tab.
