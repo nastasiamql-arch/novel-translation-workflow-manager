@@ -615,6 +615,13 @@ class CodeEditor(QPlainTextEdit):
         super().mousePressEvent(event)
 
     def keyPressEvent(self, event):
+        if event.matches(QKeySequence.Copy):
+            self.copy()
+            event.accept()
+            return
+        if (event.matches(QKeySequence.Cut) or event.key() in (Qt.Key_Backspace, Qt.Key_Delete)
+                or (event.text() and not (event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)))):
+            self.setProperty("implicitPasteNewline", False)
         if (event.key() in (
             Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down,
             Qt.Key_Home, Qt.Key_End, Qt.Key_PageUp, Qt.Key_PageDown,
@@ -622,6 +629,17 @@ class CodeEditor(QPlainTextEdit):
             self._user_positioned_caret = True
             self._paste_boundary_pending = False
         super().keyPressEvent(event)
+
+    def copy(self):
+        cursor = self.textCursor()
+        if (self.property("implicitPasteNewline") and cursor.hasSelection()
+                and cursor.selectionEnd() >= self.document().characterCount() - 1):
+            text = cursor.selectedText().replace("\u2029", "\n")
+            if text.endswith("\n"):
+                text = text[:-1]
+            QApplication.clipboard().setText(text)
+            return
+        super().copy()
 
     def insertFromMimeData(self, source):
         self._user_positioned_caret = True
@@ -677,6 +695,7 @@ class CodeEditor(QPlainTextEdit):
                         and cursor.position() == self.document().characterCount() - 1):
                     cursor.insertText('\n')
                     self.setProperty("autoNewlineAtEnd", True)
+                    self.setProperty("implicitPasteNewline", True)
             finally:
                 cursor.endEditBlock()
                 self._paste_in_progress = False

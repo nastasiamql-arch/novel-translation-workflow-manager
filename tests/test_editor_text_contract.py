@@ -86,7 +86,7 @@ def test_open_text_compacts_prose_but_preserves_structured_documents(tmp_path, r
     editor.insertFromMimeData(data)
     assert editor.toPlainText() == visible + '\n'
     editor.selectAll(); editor.copy()
-    assert QApplication.clipboard().text() == visible + ('\n' if not compact else '')
+    assert QApplication.clipboard().text() == visible
     assert tabs.save_editor(editor, autosave=True)
     assert path.read_text(encoding='utf-8') == visible + '\n'
     assert unopened.read_text(encoding='utf-8') == RAW
@@ -120,7 +120,8 @@ def test_tsv_exact_plain_html_roundtrip_empty_columns(tmp_path, name):
     editor.selectAll(); editor.insertFromMimeData(mime)
     editor.selectAll(); editor.copy()
     expected_after_paste = expected + ('\n' if name.endswith('.txt') else '')
-    assert QApplication.clipboard().text() == expected_after_paste
+    assert QApplication.clipboard().text() == expected
+    assert editor.toPlainText() == expected_after_paste
     assert tabs.save_editor(editor, autosave=True)
     assert path.read_text(encoding='utf-8') == expected_after_paste
     assert EditorTabs().open_file(path).toPlainText() == expected_after_paste
