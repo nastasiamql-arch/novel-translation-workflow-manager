@@ -28,7 +28,9 @@ class AttachmentList(QListWidget):
         rows = min(8, max(2, self.count()))
         row_height = max([self.fontMetrics().height() + 12] +
                          [self.sizeHintForRow(i) for i in range(self.count())])
-        height = rows * (row_height + 2 * self.spacing()) + 2 * self.frameWidth() + 8
+        # Leave enough room for the platform style's actual item margins and
+        # viewport frame so the final requested row is not clipped.
+        height = rows * (row_height + 2 * self.spacing()) + 2 * self.frameWidth() + 20
         self.setMinimumHeight(height)
         self.setMaximumHeight(height)
         self.updateGeometry()
