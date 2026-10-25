@@ -41,6 +41,18 @@ class PolishHistoryPage(QWidget):
         self.zip_mode.setToolTip('รวมไฟล์ของประวัติรายการเดียวเป็น ZIP · ไม่กระทบขั้นตอน Workflow')
         self.zip_mode.toggled.connect(self._change_zip_mode)
         layout.addWidget(self.zip_mode)
+        self.progress_summary = QLabel()
+        self.progress_summary.setObjectName('historyProgressSummary')
+        self.progress_summary.setWordWrap(True)
+        layout.addWidget(self.progress_summary)
+        self.go_latest_button = QPushButton('ไปยังรายการล่าสุด')
+        self.go_latest_button.setObjectName('goToLatestHistory')
+        self.go_latest_button.clicked.connect(self.go_to_latest)
+        layout.addWidget(self.go_latest_button)
+        self.copy_recommended = QPushButton('คัดลอก ZIP ของช่วงที่แนะนำ')
+        self.copy_recommended.setObjectName('copyRecommendedHistory')
+        self.copy_recommended.clicked.connect(self._copy_recommended)
+        layout.addWidget(self.copy_recommended)
         tools = QHBoxLayout()
         self.search = QLineEdit(); self.search.setPlaceholderText('ค้นหาเลขบทหรือช่วงบท…')
         self.search.setAccessibleName('ค้นหาประวัติช่วงบท')
@@ -70,6 +82,7 @@ class PolishHistoryPage(QWidget):
         layout.addLayout(sort_tools)
         self.status = QLabel(); self.status.setWordWrap(True); layout.addWidget(self.status)
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
+        self.history_scroll = scroll
         self.cards = QWidget(); self.cards.setObjectName('polishHistoryCards')
         self.card_layout = QVBoxLayout(self.cards)
         self.card_layout.setContentsMargins(0, 2, 0, 2); self.card_layout.setSpacing(4)
@@ -89,6 +102,7 @@ class PolishHistoryPage(QWidget):
             return
         # Update existing controls immediately, without depending on Qt deferred deletion.
         self.owner.update_copy_mode_labels()
+        self._update_progress_summary()
 
     def refresh(self):
         if self.owner._history_pending:
@@ -103,14 +117,99 @@ class PolishHistoryPage(QWidget):
         self.status.setText('กำลังตรวจสอบไฟล์และ Hash…')
         mime = QApplication.clipboard().mimeData()
         urls = [u.toLocalFile() for u in mime.urls()] if mime else []
-        self.owner.run_history_job(lambda: self.owner.polish_history.list(self.profile, clipboard_paths=urls), self.loaded, self.failed)
+        step_id = self.profile.polish_history_step_id
+        self.owner.run_history_job(
+            lambda: self.owner.polish_history.list(self.profile, step_id=step_id, clipboard_paths=urls),
+            self.loaded, self.failed,
+        )
 
     def loaded(self, snapshots):
         self.snapshots = snapshots
         count = sum(x.manifest.get('file_count', 0) for x in snapshots if not x.error)
         size = sum(sum(e['size'] for e in x.manifest['files']) for x in snapshots if not x.error)
         self.status.setText(f'{len(snapshots)} ประวัติ · {count} ไฟล์ · {size / (1024 * 1024):,.2f} MB')
+        self._update_progress_summary()
         self.render()
+
+    def _progress_key(self):
+        step_id = self.profile.polish_history_step_id or 'all'
+        return f'{self.profile.id}:{step_id}'
+
+    def _update_progress_summary(self):
+        state = self.owner.settings.history_copy_state.get(self._progress_key(), {})
+        last = state.get('chapter_range')
+        resume_state = self.owner.settings.history_resume_positions.get(self._progress_key(), {})
+        resume = resume_state.get('chapter_range') if isinstance(resume_state, dict) else resume_state
+        timestamp = state.get('timestamp')
+        if timestamp:
+            try: timestamp = datetime.fromisoformat(timestamp).astimezone().strftime('%d/%m/%Y %H:%M')
+            except (ValueError, TypeError): pass
+        self.progress_summary.setText(
+            f"คัดลอกล่าสุด: {'บท ' + str(last).replace('-', '–') if last else 'ไม่มีข้อมูล'}"
+            f"{(' · ' + str(timestamp)) if timestamp else ''}    "
+            f"จุดทำงานต่อ: {'บท ' + str(resume).replace('-', '–') if resume else 'ยังไม่ได้กำหนด'}"
+        )
+        candidate = self._recommended_snapshot()
+        self._recommended = candidate
+        self.copy_recommended.setEnabled(candidate is not None)
+        self.copy_recommended.setText(
+            'คัดลอก ZIP ของช่วงที่แนะนำ' if self.owner.settings.history_copy_as_zip
+            else 'คัดลอกไฟล์ของช่วงที่แนะนำ'
+        )
+
+    def _recommended_snapshot(self):
+        resume_state = self.owner.settings.history_resume_positions.get(self._progress_key(), {})
+        resume = resume_state.get('chapter_range') if isinstance(resume_state, dict) else resume_state
+        if not resume:
+            return None
+        bounds = self._chapter_range(type('RangeValue', (), {'manifest': {'chapter_range': resume}})())
+        if not bounds:
+            return None
+        next_start = bounds[1] + 1
+        return next((item for item in sorted(self.snapshots, key=lambda s: self._chapter_range(s) or (10**18, 10**18))
+                     if self._chapter_range(item) and self._chapter_range(item)[0] >= next_start), None)
+
+    def _copy_recommended(self):
+        if getattr(self, '_recommended', None):
+            self.copy_snapshot(self._recommended)
+
+    def go_to_latest(self):
+        state = self.owner.settings.history_copy_state.get(self._progress_key(), {})
+        target_id = str(state.get('snapshot_id') or '')
+        snapshot = next((item for item in self.snapshots if self._snapshot_id(item) == target_id), None)
+        if snapshot is None and self.snapshots:
+            snapshot = self.snapshots[0]
+        if snapshot is None:
+            self.status.setText('ยังไม่มีรายการประวัติให้ไปยัง')
+            return
+        self.search.clear()
+        self.render()
+        card = getattr(self, '_cards_by_id', {}).get(self._snapshot_id(snapshot))
+        if card:
+            self.history_scroll.ensureWidgetVisible(card)
+
+    def set_resume_position(self, snapshot):
+        span = snapshot.manifest.get('chapter_range')
+        if not span:
+            return
+        key = self._progress_key()
+        previous = self.owner.settings.history_resume_positions.get(key)
+        self.owner.settings.history_resume_positions[key] = {
+            'profile_id': self.profile.id,
+            'step_id': str(snapshot.manifest.get('step_id') or self.profile.polish_history_step_id or 'all'),
+            'snapshot_id': str(snapshot.manifest.get('snapshot_id') or snapshot.path.name),
+            'chapter_range': str(span),
+        }
+        try:
+            self.owner.repo.save_settings(self.owner.settings)
+        except (OSError, ValueError) as exc:
+            if previous is None: self.owner.settings.history_resume_positions.pop(key, None)
+            else: self.owner.settings.history_resume_positions[key] = previous
+            self.failed('บันทึกจุดทำงานต่อไม่ได้: ' + str(exc))
+            return
+        self._update_progress_summary()
+        self.render()
+        self.status.setText('กำหนดจุดทำงานต่อเป็นบท ' + str(span).replace('-', '–'))
 
     def failed(self, error):
         self.status.setText(str(error))
@@ -192,6 +291,7 @@ class PolishHistoryPage(QWidget):
         self.render()
 
     def render(self, *_):
+        self._cards_by_id = {}
         while self.card_layout.count():
             item = self.card_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
@@ -229,6 +329,19 @@ class PolishHistoryPage(QWidget):
             title.setObjectName('historyRangeTitle')
             title.setWordWrap(True)
             text_column.addWidget(title)
+            copy_state = self.owner.settings.history_copy_state.get(self._progress_key(), {})
+            snapshot_id = self._snapshot_id(snapshot)
+            resume = self.owner.settings.history_resume_positions.get(self._progress_key())
+            row_status = []
+            if copy_state.get('snapshot_id') == snapshot_id:
+                row_status.append('✓ คัดลอกล่าสุด')
+            resume_range = resume.get('chapter_range') if isinstance(resume, dict) else resume
+            if resume_range and str(snapshot.manifest.get('chapter_range') or '') == str(resume_range):
+                row_status.append('จุดทำงานต่อ')
+            if row_status:
+                badge = QLabel(' · '.join(row_status))
+                badge.setObjectName('mutedLabel')
+                text_column.addWidget(badge)
             zipped = self.owner.settings.history_copy_as_zip
             copy = QPushButton('คัดลอก ZIP' if zipped else 'คัดลอก')
             copy.setObjectName('polishHistoryCopy')
@@ -241,6 +354,10 @@ class PolishHistoryPage(QWidget):
             copy.setAccessibleName(f'ลำดับ {index + 1} ' + title.text() + ' คัดลอกไฟล์ทั้งหมด')
             copy.clicked.connect(lambda _=False, s=snapshot: self.copy_snapshot(s))
             rows.addWidget(copy)
+            resume_button = QPushButton('ตั้งเป็นจุดทำงานต่อ')
+            resume_button.setObjectName('setHistoryResumePosition')
+            resume_button.clicked.connect(lambda _=False, s=snapshot: self.set_resume_position(s))
+            rows.addWidget(resume_button)
             if self._sort_mode == 'manual':
                 up = QToolButton()
                 up.setObjectName('polishHistoryMoveUp')
@@ -284,6 +401,7 @@ class PolishHistoryPage(QWidget):
                 warning = QLabel(snapshot.warning); warning.setWordWrap(True)
                 text_column.addWidget(warning)
             self.card_layout.addWidget(card)
+            self._cards_by_id[self._snapshot_id(snapshot)] = card
         if not found:
             empty = QLabel('ยังไม่มีประวัติ\nเลือกขั้นตอนใน Settings แล้วคลิกขั้นตอนเพื่อบันทึกไฟล์'
                            if not self.snapshots else 'ไม่พบช่วงบทที่ค้นหา')

@@ -212,6 +212,28 @@ def test_save_for_review_does_not_copy_or_advance(window):
     assert [url.toLocalFile() for url in QApplication.clipboard().mimeData().urls()] == clipboard_before
 
 
+def test_copying_older_history_updates_last_copied_without_moving_resume(window):
+    w, p, workspace, errors = window
+    step = w._history_step_for_profile(p)
+    older = w.polish_history.create(p, step, '21-24')
+    newer = w.polish_history.create(p, step, '37-40')
+    w.open_polish_history()
+    page = w._utility_pages['polish-history:' + p.id]
+    key = f'{p.id}:{step.id}'
+    page.set_resume_position(newer)
+    before_exports = (p.verified_goal_count, len(p.verified_export_history), p.txt_export_settings.current)
+
+    w.settings.history_copy_as_zip = True
+    w.copy_history_snapshot(p, older)
+    wait_until(lambda: not w.history_busy())
+    state = w.repo.load_settings()
+    assert state.history_copy_state[key]['chapter_range'] == '21-24'
+    assert state.history_copy_state[key]['snapshot_id'] == older.manifest['snapshot_id']
+    assert state.history_resume_positions[key]['chapter_range'] == '37-40'
+    assert len(state.history_copy_events[key]) == 1
+    assert (p.verified_goal_count, len(p.verified_export_history), p.txt_export_settings.current) == before_exports
+
+
 def test_successful_txt_export_creates_pending_snapshot_without_reexport(window, tmp_path):
     w, p, workspace, errors = window
     export = workspace.editor.export_tab

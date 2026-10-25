@@ -1303,7 +1303,42 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 with zipfile.ZipFile(paths[0]) as archive:
                     count = sum(not item.is_dir() for item in archive.infolist())
             return paths, count
-        self.run_history_job(operation, lambda result: self._history_clipboard(result[0], result[1], zipped))
+        def publish(result):
+            try:
+                self._history_clipboard(result[0], result[1], zipped)
+            except Exception as exc:
+                self.statusBar().showMessage('ส่งไฟล์ไปยัง Clipboard ไม่สำเร็จ: ' + str(exc), 8000)
+                return
+            from datetime import datetime, timezone
+            from uuid import uuid4
+            step_id = str(snapshot.manifest.get('step_id') or profile.polish_history_step_id or 'all')
+            key = f'{profile.id}:{step_id}'
+            previous = self.settings.history_copy_state.get(key)
+            event = {
+                'event_id': uuid4().hex,
+                'profile_id': profile.id, 'step_id': step_id,
+                'snapshot_id': str(snapshot.manifest.get('snapshot_id') or snapshot.path.name),
+                'chapter_range': str(snapshot.manifest.get('chapter_range') or ''),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'file_count': result[1], 'mode': 'zip' if zipped else 'files', 'result': 'clipboard_set',
+            }
+            previous_events = list(self.settings.history_copy_events.get(key, []))
+            self.settings.history_copy_events[key] = [*previous_events, event]
+            self.settings.history_copy_state[key] = event
+            try:
+                self.repo.save_settings(self.settings)
+            except (OSError, ValueError) as exc:
+                if previous is None: self.settings.history_copy_state.pop(key, None)
+                else: self.settings.history_copy_state[key] = previous
+                if previous_events: self.settings.history_copy_events[key] = previous_events
+                else: self.settings.history_copy_events.pop(key, None)
+                self.statusBar().showMessage('คัดลอกสำเร็จ แต่บันทึกประวัติการคัดลอกไม่ได้: ' + str(exc), 8000)
+                return
+            page = self._utility_pages.get('polish-history:' + profile.id)
+            if isinstance(page, PolishHistoryPage):
+                page._update_progress_summary()
+                page.render()
+        self.run_history_job(operation, publish)
 
     def _history_step_for_profile(self, profile):
         step_id = getattr(profile, 'polish_history_step_id', None)
@@ -1608,10 +1643,17 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.settings_history_step.setCurrentIndex(max(0, current))
             self.settings_history_step.blockSignals(False)
         context = Path(self.profile.context_path).expanduser() if self.profile.context_path else None
-        self.settings_context_hint.setText(
-            f"Context: {context.name}" if context and context.is_file()
-            else "ยังไม่ได้เลือกไฟล์ Context"
-        )
+        if context and context.is_file():
+            self.settings_context_hint.setText(
+                f"✓ Context พร้อมใช้กับ Translator Export\n{context.name} · {context}"
+            )
+            self.settings_context_hint.setToolTip(str(context))
+        elif context:
+            self.settings_context_hint.setText(f"⚠ ไม่พบไฟล์ Context\n{context}")
+            self.settings_context_hint.setToolTip(str(context))
+        else:
+            self.settings_context_hint.setText("⚠ ยังไม่ได้เชื่อม Context")
+            self.settings_context_hint.setToolTip("")
         self.settings_goal_target.setValue(self.profile.translation_goal_target or 0)
         self.settings_launch_targets.blockSignals(True)
         self.settings_launch_targets.clear()
@@ -1655,6 +1697,84 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.profile.main_folder = self.settings_main_folder.text().strip()
         self.save()
         self.statusBar().showMessage("บันทึกโฟลเดอร์หลักแล้ว", 2500)
+
+    def configure_smart_files(self):
+        """Preview bounded folder matches, then add confirmed links without clearing old ones."""
+        if not self.profile:
+            return
+        from .smart_folder import SmartFolderDialog
+        from copy import deepcopy
+        profile = self.profile
+        dialog = SmartFolderDialog(profile, self,
+                                   shared_instruction_path=self.settings.shared_vocabulary_instruction_path)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        selections = {role: combo.currentData() for role, combo in dialog.combos.items()}
+        # Validate the entire selection before mutating the active profile.
+        for role, path in selections.items():
+            if path and not Path(path).is_file():
+                QMessageBox.warning(self, "ไฟล์เปลี่ยนแปลง", f"ไม่พบไฟล์ {role}:\n{path}\n\nโปรดสแกนใหม่หรือเลือกไฟล์อื่น")
+                return
+        updated = deepcopy(profile)
+        updated.main_folder = str(Path(dialog.folder.text()).expanduser())
+        updated.last_browse_directory = str(Path(updated.main_folder).resolve())
+        updated.novel_code = dialog.code.text().strip()
+        translate = next((step for step in updated.workflow.steps if step.name.strip() == "แปล"), None)
+        review = next((step for step in updated.workflow.steps if step.name.strip() == "ตรวจคำแปล"), None)
+        if translate is None and updated.workflow.steps:
+            translate = updated.workflow.steps[0]
+        mappings = (
+            ("prompt", translate, "Prompt"), ("style", translate, "Style"),
+            ("guideline", translate, "ไกด์ไลน์การแปล"), ("main", translate, "ไฟล์หลัก"),
+            ("context", translate, "Context"), ("glossary", translate, "Glossary"),
+            ("context", review, "Context"), ("glossary", review, "Glossary"),
+            ("translator", review, "Translator"),
+            ("novel", updated.vocabulary_step, "Novel"),
+            ("vocab_instruction", updated.vocabulary_step, "คำสั่งหาศัพท์"),
+        )
+        for role, step, label in mappings:
+            path = selections.get(role)
+            if not step or not path:
+                continue
+            resolved = str(Path(path).expanduser().resolve())
+            if any(item.path and str(Path(item.path).expanduser().resolve()) == resolved
+                   for item in step.files if item.reference_type == "external_file"):
+                continue
+            step.files.append(StepFile(label=label, reference_type="external_file", path=resolved,
+                                       file_type=role, order=len(step.files)))
+        context = selections.get("context")
+        if context:
+            updated.context_path = str(Path(context).expanduser().resolve())
+            updated.translation_checkpoint_path = updated.context_path
+            try:
+                chapter = read_context_chapter(Path(context))
+                if chapter is not None:
+                    updated.chapter_state.current_chapter = chapter
+            except OSError:
+                pass
+        instruction = selections.get("vocab_instruction")
+        previous_settings = deepcopy(self.settings)
+        if instruction:
+            updated.vocabulary_instruction_path = str(Path(instruction).expanduser().resolve())
+            if dialog.shared_instruction.isChecked():
+                self.settings.shared_vocabulary_instruction_path = updated.vocabulary_instruction_path
+        try:
+            if instruction and dialog.shared_instruction.isChecked():
+                self.repo.save_settings(self.settings)
+            self.repo.save_profile(updated)
+        except (OSError, ValueError) as exc:
+            if instruction and dialog.shared_instruction.isChecked():
+                self.settings = previous_settings
+                try: self.repo.save_settings(self.settings)
+                except (OSError, ValueError): pass
+            QMessageBox.warning(self, "บันทึกการตั้งค่าไม่สำเร็จ", str(exc))
+            return
+        profile.__dict__.update(updated.__dict__)
+        self.refresh_profiles(updated.id)
+        self.refresh_steps()
+        self.refresh_files()
+        self.refresh_settings_launch_targets()
+        self.statusBar().showMessage("ตั้งค่าไฟล์นิยายแล้ว · รายการเดิมที่เชื่อมไว้ยังคงอยู่", 5000)
 
     def add_settings_launch_target(self, kind):
         if not self.profile:

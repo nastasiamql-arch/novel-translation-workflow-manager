@@ -1,3 +1,12 @@
+## v6.5.0 — Smart File Setup and Polish Resume Tracking
+
+- Added bounded folder scanning for role-matched novel files, including nested `Project` files, Unicode names, multiple extensions, and exclusions for backup and recovery areas.
+- Added a review-before-save setup dialog that keeps existing links, supports explicit file picks, records the novel code and main folder, and links the selected Context through the existing profile field used by Translator Export.
+- Added additive profile and app settings for vocabulary instruction files, shared instruction defaults, per-profile and per-step history copy events, and resume positions.
+- Split novel settings into focused sections for novel details, files and folders, workflow steps, working tabs, and TXT export.
+- Added Polish History summary, latest item navigation, next available range suggestion, copy event recording, and independent resume position controls.
+- Added scanner and history regression coverage.
+
 ## v6.4.2 — Library list-only presentation
 
 - Open the novel library in list mode, including for saved legacy gallery preferences.

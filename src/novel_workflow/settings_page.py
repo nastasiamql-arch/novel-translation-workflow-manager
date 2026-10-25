@@ -2,7 +2,7 @@
 from PySide6.QtCore import Qt, QEvent, QTimer
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFrame, QLabel,
     QGridLayout, QPushButton, QScrollArea, QListWidget, QAbstractItemView, QSpinBox,
-    QLineEdit, QSizePolicy, QComboBox, QCheckBox, QLayout)
+    QLineEdit, QSizePolicy, QComboBox, QCheckBox, QLayout, QGroupBox)
 from .shell_components import ElidingLabel
 
 
@@ -101,7 +101,8 @@ class SettingsPage(QWidget):
         categories = AttachmentList()
         categories.setObjectName("preferencesCategory")
         categories.setAccessibleName("หมวดการตั้งค่า")
-        categories.addItems(["ทั่วไป", "การตั้งค่านิยาย", "อัปเดตโปรแกรม"])
+        categories.addItems(["ข้อมูลนิยาย", "ไฟล์และโฟลเดอร์", "ขั้นตอนการแปล", "แท็บทำงาน",
+                             "ส่งออก TXT", "ทั่วไป", "อัปเดตโปรแกรม"])
         categories.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         sidebar_layout.addWidget(categories)
         owner.profiles.setMinimumHeight(400)
@@ -143,7 +144,6 @@ class SettingsPage(QWidget):
         for index, (label, callback) in enumerate((
             ("เปลี่ยนชื่อ", owner.rename_profile), ("ตั้งรูปปก", owner.set_cover),
             ("เอารูปปกออก", owner.remove_cover), ("เลือก Context", owner.set_context_file),
-            ("ลบนิยาย", owner.delete_profile),
         )):
             button = QPushButton(label)
             button.clicked.connect(callback)
@@ -151,6 +151,15 @@ class SettingsPage(QWidget):
         story_frame = QWidget()
         story_frame.setLayout(story_actions)
         detail.addWidget(story_frame)
+
+        advanced_frame = QGroupBox("จัดการขั้นสูง")
+        advanced_frame.setCheckable(True)
+        advanced_frame.setChecked(False)
+        advanced_layout = QVBoxLayout(advanced_frame)
+        delete_profile = QPushButton("ลบนิยาย…")
+        delete_profile.clicked.connect(owner.delete_profile)
+        advanced_layout.addWidget(delete_profile)
+        detail.addWidget(advanced_frame)
 
         launcher_frame = QFrame()
         launcher_frame.setObjectName("settingsCard")
@@ -163,6 +172,11 @@ class SettingsPage(QWidget):
         choose_folder = QPushButton("เลือกโฟลเดอร์")
         choose_folder.clicked.connect(owner.choose_settings_main_folder)
         folder_row.addWidget(choose_folder)
+        smart_files = QPushButton("ตั้งค่าไฟล์ทั้งหมด")
+        smart_files.setObjectName("smartFolderSetup")
+        smart_files.setToolTip("สแกนโฟลเดอร์และตรวจสอบไฟล์ที่แนะนำก่อนบันทึก")
+        smart_files.clicked.connect(owner.configure_smart_files)
+        folder_row.addWidget(smart_files)
         save_folder = QPushButton("บันทึกโฟลเดอร์")
         save_folder.clicked.connect(owner.save_settings_main_folder)
         folder_row.addWidget(save_folder)
@@ -401,40 +415,45 @@ class SettingsPage(QWidget):
         update.clicked.connect(lambda: owner.check_updates(manual=True))
         updates_layout.addWidget(update)
         detail.addWidget(updates)
-        novel_settings = [
-            info_frame, story_frame, launcher_frame, workflow_frame,
-            work_frame, export_preferences,
-        ]
         sections = {
+            "Novel Info": [info_frame, story_frame, advanced_frame],
+            "Files and Folders": [launcher_frame],
+            "Workflow": [workflow_frame],
+            "Working Tabs": [work_frame],
+            "TXT Export": [export_preferences],
             "General": [general],
-            "Novel": novel_settings,
             "Program Updates": [updates],
         }
-        category_labels = {"General": "ทั่วไป", "Novel": "การตั้งค่านิยาย", "Program Updates": "อัปเดตโปรแกรม"}
+        category_labels = {"Novel Info": "ข้อมูลนิยาย", "Files and Folders": "ไฟล์และโฟลเดอร์",
+            "Workflow": "ขั้นตอนการแปล", "Working Tabs": "แท็บทำงาน", "TXT Export": "ส่งออก TXT",
+            "General": "ทั่วไป", "Program Updates": "อัปเดตโปรแกรม"}
         category_ids = {value: key for key, value in category_labels.items()}
         def select_category(name):
             name = category_ids.get(name, name)
             # Keep old entry points working while presenting all story settings together.
-            if name in ("Workflow", "Workflow Files", "Working Tabs", "TXT Export"):
-                name = "Novel"
+            if name == "Novel":
+                name = "Novel Info"
             shown = sections[name]
             for widget in {w for group in sections.values() for w in group}:
                 widget.setVisible(widget in shown)
             profile_panel.setVisible(name not in ("General", "Program Updates"))
             owner.settings_profile_heading.setVisible(name not in ("General", "Program Updates"))
-            files_panel.setVisible(name == "Novel")
-            step_actions_panel.setVisible(name == "Novel")
+            files_panel.setVisible(name == "Workflow")
+            step_actions_panel.setVisible(name == "Workflow")
             workflow_heading.setText("ขั้นตอนการแปล · ขั้นตอนและไฟล์แนบ")
         def select_named_category(name):
-            if name in ("Workflow", "Workflow Files", "Working Tabs", "TXT Export"):
-                name = "Novel"
+            if name == "Novel":
+                name = "Novel Info"
+            elif name == "Workflow Files":
+                # Preserve the old automation/test entry point for workflow attachments.
+                name = "Workflow"
             for index in range(categories.count()):
                 if categories.item(index).text() == category_labels.get(name, name):
                     categories.setCurrentRow(index)
                     return
         page.select_category = select_named_category
         categories.currentTextChanged.connect(select_category)
-        initial_category = "Novel" if owner.profile else "General"
+        initial_category = "Novel Info" if owner.profile else "General"
         initial_index = next(i for i in range(categories.count()) if categories.item(i).text() == category_labels[initial_category])
         categories.setCurrentRow(initial_index)
         select_category(initial_category)

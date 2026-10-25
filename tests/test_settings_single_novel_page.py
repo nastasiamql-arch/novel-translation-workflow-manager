@@ -33,9 +33,10 @@ def test_novel_settings_are_one_page_and_profile_selection_stays_in_it(tmp_path)
     page = window._settings_page_state['page']
     categories = page.findChild(QListWidget, 'preferencesCategory')
     assert [categories.item(i).text() for i in range(categories.count())] == [
-        'ทั่วไป', 'การตั้งค่านิยาย', 'อัปเดตโปรแกรม'
+        'ข้อมูลนิยาย', 'ไฟล์และโฟลเดอร์', 'ขั้นตอนการแปล', 'แท็บทำงาน',
+        'ส่งออก TXT', 'ทั่วไป', 'อัปเดตโปรแกรม'
     ]
-    assert categories.currentItem().text() == 'การตั้งค่านิยาย'
+    assert categories.currentItem().text() == 'ข้อมูลนิยาย'
     assert window.profiles.wordWrap()
     assert window.profiles.textElideMode() == Qt.ElideNone
     assert window.profiles.iconSize().width() == 52
@@ -53,17 +54,21 @@ def test_novel_settings_are_one_page_and_profile_selection_stays_in_it(tmp_path)
     assert window.settings_launch_targets.viewport().height() >= 250
     assert target_row.toolTip() == first.launch_targets[0].target
 
-    assert window.steps.isVisible()
-    assert window.files.isVisible()
-    assert window.working_files.isVisible()
-    assert window.auto_open_working_tabs.isVisible()
+    categories.setCurrentRow(1)
     assert window.settings_main_folder.isVisible()
+    categories.setCurrentRow(2)
+    assert window.steps.isVisible() and window.files.isVisible()
+    categories.setCurrentRow(3)
+    assert window.working_files.isVisible() and window.auto_open_working_tabs.isVisible()
+    categories.setCurrentRow(4)
     assert page.findChild(QPushButton, 'openNovelTxtExport').isVisible()
+    categories.setCurrentRow(0)
 
     second_index = next(i for i, item in enumerate(window.ps_list) if item.id == second.id)
     window.profiles.selectionCommitted.emit(second_index)
     assert window.profile.id == second.id
-    assert categories.currentItem().text() == 'การตั้งค่านิยาย'
+    assert categories.currentItem().text() == 'ข้อมูลนิยาย'
+    categories.setCurrentRow(3)
     assert window.auto_open_working_tabs.isVisible()
     assert not window.auto_open_working_tabs.isChecked()
     window.close()
