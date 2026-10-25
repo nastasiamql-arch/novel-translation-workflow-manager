@@ -14,12 +14,13 @@ def test_preferences_sidebar_and_consolidated_general(tmp_path):
     categories = page.findChild(QListWidget, 'preferencesCategory')
     assert categories is not None
     assert [categories.item(i).text() for i in range(categories.count())] == [
-        'ทั่วไป', 'การตั้งค่านิยาย', 'อัปเดตโปรแกรม'
+        'ข้อมูลนิยาย', 'ไฟล์และโฟลเดอร์', 'ขั้นตอนการแปล', 'แท็บทำงาน',
+        'ส่งออก TXT', 'ทั่วไป', 'อัปเดตโปรแกรม'
     ]
-    assert categories.currentRow() == 1
+    assert categories.currentRow() == 0
     assert not any(b.text() == 'ตั้งค่าโปรแกรม' for b in page.findChildren(QPushButton))
     separator = page.findChild(QLineEdit, 'assemblySeparator')
-    categories.setCurrentRow(0)
+    categories.setCurrentRow(5)
     separator.setText('--- {FILE_NAME} ---')
     separator.editingFinished.emit()
     for name in ('show_filename_heading', 'confirm_before_deleting', 'open_last_profile'):
@@ -28,15 +29,16 @@ def test_preferences_sidebar_and_consolidated_general(tmp_path):
         checkbox.setChecked(not checkbox.isChecked())
         assert getattr(repo.load_settings(), name) == checkbox.isChecked()
     assert repo.load_settings().separator == '--- {FILE_NAME} ---'
-    categories.setCurrentRow(2)
+    categories.setCurrentRow(1)
     assert window.files.isHidden() or not window.files.isVisibleTo(page)
     assert window.steps.isHidden() or not window.steps.isVisibleTo(page)
-    categories.setCurrentRow(1)
+    categories.setCurrentRow(2)
     assert window.files.isVisibleTo(page)
     assert window.steps.isVisibleTo(page)
+    categories.setCurrentRow(3)
     assert window.working_files.isVisibleTo(page)
     assert page.findChild(QCheckBox, 'autoOpenWorkingTabs').isVisibleTo(page)
     window.program_settings_dialog()
     assert window._settings_page_state['page'] is page
-    assert categories.currentRow() == 0
+    assert categories.currentRow() == 5
     window.close()

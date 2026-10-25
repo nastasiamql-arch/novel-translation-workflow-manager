@@ -153,7 +153,11 @@ def main():
                             page.select_category(category)
                             app.processEvents(); QTest.qWait(30)
                             if category == "Workflow Files":
-                                assert win.files.visualItemRect(win.files.item(5)).bottom() < win.files.viewport().height()
+                                last_attachment = win.files.visualItemRect(win.files.item(5))
+                                assert last_attachment.bottom() < win.files.viewport().height(), (
+                                    last_attachment, win.files.viewport().size(), win.files.size(),
+                                    win.files.parentWidget().size(), dimensions,
+                                )
                             for child in page.findChildren(QWidget):
                                 if child.isVisible() and child.layout(): assert_layout(child)
 

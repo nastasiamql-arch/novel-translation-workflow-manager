@@ -142,6 +142,9 @@ class NovelProfile:
     vocabulary_step: WorkflowStep | None = field(default_factory=lambda: WorkflowStep(name="หาศัพท์"))
     chapter_state: ChapterState = field(default_factory=ChapterState)
     main_folder: str = ""
+    # Additive smart-file setup metadata. Attachments remain the source of truth.
+    novel_code: str = ""
+    vocabulary_instruction_path: str | None = None
     launch_targets: list[LaunchTarget] = field(default_factory=list)
     context_path: str | None = None
     polish_history_step_id: str | None = None
@@ -193,6 +196,8 @@ class NovelProfile:
             ),
             chapter_state=ChapterState(int(state.get("current_chapter",1)),state.get("statuses",{})),
             main_folder=str(d.get("main_folder","")),
+            novel_code=str(d.get("novel_code", "")),
+            vocabulary_instruction_path=d.get("vocabulary_instruction_path"),
             last_browse_directory=d.get("last_browse_directory"),
             launch_targets=[LaunchTarget.from_dict(x) for x in d.get("launch_targets",[])],
             context_path=d.get("context_path"),
@@ -283,6 +288,9 @@ class AppSettings:
     translation_batch_profiles: dict[str, dict] = field(default_factory=dict)
     history_sort_modes: dict[str, str] = field(default_factory=dict)
     history_manual_order: dict[str, list[str]] = field(default_factory=dict)
+    history_copy_state: dict[str, dict] = field(default_factory=dict)
+    history_copy_events: dict[str, list[dict]] = field(default_factory=dict)
+    history_resume_positions: dict[str, dict] = field(default_factory=dict)
     workspace_open_profile_ids: list[str] = field(default_factory=list)
     closed_workspace_profile_ids: list[str] = field(default_factory=list)
     editor_positions: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
@@ -298,6 +306,7 @@ class AppSettings:
     txt_export_start: int = 1
     txt_export_end: int = 100
     txt_export_current: int = 1
+    shared_vocabulary_instruction_path: str | None = None
 
 @dataclass
 class WorkflowTemplate:

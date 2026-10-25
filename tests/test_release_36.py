@@ -131,14 +131,14 @@ def test_settings_categories_keep_management_actions_accessible(tmp_path):
     window.settings_dialog()
     page = window._settings_page_state['page']
     categories = page.findChild(QListWidget, 'preferencesCategory')
-    assert categories.count() == 3
+    assert categories.count() == 7
     page.select_category('General')
     checkbox = page.findChild(QCheckBox, 'copyFilesAsZip')
     checkbox.setChecked(True)
     assert repo.load_settings().copy_files_as_zip
     page.select_category('Working Tabs')
     assert not window.working_files.isHidden()
-    page.select_category('Workflow Files')
+    page.select_category('Workflow')
     assert not window.files.isHidden()
     window.return_from_utility_page()
     window.close()
