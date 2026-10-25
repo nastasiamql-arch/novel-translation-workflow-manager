@@ -225,7 +225,7 @@ def test_copying_older_history_updates_last_copied_without_moving_resume(window)
 
     w.settings.history_copy_as_zip = True
     w.copy_history_snapshot(p, older)
-    wait_until(lambda: not w.history_busy())
+    wait_until(lambda: key in w.repo.load_settings().history_copy_state)
     state = w.repo.load_settings()
     assert state.history_copy_state[key]['chapter_range'] == '21-24'
     assert state.history_copy_state[key]['snapshot_id'] == older.manifest['snapshot_id']
