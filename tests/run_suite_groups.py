@@ -28,7 +28,7 @@ def main() -> int:
         print(f"Group {n}/{len(chunks)}: {', '.join(p.name for p in chunk)}", flush=True)
         cmd = [
             sys.executable, str(Path(__file__).with_name("run_pytest_group.py")),
-            "-q", "--durations=5", "-o", "faulthandler_timeout=60",
+            "-vv", "--durations=5", "-o", "faulthandler_timeout=60",
             *(str(path) for path in chunk),
         ]
         # A file-backed log survives Windows' asynchronous native Qt crash
