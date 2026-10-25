@@ -19,7 +19,7 @@ SUCCESS_MARKER = "Pytest completed; exit status: 0"
 
 def pytest_passed_cleanly(output: str) -> bool:
     summary = re.search(
-        r"(?m)^\d+ passed(?:, \d+ (?:skipped|xfailed|warnings?))* in ", output
+        r"(?m)^=*\s*\d+ passed(?:, \d+ (?:skipped|xfailed|warnings?))* in ", output
     )
     failures = re.search(
         r"(?im)^(?:FAILED|ERROR)\b|^=+ (?:FAILURES|ERRORS) =+", output
