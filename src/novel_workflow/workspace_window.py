@@ -1266,7 +1266,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.submit_toast.show_message(message)
 
     def history_busy(self):
-        return self._history_pending or any(w.isRunning() for w in self._history_workers)
+        return (self._history_pending or bool(self._pending_export_snapshots)
+                or any(w.isRunning() for w in self._history_workers))
 
     def run_history_job(self, operation, success, failure=None):
         if self._history_pending:
@@ -1428,7 +1429,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         )
 
     def snapshot_export_for_review(self, profile_id, chapter_range=None):
-        if self.history_busy():
+        if self._history_pending or any(worker.isRunning() for worker in self._history_workers):
             self._pending_export_snapshots.append((profile_id, chapter_range))
             return
         from copy import deepcopy
@@ -1454,7 +1455,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.run_history_job(operation, success, failure)
 
     def _drain_export_snapshot_queue(self):
-        if self.history_busy():
+        if self._history_pending or any(worker.isRunning() for worker in self._history_workers):
             if self._pending_export_snapshots:
                 QTimer.singleShot(100, self._drain_export_snapshot_queue)
             return
@@ -4729,6 +4730,12 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         inspector_page = self._utility_pages.get("novel-inspector")
         if inspector_page is not None:
             workers.extend([inspector_page.worker, inspector_page.write_worker])
+        if (self._pending_export_snapshots
+                and not any(worker and worker.isRunning() for worker in workers)):
+            self.statusBar().showMessage('กำลังบันทึกประวัติ Export ที่รออยู่ก่อนปิดโปรแกรม…')
+            QTimer.singleShot(0, self._drain_export_snapshot_queue)
+            event.ignore()
+            return
         for worker in workers:
             if worker and worker.isRunning():
                 worker.requestInterruption()

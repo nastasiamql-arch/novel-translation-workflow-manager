@@ -5,6 +5,7 @@
 - Run deferred viewport restoration through a page-owned timer so callbacks cannot outlive the history page.
 - Join history workers at the finished boundary before releasing their owner reference, avoiding a Windows filesystem thread race.
 - Wait for background workers and window teardown in UI tests so asynchronous work cannot leak into the next test.
+- Keep queued Export snapshots in the busy state until they start and finish, and drain them safely before application shutdown.
 - Add UI regressions for repeat copies, forward navigation, and both clipboard modes.
 
 ## v6.7.2 — Polish History Status and Navigation

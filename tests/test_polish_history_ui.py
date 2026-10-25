@@ -531,6 +531,20 @@ def test_history_opened_during_snapshot_loads_after_job_finishes(window, monkeyp
     page = w._utility_pages['polish-history:' + p.id]
     wait_until(lambda: not w.history_busy() and len(page.snapshots) == 1)
 
+
+def test_queued_export_snapshots_keep_history_busy_until_drained(window, monkeypatch):
+    w, p, workspace, errors = window
+    w._pending_export_snapshots.append((p.id, '6-10'))
+    assert w.history_busy()
+    started = []
+    monkeypatch.setattr(w, 'snapshot_export_for_review',
+                        lambda profile_id, span: started.append((profile_id, span)))
+
+    w._drain_export_snapshot_queue()
+
+    assert started == [(p.id, '6-10')]
+    assert not w.history_busy()
+
 def test_history_refresh_preserves_clipboard_then_migrates_legacy(window):
     from PySide6.QtCore import QMimeData, QUrl
     w, p, workspace, errors = window
