@@ -429,7 +429,8 @@ class PolishHistoryPage(QWidget):
                 card.setProperty('recommendedNext', True)
                 card.setStyleSheet('QFrame#polishHistoryRow[recommendedNext="true"] { border: 2px solid #4386d8; border-radius: 7px; }')
             rows = QHBoxLayout(card); rows.setContentsMargins(8, 0, 8, 0); rows.setSpacing(6)
-            card.setMinimumHeight(54)
+            # Global button styling enforces a 48 px hit target on Windows.
+            card.setMinimumHeight(60)
             # Keep number → chapter/details → copy as one left-aligned group.
             # Destructive actions stay isolated on the far right.
             sequence = QLabel(str(index + 1))
@@ -439,12 +440,12 @@ class PolishHistoryPage(QWidget):
             sequence.setToolTip('ลำดับรายการที่แสดง')
             sequence.setAccessibleName(f'ลำดับ {index + 1}')
             rows.addWidget(sequence)
-            text_column = QVBoxLayout(); text_column.setSpacing(0)
+            text_column = QVBoxLayout(); text_column.setContentsMargins(0, 0, 0, 0); text_column.setSpacing(0)
             rows.addLayout(text_column, 1)
             span = snapshot.manifest.get('chapter_range')
             title = QLabel(('บท ' + str(span).replace('-', '–')) if span else 'รอระบุช่วงบท')
             title.setObjectName('historyRangeTitle')
-            title.setWordWrap(True)
+            title.setWordWrap(False)
             text_column.addWidget(title)
             copy_state = self.owner.settings.history_copy_state.get(self._progress_key(), {})
             copied_ids = self._copied_snapshot_ids(self._copy_events())
@@ -509,12 +510,11 @@ class PolishHistoryPage(QWidget):
             except (KeyError, ValueError, TypeError): stamp = snapshot.path.name
             review_status = snapshot.manifest.get('review_status', 'รอตรวจ')
             detail = QLabel(
-                f'{badge_text} · {stamp} · '
-                f'{snapshot.manifest.get("file_count", 0) if not snapshot.error else "?"} ไฟล์ · '
-                f'สถานะตรวจคำแปล: {review_status}'
+                f'{stamp} · {snapshot.manifest.get("file_count", 0) if not snapshot.error else "?"} ไฟล์ · ตรวจ: {review_status}'
             )
-            detail.setWordWrap(True); detail.setObjectName('historyCopyState')
-            detail.setStyleSheet(badge.styleSheet()); text_column.addWidget(detail)
+            detail.setWordWrap(False); detail.setObjectName('historyCopyState')
+            detail.setToolTip(f'สถานะคัดลอก: {badge_text}\nสถานะตรวจคำแปล: {review_status}')
+            detail.setStyleSheet('font-size: 12px; color: palette(mid);'); text_column.addWidget(detail)
             if snapshot.error:
                 error = QLabel('ตรวจพบข้อผิดพลาด: ' + snapshot.error); error.setWordWrap(True)
                 text_column.addWidget(error)
