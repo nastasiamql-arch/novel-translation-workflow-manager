@@ -5,6 +5,7 @@
 - Add batch progress summaries, status filters, latest copied and next uncopied navigation, and saved search and scroll position.
 - Persist vocabulary split output metadata and keep large pasted drafts in atomic, profile-scoped files outside `settings.json`.
 - Keep copy history independent of Translator Export, translation progress, workflow stage changes and existing Clipboard modes.
+- Reserve enough width for the longest Thai month in the shared date picker across platform font metrics.
 - Add copy history, source revision, restart restoration and draft persistence regression coverage.
 
 ## v6.5.1 — Fixed Settings Sidebar and Novel List Scrolling
