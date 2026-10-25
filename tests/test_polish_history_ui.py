@@ -42,7 +42,13 @@ def window(tmp_path, monkeypatch):
     w._automatic_update_timer.stop(); w.show()
     yield w, w.profile, w.workspaces[profile.id], errors
     w._close_export_reminder_accepted = True
+    deadline = time.monotonic() + 15
+    while w.history_busy() and time.monotonic() < deadline:
+        QApplication.processEvents(); time.sleep(0.01)
     w.close(); QApplication.processEvents()
+    while w.isVisible() and time.monotonic() < deadline:
+        QApplication.processEvents(); time.sleep(0.01)
+    QTest.qWait(10)
 
 
 @pytest.mark.parametrize('zipped', [False, True])
