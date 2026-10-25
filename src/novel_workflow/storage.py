@@ -52,6 +52,29 @@ class ProjectRepository:
     def profile_dir(self,pid):
         if not re.fullmatch(r"[a-fA-F0-9]{32}",pid): raise ValueError("Invalid profile ID")
         return self.profiles_dir/pid
+    def load_batch_draft(self, profile_id, kind):
+        if kind not in {"translation", "vocabulary"}:
+            raise ValueError("Invalid batch draft kind")
+        data=read_json(self.profile_dir(profile_id)/"batch_drafts.json",{})
+        if not isinstance(data,dict) or data.get("schema_version",1) not in (1,2):
+            return ""
+        drafts=data.get("drafts",{})
+        return drafts.get(kind,"") if isinstance(drafts,dict) and isinstance(drafts.get(kind,""),str) else ""
+    def save_batch_draft(self, profile_id, kind, text):
+        if kind not in {"translation", "vocabulary"}:
+            raise ValueError("Invalid batch draft kind")
+        if not isinstance(text,str):
+            raise TypeError("Batch draft must be text")
+        path=self.profile_dir(profile_id)/"batch_drafts.json"
+        data=read_json(path,{})
+        if not isinstance(data,dict): raise ValueError("Invalid batch drafts file; preserving existing data")
+        if data.get("schema_version") not in (None,1,2):
+            raise ValueError("Unsupported batch draft schema")
+        drafts=data.get("drafts",{})
+        if not isinstance(drafts,dict): raise ValueError("Invalid batch drafts file")
+        data["schema_version"]=2
+        data["drafts"]={**drafts,kind:text}
+        write_json(path,data)
     @profile_guard
     def list_profiles(self):
         profiles=[]

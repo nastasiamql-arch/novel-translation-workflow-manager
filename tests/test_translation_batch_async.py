@@ -68,6 +68,20 @@ def test_translation_batch_copy_uses_background_worker_and_exact_files(tmp_path)
         assert [p.name for p in paths] == ["0001.txt", "0002.txt", "0003.txt"]
         assert all(p.is_file() for p in paths)
         assert "สำเร็จ" in page.summary.text()
+        from novel_workflow.batch_copy_history import load_history
+        events = load_history(repo, profile.id, "translation")
+        assert len(events) == 1
+        assert events[0]["chapter_numbers"] == [1, 2, 3]
+        assert events[0]["copied_file_count"] == 3
+        page.close()
+        resumed = TranslationBatchPage(repo, lambda: profile, object(), {
+            "mode": "folder", "path": str(source), "size": 3
+        }, lambda _state: None, lambda: None)
+        assert resumed._load_worker.wait(20000)
+        app.processEvents()
+        assert resumed._group_status(resumed._groups[0]) == "copied"
+        assert resumed._group_status(resumed._groups[1]) == "new"
+        resumed.close()
     finally:
         if page._load_worker and page._load_worker.isRunning():
             page._load_worker.wait(20000)
