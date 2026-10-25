@@ -215,8 +215,6 @@ class SettingsPage(QWidget):
         workflow_frame = QFrame()
         workflow_frame.setObjectName("settingsCard")
         workflow_layout = QVBoxLayout(workflow_frame)
-        workflow_heading = QLabel("ขั้นตอนการแปล · จัดการขั้นตอน")
-        workflow_layout.addWidget(workflow_heading)
         history_row = QHBoxLayout()
         history_row.addWidget(QLabel('ประวัติไฟล์ขั้นตอนเกลา'))
         owner.settings_history_step = QComboBox()
@@ -451,7 +449,6 @@ class SettingsPage(QWidget):
             owner.settings_profile_heading.setVisible(name not in ("General", "Program Updates"))
             files_panel.setVisible(name == "Workflow")
             step_actions_panel.setVisible(name == "Workflow")
-            workflow_heading.setText("ขั้นตอนการแปล · ขั้นตอนและไฟล์แนบ")
         def select_named_category(name):
             if name == "Novel":
                 name = "Novel Info"
