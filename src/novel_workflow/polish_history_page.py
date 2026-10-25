@@ -302,8 +302,14 @@ class PolishHistoryPage(QWidget):
                 return
             snapshot = ordered[-1]
             self.status.setText('ถึงรายการสุดท้ายแล้ว · แสดงชุดล่าสุดที่มีเลขบท')
+        # Search clearing emits textChanged synchronously. Suppress its normal
+        # viewport-preserving render because this action intentionally moves
+        # to another snapshot.
+        self.search.blockSignals(True)
         self.search.clear()
-        self.render()
+        self.search.blockSignals(False)
+        self._cancel_viewport_restore()
+        self.render(preserve_viewport=False)
         QTimer.singleShot(0, lambda s=snapshot: self._scroll_to_snapshot(s))
 
     def go_to_previous(self):
@@ -317,16 +323,24 @@ class PolishHistoryPage(QWidget):
             target = ordered[-1]
         else:
             target = ordered[max(0, current_index - 1)]
+        self.search.blockSignals(True)
         self.search.clear()
-        self.render()
+        self.search.blockSignals(False)
+        self._cancel_viewport_restore()
+        self.render(preserve_viewport=False)
         QTimer.singleShot(0, lambda s=target: self._scroll_to_snapshot(s))
 
     def on_copy_success(self, snapshot, *, advanced=False):
         self._update_progress_summary()
-        self.render()
         if advanced:
             self._user_navigated = False
-            QTimer.singleShot(0, self.go_to_resume)
+            self.go_to_resume()
+        else:
+            self.render()
+
+    def _cancel_viewport_restore(self):
+        self._viewport_restore_timer.stop()
+        self._pending_viewport_restore = None
 
     def _restore_viewport(self):
         pending = self._pending_viewport_restore
@@ -443,7 +457,7 @@ class PolishHistoryPage(QWidget):
         self._persist_sort()
         self.render()
 
-    def render(self, *_):
+    def render(self, *_, preserve_viewport=True):
         # Rebuilding every row after a copy used to collapse the scroll area to
         # its first row. Keep the viewport where it was unless the caller has
         # explicitly requested navigation (for example, to the next batch).
@@ -581,10 +595,13 @@ class PolishHistoryPage(QWidget):
                            if not self.snapshots else 'ไม่พบช่วงบทที่ค้นหา')
             empty.setWordWrap(True); empty.setObjectName('emptyStateDescription'); self.card_layout.addWidget(empty)
         self.card_layout.addStretch()
-        self._pending_viewport_restore = (
-            render_generation, user_scroll_generation, prior_scroll_value
-        )
-        self._viewport_restore_timer.start(0)
+        if preserve_viewport:
+            self._pending_viewport_restore = (
+                render_generation, user_scroll_generation, prior_scroll_value
+            )
+            self._viewport_restore_timer.start(0)
+        else:
+            self._cancel_viewport_restore()
 
     def copy_snapshot(self, snapshot):
         """Only explicitly confirmed historical edits may update stored hashes."""

@@ -308,8 +308,42 @@ class TxtVocabularyPage(QWidget):
         self.pasted_text.textChanged.connect(self.invalidate_preview)
         self._update_labels()
         self.refresh()
-        QTimer.singleShot(0, lambda: self.tabs.setCurrentIndex(
-            max(0, min(self.tabs.count() - 1, int(self.state.get("last_tab", 0) or 0)))))
+        QTimer.singleShot(0, self._restore_last_tab)
+
+    def _restore_last_tab(self):
+        last_tab = max(
+            0, min(self.tabs.count() - 1, int(self.state.get("last_tab", 0) or 0))
+        )
+        draft = self.state.get("draft", "")
+        prior_digest = self.state.get("split_input_digest")
+        if draft and prior_digest and sha256(draft.encode("utf-8")).hexdigest() == prior_digest:
+            # Restore the verified preview and completion feedback for the
+            # exact text that was split before shutdown.
+            self.tabs.setCurrentIndex(last_tab)
+            self.preview_paste()
+        elif self.state.get("split_completed_at"):
+            # v6.7.3 cleared the saved draft after splitting. The result
+            # metadata still proves the operation completed, even though that
+            # version did not retain enough text to reconstruct its preview.
+            if not self.state.get("split_result_restored"):
+                last_tab = 1
+                self.state["split_result_restored"] = True
+            self.tabs.setCurrentIndex(last_tab)
+            self.paste_summary.setText(self._last_split_summary())
+        else:
+            self.tabs.setCurrentIndex(last_tab)
+
+    def _last_split_summary(self):
+        stamp = str(self.state.get("split_completed_at") or "")
+        written = int(self.state.get("split_written", 0) or 0)
+        skipped = int(self.state.get("split_skipped", 0) or 0)
+        folder = self.state.get("split_output_folder") or self.state.get("destination") or ""
+        return (
+            f"✓ แยกไฟล์ครั้งล่าสุดแล้ว · สร้าง {written} ไฟล์ · ข้าม {skipped} บท"
+            + (f" · {stamp}" if stamp else "")
+            + (f"\nปลายทาง: {folder}" if folder else "")
+            + "\nระบบบันทึกผลแยกครั้งล่าสุดไว้แล้ว ตรวจไฟล์ในปลายทางก่อนสั่งแยกซ้ำ"
+        )
 
     def _save(self):
         self.state["batch_size"] = self.batch_size.value()
@@ -898,9 +932,47 @@ class TxtVocabularyPage(QWidget):
                if missing else " · เลขบทต่อเนื่อง")
             + " · เลือกบทเพื่อตรวจเนื้อหาแล้วกดยืนยันบันทึก"
         )
-        self.save_button.setEnabled(True)
+        completed = self._split_completion_status(contents, segments)
+        self.save_button.setEnabled(
+            completed is None or "ไฟล์ปลายทางหาย" in completed
+        )
+        if completed is not None:
+            self.paste_summary.setText(completed)
         if segments:
             self.preview_table.selectRow(0)
+
+    def _split_completion_status(self, contents, segments):
+        expected_digest = self.state.get("split_input_digest")
+        if not expected_digest or sha256(contents.encode("utf-8")).hexdigest() != expected_digest:
+            return None
+        folder_value = self.state.get("destination") or self.state.get("folder")
+        recorded_folder = self.state.get("split_output_folder")
+        if not folder_value:
+            return None
+        folder = Path(folder_value).expanduser()
+        if recorded_folder:
+            try:
+                if folder.resolve() != Path(recorded_folder).expanduser().resolve():
+                    return None
+            except OSError:
+                return None
+        try:
+            if not folder.is_dir():
+                return None
+            outputs = {chapter.number: chapter.path for chapter in scan_chapter_files(folder)}
+        except OSError:
+            return None
+        missing = [segment.number for segment in segments if segment.number not in outputs]
+        written = int(self.state.get("split_written", 0) or 0)
+        skipped = int(self.state.get("split_skipped", 0) or 0)
+        if missing:
+            return (
+                f"ต้นฉบับนี้เคยแยกแล้ว · สร้าง {written} ไฟล์ · ข้าม {skipped} บท · "
+                f"พบไฟล์ปลายทางหาย {len(missing)} บท กรุณาตรวจปลายทางก่อนแยกซ้ำ"
+            )
+        stamp = str(self.state.get("split_completed_at") or "")
+        suffix = f" · {stamp}" if stamp else ""
+        return f"✓ แยกต้นฉบับนี้แล้ว · สร้าง {written} ไฟล์ · ข้าม {skipped} บท{suffix}"
 
     def show_preview_chapter(self):
         row = self.preview_table.currentRow()
@@ -970,19 +1042,31 @@ class TxtVocabularyPage(QWidget):
         else:
             self._split_source_folder = folder
             self.state["split_output_folder"] = str(folder.resolve())
+        self.state["destination"] = str(folder.resolve())
+        self.state["split_output_folder"] = str(folder.resolve())
         self.state["split_source_path"] = str(self._loaded_file_path or "")
         self.state["split_source_mode"] = "stage" if self.bound_mode else "paste"
         self.state["split_completed_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
         self.state["split_written"] = result.written
         self.state["split_skipped"] = result.skipped
+        self.state["split_input_digest"] = sha256(
+            self.pasted_text.toPlainText().encode("utf-8")
+        ).hexdigest()
         if self.draft_writer:
-            self.state["draft"] = ""
-            self.draft_writer("")
-            self.pasted_text.clear()
+            # Keep the source alongside the split result so the page can show
+            # the completed state after restart and never ask users to paste it
+            # again just to reconstruct the preview.
+            self.state["draft"] = self.pasted_text.toPlainText()
+            self._flush_draft()
         self._update_labels()
+        self.tabs.setCurrentIndex(1)
         self._save()
         self.refresh()
-        self.tabs.setCurrentIndex(0)
+        self.paste_summary.setText(
+            f"✓ แยกไฟล์สำเร็จ · สร้าง {result.written} ไฟล์ · ข้าม {result.skipped} บท · "
+            "บันทึกสถานะไว้แล้ว และเก็บต้นฉบับนี้ให้เปิดทำต่อได้"
+        )
+        self.save_button.setEnabled(False)
         message = f"สร้าง {result.written} ไฟล์ · ข้าม {result.skipped} บท"
         if result.backup_directory:
             message += f"\nสำรองไฟล์ที่แทนที่ไว้ใน {result.backup_directory}"

@@ -1,3 +1,11 @@
+## v6.7.4 — Copy Navigation and TXT Split Resume
+
+- Prevent delayed viewport restoration from overriding the requested next history batch after copying a late batch such as batch 86.
+- Preserve pasted chapter text after splitting; restore the split tab, preview, completed status, and destination after restarting.
+- Recognize successful split metadata from v6.7.3 even when that version cleared the saved draft, and show the output folder instead of prompting the user to split again.
+- Persist successful split metadata immediately, independent of the session debounce or application shutdown.
+- Add regression coverage for high-index history navigation and TXT split completion across restart.
+
 ## v6.7.3 — Polish History Copy Scroll Hotfix
 
 - Preserve the visible history position when copy state refreshes rows, including when copying an older batch again.

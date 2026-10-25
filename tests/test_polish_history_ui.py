@@ -251,7 +251,7 @@ def test_history_copy_buttons_keep_position_for_repeat_and_advance_from_new_batc
     w, p, workspace, errors = window
     step = w._history_step_for_profile(p)
     snapshots = [w.polish_history.create(p, step, f'{start}-{start + 3}')
-                 for start in range(1, 101, 4)]
+                 for start in range(1, 361, 4)]
     key = f'{p.id}:{step.id}'
     first_event = {
         'event_id': 'already-copied', 'profile_id': p.id, 'step_id': step.id,
@@ -306,6 +306,26 @@ def test_history_copy_buttons_keep_position_for_repeat_and_advance_from_new_batc
     row_top = next_row.mapTo(page.history_scroll.viewport(), QPoint(0, 0)).y()
     assert -next_row.height() < row_top < page.history_scroll.viewport().height()
     assert next_row.property('recommendedNext') is True
+
+    # Reproduce the reported late-row case: navigating from batch 86 must not
+    # be overwritten by a deferred pixel restoration from an earlier render.
+    late_snapshot = snapshots[85]
+    page._scroll_to_snapshot(late_snapshot)
+    wait_until(lambda: page._navigation_snapshot_id == page._snapshot_id(late_snapshot))
+    late_button = page._cards_by_id[page._snapshot_id(late_snapshot)].findChild(
+        QPushButton, 'polishHistoryCopy')
+    late_button.click()
+    wait_until(lambda: len(w.repo.load_settings().history_copy_events[key]) == 4)
+    after_late_id = page._snapshot_id(snapshots[86])
+    def late_next_visible():
+        next_row = page._cards_by_id.get(after_late_id)
+        if next_row is None:
+            return False
+        row_top = next_row.mapTo(page.history_scroll.viewport(), QPoint(0, 0)).y()
+        return -next_row.height() < row_top < page.history_scroll.viewport().height()
+    wait_until(lambda: page._navigation_snapshot_id == after_late_id and late_next_visible())
+    after_late = page._cards_by_id[after_late_id]
+    assert after_late.property('recommendedNext') is True
     QTest.qWait(50)  # Drain the page's deferred layout/scroll callbacks before teardown.
     assert not errors
 

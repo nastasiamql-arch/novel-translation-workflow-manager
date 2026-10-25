@@ -117,6 +117,27 @@ def test_active_novel_can_close_without_deleting_profiles_or_reopening_previous(
     restored.close()
 
 
+def test_successful_vocabulary_split_state_is_persisted_immediately(tmp_path):
+    app()
+    repo, profile, _ = setup_profile(tmp_path)
+    window = MainWindow(repo)
+    select_novel(window, profile)
+    stamp = '2026-10-25T12:00:00+00:00'
+    window.save_txt_vocabulary_state(profile.id, {
+        'last_tab': 1,
+        'split_completed_at': stamp,
+        'split_written': 3,
+        'split_skipped': 0,
+        'split_output_folder': str(repo.profile_dir(profile.id) / 'source'),
+    })
+    saved = repo.load_settings().vocabulary_txt_profiles[profile.id]
+    assert saved['split_completed_at'] == stamp
+    assert saved['last_tab'] == 1
+    assert saved['split_written'] == 3
+    window._close_export_reminder_accepted = True
+    window.close()
+
+
 def test_closing_last_novel_keeps_workspace_closed_after_restart(tmp_path):
     app()
     repo, profile, _ = setup_profile(tmp_path)

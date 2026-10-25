@@ -3424,8 +3424,15 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def save_txt_vocabulary_state(self, profile_id, state):
         saved = dict(state)
         saved.pop("draft", None)
+        previous = self.settings.vocabulary_txt_profiles.get(profile_id, {})
         self.settings.vocabulary_txt_profiles[profile_id] = saved
-        self._schedule_workspace_session_save()
+        if saved.get("split_completed_at") != previous.get("split_completed_at"):
+            # A successful chapter split is an explicit disk operation; persist
+            # its result and tab selection immediately rather than relying on
+            # the debounced session timer or a clean application shutdown.
+            self._persist_workspace_session()
+        else:
+            self._schedule_workspace_session_save()
 
     def open_txt_vocabulary(self, profile_id):
         if not self.profile or self.profile.id != profile_id:

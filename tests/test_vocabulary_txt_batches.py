@@ -228,10 +228,102 @@ def test_gui_copy_only_when_clicked_and_split_only_after_explicit_confirmation(t
     assert (destination / "0001 第一节.txt").read_text(encoding="utf-8").startswith("第一章")
     assert (destination / "0002 第二节.txt").read_text(encoding="utf-8").startswith("第二章")
     assert (source / "0001.txt").read_text(encoding="utf-8").startswith("第1章")
-    assert page.tabs.currentIndex() == 0
+    assert page.tabs.currentIndex() == 1
+    assert page.pasted_text.toPlainText() == paste
+    assert "แยกไฟล์สำเร็จ" in page.paste_summary.text()
+    assert not page.save_button.isEnabled()
     page.pasted_text.setPlainText(paste + "\n第三章 新章\n第三节")
     assert not page.save_button.isEnabled()
     page.close()
+
+
+def test_split_result_and_source_preview_restore_after_restart(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path / "storage")
+    profile_id = "a" * 32
+    destination = tmp_path / "split-output"
+    destination.mkdir()
+    paste = "第一章 第一节\nเนื้อหาบทหนึ่ง\n\n第二章 第二节\nเนื้อหาบทสอง"
+    persisted = {}
+    monkeypatch.setattr(QMessageBox, "question", lambda *args, **kwargs: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.Ok)
+
+    page = TxtVocabularyPage(
+        {"destination": str(destination)},
+        lambda state: persisted.update(state),
+        destination,
+        repo=repo,
+        profile_id=profile_id,
+        draft_reader=lambda: repo.load_batch_draft(profile_id, "vocabulary"),
+        draft_writer=lambda text: repo.save_batch_draft(profile_id, "vocabulary", text),
+    )
+    page.tabs.setCurrentIndex(1)
+    page.pasted_text.setPlainText(paste)
+    page.preview_paste()
+    assert page.save_button.isEnabled()
+    page.save_button.click()
+    assert repo.load_batch_draft(profile_id, "vocabulary") == paste
+    assert persisted["split_input_digest"]
+    assert persisted["last_tab"] == 1
+    page.close()
+
+    reopened = TxtVocabularyPage(
+        persisted,
+        lambda state: persisted.update(state),
+        destination,
+        repo=repo,
+        profile_id=profile_id,
+        draft_reader=lambda: repo.load_batch_draft(profile_id, "vocabulary"),
+        draft_writer=lambda text: repo.save_batch_draft(profile_id, "vocabulary", text),
+    )
+    app.processEvents()
+    assert reopened.tabs.currentIndex() == 1
+    assert reopened.pasted_text.toPlainText() == paste
+    assert reopened.preview_table.rowCount() == 2
+    assert "แยกต้นฉบับนี้แล้ว" in reopened.paste_summary.text()
+    assert not reopened.save_button.isEnabled()
+    assert (destination / "0001 第一节.txt").is_file()
+    assert (destination / "0002 第二节.txt").is_file()
+    reopened.close()
+
+    # Existing 6.7.3 settings recorded a successful split but intentionally
+    # cleared the draft, so migrate that result without asking the user to run
+    # the split operation again.
+    legacy = dict(persisted)
+    legacy.pop("split_input_digest", None)
+    legacy["last_tab"] = 0
+    repo.save_batch_draft(profile_id, "vocabulary", "")
+    migrated = TxtVocabularyPage(
+        legacy,
+        lambda state: legacy.update(state),
+        destination,
+        repo=repo,
+        profile_id=profile_id,
+        draft_reader=lambda: repo.load_batch_draft(profile_id, "vocabulary"),
+        draft_writer=lambda text: repo.save_batch_draft(profile_id, "vocabulary", text),
+    )
+    app.processEvents()
+    assert migrated.tabs.currentIndex() == 1
+    assert "แยกไฟล์ครั้งล่าสุดแล้ว" in migrated.paste_summary.text()
+    assert "ตรวจไฟล์ในปลายทาง" in migrated.paste_summary.text()
+    assert not migrated.save_button.isEnabled()
+    migrated.close()
+
+    repo.save_batch_draft(profile_id, "vocabulary", paste)
+    (destination / "0002 第二节.txt").unlink()
+    missing_output = TxtVocabularyPage(
+        persisted,
+        lambda state: persisted.update(state),
+        destination,
+        repo=repo,
+        profile_id=profile_id,
+        draft_reader=lambda: repo.load_batch_draft(profile_id, "vocabulary"),
+        draft_writer=lambda text: repo.save_batch_draft(profile_id, "vocabulary", text),
+    )
+    app.processEvents()
+    assert "ไฟล์ปลายทางหาย" in missing_output.paste_summary.text()
+    assert missing_output.save_button.isEnabled()
+    missing_output.close()
 
 
 def test_bulk_1000_chapters_lazy_scroll_search_and_copy_without_jump(tmp_path):
