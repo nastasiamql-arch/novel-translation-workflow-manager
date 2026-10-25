@@ -1,3 +1,9 @@
+## v6.7.2 — Polish History Status and Navigation
+
+- Show the copy-complete badge on each history row after a successful Clipboard event.
+- Keep “Go to Resume” enabled when chapter history exists, including when the latest snapshot is already the final available batch.
+- Scroll explicitly to the selected history card after layout updates, and add regressions for copy status, resume fallback, previous navigation, and actual scroll movement.
+
 ## v6.7.1 — Polish History Copy Hotfix
 
 - Keep each history copy button next to its chapter details on the left side of the row at wide window sizes.

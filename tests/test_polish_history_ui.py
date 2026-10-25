@@ -6,7 +6,7 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtGui import QTextCursor
-from PySide6.QtWidgets import QApplication, QPushButton, QMessageBox
+from PySide6.QtWidgets import QApplication, QPushButton, QMessageBox, QLabel
 
 from novel_workflow.models import NovelProfile, StepFile, Workflow, WorkflowStep
 from novel_workflow.storage import ProjectRepository
@@ -148,6 +148,8 @@ def test_history_page_copy_and_back_preserve_editor_and_stage(window):
     QTest.mouseClick(buttons[0], Qt.LeftButton)
     wait_until(lambda: not w.history_busy())
     payload = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
+    wait_until(lambda: any(label.text() == '✓  คัดลอกแล้ว'
+                           for label in page.findChildren(QLabel, 'historyCopyState')))
     assert all(path.read_bytes() != b'old context\n\n' for path in payload)
     assert Path(p.context_path).read_bytes() == b'new context'
     assert p.verified_goal_count == 0 and p.txt_export_settings.current == 1
@@ -186,6 +188,46 @@ def test_copy_event_storage_error_is_reported_without_escaping_callback(window, 
     wait_until(lambda: not w.history_busy())
     assert 'บันทึกประวัติการคัดลอกไม่สำเร็จ' in w.statusBar().currentMessage()
     assert QApplication.clipboard().mimeData().urls()
+
+
+def test_resume_and_previous_buttons_scroll_when_progress_is_at_last_snapshot(window):
+    w, p, workspace, errors = window
+    step = w._history_step_for_profile(p)
+    snapshots = [w.polish_history.create(p, step, f'{start}-{start + 3}')
+                 for start in range(1, 101, 4)]
+    key = f'{p.id}:{step.id}'
+    events = [
+        {'event_id': f'event-{i}', 'profile_id': p.id, 'step_id': step.id,
+         'snapshot_id': snapshot.manifest['snapshot_id'],
+         'chapter_range': snapshot.manifest['chapter_range'],
+         'timestamp': f'2026-10-25T00:{i:02d}:00+00:00',
+         'result': 'clipboard_set'}
+        for i, snapshot in enumerate(snapshots)
+    ]
+    w.settings.history_copy_events[key] = events
+    w.settings.history_copy_state[key] = events[-1]
+    w.settings.history_sort_modes[p.id] = 'chapter_asc'
+    w.repo.save_settings(w.settings)
+
+    w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
+    page = w._utility_pages['polish-history:' + p.id]
+    page.history_scroll.setFixedHeight(75)
+    QApplication.processEvents()
+    assert not page._recommended
+    assert page.resume_button.isEnabled()
+
+    bar = page.history_scroll.verticalScrollBar()
+    bar.setValue(bar.minimum())
+    page.resume_button.click()
+    last_id = page._snapshot_id(snapshots[-1])
+    wait_until(lambda: page._navigation_snapshot_id == last_id and bar.value() > bar.minimum())
+    last_position = bar.value()
+
+    page.previous_button.click()
+    previous_id = page._snapshot_id(snapshots[-2])
+    wait_until(lambda: page._navigation_snapshot_id == previous_id)
+    assert bar.value() < last_position
 
 
 def test_range_required_focus_and_no_false_success(window):

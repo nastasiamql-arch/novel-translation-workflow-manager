@@ -191,8 +191,11 @@ class PolishHistoryPage(QWidget):
             f"ชุดถัดไป: {'บท ' + str(candidate.manifest.get('chapter_range')).replace('-', '–') if candidate else 'ถึงรายการสุดท้ายแล้ว'}"
             f"    รายการที่ข้ามไว้: {skipped} ชุด"
         )
-        self.resume_button.setEnabled(candidate is not None)
-        self.previous_button.setEnabled(bool(self._chapter_ordered_snapshots()))
+        chapter_snapshots = self._chapter_ordered_snapshots()
+        # Resume remains useful at the end of the recorded history: its handler
+        # falls back to the latest available chapter when no next batch exists.
+        self.resume_button.setEnabled(bool(chapter_snapshots))
+        self.previous_button.setEnabled(bool(chapter_snapshots))
 
     def _copy_events(self):
         events = self.owner.settings.history_copy_events.get(self._progress_key(), [])
@@ -260,8 +263,27 @@ class PolishHistoryPage(QWidget):
         card = getattr(self, '_cards_by_id', {}).get(self._navigation_snapshot_id)
         if card:
             self._programmatic_scroll = True
-            self.history_scroll.ensureWidgetVisible(card, 0, 24)
-            QTimer.singleShot(0, lambda: setattr(self, '_programmatic_scroll', False))
+            # Use the rebuilt card's content coordinates after layout, then set
+            # the scrollbar explicitly. ensureWidgetVisible() can be a no-op
+            # while the card layout is being rebuilt or the utility page is
+            # switching stacks.
+            def reveal():
+                if not card or not self.cards:
+                    self._programmatic_scroll = False
+                    return
+                self.cards.layout().activate()
+                top = card.mapTo(self.cards, self.cards.rect().topLeft()).y()
+                bottom = top + card.height()
+                bar = self.history_scroll.verticalScrollBar()
+                margin = 24
+                target = bar.value()
+                if top < target + margin:
+                    target = max(bar.minimum(), top - margin)
+                elif bottom > target + self.history_scroll.viewport().height() - margin:
+                    target = bottom - self.history_scroll.viewport().height() + margin
+                bar.setValue(max(bar.minimum(), min(bar.maximum(), target)))
+                QTimer.singleShot(0, lambda: setattr(self, '_programmatic_scroll', False))
+            QTimer.singleShot(0, reveal)
 
     def go_to_resume(self):
         self._user_navigated = True
@@ -462,6 +484,7 @@ class PolishHistoryPage(QWidget):
             badge.setStyleSheet('font-size: 16px; font-weight: 700; color: #24834a;' if copied else
                                 ('font-size: 16px; font-weight: 700; color: #2868b2;' if is_recommended else
                                  'font-size: 14px; color: palette(mid);'))
+            text_column.addWidget(badge)
             zipped = self.owner.settings.history_copy_as_zip
             copy = QPushButton('คัดลอก ZIP' if zipped else 'คัดลอก')
             copy.setObjectName('polishHistoryCopy')
