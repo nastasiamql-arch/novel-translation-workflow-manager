@@ -35,6 +35,11 @@ def test_translation_batch_86_copy_preserves_viewport_and_row(tmp_path):
         assert len(page._groups) == 90
         group = page._groups[85]
         page._scroll_to_group(group)
+        # The first call creates lazy rows. Qt must lay them out before
+        # ensureWidgetVisible can calculate a real scrollbar offset.
+        app.processEvents()
+        page.rows_host.layout().activate()
+        page._scroll_to_group(group)
         app.processEvents()
         bar = page.scroll.verticalScrollBar()
         before = bar.value()
