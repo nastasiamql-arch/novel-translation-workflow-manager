@@ -166,3 +166,12 @@ def test_indented_unrecognized_chapter_is_not_silently_renumbered():
         automatic_renumber_plan("　　第1章 第一个\n　　第???章 错误\n", 10)
     with pytest.raises(ValueError, match="หลายเล่ม"):
         automatic_renumber_plan("第一卷\n第1章\n第二卷\n第1章\n", 10)
+
+
+def test_fullwidth_indented_narrative_reference_is_not_a_chapter_candidate():
+    from novel_workflow.chapter_numbering import automatic_renumber_plan
+    text = "第六百四十一章 逆神教老巢\n正文\n第六百四十二章 余波\n　　第三章的文字不应算作章节。\n"
+    result, edits = automatic_renumber_plan(text, 621)
+    assert [h.number for h in scan_chapters(text)] == [641, 642]
+    assert len(edits) == 2
+    assert "　　第三章的文字不应算作章节。" in result
