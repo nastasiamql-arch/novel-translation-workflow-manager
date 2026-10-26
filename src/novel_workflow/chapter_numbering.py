@@ -11,7 +11,7 @@ import unicodedata
 _MAX = 2_147_483_647
 _NUMBER = r"[0-9０-９零〇○一二两兩三四五六七八九十百千万萬亿億]+"
 _HEADING = re.compile(
-    rf"(?im)^[ \t]*(?:#{{1,6}}[ \t]+)?(?:"
+    rf"(?im)^[ \t\u3000]*(?:#{{1,6}}[ \t\u3000]+)?(?:"
     # Chinese source titles often start immediately after 章 (第25章月薪40万).
     # Reject common grammatical continuations so prose such as 第25章的故事... is
     # not promoted to a heading merely because it starts at the beginning of a line.
@@ -19,6 +19,13 @@ _HEADING = re.compile(
     rf"|chapter[ \t]+(?P<english>[0-9０-９]+)\b"
     rf"|(?:บทที่|ตอนที่)[ \t]*(?P<thai>[0-9０-９]+)"
     rf")"
+)
+
+# A volume label is a boundary, not a chapter; do not change its text.
+_VOLUME_HEADING = re.compile(
+    rf"(?im)^[ \t\u3000]*(?:#{{1,6}}[ \t\u3000]+)?"
+    rf"(?:第[ \t\u3000]*(?P<ordinal>{_NUMBER})[ \t\u3000]*(?:卷|册|冊|部)"
+    rf"|卷[ \t\u3000]*(?P<suffix>{_NUMBER}))"
 )
 
 
@@ -29,6 +36,8 @@ class ChapterHeading:
     number_start: int
     number_end: int
     title: str
+    volume: int | None = None
+    volume_index: int = 0
 
 
 def parse_number(value: str) -> int:
@@ -64,10 +73,21 @@ def scan_chapters(text: str) -> list[ChapterHeading]:
     result = []
     fenced = False
     offset = 0
+    active_volume = None
+    volume_index = 0
     for line_no, line in enumerate(text.splitlines(keepends=True), 1):
         if line.lstrip().startswith(("\x60\x60\x60", "~~~")):
             fenced = not fenced
         if not fenced:
+            volume_match = _VOLUME_HEADING.match(line)
+            if volume_match:
+                raw_volume = volume_match.group("ordinal") or volume_match.group("suffix")
+                try:
+                    active_volume = parse_number(raw_volume)
+                except ValueError:
+                    pass
+                else:
+                    volume_index += 1
             match = _HEADING.match(line)
             if match:
                 for group in ("chinese", "english", "thai"):
@@ -78,11 +98,28 @@ def scan_chapters(text: str) -> list[ChapterHeading]:
                             break
                         result.append(ChapterHeading(
                             line_no, number, offset + match.start(group),
-                            offset + match.end(group), line[match.end():].strip()
+                            offset + match.end(group), line[match.end():].strip(),
+                            active_volume, volume_index,
                         ))
                         break
         offset += len(line)
     return result
+
+
+def chapter_groups(headings: list[ChapterHeading],
+                   volume_starts: set[int] | None = None) -> list[int]:
+    """Sequence groups from explicit volume headings or confirmed manual breaks.
+
+    An unlabelled number rollback alone is not evidence of a new volume.
+    """
+    starts = volume_starts or set()
+    groups = []
+    group = 0
+    for i, heading in enumerate(headings):
+        if i and (heading.volume_index != headings[i - 1].volume_index or i in starts):
+            group += 1
+        groups.append(group)
+    return groups
 
 
 def _normalized_title(value: str) -> str:
@@ -90,7 +127,8 @@ def _normalized_title(value: str) -> str:
     return "".join(char for char in value if not char.isspace())
 
 
-def chapter_issues(headings: list[ChapterHeading], text: str | None = None) -> list[str]:
+def chapter_issues(headings: list[ChapterHeading], text: str | None = None,
+                   volume_starts: set[int] | None = None) -> list[str]:
     """Describe numbering problems and safely distinguish likely duplicate rows.
 
     When source text is supplied, identical consecutive headings with no nonblank
@@ -101,7 +139,10 @@ def chapter_issues(headings: list[ChapterHeading], text: str | None = None) -> l
     previous = None
     lines = text.splitlines() if text is not None else None
     previous_heading = None
-    for heading in headings:
+    groups = chapter_groups(headings, volume_starts)
+    for i, heading in enumerate(headings):
+        if i and groups[i] != groups[i - 1]:
+            seen, previous, previous_heading = set(), None, None
         number = heading.number
         if number in seen:
             status = "เลขซ้ำ"
@@ -129,14 +170,14 @@ def chapter_issues(headings: list[ChapterHeading], text: str | None = None) -> l
     return issues
 
 
-def duplicate_heading_removal_plan(text: str) -> tuple[str, list[int]]:
+def duplicate_heading_removal_plan(text: str, volume_starts: set[int] | None = None) -> tuple[str, list[int]]:
     """Plan removal of only adjacent, identical duplicate heading lines.
 
     Whitespace-only separators are retained. A repeated heading with intervening
     story text or a different title is never included in this plan.
     """
     headings = scan_chapters(text)
-    issues = chapter_issues(headings, text)
+    issues = chapter_issues(headings, text, volume_starts)
     remove_lines = [
         heading.line for heading, issue in zip(headings, issues)
         if issue == "หัวบทซ้ำที่น่าจะเป็นรายการเดียวกัน"
@@ -155,7 +196,7 @@ def duplicate_heading_removal_plan(text: str) -> tuple[str, list[int]]:
 _CHINESE_DIGITS = "零一二三四五六七八九"
 _CHINESE_UNITS = ((1000, "千"), (100, "百"), (10, "十"), (1, ""))
 _SUSPECT_HEADING = re.compile(
-    r"(?im)^[ \t]*(?:#{1,6}[ \t]+)?(?:第[^\r\n]{1,24}?章|chapter[ \t]+\S+|(?:บทที่|ตอนที่)[ \t]*\S+)"
+    r"(?im)^[ \t\u3000]*(?:#{1,6}[ \t\u3000]+)?(?:第[^\r\n]{1,24}?章|chapter[ \t]+\S+|(?:บทที่|ตอนที่)[ \t]*\S+)"
 )
 
 
@@ -225,6 +266,8 @@ def automatic_renumber_plan(text: str, start: int) -> tuple[str, list[tuple[int,
             continue
         if not fenced and _SUSPECT_HEADING.match(line) and i not in known_lines:
             raise ValueError("พบหัวบทที่อ่านเลขไม่ได้ กรุณาตรวจเองก่อนแก้")
+    if len(set(chapter_groups(headings))) > 1:
+        raise ValueError("ต้นฉบับมีหลายเล่ม ไม่เสนอเรียงเลขอัตโนมัติข้ามเล่ม")
     nums = [h.number for h in headings]
     if any(n != nums[0] + i for i, n in enumerate(nums)):
         raise ValueError("ต้นฉบับมีเลขซ้ำหรือไม่ต่อเนื่อง อาจมีบทขาดจริง")
@@ -235,7 +278,8 @@ def automatic_renumber_plan(text: str, start: int) -> tuple[str, list[tuple[int,
     return preview_renumber(text, {i: start + i for i in range(len(headings))})
 
 
-def preview_renumber(text: str, changes: dict[int, int]) -> tuple[str, list[tuple[int, int, int]]]:
+def preview_renumber(text: str, changes: dict[int, int],
+                     volume_starts: set[int] | None = None) -> tuple[str, list[tuple[int, int, int]]]:
     """Return exact proposed text. Keys are zero-based heading indices."""
     headings = scan_chapters(text)
     if any(type(k) is not int or k < 0 or k >= len(headings) for k in changes):
@@ -243,8 +287,9 @@ def preview_renumber(text: str, changes: dict[int, int]) -> tuple[str, list[tupl
     expected = [changes.get(i, heading.number) for i, heading in enumerate(headings)]
     if any(type(n) is not int or not 0 < n <= _MAX for n in expected):
         raise ValueError("Invalid chapter number")
-    if len(set(expected)) != len(expected):
-        raise ValueError("Chapter numbers would collide; nothing changed")
+    groups = chapter_groups(headings, volume_starts)
+    if len(set(zip(groups, expected))) != len(expected):
+        raise ValueError("Chapter numbers would collide within a volume; nothing changed")
     applied = []
     result = text
     for i in sorted(changes, reverse=True, key=lambda k: headings[k].number_start):

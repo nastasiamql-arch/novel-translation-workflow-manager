@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from .chapter_numbering import (
-    chapter_issues, duplicate_heading_removal_plan, preview_renumber,
+    chapter_groups, chapter_issues, duplicate_heading_removal_plan, preview_renumber,
     scan_chapters, format_heading_number,
 )
 from .chapter_number_reference import resolve_translator_reference, should_auto_propose
@@ -105,6 +105,8 @@ class ChapterNumberDialog(QDialog):
         self.history_path = self.profile_dir / "chapter_numbering" / "history.json"
         self.original = editor.toPlainText()
         self.headings = scan_chapters(self.original)
+        self.volume_path = self.profile_dir / "chapter_numbering" / "volume_boundaries.json"
+        self.manual_volume_starts = self._load_volume_starts()
         open_texts = {}
         for tab_index in range(workspace.editor.tabs.count()):
             opened = workspace.editor.tabs.widget(tab_index)
@@ -115,7 +117,7 @@ class ChapterNumberDialog(QDialog):
             workspace.owner.repo, workspace.profile_id, self.path, open_texts
         )
         self.setWindowTitle("ตรวจเลขบทต้นฉบับ · " + self.path.name)
-        self.resize(850, 580)
+        self.resize(1080, 650)
         layout = QVBoxLayout(self)
         intro = QLabel(
             f"ไฟล์: {self.path.name} · พบหัวบท {len(self.headings)} บท\n"
@@ -168,19 +170,32 @@ class ChapterNumberDialog(QDialog):
         top.addWidget(self.sequence_button)
         top.addStretch(1)
         layout.addLayout(top)
-
-        self.table = QTableWidget(len(self.headings), 5)
-        self.table.setHorizontalHeaderLabels(
-            ["เลือกแก้", "บรรทัด", "เลขเดิม / ชื่อบท", "เลขใหม่", "ผลตรวจ"]
+        volume_controls = QHBoxLayout()
+        self.volume_button = QPushButton("กำหนด / ยกเลิกจุดเริ่มเล่มที่เลือก")
+        self.volume_button.setToolTip(
+            "เลือกแถวแรกของเล่มใหม่ แล้วกดปุ่มนี้ · บันทึกแยกต่อไฟล์ ไม่แก้ต้นฉบับ"
         )
-        self.table.setColumnWidth(0, 75)
-        self.table.setColumnWidth(1, 80)
-        self.table.setColumnWidth(2, 300)
-        self.table.setColumnWidth(3, 120)
+        self.volume_button.clicked.connect(self.toggle_volume_start)
+        volume_controls.addWidget(self.volume_button)
+        volume_hint = QLabel("หัวเล่ม 第1卷 / 第二卷 จะแยกอัตโนมัติ · ไม่มีหัวเล่มให้เลือกแถวแรกของเล่ม")
+        volume_hint.setWordWrap(True)
+        volume_controls.addWidget(volume_hint, 1)
+        layout.addLayout(volume_controls)
+
+        self.table = QTableWidget(len(self.headings), 6)
+        self.table.setHorizontalHeaderLabels(
+            ["เลือกแก้", "บรรทัด", "เล่ม", "เลขเดิม / ชื่อบท", "เลขใหม่", "ผลตรวจ"]
+        )
+        self.table.setColumnWidth(0, 65)
+        self.table.setColumnWidth(1, 66)
+        self.table.setColumnWidth(2, 90)
+        self.table.setColumnWidth(3, 285)
+        self.table.setColumnWidth(4, 115)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.checks = []
         self.spins = []
-        issues = chapter_issues(self.headings, self.original)
+        issues = chapter_issues(self.headings, self.original, self.manual_volume_starts)
+        groups = chapter_groups(self.headings, self.manual_volume_starts)
         duplicate_count = sum("ซ้ำ" in issue for issue in issues)
         likely_duplicate_count = sum("น่าจะเป็นรายการเดียวกัน" in issue for issue in issues)
         gap_count = sum("กระโดด" in issue for issue in issues)
@@ -198,8 +213,9 @@ class ChapterNumberDialog(QDialog):
             self.checks.append(checkbox)
             for col, value in (
                 (1, str(heading.line)),
-                (2, f"{heading.number} · {heading.title[:90]}"),
-                (4, issues[i]),
+                (2, self._volume_label(i, groups)),
+                (3, f"{heading.number} · {heading.title[:90]}"),
+                (5, issues[i]),
             ):
                 item = QTableWidgetItem(value)
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
@@ -243,9 +259,11 @@ class ChapterNumberDialog(QDialog):
         close.clicked.connect(self.reject)
         actions.addWidget(close)
         layout.addLayout(actions)
-        if self.translator_reference.path is not None and should_auto_propose(
-            self.headings[self.verified_prefix_count:], initial
-        ):
+        if (self.translator_reference.path is not None
+                and len(set(chapter_groups(self.headings, self.manual_volume_starts))) <= 1
+                and should_auto_propose(
+                    self.headings[self.verified_prefix_count:], initial
+                )):
             self.propose_sequence()
             self.result.setText(
                 f"เสนอเลขจาก {self.translator_reference.path.name} แล้ว · "
@@ -254,6 +272,81 @@ class ChapterNumberDialog(QDialog):
         self.sequence_button.setEnabled(bool(self.headings))
         self.selected_button.setEnabled(bool(self.headings))
         self.all_button.setEnabled(bool(self.headings))
+        self.volume_button.setEnabled(len(self.headings) > 1)
+
+    def _load_volume_starts(self):
+        """Restore only confirmed breakpoints that still match their source headings."""
+        saved = read_json(self.volume_path, {"files": {}})
+        files = saved.get("files", {}) if isinstance(saved, dict) else {}
+        entries = files.get(str(self.path), []) if isinstance(files, dict) else []
+        if not isinstance(entries, list):
+            return set()
+        return {
+            entry["index"] for entry in entries
+            if isinstance(entry, dict)
+            and type(entry.get("index")) is int
+            and 0 < entry["index"] < len(self.headings)
+            and entry.get("line") == self.headings[entry["index"]].line
+            and entry.get("title") == self.headings[entry["index"]].title
+        }
+
+    def _save_volume_starts(self):
+        saved = read_json(self.volume_path, {"files": {}})
+        if not isinstance(saved, dict) or not isinstance(saved.get("files"), dict):
+            raise ValueError("ข้อมูลจุดแบ่งเล่มไม่ถูกต้อง · ไม่บันทึกทับ")
+        saved["files"][str(self.path)] = [
+            {"index": i, "line": self.headings[i].line, "title": self.headings[i].title}
+            for i in sorted(self.manual_volume_starts)
+        ]
+        write_json(self.volume_path, saved)
+
+    def _volume_label(self, index, groups):
+        heading = self.headings[index]
+        if index in self.manual_volume_starts:
+            return f"เล่ม {groups[index] + 1} ★"
+        if heading.volume is not None:
+            return f"เล่ม {heading.volume}"
+        if max(groups, default=0):
+            return f"เล่ม {groups[index] + 1}"
+        return "—"
+
+    def _refresh_volumes(self):
+        groups = chapter_groups(self.headings, self.manual_volume_starts)
+        issues = chapter_issues(self.headings, self.original, self.manual_volume_starts)
+        for i in range(len(self.headings)):
+            self.table.item(i, 2).setText(self._volume_label(i, groups))
+            self.table.item(i, 5).setText(issues[i])
+        duplicate_count = sum("ซ้ำ" in issue for issue in issues)
+        likely_count = sum("น่าจะเป็นรายการเดียวกัน" in issue for issue in issues)
+        gap_count = sum("กระโดด" in issue for issue in issues)
+        reverse_count = sum("ย้อนกลับ" in issue for issue in issues)
+        self.remove_duplicates_button.setEnabled(likely_count > 0)
+        self.result.setText(
+            f"ตรวจใหม่ · {len(self.headings)} บท · {max(groups, default=0) + 1} ช่วงเล่ม · "
+            f"เลขซ้ำ {duplicate_count} · เลขกระโดด {gap_count} · เลขย้อน {reverse_count}\n"
+            "เลขข้ามเล่มไม่ถือว่าซ้ำ · ยังไม่ได้แก้ไฟล์ต้นฉบับ"
+        )
+
+    def toggle_volume_start(self):
+        row = self.table.currentRow()
+        if row <= 0 or row >= len(self.headings):
+            QMessageBox.warning(self, "เลือกบทแรกของเล่ม", "กรุณาเลือกแถวแรกของเล่มใหม่ (ไม่ใช่แถวแรกของไฟล์)")
+            return
+        if self.headings[row].volume_index != self.headings[row - 1].volume_index:
+            QMessageBox.information(self, "พบหัวเล่มแล้ว", "โปรแกรมแยกเล่มนี้จากหัวเล่มจีนในต้นฉบับอยู่แล้ว")
+            return
+        original = set(self.manual_volume_starts)
+        if row in self.manual_volume_starts:
+            self.manual_volume_starts.remove(row)
+        else:
+            self.manual_volume_starts.add(row)
+        try:
+            self._save_volume_starts()
+        except (OSError, ValueError) as exc:
+            self.manual_volume_starts = original
+            QMessageBox.warning(self, "บันทึกจุดแบ่งเล่มไม่ได้", str(exc))
+            return
+        self._refresh_volumes()
 
     def mark_reviewed(self):
         """Persist explicit human confirmation against the exact source bytes."""
@@ -304,7 +397,9 @@ class ChapterNumberDialog(QDialog):
         try:
             if self.editor.toPlainText() != self.original:
                 raise ValueError("ข้อความเปลี่ยนหลังตรวจ กรุณาปิดแล้วตรวจใหม่")
-            expected, removed_lines = duplicate_heading_removal_plan(self.original)
+            expected, removed_lines = duplicate_heading_removal_plan(
+                self.original, self.manual_volume_starts
+            )
             if not removed_lines:
                 QMessageBox.information(self, "ไม่พบหัวบทซ้ำที่ปลอดภัย", "ไม่มีหัวบทซ้ำติดกันที่เลขและชื่อบทตรงกัน")
                 return
@@ -380,20 +475,28 @@ class ChapterNumberDialog(QDialog):
 
     def propose_sequence(self):
         first = self.start_number.value()
-        if first + len(self.headings) - self.verified_prefix_count - 1 > 2_147_483_647:
-            QMessageBox.warning(self, "เลขบทไม่ถูกต้อง", "เลขบทใหม่เกินช่วงที่รองรับ")
-            return
+        groups = chapter_groups(self.headings, self.manual_volume_starts)
         changed = 0
+        previous_proposal = None
         for i, (heading, spin, check) in enumerate(zip(self.headings, self.spins, self.checks)):
-            proposed = (
-                heading.number if i < self.verified_prefix_count
-                else first + i - self.verified_prefix_count
-            )
+            if i < self.verified_prefix_count:
+                proposed = heading.number
+            elif i == self.verified_prefix_count:
+                proposed = first
+            elif groups[i] != groups[i - 1]:
+                # A confirmed new volume keeps its original local start.
+                proposed = heading.number
+            else:
+                proposed = previous_proposal + 1
+            if proposed > 2_147_483_647:
+                QMessageBox.warning(self, "เลขบทไม่ถูกต้อง", "เลขบทใหม่เกินช่วงที่รองรับ")
+                return
+            previous_proposal = proposed
             spin.setValue(proposed)
             check.setChecked(proposed != heading.number)
             changed += proposed != heading.number
         self.result.setText(
-            f"เสนอแก้ {changed} บท · ลำดับที่เสนอยังไม่ยืนยันว่าบทไม่ขาดจริง"
+            f"เสนอแก้ {changed} บท · แยกเลขตามเล่มที่ระบุไว้ · กรุณาตรวจก่อนยืนยัน"
         )
 
     def _proposal(self, all_rows):
@@ -404,7 +507,9 @@ class ChapterNumberDialog(QDialog):
             for i, (spin, check) in enumerate(zip(self.spins, self.checks))
             if (all_rows or check.isChecked()) and spin.value() != self.headings[i].number
         }
-        expected, changes = preview_renumber(self.original, requested)
+        expected, changes = preview_renumber(
+            self.original, requested, self.manual_volume_starts
+        )
         return requested, expected, changes
 
     def apply_all(self):

@@ -185,3 +185,29 @@ def test_duplicate_heading_removal_previews_saves_backup_and_can_restore(tmp_pat
     assert editor.toPlainText() == original
     assert source.read_text(encoding="utf-8") == original
     _close(window)
+
+
+
+def test_manual_volume_boundary_is_persisted_without_modifying_source(tmp_path):
+    repo, profile, window, ws, editor, source, translator, _messages = _window(
+        tmp_path, fix=False
+    )
+    text = "第99章 旧事\n内容\n第100章 结束\n内容\n第1章 新篇\n第2章 分割遗产"
+    editor.setPlainText(text)
+    assert ws.editor.save_editor(editor, quiet=True)
+    dialog = ChapterNumberDialog(ws, editor, source)
+    assert dialog.table.item(2, 5).text() == "เลขย้อนกลับ"
+    dialog.table.setCurrentCell(2, 1)
+    dialog.toggle_volume_start()
+    assert dialog.table.item(2, 5).text() == "ปกติ"
+    assert 2 in dialog.manual_volume_starts
+    assert source.read_text(encoding="utf-8") == text
+    reopened = ChapterNumberDialog(ws, editor, source)
+    assert reopened.manual_volume_starts == {2}
+    assert reopened.table.item(2, 5).text() == "ปกติ"
+    reopened.start_number.setValue(99)
+    reopened.propose_sequence()
+    assert [spin.value() for spin in reopened.spins] == [99, 100, 1, 2]
+    reopened.close()
+    dialog.close()
+    _close(window)

@@ -109,3 +109,60 @@ def test_invalid_or_unrecognized_are_not_modified():
     text = "第0章 Invalid\n第???章 Name\n这个故事有第559章的说法。\n"
     assert scan_chapters(text) == []
     assert preview_renumber(text, {}) == (text, [])
+
+
+@pytest.mark.parametrize("prefix", ["　", "　　", "　 \t", "\t　"])
+def test_ideographic_indentation_before_chinese_chapter(prefix):
+    text = f"{prefix}第2章分割遗产\n　　正文\n{prefix}第3章下一个章节\n"
+    headings = scan_chapters(text)
+    assert [heading.number for heading in headings] == [2, 3]
+    assert headings[0].title == "分割遗产"
+    assert chapter_issues(headings, text) == ["ปกติ", "ปกติ"]
+    result, changes = preview_renumber(text, {0: 5, 1: 6})
+    assert changes == [(1, 2, 5), (3, 3, 6)]
+    assert result == text.replace("第2章", "第5章").replace("第3章", "第6章")
+    assert result.startswith(prefix)
+
+
+def test_explicit_chinese_volumes_reset_duplicate_and_gap_detection():
+    from novel_workflow.chapter_numbering import chapter_groups
+    text = (
+        "第一卷 起点\n第99章 旧事\n第100章 终章\n"
+        "　　第二卷 新的开始\n　　第1章分割遗产\n　第2章 后续\n"
+        "第三卷\n第1章新篇\n"
+    )
+    found = scan_chapters(text)
+    assert [h.number for h in found] == [99, 100, 1, 2, 1]
+    assert [h.volume for h in found] == [1, 1, 2, 2, 3]
+    assert chapter_groups(found) == [0, 0, 1, 1, 2]
+    assert chapter_issues(found, text) == ["ปกติ"] * 5
+    # Repeated local chapter numbers in distinct volumes are not collisions.
+    changed, rows = preview_renumber(text, {3: 3})
+    assert len(rows) == 1 and "第3章 后续" in changed
+    with pytest.raises(ValueError, match="collide"):
+        preview_renumber(text, {3: 1})
+
+
+def test_unlabelled_rollback_remains_warning_until_volume_confirmed():
+    from novel_workflow.chapter_numbering import chapter_groups
+    text = "第99章\n第100章\n第1章 新卷\n第2章 分割遗产\n"
+    found = scan_chapters(text)
+    assert chapter_issues(found, text) == ["ปกติ", "ปกติ", "เลขย้อนกลับ", "ปกติ"]
+    assert chapter_groups(found, {2}) == [0, 0, 1, 1]
+    assert chapter_issues(found, text, {2}) == ["ปกติ"] * 4
+    with pytest.raises(ValueError, match="collide"):
+        preview_renumber(text, {1: 99})
+    result, changes = preview_renumber(text, {0: 1}, {2})
+    assert changes == [(1, 99, 1)]
+    assert result.startswith("第1章")
+    # No deletion across a confirmed volume boundary even with equal titles.
+    duplicate = "第1章 同题\n第1章 同题\n"
+    assert duplicate_heading_removal_plan(duplicate, {1}) == (duplicate, [])
+
+
+def test_indented_unrecognized_chapter_is_not_silently_renumbered():
+    from novel_workflow.chapter_numbering import automatic_renumber_plan
+    with pytest.raises(ValueError, match="อ่านเลขไม่ได้"):
+        automatic_renumber_plan("　　第1章 第一个\n　　第???章 错误\n", 10)
+    with pytest.raises(ValueError, match="หลายเล่ม"):
+        automatic_renumber_plan("第一卷\n第1章\n第二卷\n第1章\n", 10)
