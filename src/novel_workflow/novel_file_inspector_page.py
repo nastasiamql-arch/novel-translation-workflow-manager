@@ -510,6 +510,9 @@ class NovelFileInspectorPage(QWidget):
         self.model.rows = list(result.files)
         self.model.endResetModel()
         self.table.setSortingEnabled(not combined)
+        if combined:
+            # Reset the proxy sort inherited from file mode; use actual chapter order.
+            self.proxy.sort(-1)
         for button in self.repair_buttons + self.review_buttons:
             button.setEnabled(not combined)
         self.proxy.minimum = result.minimum
