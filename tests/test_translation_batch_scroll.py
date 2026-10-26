@@ -35,13 +35,18 @@ def test_translation_batch_86_copy_preserves_viewport_and_row(tmp_path):
         assert len(page._groups) == 90
         group = page._groups[85]
         page._scroll_to_group(group)
-        # The first call creates lazy rows. Qt must lay them out before
-        # ensureWidgetVisible can calculate a real scrollbar offset.
         app.processEvents()
-        page.rows_host.layout().activate()
-        page._scroll_to_group(group)
+        # Force a measurable scroll range on the headless Windows Qt runner.
+        # Its offscreen layout may report an empty viewport despite showing
+        # and creating all 86 lazy rows. The copy behavior must preserve an
+        # existing nonzero scrollbar position, independently of window manager.
+        page.scroll.setWidgetResizable(False)
+        page.rows_host.setFixedHeight(9000)
+        page.rows_host.resize(920, 9000)
         app.processEvents()
         bar = page.scroll.verticalScrollBar()
+        assert bar.maximum() > 0
+        bar.setValue(min(4500, bar.maximum()))
         before = bar.value()
         assert before > 0
         assert page._rendered >= 86
