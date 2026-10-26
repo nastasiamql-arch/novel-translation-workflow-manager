@@ -87,3 +87,58 @@ def test_scan_progress_has_clear_status_outside_bar(app, tmp_path):
         assert "50%" in page.progress_status.text()
     finally:
         page.close()
+
+
+@pytest.mark.parametrize("kind", ["folder", "zip"])
+def test_actual_picker_does_not_use_removed_profile_widget(app, tmp_path, monkeypatch, kind):
+    import zipfile
+    from PySide6.QtWidgets import QFileDialog
+    from novel_workflow.novel_file_inspector_page import NovelFileInspectorPage
+    root = tmp_path / "files"
+    root.mkdir()
+    (root / "0001.txt").write_text("第1章 标题\n" + "中" * 1600, encoding="utf-8")
+    archive = tmp_path / "files.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.write(root / "0001.txt", "0001.txt")
+    page = NovelFileInspectorPage(ProjectRepository(tmp_path / "state"))
+    try:
+        if kind == "folder":
+            monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *_a: str(root))
+            page.choose_folder()
+        else:
+            monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *_a: (str(archive), "ZIP (*.zip)"))
+            page.choose_zip()
+        assert page.worker.wait(15000)
+        app.processEvents()
+        assert page.result and page.result.summary()["total"] == 1
+    finally:
+        if page.worker and page.worker.isRunning():
+            page.worker.cancel()
+            page.worker.wait(15000)
+        page.close()
+
+
+def test_combined_txt_file_picker_readonly(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+    from novel_workflow.novel_file_inspector_page import NovelFileInspectorPage
+    source = tmp_path / "APOC.txt"
+    original = "第一卷\n第1章 开始\n" + "甲" * 1600 + "\n第2章分割遗产\n" + "乙" * 1600
+    source.write_text(original, encoding="utf-8")
+    page = NovelFileInspectorPage(ProjectRepository(tmp_path / "state"))
+    try:
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *_a: (str(source), "TXT (*.txt)"))
+        page.choose_combined()
+        assert page.worker.wait(15000)
+        app.processEvents()
+        assert page.result.kind == "combined"
+        assert page.model.rowCount() == 2
+        assert all(not b.isEnabled() for b in page.repair_buttons)
+        page.table.selectRow(1)
+        app.processEvents()
+        assert "第2章分割遗产" in page.text.toPlainText()
+        assert source.read_text(encoding="utf-8") == original
+    finally:
+        if page.worker and page.worker.isRunning():
+            page.worker.cancel()
+            page.worker.wait(15000)
+        page.close()

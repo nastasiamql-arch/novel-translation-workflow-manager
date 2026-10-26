@@ -356,3 +356,45 @@ def test_repair_selected_original_with_backup(tmp_path):
     assert (root / "0002.txt").read_bytes() == original
     assert not (tmp_path / "novel-inspected").exists()
     assert (Path(outcome["backup"]) / "original" / "0001.txt").exists()
+
+
+def test_inspect_combined_chapters_volumes_and_preserve_file(tmp_path):
+    from novel_workflow.novel_file_inspector import inspect, read_combined_chapter
+    from novel_workflow.novel_file_inspector_renumber import plan_renumber, plan_heading_repair
+    file = tmp_path / "APOC.txt"
+    original = ("第一卷\n　　第1章 开始\n" + "甲" * 1600 + "\n"
+                "　　第2章分割遗产\n" + "乙" * 1600 + "\n"
+                "　　第125章 不确定\n" + "丙" * 1600 + "\n"
+                "第二卷\n　　第1章 又从一开始\n" + "丁" * 1600)
+    file.write_text(original, encoding="utf-8")
+    before = file.read_bytes()
+    result = inspect(file, "combined", minimum=1500)
+    assert result.kind == "combined"
+    assert [r.chapter for r in result.files] == [1, 2, 125, 1]
+    assert [r.volume_index for r in result.files] == [0, 0, 0, 1]
+    assert "เลขกระโดด" in result.files[2].reasons[0]
+    assert "เลขย้อนกลับ" not in str(result.files[3].reasons)
+    assert "第2章分割遗产" in read_combined_chapter(result, result.files[1])
+    assert "第125章" not in read_combined_chapter(result, result.files[1])
+    with pytest.raises(ValueError, match="TXT รวม"):
+        plan_renumber(result)
+    with pytest.raises(ValueError, match="TXT รวม"):
+        plan_heading_repair(result)
+    assert file.read_bytes() == before
+    file.write_text(original + "ต่อท้าย", encoding="utf-8")
+    with pytest.raises(ValueError, match="เปลี่ยน"):
+        read_combined_chapter(result, result.files[0])
+
+
+def test_folder_single_combined_auto_detects_but_preserves_multifile_mode(tmp_path):
+    from novel_workflow.novel_file_inspector import inspect
+    folder = tmp_path / "source"
+    folder.mkdir()
+    (folder / "APOC.txt").write_text("第1章 开始\n内容\n第2章 继续\n内容\n", encoding="utf-8")
+    result = inspect(folder, "folder")
+    assert result.kind == "combined"
+    assert [row.chapter for row in result.files] == [1, 2]
+    (folder / "0001.txt").write_text("第1章 独立\n内容\n", encoding="utf-8")
+    result = inspect(folder, "folder")
+    assert result.kind == "folder"
+    assert result.summary()["total"] == 2

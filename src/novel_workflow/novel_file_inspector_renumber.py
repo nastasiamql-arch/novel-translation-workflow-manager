@@ -55,6 +55,8 @@ def update_heading(data: bytes, encoding: str, current: int | None, number: int)
 
 def plan_renumber(result: Inspection, start: int = 1, padding: int = 4,
                   change_heading: bool = False) -> RenumberPlan:
+    if result.kind == "combined":
+        raise ValueError("TXT รวมบทตรวจได้อย่างเดียว ห้ามจัดเลขไฟล์หรือแก้ต้นฉบับ")
     if not 1 <= start <= 2_147_483_647 or not 1 <= padding <= 12:
         raise ValueError("Invalid chapter start/padding")
     rows = [r for r in result.files if not r.virtual]
@@ -92,6 +94,8 @@ def plan_renumber(result: Inspection, start: int = 1, padding: int = 4,
 def plan_heading_repair(result: Inspection, names: set[str] | None = None,
                         only_changed: bool = False) -> tuple[RenumberPlan, dict[str, str]]:
     """Plan filename-authoritative heading edits, preserving all other files."""
+    if result.kind == "combined":
+        raise ValueError("TXT รวมบทตรวจได้อย่างเดียว ห้ามแก้ต้นฉบับ")
     selected = set(names) if names is not None else None
     rows = [r for r in result.files if not r.virtual]
     blocked: dict[str, str] = {}

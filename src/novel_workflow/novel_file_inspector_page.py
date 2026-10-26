@@ -13,9 +13,8 @@ from PySide6.QtWidgets import (
     QWidget, QDialog, QTableWidget, QTableWidgetItem, QTabWidget,
 )
 
-from .novel_file_inspector import Inspection, inspect, read_source, decode_text
+from .novel_file_inspector import Inspection, inspect, read_source, decode_text, read_combined_chapter
 from .novel_file_inspector_history import InspectorStore
-from .services import ProfileService
 from .novel_file_inspector_renumber import (
     plan_renumber, plan_heading_repair, execute_new, execute_in_place, restore_backup,
 )
@@ -72,6 +71,7 @@ class FileTable(QAbstractTableModel):
     def __init__(self):
         super().__init__()
         self.rows = []
+        self.combined = False
 
     def reset_rows(self, rows):
         self.beginResetModel()
@@ -86,7 +86,7 @@ class FileTable(QAbstractTableModel):
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
         if role == Qt.DisplayRole and orientation == Qt.Horizontal:
-            return self.HEADERS[section]
+            return ("บท", "หัวบท / เล่ม", "ตัวอักษร", "สถานะ")[section] if self.combined else self.HEADERS[section]
         return None
 
     def data(self, index, role=Qt.DisplayRole):
@@ -160,6 +160,9 @@ class NovelFileInspectorPage(QWidget):
         folder = QPushButton("เลือกโฟลเดอร์ TXT")
         folder.clicked.connect(self.choose_folder)
         source.addWidget(folder)
+        combined = QPushButton("เลือก TXT รวมหลายบท")
+        combined.clicked.connect(self.choose_combined)
+        source.addWidget(combined)
         self.more_button = QPushButton("ตัวเลือกเพิ่มเติม")
         self.more_button.clicked.connect(self.open_more)
         source.addWidget(self.more_button)
@@ -258,6 +261,7 @@ class NovelFileInspectorPage(QWidget):
         self.text.setPlaceholderText("เนื้อหาเต็มแบบอ่านอย่างเดียว")
         read_layout.addWidget(self.text, 1)
         actions = QHBoxLayout()
+        self.review_buttons = []
         for label, slot in (("ก่อนหน้า", lambda: self.navigate_row(-1)),
                             ("ถัดไป", lambda: self.navigate_row(1)),
                             ("เปรียบเทียบ", self.compare_selected),
@@ -267,6 +271,8 @@ class NovelFileInspectorPage(QWidget):
             button = QPushButton(label)
             button.clicked.connect(slot)
             actions.addWidget(button)
+            if label in ("เป็นนิยาย — เก็บไว้", "คัดออก", "ยังไม่ตัดสินใจ"):
+                self.review_buttons.append(button)
         read_layout.addLayout(actions)
         splitter.addWidget(reader)
         splitter.setSizes([550, 650])
@@ -330,12 +336,14 @@ class NovelFileInspectorPage(QWidget):
         self.history_dialog.resize(720, 400)
         QVBoxLayout(self.history_dialog).addWidget(history)
         actions = QHBoxLayout()
+        self.repair_buttons = []
         for label, handler in (("แก้รายการที่เลือก", lambda: self.repair_headings(True)),
                                ("แก้เลขหัวบททั้งหมด", lambda: self.repair_headings(False)),
                                ("จัดเลขบทใหม่ทั้งหมด", self.renumber_dialog.exec)):
             button = QPushButton(label)
             button.clicked.connect(handler)
             actions.addWidget(button)
+            self.repair_buttons.append(button)
         body.addLayout(actions)
         self.refresh_history()
 
@@ -350,6 +358,9 @@ class NovelFileInspectorPage(QWidget):
         menu.exec(self.more_button.mapToGlobal(self.more_button.rect().bottomLeft()))
 
     def repair_headings(self, selected_only=False):
+        if self.result and self.result.kind == "combined":
+            QMessageBox.information(self, "อ่านอย่างเดียว", "TXT รวมบทไม่รองรับการแก้ไฟล์จากหน้านี้")
+            return
         if not self.result or (self.worker and self.worker.isRunning()) or (self.write_worker and self.write_worker.isRunning()):
             return
         names = {r.name for r in self.selected_files()} if selected_only else None
@@ -395,37 +406,19 @@ class NovelFileInspectorPage(QWidget):
     def choose_folder(self):
         path = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์ TXT", self.source or str(Path.home()))
         if path:
-            self._remember_selected_novel_folder(path)
             self.set_source(path, "folder")
 
     def choose_zip(self):
         path, _ = QFileDialog.getOpenFileName(self, "เลือก ZIP", self.source or str(Path.home()), "ZIP (*.zip)")
         if path:
-            self._remember_selected_novel_folder(path)
             self.set_source(path, "zip")
 
-    def choose_profile(self):
-        pid = self.profile_combo.currentData()
-        if not pid:
-            QMessageBox.information(self, "เลือกนิยาย", "เลือกนิยายก่อน")
-            return
-        profile = next((p for p in self.repo.list_profiles() if p.id == pid), None)
-        if not profile:
-            return
-        base = ProfileService.browse_directory(self.repo, profile)
-        preferred = base / "source" if (base / "source").is_dir() else base
-        path = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์ต้นฉบับของนิยาย", str(preferred))
+    def choose_combined(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "เลือก TXT ที่รวมหลายบท", self.source or str(Path.home()), "TXT (*.txt)"
+        )
         if path:
-            ProfileService.remember_browse_directory(self.repo, profile, path)
-            self.set_source(path, "folder")
-
-    def _remember_selected_novel_folder(self, path):
-        pid = self.profile_combo.currentData()
-        if not pid:
-            return
-        profile = next((p for p in self.repo.list_profiles() if p.id == pid), None)
-        if profile is not None:
-            ProfileService.remember_browse_directory(self.repo, profile, path)
+            self.set_source(path, "combined")
 
     def set_source(self, path, kind):
         if self.write_worker and self.write_worker.isRunning():
@@ -501,7 +494,8 @@ class NovelFileInspectorPage(QWidget):
             self.detail.setText("ยกเลิกการตรวจแล้ว ผลลัพธ์บางส่วนไม่ได้บันทึก")
             return
         self.progress_status.setText(
-            f"ตรวจสอบเสร็จแล้ว · {result.summary()['total']:,} ไฟล์"
+            f"ตรวจสอบเสร็จแล้ว · {result.summary()['total']:,} " +
+            ("หัวบท (อ่านอย่างเดียว)" if result.kind == "combined" else "ไฟล์")
         )
         self.set_result(result)
         self.store.save_cache(result.source, result.kind, self.worker.cache)
@@ -510,17 +504,32 @@ class NovelFileInspectorPage(QWidget):
 
     def set_result(self, result):
         self.result = result
-        self.model.reset_rows(result.files)
+        combined = result.kind == "combined"
+        self.model.beginResetModel()
+        self.model.combined = combined
+        self.model.rows = list(result.files)
+        self.model.endResetModel()
+        self.table.setSortingEnabled(not combined)
+        for button in self.repair_buttons + self.review_buttons:
+            button.setEnabled(not combined)
         self.proxy.minimum = result.minimum
         self.proxy.invalidateFilter()
         s = result.summary()
-        self.summary.setText(
-            f"ไฟล์ทั้งหมด {s['total']:,} · ไม่พบปัญหา {s['clean']:,} · ต้องตรวจสอบ {s['suspicious']:,} · รอตรวจทาน {s['pending_review']:,}" +
-            f"  |  เลขหัวบทไม่ตรง {s['heading_mismatch']:,} · สั้นกว่าเกณฑ์ {s['short']:,} · เนื้อหาซ้ำ {s['duplicate_content']:,}" +
-            f" · เลขบทขาด {s['missing']:,} · อ่านไม่ได้ {s['unreadable']:,} · แก้เลขอัตโนมัติได้ {s['repairable']:,}")
+        if combined:
+            self.source_label.setText(f"TXT รวมบท (อ่านอย่างเดียว): {result.source}")
+            self.summary.setText(
+                f"หัวบทที่ตรวจพบ {s['total']:,} · จุดน่าสงสัย {s['suspicious']:,}"
+                f" · บทสั้น {s['short']:,} · ไม่มีการแก้ต้นฉบับ"
+            )
+        else:
+            self.summary.setText(
+                f"ไฟล์ทั้งหมด {s['total']:,} · ไม่พบปัญหา {s['clean']:,} · ต้องตรวจสอบ {s['suspicious']:,} · รอตรวจทาน {s['pending_review']:,}" +
+                f"  |  เลขหัวบทไม่ตรง {s['heading_mismatch']:,} · สั้นกว่าเกณฑ์ {s['short']:,} · เนื้อหาซ้ำ {s['duplicate_content']:,}" +
+                f" · เลขบทขาด {s['missing']:,} · อ่านไม่ได้ {s['unreadable']:,} · แก้เลขอัตโนมัติได้ {s['repairable']:,}")
         self.preview_table.setRowCount(0)
         self.apply.setEnabled(False)
-        self.table.sortByColumn(0, Qt.AscendingOrder)
+        if not combined:
+            self.table.sortByColumn(0, Qt.AscendingOrder)
 
     def update_filter(self, *_):
         self.proxy.category = self.filter.currentData()
@@ -544,7 +553,8 @@ class NovelFileInspectorPage(QWidget):
             self.text.clear()
             return
         try:
-            text, encoding = decode_text(read_source(self.result.source, self.result.kind, row.name))
+            text = (read_combined_chapter(self.result, row) if self.result.kind == "combined"
+                    else decode_text(read_source(self.result.source, self.result.kind, row.name))[0])
             self.text.setPlainText(text)
         except Exception as exc:
             self.text.setPlainText(f"เปิดไฟล์ไม่ได้: {exc}")
@@ -571,7 +581,7 @@ class NovelFileInspectorPage(QWidget):
             editor = QPlainTextEdit()
             editor.setReadOnly(True)
             try:
-                editor.setPlainText(decode_text(read_source(self.result.source, self.result.kind, row.name))[0])
+                editor.setPlainText(read_combined_chapter(self.result, row) if self.result.kind == "combined" else decode_text(read_source(self.result.source, self.result.kind, row.name))[0])
             except Exception as exc:
                 editor.setPlainText(str(exc))
             box.addWidget(editor)
@@ -579,6 +589,8 @@ class NovelFileInspectorPage(QWidget):
         dialog.exec()
 
     def mark_selection(self, decision):
+        if self.result and self.result.kind == "combined":
+            return
         if not self.result:
             return
         selected = [r for r in self.selected_files() if not r.virtual and not r.error]
@@ -591,6 +603,9 @@ class NovelFileInspectorPage(QWidget):
         self.set_result(self.result)
 
     def preview(self):
+        if self.result and self.result.kind == "combined":
+            QMessageBox.information(self, "อ่านอย่างเดียว", "TXT รวมบทไม่รองรับการจัดเลขไฟล์")
+            return
         self.apply.setEnabled(False)
         if not self.result:
             QMessageBox.information(self, "ตรวจสอบก่อน", "ตรวจสอบไฟล์ก่อนจัดเลขบท")
@@ -613,6 +628,8 @@ class NovelFileInspectorPage(QWidget):
         self.apply.setEnabled(True)
 
     def execute(self):
+        if self.result and self.result.kind == "combined":
+            return
         if not self.apply.isEnabled():
             return
         plan = self.plan

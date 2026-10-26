@@ -15,7 +15,7 @@ import statistics
 import unicodedata
 import zipfile
 
-from .chapter_numbering import scan_chapters
+from .chapter_numbering import scan_chapters, chapter_groups, chapter_issues
 
 MAX_FILE = 32 * 1024 * 1024
 MAX_ARCHIVE_TOTAL = 1024 * 1024 * 1024
@@ -43,6 +43,10 @@ class InspectedFile:
     review_stale: bool = False
     error: str = ""
     virtual: bool = False
+    # Combined TXT offsets refer to the decoded original text, never file names.
+    start_offset: int = 0
+    end_offset: int = 0
+    volume_index: int = 0
 
     @property
     def suspicious(self) -> bool:
@@ -176,6 +180,71 @@ def valid_zip_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     return selected
 
 
+def inspect_combined_file(source: str | Path, minimum: int = 1500,
+                          progress=None, cancelled=None, options=None,
+                          decoded: tuple[str, str] | None = None) -> Inspection:
+    """Read-only chapter-level inspection of a single combined TXT source."""
+    path = Path(source)
+    if path.suffix.casefold() != ".txt" or not path.is_file() or path.is_symlink():
+        raise ValueError("เลือกไฟล์ TXT ต้นฉบับที่มีอยู่จริง")
+    if path.stat().st_size > MAX_FILE:
+        raise UnsafeSource("TXT รวมบทใหญ่เกินขีดจำกัด 32 MB")
+    data = path.read_bytes()
+    if len(data) > MAX_FILE:
+        raise UnsafeSource("TXT รวมบทใหญ่เกินขีดจำกัด 32 MB")
+    text, encoding = decoded if decoded is not None else decode_text(data)
+    headings = scan_chapters(text)
+    if not headings:
+        raise ValueError("ไม่พบหัวบทที่อ่านได้ใน TXT รวมบท · ไม่เปลี่ยนไฟล์")
+    groups, issues = chapter_groups(headings), chapter_issues(headings, text)
+    line_starts, offset = {}, 0
+    for line_no, line in enumerate(text.splitlines(keepends=True), 1):
+        line_starts[line_no] = offset
+        offset += len(line)
+    digest, options = sha256(data).hexdigest(), (options or {})
+    records = []
+    for i, heading in enumerate(headings):
+        if cancelled and cancelled():
+            return Inspection(str(path), "combined", records, minimum, cancelled=True)
+        start = line_starts[heading.line]
+        end = line_starts[headings[i + 1].line] if i + 1 < len(headings) else len(text)
+        segment = text[start:end]
+        count = count_characters(segment)
+        reasons = [] if issues[i] == "ปกติ" else [issues[i]]
+        if not count:
+            reasons.append("เนื้อหาว่าง")
+        elif options.get("short", True) and count < minimum:
+            reasons.append("ต่ำกว่าเกณฑ์")
+        label = (f"เล่ม {groups[i] + 1} · " if len(set(groups)) > 1 else "") + (
+            f"บรรทัด {heading.line} · {heading.title[:90] or 'ไม่มีชื่อบท'}"
+        )
+        records.append(InspectedFile(
+            name=label, chapter=heading.number, size=len(segment.encode("utf-8")),
+            count=count, fingerprint=digest, encoding=encoding,
+            heading=heading.number, reasons=reasons,
+            start_offset=start, end_offset=end, volume_index=groups[i],
+        ))
+        if progress:
+            progress(i + 1, len(headings))
+    return Inspection(str(path), "combined", records, minimum)
+
+
+def read_combined_chapter(result: Inspection, row: InspectedFile) -> str:
+    """Read the selected chapter only if the source is unchanged since scan."""
+    if result.kind != "combined":
+        raise ValueError("ไม่ใช่รายการ TXT รวมบท")
+    path = Path(result.source)
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_FILE:
+        raise UnsafeSource("ต้นฉบับเปลี่ยนหรือไม่ปลอดภัย กรุณาสแกนใหม่")
+    data = path.read_bytes()
+    if sha256(data).hexdigest() != row.fingerprint:
+        raise ValueError("ไฟล์ต้นฉบับเปลี่ยนหลังสแกน กรุณาตรวจใหม่")
+    text, _encoding = decode_text(data)
+    if not 0 <= row.start_offset < row.end_offset <= len(text):
+        raise ValueError("ช่วงบทไม่ตรงกับไฟล์ กรุณาตรวจใหม่")
+    return text[row.start_offset:row.end_offset]
+
+
 def list_sources(source: str | Path, kind: str) -> list[tuple[str, int]]:
     root = Path(source)
     if kind == "zip":
@@ -231,7 +300,21 @@ def inspect(source: str | Path, kind: str = "folder", minimum: int = 1500,
         raise ValueError("Minimum must be positive")
     reviews = reviews or {}
     options = options or {}
+    if kind == "combined":
+        return inspect_combined_file(source, minimum, progress, cancelled, options)
     listing = list_sources(source, kind)
+    # A single unnumbered TXT with multiple headings is a combined source.
+    # Treat its chapters as read-only records, never as files to rename.
+    if kind == "folder" and len(listing) == 1 and number_from_filename(listing[0][0]) is None:
+        candidate = Path(source) / listing[0][0]
+        if 0 < listing[0][1] <= MAX_FILE and not candidate.is_symlink():
+            try:
+                decoded = decode_text(read_source(source, "folder", listing[0][0]))
+                if len(scan_chapters(decoded[0])) > 1:
+                    return inspect_combined_file(candidate, minimum, progress,
+                                                 cancelled, options, decoded)
+            except (OSError, UnicodeError, ValueError, UnsafeSource):
+                pass
     listing.sort(key=lambda it: (number_from_filename(it[0]) is None,
                                  number_from_filename(it[0]) or 0, it[0].casefold()))
     files = []
