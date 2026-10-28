@@ -87,7 +87,7 @@ class TodayPlanBar(QFrame):
         self._last_day = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setContentsMargins(10, 3, 10, 3)
         layout.setSpacing(5)
         line = QHBoxLayout()
         line.setSpacing(9)
