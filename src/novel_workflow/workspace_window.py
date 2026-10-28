@@ -4839,10 +4839,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if workspace is self.workspace_stack.currentWidget():
                 self.settings.workspace_focus_mode = workspace._focus_mode
                 self.settings.sidebar_visible = not workspace._focus_mode
-                if not workspace._focus_mode:
-                    sidebar_size = workspace.workspace_splitter.sizes()[0]
-                    if sidebar_size >= 180:
-                        self.settings.sidebar_width = sidebar_size
+                # Explicit splitter drag is the width source of truth. Session
+                # capture must never turn automatic Qt size clamping into a
+                # new user-selected sidebar width.
             positions = {}
             for index in range(workspace.editor.tabs.count()):
                 editor = workspace.editor.tabs.widget(index)
