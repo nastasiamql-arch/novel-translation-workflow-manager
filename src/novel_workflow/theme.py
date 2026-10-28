@@ -222,6 +222,23 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QPushButton#workflowStageButton:hover, QPushButton#vocabularyButton:hover {{ background: {c['hover']}; }}
     QPushButton#workflowStageButton[workflowActive="true"], QPushButton#vocabularyButton[workflowActive="true"] {{ background: {c['item_selection']}; color: {c['text']}; font-weight: 600; }}
     QPushButton#workflowStageButton[keyboardFocus="true"], QPushButton#vocabularyButton[keyboardFocus="true"] {{ border-bottom: 2px solid {c['focus']}; }}
+    QPushButton#workspaceEditorShortcut, QPushButton#txtVocabularyShortcut, QPushButton#translationBatchShortcut {{
+        min-height: 38px; padding: 7px 12px; border-radius: 8px;
+        background: {c['surface2']}; color: {c['text']}; border: 1px solid {c['border']};
+        font-weight: 600; text-align: center;
+    }}
+    QPushButton#workspaceEditorShortcut:hover, QPushButton#txtVocabularyShortcut:hover, QPushButton#translationBatchShortcut:hover {{
+        background: {c['hover']};
+    }}
+    QPushButton#workspaceEditorShortcut:checked, QPushButton#txtVocabularyShortcut:checked, QPushButton#translationBatchShortcut:checked {{
+        background: {c['item_selection']}; border: 1px solid {c['accent']};
+    }}
+    QPushButton#workspaceEditorShortcut:focus, QPushButton#txtVocabularyShortcut:focus, QPushButton#translationBatchShortcut:focus {{
+        border: 2px solid {c['focus']};
+    }}
+    QComboBox#workspaceStepSelector {{
+        min-height: 38px; padding: 4px 8px; border-radius: 7px;
+    }}
     QPushButton#copyStepButton {{ color: {c['text']}; background: transparent; border: 0; border-radius: 0; min-height: 34px; padding: 7px 14px; font-weight: 600; }}
     QPushButton#copyStepButton:hover {{ color: {c['text']}; background: {c['hover']}; text-decoration: none; }}
     QPushButton#copyStepButton[keyboardFocus="true"] {{ color: {c['focus']}; background: transparent; border: 0; text-decoration: none; }}

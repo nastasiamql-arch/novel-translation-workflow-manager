@@ -264,22 +264,13 @@ class WorkspacePage(QWidget):
         self.editor.destructive_paste_callback = (
             lambda editor: owner._guard_destructive_paste(profile.id, editor)
         )
-        self.steps = QListWidget()
+        # Kept only as the management/file-binding adapter used by the existing
+        # ManagementActionsMixin. It has no visible rows or copy-action buttons.
+        self.steps = QListWidget(self)
         self.steps.setObjectName("workflowSteps")
-        # Stage state is changed by the stage buttons' clicked handlers only.
-        # The list's current row is presentation state and must not activate a
-        # workflow stage when Qt updates it from pointer/focus navigation.
         self.steps.setSelectionMode(QAbstractItemView.NoSelection)
-        self.steps.setSpacing(2)
-        self.stage_buttons = []
+        self.steps.hide()
         self.vocabulary_mode = False
-        self.vocabulary_button = WorkflowStageButton("หาศัพท์")
-        self.vocabulary_button.setObjectName("vocabularyButton")
-        self.vocabulary_button.setWorkflowActive(False)
-        self.vocabulary_button.setToolTip("คลิกเพื่อเลือกและคัดลอกไฟล์ขั้นตอนหาศัพท์ทันที · หรือใช้ COPY STEP / Ctrl+Shift+C")
-        self.vocabulary_button.clicked.connect(
-            lambda checked=False: self.owner.copy_named_stage(self.profile_id, "vocabulary")
-        )
         self.files = QListWidget()
         self.files.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.files.setSpacing(1)
@@ -321,23 +312,45 @@ class WorkspacePage(QWidget):
         self.history_range.setMinimumWidth(0)
         history_row.addWidget(self.history_range, 1)
         sidebar_layout.addLayout(history_row)
-        sidebar_layout.addWidget(self.vocabulary_button)
         tools_heading = QLabel("เครื่องมือทำงาน")
         tools_heading.setObjectName("sectionHeading")
         sidebar_layout.addWidget(tools_heading)
+        self.editor_shortcut = QPushButton("Editor")
+        self.editor_shortcut.setObjectName("workspaceEditorShortcut")
+        self.editor_shortcut.setCheckable(True)
+        self.editor_shortcut.clicked.connect(self.open_editor)
+        sidebar_layout.addWidget(self.editor_shortcut)
         self.txt_vocabulary_shortcut = QPushButton("หาศัพท์")
         self.txt_vocabulary_shortcut.setObjectName("txtVocabularyShortcut")
+        self.txt_vocabulary_shortcut.setCheckable(True)
         self.txt_vocabulary_shortcut.clicked.connect(
             lambda checked=False: self.owner.open_txt_vocabulary(self.profile_id)
         )
         sidebar_layout.addWidget(self.txt_vocabulary_shortcut)
         self.translation_batch_shortcut = QPushButton("แปล")
         self.translation_batch_shortcut.setObjectName("translationBatchShortcut")
+        self.translation_batch_shortcut.setCheckable(True)
         self.translation_batch_shortcut.clicked.connect(
             lambda checked=False: self.owner.open_translation_batches(self.profile_id)
         )
         sidebar_layout.addWidget(self.translation_batch_shortcut)
-        sidebar_layout.addWidget(self.steps, 2)
+        self.current_step_label = QLabel("ขั้นตอนปัจจุบัน")
+        self.current_step_label.setObjectName("sectionHeading")
+        sidebar_layout.addWidget(self.current_step_label)
+        self.step_selector = QComboBox()
+        self.step_selector.setObjectName("workspaceStepSelector")
+        self.step_selector.setAccessibleName("ขั้นตอนปัจจุบัน")
+        self.step_selector.setToolTip("เลือกขั้นตอนโดยไม่คัดลอกไฟล์ · คลิกขวาเพื่อดูคำสั่งคัดลอกขั้นตอน")
+        self.step_selector.setMinimumHeight(38)
+        self.step_selector.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.step_selector.currentIndexChanged.connect(
+            lambda _index: self.owner._sidebar_step_selected(self.profile_id)
+        )
+        self.step_selector.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.step_selector.customContextMenuRequested.connect(
+            lambda pos: self.owner._workspace_step_menu(self.profile_id, pos)
+        )
+        sidebar_layout.addWidget(self.step_selector)
         files_heading = QLabel("ไฟล์ของขั้นตอนปัจจุบัน")
         files_heading.setObjectName("sectionHeading")
         sidebar_layout.addWidget(files_heading)
@@ -542,6 +555,9 @@ class WorkspacePage(QWidget):
         self.translation_batch_page = None
         self.editor_content_stack = QStackedWidget()
         self.editor_content_stack.addWidget(self.editor)
+        self.editor_content_stack.currentChanged.connect(
+            lambda _index: self._sync_tool_buttons()
+        )
         editor_layout.addWidget(self.editor_content_stack, 1)
         self.sync_vocabulary_source()
         editor_host = QWidget()
@@ -597,6 +613,24 @@ class WorkspacePage(QWidget):
 
         self.configure(profile)
         self.set_mode(0)
+
+    def _sync_tool_buttons(self):
+        """Selected appearance follows the existing stacked widget, not the step."""
+        current = self.editor_content_stack.currentWidget()
+        for button, target in (
+            (self.editor_shortcut, self.editor),
+            (self.txt_vocabulary_shortcut, self.txt_vocabulary_page),
+            (self.translation_batch_shortcut, self.translation_batch_page),
+        ):
+            button.setChecked(target is not None and current is target)
+
+    def open_editor(self):
+        """Return to the one existing EditorTabs without changing its session."""
+        self.workspace_sections.blockSignals(True)
+        self.workspace_sections.setCurrentIndex(0)
+        self.workspace_sections.blockSignals(False)
+        self.editor_content_stack.setCurrentWidget(self.editor)
+        self._sync_tool_buttons()
 
     def _open_section(self, index):
         """Keep the editor in place and route novel-specific tools by ID."""
@@ -962,9 +996,14 @@ class WorkspacePage(QWidget):
         self.manual_source_button.setChecked(self.vocabulary_source_mode != "files")
         self.txt_source_button.setChecked(self.vocabulary_source_mode == "files")
         show_files = self.vocabulary_mode and self.vocabulary_source_mode == "files"
+        # Do not eject the user from an independent Translation Batch view.
+        if self.editor_content_stack.currentWidget() is self.translation_batch_page and self.translation_batch_page is not None:
+            return
         if show_files:
             self._ensure_txt_vocabulary_page()
-        self.editor_content_stack.setCurrentWidget(self.txt_vocabulary_page if show_files else self.editor)
+            self.editor_content_stack.setCurrentWidget(self.txt_vocabulary_page)
+        elif self.editor_content_stack.currentWidget() is self.txt_vocabulary_page and self.txt_vocabulary_page is not None:
+            self.editor_content_stack.setCurrentWidget(self.editor)
 
     def filter_files(self, query):
         query = query.strip().casefold()
@@ -3257,51 +3296,74 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.steps.blockSignals(True)
         self.steps.clear()
         if workspace:
-            workspace.stage_buttons = []
+            workspace.step_selector.blockSignals(True)
+            workspace.step_selector.clear()
 
         if self.profile:
-            for index, step in enumerate(self.profile.workflow.steps):
-                # With an item widget the list paints both the item's text and
-                # the button label. Keep the row text only when no button is used.
-                item = QListWidgetItem("" if workspace else step.name)
-                item.setSizeHint(QSize(0, 42))
-                self.steps.addItem(item)
+            for step in self.profile.workflow.steps:
+                # The legacy list is an internal adapter, never a visible button.
+                self.steps.addItem(QListWidgetItem(step.name))
                 if workspace:
-                    button = WorkflowStageButton(step.name)
-                    button.setObjectName("workflowStageButton")
-                    button.setAccessibleName(step.name)
-                    button.setProperty("workflowStageName", step.name)
-                    button.setWorkflowActive(False)
-                    button.setMinimumHeight(38)
-                    button.setCursor(Qt.PointingHandCursor)
-                    button.setToolTip(f"คลิกเพื่อเลือกและคัดลอกไฟล์ขั้นตอน{step.name}ทันที · หรือใช้ COPY STEP / Ctrl+Shift+C")
-                    button.clicked.connect(
-                        lambda checked=False, row=index, pid=self.profile.id:
-                            self.copy_named_stage(pid, row)
-                    )
-                    button.setContextMenuPolicy(Qt.CustomContextMenu)
-                    button.customContextMenuRequested.connect(
-                        lambda pos, b=button: self._workflow_copy_menu(b, pos))
-                    self.steps.setItemWidget(item, button)
-                    workspace.stage_buttons.append(button)
+                    workspace.step_selector.addItem(step.name, step.id)
+            if workspace and self.profile.vocabulary_step is not None:
+                vocabulary = self.profile.vocabulary_step
+                workspace.step_selector.addItem(vocabulary.name, vocabulary.id)
 
         self.steps.blockSignals(False)
         if self.profile and self.profile.workflow.steps:
-            if workspace:
-                workspace.copy_step_button.setEnabled(
-                    bool(self.profile.workflow.steps or self.profile.vocabulary_step)
-                )
-            self.si = max(
-                0, min(desired, len(self.profile.workflow.steps) - 1)
-            )
+            self.si = max(0, min(desired, len(self.profile.workflow.steps) - 1))
             self.steps.setCurrentRow(self.si)
         else:
             self.si = -1
-            if workspace:
-                workspace.copy_step_button.setEnabled(False)
-        self.refresh_files()
         if workspace:
+            workspace.step_index = self.si
+            workspace.vocabulary_mode = bool(
+                workspace.vocabulary_mode and self.profile and self.profile.vocabulary_step
+            )
+            workspace.copy_step_button.setEnabled(
+                bool(self.profile and (self.profile.workflow.steps or self.profile.vocabulary_step))
+            )
+            workspace.step_selector.blockSignals(False)
             self._sync_stage_buttons(workspace)
+        self.refresh_files()
+
+    def _sidebar_step_selected(self, profile_id):
+        """Dropdown changes the stage, never the clipboard or tool page."""
+        if not self.profile or self.profile.id != profile_id:
+            return
+        workspace = self.workspaces.get(profile_id)
+        if workspace is None:
+            return
+        step_id = workspace.step_selector.currentData()
+        vocabulary = self.profile.vocabulary_step
+        if vocabulary is not None and step_id == vocabulary.id:
+            self.set_vocabulary_mode(profile_id, True)
+        else:
+            row = next(
+                (index for index, step in enumerate(self.profile.workflow.steps)
+                 if step.id == step_id), -1
+            )
+            if row >= 0:
+                self._step_changed(profile_id, row)
+        self._sync_stage_buttons(workspace)
+
+    def _workspace_step_menu(self, profile_id, position):
+        """Accessible right-click menu for the current stage and ZIP selection."""
+        if not self.profile or self.profile.id != profile_id:
+            return
+        workspace = self.workspaces.get(profile_id)
+        if workspace is None or self.step() is None:
+            return
+        menu = QMenu(workspace.step_selector)
+        copy_one = menu.addAction("คัดลอกขั้นตอนนี้")
+        copy_multiple = menu.addAction("เลือกหลายขั้นตอนแล้วคัดลอกเป็น ZIP…")
+        copy_multiple.setEnabled(self.settings.copy_files_as_zip)
+        chosen = menu.exec(workspace.step_selector.mapToGlobal(position))
+        if chosen == copy_one:
+            stage = "vocabulary" if workspace.vocabulary_mode else workspace.step_index
+            self.copy_named_stage(profile_id, stage)
+        elif chosen == copy_multiple:
+            self._workflow_copy_menu(workspace.step_selector, position, direct=True)
 
     def refresh_files(self):
         super().refresh_files()
@@ -3310,7 +3372,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             workspace.filter_files(workspace.file_search.text())
 
     def _step_changed(self, profile_id, row):
-        if not self.profile or self.profile.id != profile_id or row < 0:
+        if (not self.profile or self.profile.id != profile_id
+                or not 0 <= row < len(self.profile.workflow.steps)):
             return
         workspace = self.workspaces.get(profile_id)
         if workspace:
@@ -3319,37 +3382,42 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 workspace.steps.blockSignals(True)
                 workspace.steps.setCurrentRow(workspace.step_index)
                 workspace.steps.blockSignals(False)
+                self._sync_stage_buttons(workspace)
                 return
             workspace.vocabulary_mode = False
-            workspace.vocabulary_button.setWorkflowActive(False)
-            workspace.vocabulary_button.update()
             workspace.step_index = row
             self.settings.workspace_step_indices[profile_id] = row
         self.si = row
         self.refresh_files()
         if workspace:
             self._sync_stage_buttons(workspace)
+            self._schedule_workspace_session_save()
 
     @staticmethod
     def _sync_stage_buttons(workspace):
+        """Synchronize the visible selector from one active stage state."""
         profile = workspace.owner.profile
         workspace.history_range.setVisible(bool(profile and profile.polish_history_step_id))
-        for index, button in enumerate(workspace.stage_buttons):
-            active = (
-                not workspace.vocabulary_mode
-                and index == workspace.step_index
-            )
-            button.setWorkflowActive(active)
-        workspace.vocabulary_button.setWorkflowActive(workspace.vocabulary_mode)
+        active_id = None
+        if profile:
+            if workspace.vocabulary_mode and profile.vocabulary_step:
+                active_id = profile.vocabulary_step.id
+            elif 0 <= workspace.step_index < len(profile.workflow.steps):
+                active_id = profile.workflow.steps[workspace.step_index].id
+        selector = workspace.step_selector
+        selector.blockSignals(True)
+        selector.setCurrentIndex(selector.findData(active_id))
+        selector.blockSignals(False)
         workspace.sync_vocabulary_source()
 
-    def _workflow_copy_menu(self, button, position):
+    def _workflow_copy_menu(self, button, position, *, direct=False):
         if not self.profile or not self.settings.copy_files_as_zip:
             return
-        menu = QMenu(button)
-        choose = menu.addAction("เลือกหลายขั้นตอนแล้วคัดลอกเป็น ZIP…")
-        if menu.exec(button.mapToGlobal(position)) != choose:
-            return
+        if not direct:
+            menu = QMenu(button)
+            choose = menu.addAction("เลือกหลายขั้นตอนแล้วคัดลอกเป็น ZIP…")
+            if menu.exec(button.mapToGlobal(position)) != choose:
+                return
         dialog = QDialog(self)
         dialog.setWindowTitle("เลือกขั้นตอนสำหรับ ZIP")
         layout = QVBoxLayout(dialog)
@@ -3448,6 +3516,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         workspace = self.workspaces.get(profile_id)
         if workspace and workspace.vocabulary_mode:
             workspace.set_vocabulary_source("files")
+            if workspace.txt_vocabulary_page is not None:
+                workspace.editor_content_stack.setCurrentWidget(workspace.txt_vocabulary_page)
 
     def step(self):
         """Return the currently active vocabulary or translation step."""
@@ -3469,9 +3539,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         workspace = self.workspaces.get(profile_id)
         if not workspace or not self.profile or self.profile.id != profile_id:
             return
+        if enabled and self.profile.vocabulary_step is None:
+            return
         if not workspace.editor.save_all(include_normalization=False):
-            workspace.vocabulary_button.setWorkflowActive(not enabled)
-            workspace.vocabulary_button.update()
+            self._sync_stage_buttons(workspace)
             self.statusBar().showMessage("บันทึกไม่สำเร็จ จึงยังเปลี่ยนขั้นตอนไม่ได้", 5000)
             return
         workspace.vocabulary_mode = enabled

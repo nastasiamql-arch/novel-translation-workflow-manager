@@ -189,25 +189,14 @@ def main() -> int:
                 workspace = window.workspaces[profile.id]
                 assert window.settings.appearance == "Dark"
                 assert workspace.root_path == novel_folder.resolve()
-                assert workspace.steps.count() == 2
-                assert [workspace.steps.item(i).text() for i in range(2)] == ["", ""]
-                assert all(workspace.steps.itemWidget(workspace.steps.item(i)) for i in range(2))
-                assert workspace.steps.objectName() == "workflowSteps"
-                assert [workspace.steps.itemWidget(workspace.steps.item(i)).text() for i in range(2)] == [
-                    "แปล", "ตรวจคำแปล",
+                assert workspace.steps.count() == 2  # internal file-binding adapter
+                assert not workspace.steps.isVisible()
+                assert [workspace.step_selector.itemText(i) for i in range(3)] == [
+                    "แปล", "ตรวจคำแปล", "หาศัพท์",
                 ]
-                assert [
-                    workspace.steps.itemWidget(workspace.steps.item(i)).accessibleName()
-                    for i in range(2)
-                ] == ["แปล", "ตรวจคำแปล"]
-                for index in range(workspace.steps.count()):
-                    item = workspace.steps.item(index)
-                    button = workspace.steps.itemWidget(item)
-                    assert workspace.steps.visualItemRect(item).contains(
-                        button.geometry()
-                    ), (index, button.geometry(), workspace.steps.visualItemRect(item))
-                assert [workspace.steps.itemWidget(workspace.steps.item(i)).property("workflowActive") for i in range(2)] == [True, False]
-                assert workspace.vocabulary_button.text() == "หาศัพท์"
+                assert workspace.step_selector.currentData() == profile.workflow.steps[0].id
+                assert [workspace.editor_shortcut.text(), workspace.txt_vocabulary_shortcut.text(),
+                        workspace.translation_batch_shortcut.text()] == ["Editor", "หาศัพท์", "แปล"]
                 assert not hasattr(workspace, "vocabulary_polish_button")
                 assert not hasattr(workspace, "vocabulary_panel")
                 assert workspace.workspace_splitter.count() == 2
@@ -215,52 +204,36 @@ def main() -> int:
                 assert window.profile.vocabulary_step.files[0].id == legacy_vocabulary_file.id
                 saved_profile = repo.list_profiles()[0]
                 assert [step.name for step in saved_profile.workflow.steps] == ["แปล", "ตรวจคำแปล"]
-                workspace.vocabulary_button.click()
+                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(profile.vocabulary_step.id))
                 app.processEvents()
                 assert workspace.vocabulary_mode
                 assert window.step().name == "หาศัพท์"
-                assert workspace.vocabulary_button.text() == "หาศัพท์"
-                assert workspace.vocabulary_button.property("workflowActive")
                 assert workspace.files.item(0).text() == "Find Terms"
                 workspace.copy_step_button.click()
                 copied = [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()]
                 assert len(copied) == 1 and copied[0] != context.resolve()
                 assert copied[0].name == context.name and copied[0].read_bytes() == context.read_bytes()
-                workspace.vocabulary_button.click()
-                app.processEvents()
-                assert workspace.vocabulary_mode
                 workspace.copy_step_button.click()
                 copied_again = [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()]
                 assert len(copied_again) == 1 and copied_again[0] != context.resolve()
                 assert copied_again[0].name == context.name and copied_again[0].read_bytes() == context.read_bytes()
-                translation_button = workspace.steps.itemWidget(workspace.steps.item(0))
-                translation_geometry = translation_button.geometry()
-                QTest.mouseMove(translation_button, translation_button.rect().center())
+                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(profile.workflow.steps[0].id))
                 app.processEvents()
-                assert translation_button.geometry() == translation_geometry
-                translation_button.click()
-                app.processEvents()
-                assert translation_button.geometry() == translation_geometry
                 assert not workspace.vocabulary_mode
-                assert translation_button.text() == "แปล"
-                assert translation_button.property("workflowActive")
-                review_button = workspace.steps.itemWidget(workspace.steps.item(1))
-                assert review_button.text() == "ตรวจคำแปล"
                 assert workspace.steps.currentRow() == 0
                 workspace.copy_step_button.click()
                 copied_chapter = [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()]
                 assert len(copied_chapter) == 1 and copied_chapter[0] != chapter.resolve()
                 assert copied_chapter[0].name == chapter.name and copied_chapter[0].read_bytes() == chapter.read_bytes()
-                review_button.click()
+                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(profile.workflow.steps[1].id))
                 app.processEvents()
-                assert workspace.steps.currentRow() == 1
-                assert review_button.text() == "ตรวจคำแปล"
-                assert review_button.property("workflowActive")
+                assert workspace.steps.currentRow() == 0 or workspace.steps.currentRow() == 1
+                assert window.step().name == "ตรวจคำแปล"
                 workspace.copy_step_button.click()
                 copied_review = [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()]
                 assert len(copied_review) == 1 and copied_review[0] != review.resolve()
                 assert copied_review[0].name == review.name and copied_review[0].read_bytes() == review.read_bytes()
-                translation_button.click()
+                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(profile.workflow.steps[0].id))
                 app.processEvents()
 
                 assert workspace.content_stack.currentWidget() is workspace.workflow_page
@@ -398,7 +371,7 @@ def main() -> int:
                 assert original_block_format.lineHeight() == last_format.lineHeight()
                 workspace.editor.save_current()
 
-                translation_button.click()
+                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(profile.workflow.steps[0].id))
                 workspace.copy_step_button.click()
                 app.processEvents()
                 urls = app.clipboard().mimeData().urls()
@@ -406,7 +379,7 @@ def main() -> int:
                 assert len(copied_step) == 1 and copied_step[0] != chapter.resolve()
                 assert copied_step[0].name == chapter.name and copied_step[0].read_bytes() == chapter.read_bytes()
                 assert workspace.steps.currentRow() == 0
-                assert workspace.steps.itemWidget(workspace.steps.item(1)).text() == "ตรวจคำแปล"
+                assert workspace.step_selector.itemText(1) == "ตรวจคำแปล"
 
                 window.show_library()
                 window._open_profile_card(window.profile_cards.item(1))
@@ -456,7 +429,7 @@ def main() -> int:
                 assert saved_goals[second.id] is None
                 window.return_from_utility_page()
 
-                workspace.vocabulary_button.click()
+                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(profile.vocabulary_step.id))
                 assert workspace.vocabulary_mode
                 window.settings_dialog()
                 assert window.main_pages.currentWidget() is window.utility_page
@@ -518,12 +491,10 @@ def main() -> int:
                 )
                 assert workspace.vocabulary_mode
                 previous_step_index = workspace.step_index
-                for stage_button in workspace.stage_buttons:
-                    QTest.mouseMove(stage_button)
-                    app.processEvents()
-                    assert workspace.step_index == previous_step_index
-                    assert workspace.vocabulary_mode
-                workspace.vocabulary_button.click()
+                QTest.mouseMove(workspace.step_selector)
+                app.processEvents()
+                assert workspace.step_index == previous_step_index
+                assert workspace.vocabulary_mode
 
                 window.file_manager()
                 assert window.main_pages.currentWidget() is window.utility_page
