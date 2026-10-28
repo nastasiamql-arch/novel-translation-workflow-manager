@@ -305,6 +305,8 @@ class AppSettings:
     library_view_mode: str = "list"
     sidebar_width: int = 290
     sidebar_visible: bool = True
+    workspace_focus_mode: bool = False
+    workspace_active_views: dict[str, str] = field(default_factory=dict)
     editor_font_size: float = 11.0
     last_update_check_date: str | None = None
     txt_export_filename: str = "segverified"
