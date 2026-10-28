@@ -94,14 +94,23 @@ class TxtVocabularyPage(QWidget):
         root.addWidget(title)
         guide = QLabel("1  เลือกต้นฉบับ     →     2  กำหนดจำนวนบท     →     3  คัดลอกชุดที่ต้องการ")
         guide.setObjectName("mutedLabel")
-        root.addWidget(guide)
+        guide.setVisible(False)
         self.tabs = QTabWidget()
         self.tabs.setObjectName("txtVocabularyTabs")
         root.addWidget(self.tabs, 1)
 
         batch_page = QWidget()
         batch_layout = QVBoxLayout(batch_page)
-        batch_layout.setSpacing(9)
+        batch_layout.setSpacing(5)
+        self.configuration_toggle = QPushButton("ตั้งค่าชุดบท ▾")
+        self.configuration_toggle.setObjectName("txtVocabularyConfigurationToggle")
+        self.configuration_toggle.setCheckable(True)
+        self.configuration_toggle.setChecked(bool(self.state.get("configuration_expanded", False)))
+        batch_layout.addWidget(self.configuration_toggle)
+        self.configuration_panel = QWidget()
+        config_layout = QVBoxLayout(self.configuration_panel)
+        config_layout.setContentsMargins(0, 0, 0, 0)
+        config_layout.setSpacing(5)
         folder_row = QHBoxLayout()
         folder_row.addWidget(QLabel("โฟลเดอร์ต้นฉบับ"))
         self.folder_label = QLabel()
@@ -122,7 +131,7 @@ class TxtVocabularyPage(QWidget):
         select_folder.setToolTip("เลือกโฟลเดอร์ที่มีไฟล์รายบท เช่น 0601.txt – 0629.txt")
         select_folder.setVisible(True)
         folder_row.addWidget(select_folder)
-        batch_layout.addLayout(folder_row)
+        config_layout.addLayout(folder_row)
 
         controls = QHBoxLayout()
         controls.addWidget(QLabel("บทต่อชุด"))
@@ -156,7 +165,7 @@ class TxtVocabularyPage(QWidget):
         self.zip_toggle.toggled.connect(self._copy_mode_changed)
         controls.addWidget(self.zip_toggle)
         controls.addStretch(1)
-        batch_layout.addLayout(controls)
+        config_layout.addLayout(controls)
 
         self.glossary_labels = []
         for n in (1, 2):
@@ -174,8 +183,11 @@ class TxtVocabularyPage(QWidget):
             choose.setObjectName(f"txtVocabularyChooseGlossary{n}")
             choose.clicked.connect(lambda checked=False, i=n: self.choose_glossary(i))
             row.addWidget(choose)
-            batch_layout.addWidget(glossary_row)
+            config_layout.addWidget(glossary_row)
             glossary_row.setVisible(not self.bound_mode)
+        batch_layout.addWidget(self.configuration_panel)
+        self.configuration_toggle.toggled.connect(self._toggle_configuration)
+        self.configuration_panel.setVisible(self.configuration_toggle.isChecked())
         self.summary = QLabel()
         self.summary.setObjectName("mutedLabel")
         self.summary.setWordWrap(True)
@@ -344,6 +356,12 @@ class TxtVocabularyPage(QWidget):
             + (f"\nปลายทาง: {folder}" if folder else "")
             + "\nระบบบันทึกผลแยกครั้งล่าสุดไว้แล้ว ตรวจไฟล์ในปลายทางก่อนสั่งแยกซ้ำ"
         )
+
+    def _toggle_configuration(self, expanded):
+        self.configuration_panel.setVisible(bool(expanded))
+        self.configuration_toggle.setText("ซ่อนตั้งค่าชุดบท ▴" if expanded else "ตั้งค่าชุดบท ▾")
+        self.state["configuration_expanded"] = bool(expanded)
+        self._save()
 
     def _save(self):
         self.state["batch_size"] = self.batch_size.value()
@@ -755,8 +773,8 @@ class TxtVocabularyPage(QWidget):
         copy.setEnabled(bool(group.chapters) and (not self.bound_mode or not missing_references))
         copy.clicked.connect(lambda checked=False, batch=group, button=copy: self.copy_batch(batch, button))
         self._copy_buttons.append((copy, unique_count, group))
-        top.addWidget(copy)
         top.addStretch(1)
+        top.addWidget(copy)
         layout.addLayout(top)
 
         detail = QWidget()
@@ -1119,7 +1137,7 @@ class TxtVocabularyPage(QWidget):
         self._apply_history_filter()
         self._clear_cards(clear_groups=False)
         self._append_next()
-        self.scroll.verticalScrollBar().setValue(old)
+        self._restore_scroll(old)
 
     def _scroll_to_group(self, group):
         if group is None:

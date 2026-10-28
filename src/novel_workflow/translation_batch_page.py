@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
+    QGridLayout, QSizePolicy,
 )
 
 from .translation_batches import (
@@ -131,9 +132,15 @@ class TranslationBatchPage(QWidget):
         back.clicked.connect(on_close)
         heading.addWidget(back)
         outer.addLayout(heading)
-        helper = QLabel("1  เลือกต้นฉบับ     →     2  กำหนดบทต่อชุด     →     3  กดคัดลอกชุดที่ต้องการ")
-        helper.setObjectName("mutedLabel")
-        outer.addWidget(helper)
+        self.configuration_toggle = QPushButton("ตั้งค่าต้นฉบับ ▾")
+        self.configuration_toggle.setObjectName("translationBatchConfigurationToggle")
+        self.configuration_toggle.setCheckable(True)
+        self.configuration_toggle.setChecked(bool(self.state.get("configuration_expanded", False)))
+        outer.addWidget(self.configuration_toggle)
+        self.configuration_panel = QWidget()
+        configuration_layout = QVBoxLayout(self.configuration_panel)
+        configuration_layout.setContentsMargins(0, 0, 0, 0)
+        configuration_layout.setSpacing(5)
 
         sources = QHBoxLayout()
         self.mode = QComboBox()
@@ -155,20 +162,22 @@ class TranslationBatchPage(QWidget):
         browse.clicked.connect(self._browse)
         sources.addWidget(browse)
         self.browse = browse
-        outer.addLayout(sources)
+        configuration_layout.addLayout(sources)
 
         self.path_label = QLabel("")
         self.path_label.setObjectName("mutedLabel")
         self.path_label.setTextFormat(Qt.PlainText)
         self.path_label.setWordWrap(True)
         self.path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        outer.addWidget(self.path_label)
+        configuration_layout.addWidget(self.path_label)
         self.pasted_text = QPlainTextEdit()
         self.pasted_text.setObjectName("translationBatchDraft")
         self.pasted_text.setPlaceholderText("วางต้นฉบับจีนหลายบท เช่น 第一章 ...")
         self.pasted_text.setPlainText(self.state.get("draft", ""))
         self.pasted_text.textChanged.connect(self._draft_changed)
-        outer.addWidget(self.pasted_text, 1)
+        configuration_layout.addWidget(self.pasted_text)
+        self.pasted_text.setMinimumHeight(160)
+        self.pasted_text.setMaximumHeight(260)
 
         controls = QHBoxLayout()
         controls.addWidget(QLabel("บทต่อชุด"))
@@ -186,19 +195,24 @@ class TranslationBatchPage(QWidget):
         self.copy_mode.setCurrentIndex(1 if self.state.get("zip", False) else 0)
         self.copy_mode.currentIndexChanged.connect(self._copy_mode_changed)
         controls.addWidget(self.copy_mode)
-        controls.addWidget(QLabel("ค้นหาช่วงบท"))
+        configuration_layout.addLayout(controls)
+        self.configuration_toggle.toggled.connect(self._toggle_configuration)
+        outer.addWidget(self.configuration_panel)
+        self.configuration_panel.setVisible(self.configuration_toggle.isChecked())
+
+        toolbar = QHBoxLayout()
+        toolbar.addWidget(QLabel("ค้นหาช่วงบท"))
         self.search = QLineEdit()
         self.search.setObjectName("translationBatchSearch")
         self.search.setPlaceholderText("6-10 หรือ 603")
         self.search.setText(str(self.state.get("search", "")))
         self.search.textChanged.connect(self._refresh_rows)
         self.search.textChanged.connect(lambda value: self._state_changed(search=value))
-        controls.addWidget(self.search, 1)
+        toolbar.addWidget(self.search, 1)
         refresh = QPushButton("ตรวจต้นฉบับ / รีเฟรช")
         refresh.setObjectName("translationBatchRefresh")
         refresh.clicked.connect(self.refresh)
-        controls.addWidget(refresh)
-        outer.addLayout(controls)
+        toolbar.addWidget(refresh)
 
         self.summary = QLabel("กำลังเตรียมรายการบท…")
         self.summary.setObjectName("mutedLabel")
@@ -227,7 +241,17 @@ class TranslationBatchPage(QWidget):
         self.next_button.clicked.connect(self._go_to_next_uncopied)
         resume_row.addWidget(self.next_button)
         resume_row.addStretch(1)
-        outer.addLayout(resume_row)
+        toolbar.addLayout(resume_row)
+        outer.addLayout(toolbar)
+        self.columns = QWidget()
+        column_layout = QGridLayout(self.columns)
+        column_layout.setContentsMargins(7, 3, 7, 3)
+        column_layout.setHorizontalSpacing(8)
+        for col, label in enumerate(("ชุด", "ช่วงบท", "จำนวนบท", "สถานะ", "รายละเอียด", "การทำงาน")):
+            column_layout.addWidget(QLabel(label), 0, col)
+        column_layout.setColumnStretch(1, 2)
+        column_layout.setColumnStretch(3, 2)
+        outer.addWidget(self.columns)
         self.scroll = QScrollArea()
         self.scroll.setObjectName("translationBatchScroll")
         self.scroll.setWidgetResizable(True)
@@ -249,6 +273,11 @@ class TranslationBatchPage(QWidget):
             self.refresh()
         elif current_mode == "paste" and self.pasted_text.toPlainText().strip():
             self.refresh()
+
+    def _toggle_configuration(self, expanded):
+        self.configuration_panel.setVisible(bool(expanded))
+        self.configuration_toggle.setText("ซ่อนตั้งค่าต้นฉบับ ▴" if expanded else "ตั้งค่าต้นฉบับ ▾")
+        self._state_changed(configuration_expanded=bool(expanded))
 
     def _persist(self):
         saved = dict(self.state)
@@ -453,10 +482,9 @@ class TranslationBatchPage(QWidget):
         self._visible = tuple(group for group in candidates if selected_filter == "all"
                               or self._group_status(group) == selected_filter)
         self._clear_rows()
-        # Keep enough lazy rows to cover the previous viewport; rebuilding only
-        # the first 35 rows would clamp the scrollbar near batch 1 or 26.
+        # Recreate enough rows to represent the previous offset before restoring.
         self._append_rows(limit=max(35, previous_count))
-        self.scroll.verticalScrollBar().setValue(old)
+        self._restore_scroll(old)
 
     def _append_rows(self, limit=35):
         if self._busy:
@@ -466,35 +494,34 @@ class TranslationBatchPage(QWidget):
             end = min(len(self._visible), self._rendered + limit)
             for group in self._visible[self._rendered:end]:
                 row = QFrame()
-                layout = QHBoxLayout(row)
-                layout.setContentsMargins(5, 4, 5, 4)
+                layout = QGridLayout(row)
+                layout.setContentsMargins(7, 4, 7, 4)
+                layout.setHorizontalSpacing(8)
                 row.setObjectName("translationBatchRow")
-                row.setMinimumHeight(54)
-                layout.addWidget(QLabel(f"ชุด {group.index:02d}"))
-                chapter_label = QLabel(f"บท {group.start:04d}–{group.end:04d}")
-                chapter_label.setMinimumWidth(125)
-                layout.addWidget(chapter_label)
-                description = f"ต้นฉบับ {len(group.chapters)} บท"
-                if group.missing:
-                    description += " · ⚠ ขาด " + ", ".join(map(str, group.missing[:8]))
-                layout.addWidget(QLabel(description))
+                row.setMinimumHeight(48)
+                layout.addWidget(QLabel(f"{group.index:02d}"), 0, 0)
+                chapter_label = QLabel(f"{group.start:04d}–{group.end:04d}")
+                layout.addWidget(chapter_label, 0, 1)
+                layout.addWidget(QLabel(str(len(group.chapters))), 0, 2)
                 status = self._group_status(group)
                 status_text = {"copied": "✓ คัดลอกแล้ว", "review": "ต้องตรวจใหม่",
                                "new": "ยังไม่ได้คัดลอก"}[status]
                 status_label = QLabel(status_text)
                 status_label.setObjectName(f"translationBatchStatus{group.index}")
-                layout.addWidget(status_label)
+                layout.addWidget(status_label, 0, 3)
                 details = QPushButton("รายละเอียด")
                 details.setCheckable(True)
-                layout.addWidget(details)
+                layout.addWidget(details, 0, 4)
                 button_label = ("คัดลอกอีกครั้ง" if status == "copied" else
                                 "ต้องตรวจใหม่ · คัดลอก" if status == "review" else
                                 "คัดลอก ZIP" if self.copy_mode.currentData() else "คัดลอก")
                 button = QPushButton(button_label)
                 button.setObjectName(f"translationBatchCopy{group.index}")
+                button.setMinimumHeight(36)
                 button.clicked.connect(lambda _checked=False, g=group, b=button: self.copy_group(g, b))
-                layout.addWidget(button)
-                layout.addStretch(1)
+                layout.addWidget(button, 0, 5)
+                layout.setColumnStretch(1, 2)
+                layout.setColumnStretch(3, 2)
                 self.rows.addWidget(row)
                 filenames = QLabel(", ".join(c.path.name for c in group.chapters))
                 filenames.setWordWrap(True)
