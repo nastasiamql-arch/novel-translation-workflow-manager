@@ -72,7 +72,7 @@ def test_named_stage_click_copies_immediately_without_snapshot(window, zipped):
     QApplication.clipboard().setText("keep this text")
 
     # Clicking the named stage itself must publish its files to the clipboard.
-    workspace.stage_buttons[1].click()
+    w.copy_named_stage(p.id, 1)
     urls = QApplication.clipboard().mimeData().urls()
     assert len(urls) == 1
     copied = Path(urls[0].toLocalFile())
@@ -101,7 +101,7 @@ def test_named_stage_click_copies_immediately_without_snapshot(window, zipped):
 def test_other_stage_keeps_enabled_only_behavior(window):
     w, p, workspace, errors = window
     assert hasattr(w, 'polish_history'), 'History service missing'
-    workspace.stage_buttons[0].click()
+    w.copy_named_stage(p.id, 0)
     workspace.copy_step_button.click()
     assert len(QApplication.clipboard().mimeData().urls()) == 1
     assert w.polish_history.list(p) == []
@@ -114,15 +114,15 @@ def test_vocabulary_custom_and_repeated_stage_clicks_copy_only_active_files(wind
     w.refresh_steps()
 
     actions = [
-        (workspace.vocabulary_button, 'หาศัพท์', b'disabled', None),
-        (workspace.stage_buttons[0], 'Translate', b'original\t\n\n', 0),
-        (workspace.stage_buttons[1], 'Polish', b'original\t\n\n', 1),
-        (workspace.stage_buttons[2], 'ตรวจเพิ่ม', b'disabled', 2),
-        (workspace.stage_buttons[2], 'ตรวจเพิ่ม', b'disabled', 2),
+        ("vocabulary", 'หาศัพท์', b'disabled', None),
+        (0, 'Translate', b'original\t\n\n', 0),
+        (1, 'Polish', b'original\t\n\n', 1),
+        (2, 'ตรวจเพิ่ม', b'disabled', 2),
+        (2, 'ตรวจเพิ่ม', b'disabled', 2),
     ]
-    for button, stage_name, expected, row in actions:
+    for stage, stage_name, expected, row in actions:
         QApplication.clipboard().setText('old clipboard')
-        button.click()
+        w.copy_named_stage(p.id, stage)
         urls = QApplication.clipboard().mimeData().urls()
         assert len(urls) == 1, stage_name
         copied = Path(urls[0].toLocalFile())
@@ -141,7 +141,7 @@ def test_named_stage_copy_failure_keeps_previous_clipboard(window):
     w, p, workspace, errors = window
     p.workflow.steps[0].files = [StepFile(path='missing-file.txt')]
     QApplication.clipboard().setText('existing clipboard contents')
-    workspace.stage_buttons[0].click()
+    w.copy_named_stage(p.id, 0)
     assert QApplication.clipboard().text() == 'existing clipboard contents'
     assert w.si == 0
     assert errors and 'missing-file.txt' in str(errors[-1])
@@ -154,7 +154,7 @@ def test_history_page_copy_and_back_preserve_editor_and_stage(window):
     editor = workspace.editor.open_file(w.repo.profile_dir(p.id) / 'a.txt')
     editor.moveCursor(QTextCursor.End)
     position = editor.textCursor().position()
-    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); w.save_for_review()
+    workspace.history_range.setText('6-10'); w.copy_named_stage(p.id, 1); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     Path(p.context_path).write_bytes(b'new context')
     w.open_polish_history()
@@ -181,7 +181,7 @@ def test_history_page_copy_and_back_preserve_editor_and_stage(window):
 def test_history_copy_and_delete_buttons_stay_on_right(window):
     w, p, workspace, errors = window
     workspace.history_range.setText('6-10')
-    workspace.stage_buttons[1].click(); w.save_for_review()
+    w.copy_named_stage(p.id, 1); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     w.open_polish_history()
     wait_until(lambda: not w.history_busy())
@@ -198,7 +198,7 @@ def test_history_copy_and_delete_buttons_stay_on_right(window):
 def test_copy_event_storage_error_is_reported_without_escaping_callback(window, monkeypatch):
     w, p, workspace, errors = window
     workspace.history_range.setText('6-10')
-    workspace.stage_buttons[1].click(); w.save_for_review()
+    w.copy_named_stage(p.id, 1); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     snapshot = w.polish_history.list(p)[0]
     monkeypatch.setattr(w, '_record_history_copy_success', lambda *args: (_ for _ in ()).throw(OSError('disk full')))
@@ -335,7 +335,7 @@ def test_history_copy_buttons_keep_position_for_repeat_and_advance_from_new_batc
 def test_range_required_focus_and_no_false_success(window):
     w, p, workspace, errors = window
     assert hasattr(workspace, 'history_range')
-    workspace.stage_buttons[1].click(); w.save_for_review()
+    w.copy_named_stage(p.id, 1); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     assert not w.polish_history.list(p)
     assert 'ช่วงบท' in w.statusBar().currentMessage()
@@ -364,7 +364,7 @@ def test_legacy_default_only_clear_polish_name(names, expected):
 def test_history_copy_survives_window_close(window):
     w, p, workspace, errors = window
     assert hasattr(workspace, 'history_range')
-    workspace.history_range.setText('1-5'); workspace.stage_buttons[1].click(); w.save_for_review()
+    workspace.history_range.setText('1-5'); w.copy_named_stage(p.id, 1); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     paths = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
     w._close_export_reminder_accepted = True; w.close()
@@ -484,14 +484,14 @@ def test_failed_save_blocks_stage_snapshot(window, monkeypatch):
     editor = workspace.editor.open_file(w.repo.profile_dir(p.id) / 'a.txt')
     editor.insertPlainText('unsaved work')
     monkeypatch.setattr(workspace.editor, 'save_editor', lambda *args, **kwargs: False)
-    workspace.stage_buttons[1].click(); w.save_for_review()
+    w.copy_named_stage(p.id, 1); w.save_for_review()
     assert w.polish_history.list(p) == []
 
 
 def test_cached_history_follows_changed_main_folder(window, tmp_path):
     from dataclasses import asdict
     w, p, workspace, errors = window
-    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); w.save_for_review()
+    workspace.history_range.setText('6-10'); w.copy_named_stage(p.id, 1); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     w.open_polish_history(); wait_until(lambda: not w.history_busy())
     w.utility_back.click()
@@ -520,7 +520,7 @@ def test_multistage_zip_keeps_all_stages_and_snapshot_context(window):
 
 def test_reopened_window_recovers_old_context_from_disk(window):
     w, p, workspace, errors = window
-    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); w.save_for_review()
+    workspace.history_range.setText('6-10'); w.copy_named_stage(p.id, 1); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     w._close_export_reminder_accepted = True; w.close()
     Path(p.context_path).write_bytes(b'latest context after restart')
@@ -548,7 +548,7 @@ def test_history_opened_during_snapshot_loads_after_job_finishes(window, monkeyp
         assert ready.wait(3)
         return create(*args, **kwargs)
     monkeypatch.setattr(w.polish_history, 'create', pending)
-    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); w.save_for_review()
+    workspace.history_range.setText('6-10'); w.copy_named_stage(p.id, 1); w.save_for_review()
     w.open_polish_history(); ready.set()
     page = w._utility_pages['polish-history:' + p.id]
     wait_until(lambda: not w.history_busy() and len(page.snapshots) == 1)
@@ -594,7 +594,7 @@ def test_history_copy_button_shows_zip_scope_when_enabled(window):
     import zipfile
     w, p, workspace, errors = window
     workspace.history_range.setText('6-10')
-    workspace.stage_buttons[1].click(); w.save_for_review()
+    w.copy_named_stage(p.id, 1); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     w.open_polish_history()
     wait_until(lambda: not w.history_busy())

@@ -81,7 +81,7 @@ def test_copy_normal_files_are_frozen_and_latest(window):
     path = w.repo.profile_dir(p.id) / 'a.txt'
     editor = ws.editor.open_file(path)
     editor.insertPlainText('latest')
-    ws.stage_buttons[0].click()
+    w.copy_named_stage(p.id, 0)
     ws.copy_step_button.click()
     payload = Path(QApplication.clipboard().mimeData().urls()[0].toLocalFile())
     expected = path.read_bytes()
@@ -136,7 +136,7 @@ def test_native_recycle_bin_receives_snapshot(history):
 
 def test_compact_history_delete_has_no_confirmation(window, monkeypatch):
     w, p, ws, errors = window
-    ws.history_range.setText('6-10'); ws.stage_buttons[1].click(); w.save_for_review()
+    ws.history_range.setText('6-10'); w.copy_named_stage(p.id, 1); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     w.open_polish_history(); wait_until(lambda: not w.history_busy())
     page = w._utility_pages['polish-history:' + p.id]
@@ -185,7 +185,7 @@ def test_copy_untouched_normalization_preserves_bom_crlf(window):
     path = w.repo.profile_dir(p.id) / 'a.txt'
     raw = b'\xef\xbb\xbfline\r\n\r\nnext\r\n'
     path.write_bytes(raw); ws.editor.open_file(path)
-    ws.stage_buttons[0].click(); ws.copy_step_button.click()
+    w.copy_named_stage(p.id, 0); ws.copy_step_button.click()
     payload = Path(QApplication.clipboard().mimeData().urls()[0].toLocalFile())
     assert payload.read_bytes() == path.read_bytes() == raw
 
@@ -198,7 +198,7 @@ def test_copy_external_and_dynamic_reference(window, tmp_path, monkeypatch):
     p.workflow.steps[0].files = [StepFile(reference_type='external_file', path=str(external)),
                                StepFile(reference_type='dynamic', dynamic_reference='latest')]
     monkeypatch.setattr(w.assembler, 'resolve', lambda *args: dynamic)
-    ws.stage_buttons[0].click(); ws.copy_step_button.click()
+    w.copy_named_stage(p.id, 0); ws.copy_step_button.click()
     paths = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
     assert {path.read_bytes() for path in paths} == {b'chapter 1-5', b'chapter 6-10'}
     assert not errors
@@ -213,7 +213,7 @@ def test_copy_multiple_edited_tabs(window):
     first = ws.editor.open_file(folder / 'a.txt')
     other = ws.editor.open_file(second)
     first.insertPlainText('latest first'); other.insertPlainText('latest second')
-    ws.stage_buttons[0].click()
+    w.copy_named_stage(p.id, 0)
     paths = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
     assert len(paths) == 2
     assert all(b'latest' in path.read_bytes() for path in paths)
