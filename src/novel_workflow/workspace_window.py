@@ -284,7 +284,12 @@ class WorkspacePage(QWidget):
 
         self.sidebar = QFrame()
         self.sidebar.setObjectName("workflowSidebar")
-        sidebar_layout = QVBoxLayout(self.sidebar)
+        sidebar_root = QVBoxLayout(self.sidebar)
+        sidebar_root.setContentsMargins(0, 0, 0, 0)
+        sidebar_root.setSpacing(0)
+        self.sidebar_normal = QWidget(self.sidebar)
+        sidebar_root.addWidget(self.sidebar_normal, 1)
+        sidebar_layout = QVBoxLayout(self.sidebar_normal)
         sidebar_layout.setContentsMargins(10, 10, 10, 10)
         sidebar_layout.setSpacing(8)
         step_header = QHBoxLayout()
@@ -374,6 +379,54 @@ class WorkspacePage(QWidget):
             button.clicked.connect(callback)
             file_actions.addWidget(button, index // 2, index % 2)
         sidebar_layout.addLayout(file_actions)
+
+        # The same sidebar keeps its file/step controls mounted in both modes;
+        # focus uses a narrow rail, never a second EditorTabs instance.
+        self.focus_rail = QWidget(self.sidebar)
+        rail_layout = QVBoxLayout(self.focus_rail)
+        rail_layout.setContentsMargins(3, 8, 3, 8)
+        rail_layout.setSpacing(6)
+        self.focus_buttons = {}
+        for name, glyph, title, callback in (
+            ("editor", "▤", "Editor", self.open_editor),
+            ("vocabulary", "字", "หาศัพท์", lambda: self.owner.open_txt_vocabulary(self.profile_id)),
+            ("translation", "文", "แปล", lambda: self.owner.open_translation_batches(self.profile_id)),
+        ):
+            button = QToolButton(self.focus_rail)
+            button.setText(glyph)
+            button.setObjectName("focus" + name.title())
+            button.setToolTip(title)
+            button.setAccessibleName(title)
+            button.setCheckable(True)
+            button.setMinimumHeight(40)
+            button.clicked.connect(callback)
+            rail_layout.addWidget(button)
+            self.focus_buttons[name] = button
+        self.focus_step_button = QToolButton(self.focus_rail)
+        self.focus_step_button.setText("☷")
+        self.focus_step_button.setToolTip("ขั้นตอนปัจจุบัน")
+        self.focus_step_button.setAccessibleName("เลือกขั้นตอนปัจจุบัน")
+        self.focus_step_menu = QMenu(self.focus_step_button)
+        self.focus_step_menu.aboutToShow.connect(self._fill_focus_step_menu)
+        self.focus_step_button.setMenu(self.focus_step_menu)
+        self.focus_step_button.setPopupMode(QToolButton.InstantPopup)
+        self.focus_step_button.setMinimumHeight(40)
+        rail_layout.addWidget(self.focus_step_button)
+        self.focus_files_button = QToolButton(self.focus_rail)
+        self.focus_files_button.setText("▤")
+        self.focus_files_button.setToolTip("ไฟล์และการจัดการไฟล์")
+        self.focus_files_button.setAccessibleName("เปิดและจัดการไฟล์")
+        self.focus_files_menu = QMenu(self.focus_files_button)
+        self.focus_files_menu.aboutToShow.connect(self._fill_focus_files_menu)
+        self.focus_files_button.setMenu(self.focus_files_menu)
+        self.focus_files_button.setPopupMode(QToolButton.InstantPopup)
+        self.focus_files_button.setMinimumHeight(40)
+        rail_layout.addWidget(self.focus_files_button)
+        rail_layout.addStretch(1)
+        sidebar_root.addWidget(self.focus_rail)
+        self.focus_rail.hide()
+        self._focus_mode = False
+        self._view_ready = False
 
         self.sidebar_toggle = QToolButton()
         self.sidebar_toggle.setText("☰")
@@ -569,8 +622,10 @@ class WorkspacePage(QWidget):
         self.workspace_splitter.addWidget(editor_host)
         self.workspace_splitter.setStretchFactor(0, 0)
         self.workspace_splitter.setStretchFactor(1, 1)
-        self.workspace_splitter.setSizes([290, 900])
+        self.workspace_splitter.setSizes([max(220, int(owner.settings.sidebar_width or 290)), 900])
         self.workspace_splitter.splitterMoved.connect(self._remember_sidebar_width)
+        self.set_focus_mode(bool(getattr(owner.settings, "workspace_focus_mode", False)
+                                 or not owner.settings.sidebar_visible), persist=False)
 
         self.goal_panel = QFrame()
         self.goal_panel.setObjectName("goalPanel")
@@ -613,6 +668,8 @@ class WorkspacePage(QWidget):
 
         self.configure(profile)
         self.set_mode(0)
+        self._view_ready = True
+        self._sync_tool_buttons()
 
     def _sync_tool_buttons(self):
         """Selected appearance follows the existing stacked widget, not the step."""
@@ -623,6 +680,16 @@ class WorkspacePage(QWidget):
             (self.translation_batch_shortcut, self.translation_batch_page),
         ):
             button.setChecked(target is not None and current is target)
+        view = ("translation" if current is self.translation_batch_page and self.translation_batch_page is not None
+                else "vocabulary" if current is self.txt_vocabulary_page and self.txt_vocabulary_page is not None
+                else "editor")
+        for name, button in self.focus_buttons.items():
+            button.setChecked(name == view)
+        if self._view_ready:
+            views = self.owner.settings.workspace_active_views
+            if views.get(self.profile_id) != view:
+                views[self.profile_id] = view
+                self.owner._schedule_workspace_session_save()
 
     def open_editor(self):
         """Return to the one existing EditorTabs without changing its session."""
@@ -658,9 +725,63 @@ class WorkspacePage(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        sizes = self.workspace_splitter.sizes()
-        if self.width() < 900 and sizes[0] > 220:
-            self.workspace_splitter.setSizes([220, max(210, self.width() - 220)])
+        # Keep the last user-chosen normal width; Qt's splitter clamps it as
+        # needed for small windows without overwriting the persisted setting.
+
+    def _fill_focus_step_menu(self):
+        self.focus_step_menu.clear()
+        for index in range(self.step_selector.count()):
+            action = self.focus_step_menu.addAction(self.step_selector.itemText(index))
+            action.setCheckable(True)
+            action.setChecked(index == self.step_selector.currentIndex())
+            action.triggered.connect(
+                lambda _checked=False, row=index: self.step_selector.setCurrentIndex(row)
+            )
+
+    def _fill_focus_files_menu(self):
+        self.focus_files_menu.clear()
+        for index in range(self.files.count()):
+            item = self.files.item(index)
+            if item.isHidden():
+                continue
+            action = self.focus_files_menu.addAction(item.text())
+            action.triggered.connect(
+                lambda _checked=False, current=item: self.owner.open_workflow_file(self.profile_id, current)
+            )
+        self.focus_files_menu.addSeparator()
+        for title, callback in (
+            ("ไฟล์ใหม่", self.new_file), ("โฟลเดอร์ใหม่", self.new_folder),
+            ("เปลี่ยนชื่อ", self.rename_selected), ("ลบ", self.delete_selected),
+        ):
+            self.focus_files_menu.addAction(title, callback)
+        self.focus_files_menu.addAction("เปิด File Explorer", lambda: self.toggle_sidebar())
+
+    def set_focus_mode(self, enabled: bool, *, persist=True):
+        enabled = bool(enabled)
+        if enabled == self._focus_mode and persist:
+            return
+        if not enabled and self._focus_mode:
+            self.sidebar.setMinimumWidth(0)
+            self.sidebar.setMaximumWidth(16777215)
+        self._focus_mode = enabled
+        self.sidebar_normal.setVisible(not enabled)
+        self.focus_rail.setVisible(enabled)
+        self._suspend_sidebar_width_updates = True
+        try:
+            if enabled:
+                self.sidebar.setFixedWidth(56)
+                self.workspace_splitter.setSizes([56, max(1, self.workspace_splitter.width() - 56)])
+            else:
+                saved = max(220, int(self.owner.settings.sidebar_width or 290))
+                self.workspace_splitter.setSizes([saved, max(1, self.workspace_splitter.width() - saved)])
+        finally:
+            self._suspend_sidebar_width_updates = False
+        self.sidebar_toggle.setToolTip("กลับสู่มุมมองปกติ" if enabled else "ขยายพื้นที่ทำงาน (Focus)")
+        self.sidebar_toggle.setAccessibleName("กลับสู่มุมมองปกติ" if enabled else "ขยายพื้นที่ทำงาน")
+        if persist:
+            self.owner.settings.workspace_focus_mode = enabled
+            self.owner.settings.sidebar_visible = not enabled
+            self.owner._schedule_workspace_session_save()
 
     def bind_history(self, *_args):
         editor = self.editor._current_editor()
@@ -1012,26 +1133,15 @@ class WorkspacePage(QWidget):
             item.setHidden(bool(query) and query not in item.text().casefold())
 
     def toggle_sidebar(self):
-        sizes = self.workspace_splitter.sizes()
-        sidebar_width = sizes[0] if sizes else 0
-        if sidebar_width > 0:
-            self.owner.settings.sidebar_width = sidebar_width
-            self.owner.settings.sidebar_visible = False
-            self.workspace_splitter.setSizes([
-                0, max(1, sum(sizes))
-            ])
-        else:
-            self.owner.settings.sidebar_visible = True
-            self.workspace_splitter.setSizes([
-                max(220, int(self.owner.settings.sidebar_width or 290)),
-                1000,
-            ])
-        self.owner.repo.save_settings(self.owner.settings)
+        self.set_focus_mode(not self._focus_mode)
 
     def _remember_sidebar_width(self, _position, index):
         sizes = self.workspace_splitter.sizes()
-        if index == 1 and len(sizes) == 2 and sizes[0] > 0:
+        if (not getattr(self, "_suspend_sidebar_width_updates", False)
+                and not self._focus_mode and index == 1 and len(sizes) == 2
+                and sizes[0] >= 180):
             self.owner.settings.sidebar_width = sizes[0]
+            self.owner._schedule_workspace_session_save()
 
     def selected_path(self):
         index = self.file_tree.currentIndex()
@@ -3039,12 +3149,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 workspace.step_index = int(self.settings.workspace_step_indices.get(profile.id, 0))
                 workspace.vocabulary_mode = bool(self.settings.workspace_vocabulary_modes.get(profile.id, False))
                 workspace.sync_vocabulary_source()
-                if self.settings.sidebar_visible:
-                    workspace.workspace_splitter.setSizes([
-                        max(220, int(self.settings.sidebar_width or 290)), 1000,
-                    ])
-                else:
-                    workspace.workspace_splitter.setSizes([0, 1000])
+                workspace.set_focus_mode(bool(self.settings.workspace_focus_mode
+                                              or not self.settings.sidebar_visible), persist=False)
                 positions = self.settings.editor_positions.get(profile.id, {})
                 for editor_index in range(workspace.editor.tabs.count()):
                     widget = workspace.editor.tabs.widget(editor_index)
@@ -3062,6 +3168,14 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             workspace.configure(profile)
             if was_closed and profile.open_working_tabs_on_open:
                 self._open_profile_working_tabs(profile, workspace)
+        if not getattr(workspace, "_last_view_restored", False):
+            workspace._last_view_restored = True
+            view = self.settings.workspace_active_views.get(profile.id, "editor")
+            if view == "translation":
+                workspace.open_translation_batches()
+            elif view == "vocabulary":
+                workspace.vocabulary_mode = True
+                workspace.set_vocabulary_source("files")
         return workspace
 
     def _open_profile_working_tabs(self, profile, workspace):
@@ -4722,10 +4836,12 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 self.settings.editor_active_tab_keys[profile_id] = active_key
             self.settings.workspace_step_indices[profile_id] = workspace.step_index
             self.settings.workspace_vocabulary_modes[profile_id] = workspace.vocabulary_mode
-            sidebar_size = workspace.workspace_splitter.sizes()[0]
-            self.settings.sidebar_visible = sidebar_size > 0
-            if sidebar_size > 0:
-                self.settings.sidebar_width = sidebar_size
+            if workspace is self.workspace_stack.currentWidget():
+                self.settings.workspace_focus_mode = workspace._focus_mode
+                self.settings.sidebar_visible = not workspace._focus_mode
+                # Explicit splitter drag is the width source of truth. Session
+                # capture must never turn automatic Qt size clamping into a
+                # new user-selected sidebar width.
             positions = {}
             for index in range(workspace.editor.tabs.count()):
                 editor = workspace.editor.tabs.widget(index)

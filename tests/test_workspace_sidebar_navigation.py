@@ -24,15 +24,16 @@ def test_sidebar_has_three_tools_and_one_stage_dropdown(tmp_path):
         tools = (workspace.editor_shortcut, workspace.txt_vocabulary_shortcut,
                  workspace.translation_batch_shortcut)
         assert [button.text() for button in tools] == ["Editor", "หาศัพท์", "แปล"]
-        assert all(button.parent() is workspace.sidebar for button in tools)
-        assert [workspace.sidebar.layout().indexOf(button) for button in tools] == sorted(
-            workspace.sidebar.layout().indexOf(button) for button in tools
+        assert workspace.sidebar_normal.parent() is workspace.sidebar
+        assert all(button.parent() is workspace.sidebar_normal for button in tools)
+        assert [workspace.sidebar_normal.layout().indexOf(button) for button in tools] == sorted(
+            workspace.sidebar_normal.layout().indexOf(button) for button in tools
         )
-        assert workspace.sidebar.layout().indexOf(workspace.step_selector) > workspace.sidebar.layout().indexOf(tools[-1])
-        assert workspace.sidebar.layout().indexOf(workspace.file_search) > workspace.sidebar.layout().indexOf(workspace.step_selector)
-        assert workspace.sidebar.layout().indexOf(workspace.files) > workspace.sidebar.layout().indexOf(workspace.file_search)
+        assert workspace.sidebar_normal.layout().indexOf(workspace.step_selector) > workspace.sidebar_normal.layout().indexOf(tools[-1])
+        assert workspace.sidebar_normal.layout().indexOf(workspace.file_search) > workspace.sidebar_normal.layout().indexOf(workspace.step_selector)
+        assert workspace.sidebar_normal.layout().indexOf(workspace.files) > workspace.sidebar_normal.layout().indexOf(workspace.file_search)
         assert workspace.steps.count() == len(profile.workflow.steps)
-        assert workspace.sidebar.layout().indexOf(workspace.steps) == -1
+        assert workspace.sidebar_normal.layout().indexOf(workspace.steps) == -1
         assert not any(button.text() == "บันทึกไว้รอตรวจ"
                        for button in workspace.sidebar.findChildren(QPushButton))
         assert workspace.history_button.text() == "Novel Polish"

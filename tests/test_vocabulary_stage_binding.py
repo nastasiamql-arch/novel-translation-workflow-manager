@@ -256,7 +256,10 @@ def test_select_folder_of_numbered_txt_uses_existing_vocabulary_step_files(tmp_p
     page.show()
     app.processEvents()
     chooser = page.findChild(QPushButton, "txtVocabularyChooseFolder")
-    assert chooser is not None and chooser.isVisible()
+    assert chooser is not None and not chooser.isVisible()
+    page.configuration_toggle.setChecked(True)
+    app.processEvents()
+    assert chooser.isVisible()
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(folder))
     chooser.click()
     assert saved[-1]["source_mode"] == "folder"

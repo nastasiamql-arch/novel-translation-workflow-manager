@@ -25,18 +25,18 @@ class NovelHeader(QFrame):
         super().__init__()
         self.repo = repo
         self.setObjectName('novelHeader')
-        layout = QHBoxLayout(self); layout.setContentsMargins(12,8,12,8); layout.setSpacing(10)
+        layout = QHBoxLayout(self); layout.setContentsMargins(9,4,9,4); layout.setSpacing(8)
         self.cover = QLabel(); self.cover.setObjectName('activeNovelCover')
-        self.cover.setFixedSize(44, 58); self.cover.setAlignment(Qt.AlignCenter)
+        self.cover.setFixedSize(34, 44); self.cover.setAlignment(Qt.AlignCenter)
         self.cover.setAccessibleName('ปกนิยายที่กำลังทำงาน')
         layout.addWidget(self.cover)
-        text = QVBoxLayout(); text.setSpacing(3)
+        text = QVBoxLayout(); text.setSpacing(1)
         self.title = ElidingLabel(); self.title.setObjectName('sectionHeading')
         self.title.setMinimumWidth(0); self.title.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Preferred)
         self.progress = QLabel(); self.progress.setWordWrap(True)
         self.progress.setObjectName('completedTranslationSummary')
         self.progress.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        text.addWidget(self.title); text.addWidget(self.progress)
+        text.addWidget(self.title)
         # Keep the per-novel translation goal visible without consuming editor space.
         goal_row = QHBoxLayout()
         goal_row.setContentsMargins(0, 0, 0, 0)
@@ -60,6 +60,7 @@ class NovelHeader(QFrame):
         self.goal_reset.setText("รีเซ็ต")
         self.goal_reset.setCursor(Qt.PointingHandCursor)
         self.goal_reset.setAccessibleName("รีเซ็ตความคืบหน้าเป้าหมายของนิยายเรื่องนี้")
+        goal_row.addWidget(self.progress, 1)
         goal_row.addWidget(self.goal_label, 1)
         goal_row.addWidget(self.goal_bar)
         goal_row.addWidget(self.goal_edit)
@@ -69,7 +70,7 @@ class NovelHeader(QFrame):
         self.close_button = QToolButton(); self.close_button.setText('×')
         self.close_button.setAccessibleName('ปิดเรื่องที่กำลังทำงาน')
         self.close_button.setToolTip('ปิดเรื่องนี้และกลับคลังนิยาย')
-        layout.addWidget(self.close_button, 0, Qt.AlignTop)
+        layout.addWidget(self.close_button, 0, Qt.AlignVCenter)
 
     def refresh(self, profile, chapter=None):
         from .translation_progress import daily_chapter_count, completion_label, completion_tooltip

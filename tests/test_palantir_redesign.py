@@ -260,10 +260,19 @@ def test_workspace_uses_library_navigation_without_cover_rail(window):
     assert ws.workspace_splitter.count() == 2
     assert ws.workspace_splitter.widget(0) is ws.sidebar
     assert not hasattr(ws, 'novel_cover_rail')
+    saved_width = window.settings.sidebar_width
+    normal_editor_width = ws.editor_content_stack.width()
     ws.toggle_sidebar()
-    assert ws.workspace_splitter.sizes()[0] == 0
+    QApplication.processEvents()
+    assert ws._focus_mode
+    assert ws.focus_rail.isVisible()
+    assert ws.workspace_splitter.sizes()[0] <= 60
+    assert ws.editor_content_stack.width() > normal_editor_width
     ws.toggle_sidebar()
+    QApplication.processEvents()
+    assert not ws._focus_mode
     assert ws.workspace_splitter.sizes()[0] > 0
+    assert window.settings.sidebar_width == saved_width
     window.navigate('library')
     window._open_profile_card(window.profile_cards.item(0))
     assert window.main_pages.currentWidget() is window.workspace_stack
