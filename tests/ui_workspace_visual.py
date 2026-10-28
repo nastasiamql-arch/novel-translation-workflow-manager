@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtTest import QTest
 from novel_workflow.storage import ProjectRepository
 from novel_workflow.models import NovelProfile
@@ -89,7 +90,12 @@ def main():
         app.processEvents()
         assert window.grab().save(str(output / "narrow-focus.png"))
         print("Saved real PySide6 workspace visual captures:", ", ".join(screenshots), flush=True)
+        ws.file_tree.setModel(None)
+        ws.file_model.setRootPath("")
         window.close()
+        window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        QTest.qWait(350)
 
 
 if __name__ == "__main__":
