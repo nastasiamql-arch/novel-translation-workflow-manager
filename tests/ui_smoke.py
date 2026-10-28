@@ -194,7 +194,7 @@ def main() -> int:
                 assert [workspace.step_selector.itemText(i) for i in range(3)] == [
                     "แปล", "ตรวจคำแปล", "หาศัพท์",
                 ]
-                assert workspace.step_selector.currentData() == profile.workflow.steps[0].id
+                assert workspace.step_selector.currentData() == window.step().id
                 assert [workspace.editor_shortcut.text(), workspace.txt_vocabulary_shortcut.text(),
                         workspace.translation_batch_shortcut.text()] == ["Editor", "หาศัพท์", "แปล"]
                 assert not hasattr(workspace, "vocabulary_polish_button")
