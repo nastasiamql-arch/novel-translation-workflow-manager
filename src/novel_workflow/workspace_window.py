@@ -766,15 +766,16 @@ class WorkspacePage(QWidget):
         self._focus_mode = enabled
         self.sidebar_normal.setVisible(not enabled)
         self.focus_rail.setVisible(enabled)
-        if enabled:
-            widths = self.workspace_splitter.sizes()
-            if widths and widths[0] > 100:
-                self.owner.settings.sidebar_width = widths[0]
-            self.sidebar.setFixedWidth(56)
-            self.workspace_splitter.setSizes([56, max(1, self.workspace_splitter.width() - 56)])
-        else:
-            saved = max(220, int(self.owner.settings.sidebar_width or 290))
-            self.workspace_splitter.setSizes([saved, max(1, self.workspace_splitter.width() - saved)])
+        self._suspend_sidebar_width_updates = True
+        try:
+            if enabled:
+                self.sidebar.setFixedWidth(56)
+                self.workspace_splitter.setSizes([56, max(1, self.workspace_splitter.width() - 56)])
+            else:
+                saved = max(220, int(self.owner.settings.sidebar_width or 290))
+                self.workspace_splitter.setSizes([saved, max(1, self.workspace_splitter.width() - saved)])
+        finally:
+            self._suspend_sidebar_width_updates = False
         self.sidebar_toggle.setToolTip("กลับสู่มุมมองปกติ" if enabled else "ขยายพื้นที่ทำงาน (Focus)")
         self.sidebar_toggle.setAccessibleName("กลับสู่มุมมองปกติ" if enabled else "ขยายพื้นที่ทำงาน")
         if persist:
@@ -1136,7 +1137,8 @@ class WorkspacePage(QWidget):
 
     def _remember_sidebar_width(self, _position, index):
         sizes = self.workspace_splitter.sizes()
-        if (not self._focus_mode and index == 1 and len(sizes) == 2
+        if (not getattr(self, "_suspend_sidebar_width_updates", False)
+                and not self._focus_mode and index == 1 and len(sizes) == 2
                 and sizes[0] >= 180):
             self.owner.settings.sidebar_width = sizes[0]
             self.owner._schedule_workspace_session_save()
