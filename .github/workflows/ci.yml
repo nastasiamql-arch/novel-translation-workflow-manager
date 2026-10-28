@@ -44,6 +44,15 @@ jobs:
           name: NovelLibrary-Visual-QA
           path: test-output/library-visuals/*.png
           if-no-files-found: ignore
+      - name: Capture real workspace normal/focus screenshots
+        run: python tests/ui_workspace_visual.py
+      - name: Upload workspace visual QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FocusWorkspace-Visual-QA
+          path: test-output/workspace-visuals/*.png
+          if-no-files-found: error
       - name: Run test suite
         timeout-minutes: 25
         run: python tests/run_suite_groups.py
