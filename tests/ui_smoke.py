@@ -204,7 +204,7 @@ def main() -> int:
                 assert window.profile.vocabulary_step.files[0].id == legacy_vocabulary_file.id
                 saved_profile = repo.list_profiles()[0]
                 assert [step.name for step in saved_profile.workflow.steps] == ["แปล", "ตรวจคำแปล"]
-                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(profile.vocabulary_step.id))
+                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(window.profile.vocabulary_step.id))
                 app.processEvents()
                 assert workspace.vocabulary_mode
                 assert window.step().name == "หาศัพท์"
@@ -217,7 +217,7 @@ def main() -> int:
                 copied_again = [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()]
                 assert len(copied_again) == 1 and copied_again[0] != context.resolve()
                 assert copied_again[0].name == context.name and copied_again[0].read_bytes() == context.read_bytes()
-                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(profile.workflow.steps[0].id))
+                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(window.profile.workflow.steps[0].id))
                 app.processEvents()
                 assert not workspace.vocabulary_mode
                 assert workspace.steps.currentRow() == 0
@@ -225,7 +225,7 @@ def main() -> int:
                 copied_chapter = [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()]
                 assert len(copied_chapter) == 1 and copied_chapter[0] != chapter.resolve()
                 assert copied_chapter[0].name == chapter.name and copied_chapter[0].read_bytes() == chapter.read_bytes()
-                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(profile.workflow.steps[1].id))
+                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(window.profile.workflow.steps[1].id))
                 app.processEvents()
                 assert workspace.steps.currentRow() == 0 or workspace.steps.currentRow() == 1
                 assert window.step().name == "ตรวจคำแปล"
@@ -233,7 +233,7 @@ def main() -> int:
                 copied_review = [Path(url.toLocalFile()).resolve() for url in QApplication.clipboard().mimeData().urls()]
                 assert len(copied_review) == 1 and copied_review[0] != review.resolve()
                 assert copied_review[0].name == review.name and copied_review[0].read_bytes() == review.read_bytes()
-                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(profile.workflow.steps[0].id))
+                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(window.profile.workflow.steps[0].id))
                 app.processEvents()
 
                 assert workspace.content_stack.currentWidget() is workspace.workflow_page
@@ -371,7 +371,7 @@ def main() -> int:
                 assert original_block_format.lineHeight() == last_format.lineHeight()
                 workspace.editor.save_current()
 
-                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(profile.workflow.steps[0].id))
+                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(window.profile.workflow.steps[0].id))
                 workspace.copy_step_button.click()
                 app.processEvents()
                 urls = app.clipboard().mimeData().urls()
@@ -429,7 +429,7 @@ def main() -> int:
                 assert saved_goals[second.id] is None
                 window.return_from_utility_page()
 
-                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(profile.vocabulary_step.id))
+                workspace.step_selector.setCurrentIndex(workspace.step_selector.findData(window.profile.vocabulary_step.id))
                 assert workspace.vocabulary_mode
                 window.settings_dialog()
                 assert window.main_pages.currentWidget() is window.utility_page
