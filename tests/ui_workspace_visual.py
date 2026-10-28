@@ -79,13 +79,33 @@ def main():
                 assert window.grab().save(str(output / filename))
                 screenshots.append(filename)
                 print(f"{appearance} {page_name}: normal {normal_width}x{normal_height}, focus {viewport.width()}x{viewport.height()}", flush=True)
+        nav_widths = {}
         for nav_collapsed in (False, True):
             window.navigation.set_collapsed(nav_collapsed)
             ws.open_editor()
             app.processEvents()
+            nav_widths[nav_collapsed] = ws.editor_content_stack.width()
             filename = f"editor-navigation-{'icon-only' if nav_collapsed else 'expanded'}.png"
             assert window.grab().save(str(output / filename))
             screenshots.append(filename)
+        assert nav_widths[True] > nav_widths[False], nav_widths
+        print(f"Navigation 196→60 px: editor content {nav_widths[False]}→{nav_widths[True]} px", flush=True)
+
+        # Capture real Planner rest/empty states without mocking any widget.
+        planner.save(date.today(), profile.id, "rest")
+        ws.refresh_today_plan(profile)
+        app.processEvents()
+        assert ws.today_plan_bar.snapshot["status"] == "rest"
+        assert not ws.today_plan_bar.progress.isVisible()
+        assert window.grab().save(str(output / "today-rest-day.png"))
+        screenshots.append("today-rest-day.png")
+        planner.path.unlink()  # TemporaryDirectory-only test data; do not touch user profiles.
+        ws.refresh_today_plan(profile)
+        app.processEvents()
+        assert ws.today_plan_bar.snapshot["status"] == "empty"
+        assert not ws.today_plan_bar.progress.isVisible()
+        assert window.grab().save(str(output / "today-no-plan.png"))
+        screenshots.append("today-no-plan.png")
         window.resize(900, 600)
         app.processEvents()
         assert window.grab().save(str(output / "narrow-focus.png"))
