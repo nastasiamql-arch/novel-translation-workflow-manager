@@ -12,8 +12,12 @@ from test_release_36 import app, setup_profile
 
 
 def _open(tmp_path):
+    # Keep the QApplication wrapper alive for this independent pytest group.
+    # Without it Windows can abort in native Qt before any assertion runs.
+    qt_app = app()
     repo, profile, _ = setup_profile(tmp_path)
     window = MainWindow(repo)
+    window._test_qt_app = qt_app
     window.select_profile(next(i for i, item in enumerate(window.ps_list) if item.id == profile.id))
     return repo, profile, window, window.workspaces[profile.id]
 

@@ -25,7 +25,7 @@ class NovelHeader(QFrame):
         super().__init__()
         self.repo = repo
         self.setObjectName('novelHeader')
-        layout = QHBoxLayout(self); layout.setContentsMargins(9,4,9,4); layout.setSpacing(8)
+        layout = QHBoxLayout(self); layout.setContentsMargins(8,2,8,2); layout.setSpacing(6)
         self.cover = QLabel(); self.cover.setObjectName('activeNovelCover')
         self.cover.setFixedSize(34, 44); self.cover.setAlignment(Qt.AlignCenter)
         self.cover.setAccessibleName('ปกนิยายที่กำลังทำงาน')
@@ -80,9 +80,8 @@ class NovelHeader(QFrame):
         if getattr(self, "_cover_key", None) != cover_key:
             self._cover_key = cover_key
             self._render_cover(profile)
-        today = daily_chapter_count(profile)
-        today_text = f'วันนี้ +{today:,} บท' if today else 'วันนี้ 0 บท'
-        self.progress.setText(f'{completion_label(profile)}  ·  {today_text}')
+        # Today's confirmed exports live in the shared TodayPlanBar below.
+        self.progress.setText(completion_label(profile))
         self.progress.setToolTip(completion_tooltip(profile))
         from .translation_progress import goal_progress
         goal = goal_progress(profile)
