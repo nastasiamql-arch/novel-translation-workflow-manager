@@ -1704,7 +1704,12 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         from .story_planner_page import StoryPlannerPage
         if not any(profile.id == profile_id for profile in self.repo.list_profiles()):
             return
-        key = f"story-planner:{profile_id}"
+        key = "story-planner"
+        previous = self._utility_pages.get(key)
+        if previous is not None and previous.profile_id != profile_id:
+            self.utility_stack.removeWidget(previous)
+            previous.deleteLater()
+            self._utility_pages.pop(key)
         self._show_utility_page(key, "แผนการแปล",
                                 lambda: StoryPlannerPage(self.repo, profile_id, self))
         self._utility_pages[key].refresh()
