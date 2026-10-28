@@ -89,7 +89,7 @@ def main():
             assert window.grab().save(str(output / filename))
             screenshots.append(filename)
         assert nav_widths[True] > nav_widths[False], nav_widths
-        print(f"Navigation 196→60 px: editor content {nav_widths[False]}→{nav_widths[True]} px", flush=True)
+        print(f"Navigation 196->60 px: editor content {nav_widths[False]}->{nav_widths[True]} px", flush=True)
 
         # Capture real Planner rest/empty states without mocking any widget.
         planner.save(date.today(), profile.id, "rest")
