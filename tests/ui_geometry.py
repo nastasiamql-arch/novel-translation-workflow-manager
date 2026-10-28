@@ -129,6 +129,21 @@ def main():
                     if button.isVisible(): assert button.height()>=button.fontMetrics().height()
                 assert 'ยังไม่มี Export ที่ยืนยัน' in ws.novel_header.progress.text()
                 assert ws.workspace_splitter.count() == 2
+                ws.set_focus_mode(False)
+                app.processEvents()
+                normal_width = ws.editor_content_stack.width()
+                saved_sidebar_width = win.settings.sidebar_width
+                ws.set_focus_mode(True)
+                app.processEvents()
+                assert ws.focus_rail.isVisible()
+                assert not ws.sidebar_normal.isVisible()
+                assert ws.editor_content_stack.width() > normal_width, (
+                    theme, width, normal_width, ws.editor_content_stack.width())
+                assert ws.workspace_splitter.widget(0).width() <= 60
+                ws.set_focus_mode(False)
+                app.processEvents()
+                assert ws.sidebar_normal.isVisible()
+                assert win.settings.sidebar_width == saved_sidebar_width
                 if os.environ.get("PALANTIR_UI_CAPTURE"):
                     Path("build").mkdir(exist_ok=True)
                     win.grab().save(f"build/ui-{theme}-{width}.png")
