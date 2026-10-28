@@ -30,6 +30,7 @@ from .translation_progress import (
 )
 from .ui import ManagementActionsMixin
 from .shell_components import NovelHeader, NavigationSidebar, ElidingLabel, EditorToolbar, MainPageStack
+from .today_plan_bar import TodayPlanBar
 from .library_page import LibraryPage
 from .profile_list import ReorderableProfileList
 from .settings_page import SettingsPage
@@ -576,6 +577,10 @@ class WorkspacePage(QWidget):
         self.novel_header.close_button.clicked.connect(
             lambda: self.owner._close_novel_tab(self.profile_id))
         editor_layout.addWidget(self.novel_header)
+        self.today_plan_bar = TodayPlanBar(owner.repo, self.profile_id,
+            lambda: owner.open_story_planner(self.profile_id))
+        self.today_plan_bar.refresh(profile)
+        editor_layout.addWidget(self.today_plan_bar)
         editor_layout.addWidget(self.editor_header)
         self.vocabulary_source_bar = QWidget()
         source_row = QHBoxLayout(self.vocabulary_source_bar)
@@ -690,6 +695,12 @@ class WorkspacePage(QWidget):
             if views.get(self.profile_id) != view:
                 views[self.profile_id] = view
                 self.owner._schedule_workspace_session_save()
+
+    def refresh_today_plan(self, profile=None):
+        if profile is None:
+            profile = next((p for p in self.owner.ps_list if p.id == self.profile_id), None)
+        if profile is not None:
+            self.today_plan_bar.refresh(profile)
 
     def open_editor(self):
         """Return to the one existing EditorTabs without changing its session."""
@@ -1408,6 +1419,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if hasattr(self, "navigation"):
             self.navigation.refresh_icons(self.settings.appearance)
         for workspace in getattr(self, "workspaces", {}).values():
+            workspace.today_plan_bar.apply_appearance(self.settings.appearance)
             workspace.editor.set_appearance(self.settings.appearance)
             workspace.refresh_export_status()
         for page in getattr(self, "_utility_pages", {}).values():
@@ -1634,7 +1646,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             page.set_profiles(self.ps_list)
         elif key.startswith(("resources:", "novel-progress:")):
             page.refresh()
-        elif key in {"groups", "launcher", "file-manager", "preview", "story-planner"}:
+        elif key in {"groups", "launcher", "file-manager", "preview"}:
             self.utility_stack.removeWidget(page)
             page.deleteLater()
             page = factory()
@@ -1670,6 +1682,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 return
             self.workspace_stack.setCurrentWidget(workspace)
             self.main_pages.setCurrentWidget(self.workspace_stack)
+            workspace.refresh_today_plan()
         else:
             self.main_pages.setCurrentWidget(self.library_page)
 
@@ -1690,8 +1703,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         from .story_planner_page import StoryPlannerPage
         if not any(profile.id == profile_id for profile in self.repo.list_profiles()):
             return
-        self._show_utility_page("story-planner", "แผนการแปล",
+        key = f"story-planner:{profile_id}"
+        self._show_utility_page(key, "แผนการแปล",
                                 lambda: StoryPlannerPage(self.repo, profile_id, self))
+        self._utility_pages[key].refresh()
 
     def open_novel_resources(self, profile_id):
         """Show working files, Context, glossary and workflow for this novel."""
@@ -2558,6 +2573,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._watch_context_paths()
         if hasattr(self, 'today_page'):
             self.today_page.refresh()
+        for workspace in self.workspaces.values():
+            profile = by_id.get(workspace.profile_id)
+            if profile:
+                workspace.refresh_today_plan(profile)
         if self.profile:
             self.refresh_goal_indicator()
             self._update_editor_status()
@@ -2575,6 +2594,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._workspace_cache_host.hide()
         # Old multi-novel sessions retain per-novel file state, not open tabs.
         self._open_workspace_ids = []
+        self._today_plan_date = date.today()
+        self._today_date_timer = QTimer(self)
+        self._today_date_timer.setInterval(60000)
+        self._today_date_timer.timeout.connect(self._refresh_plan_on_new_day)
+        self._today_date_timer.start()
         self._session_save_timer = QTimer(self)
         self._session_save_timer.setSingleShot(True)
         self._session_save_timer.setInterval(250)
@@ -2649,6 +2673,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._utility_return_page = None
         self._settings_page_state = None
         self.shell_splitter = QSplitter(Qt.Horizontal)
+        self.shell_splitter.setHandleWidth(2)
         self.shell_splitter.addWidget(self.navigation); self.shell_splitter.addWidget(self.main_pages)
         self.shell_splitter.setStretchFactor(1, 1)
         self.shell_splitter.setChildrenCollapsible(False)
@@ -2732,6 +2757,14 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._automatic_update_timer.timeout.connect(lambda: self.check_updates(manual=False))
         if self.settings.last_update_check_date != date.today().isoformat():
             self._automatic_update_timer.start(2500)
+
+    def _refresh_plan_on_new_day(self):
+        local_day = date.today()
+        if local_day != self._today_plan_date:
+            self._today_plan_date = local_day
+            for workspace in self.workspaces.values():
+                workspace.refresh_today_plan()
+            self.today_page.refresh()
 
     def _navigation_collapsed_changed(self, collapsed):
         self.settings.navigation_collapsed = bool(collapsed)
@@ -3168,6 +3201,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             workspace.configure(profile)
             if was_closed and profile.open_working_tabs_on_open:
                 self._open_profile_working_tabs(profile, workspace)
+        workspace.refresh_today_plan(profile)
         if not getattr(workspace, "_last_view_restored", False):
             workspace._last_view_restored = True
             view = self.settings.workspace_active_views.get(profile.id, "editor")
