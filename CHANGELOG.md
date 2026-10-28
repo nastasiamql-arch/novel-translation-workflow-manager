@@ -1,3 +1,12 @@
+## v6.11.0 — Compact Navigation & Today's Translation Plan
+
+- Open the workspace with 60-pixel icon-only global navigation for new settings; preserve existing expanded/collapsed preferences separately from Focus Mode.
+- Reclaim editor width by removing excess shell spacing and retaining the existing resizable Workspace Sidebar and editor stack.
+- Show one compact, blue-accented Today Plan bar below each novel header across Editor, Vocabulary and Translation views, reading targets and confirmed export activity from the existing Translation Planner.
+- Handle rest days, no plan, focus without a daily target, completed and exceeded targets without inventing percentages or duplicating chapter completion counts.
+- Open the existing daily or story-specific Planner as appropriate; refresh after successful confirmed Translator Export, returning from the Planner, and local day rollover.
+- Extend real Windows Qt geometry, DPI, screenshot, navigation persistence and plan regression coverage without modifying existing batch/copy/export file handling.
+
 ## v6.7.5 — Translation Batch Copy Scroll Stability
 
 - Keep the visible translation batch row and scrollbar position unchanged after copying, including high-index batches such as batch 86.
