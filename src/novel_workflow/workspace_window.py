@@ -565,7 +565,7 @@ class WorkspacePage(QWidget):
         self.update_profile_status(_profile_status(profile))
         editor_layout = QVBoxLayout()
         editor_layout.setContentsMargins(0, 0, 0, 0)
-        editor_layout.setSpacing(3)
+        editor_layout.setSpacing(0)
         self.novel_header = NovelHeader(owner.repo)
         self.novel_header.refresh(profile)
         self.novel_header.goal_edit.clicked.connect(
