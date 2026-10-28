@@ -41,6 +41,8 @@ def window(tmp_path, monkeypatch):
     w = MainWindow(repo); w.refresh_profiles(profile.id)
     w._automatic_update_timer.stop(); w.show()
     yield w, w.profile, w.workspaces[profile.id], errors
+    QApplication.clipboard().clear()
+    QApplication.processEvents()
     w._close_export_reminder_accepted = True
     deadline = time.monotonic() + 15
     workers = [w._update_check_worker, w._update_download_worker, *w._history_workers]
@@ -152,7 +154,7 @@ def test_history_page_copy_and_back_preserve_editor_and_stage(window):
     editor = workspace.editor.open_file(w.repo.profile_dir(p.id) / 'a.txt')
     editor.moveCursor(QTextCursor.End)
     position = editor.textCursor().position()
-    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     Path(p.context_path).write_bytes(b'new context')
     w.open_polish_history()
@@ -176,10 +178,10 @@ def test_history_page_copy_and_back_preserve_editor_and_stage(window):
     assert not errors
 
 
-def test_history_copy_button_stays_left_of_the_row(window):
+def test_history_copy_and_delete_buttons_stay_on_right(window):
     w, p, workspace, errors = window
     workspace.history_range.setText('6-10')
-    workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    workspace.stage_buttons[1].click(); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     w.open_polish_history()
     wait_until(lambda: not w.history_busy())
@@ -189,20 +191,20 @@ def test_history_copy_button_stays_left_of_the_row(window):
     copy = card.findChild(QPushButton, 'polishHistoryCopy')
     delete = card.findChild(QPushButton, 'polishHistoryDelete')
     assert copy is not None and delete is not None
-    assert copy.geometry().center().x() < card.width() * 0.45
+    assert copy.geometry().right() < delete.geometry().left()
     assert delete.geometry().center().x() > card.width() * 0.85
 
 
 def test_copy_event_storage_error_is_reported_without_escaping_callback(window, monkeypatch):
     w, p, workspace, errors = window
     workspace.history_range.setText('6-10')
-    workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    workspace.stage_buttons[1].click(); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     snapshot = w.polish_history.list(p)[0]
     monkeypatch.setattr(w, '_record_history_copy_success', lambda *args: (_ for _ in ()).throw(OSError('disk full')))
     w.copy_history_snapshot(p, snapshot)
     wait_until(lambda: not w.history_busy())
-    assert 'บันทึกประวัติการคัดลอกไม่สำเร็จ' in w.statusBar().currentMessage()
+    assert 'บันทึกสถานะการคัดลอกไม่สำเร็จ' in w.statusBar().currentMessage()
     assert QApplication.clipboard().mimeData().urls()
 
 
@@ -333,7 +335,7 @@ def test_history_copy_buttons_keep_position_for_repeat_and_advance_from_new_batc
 def test_range_required_focus_and_no_false_success(window):
     w, p, workspace, errors = window
     assert hasattr(workspace, 'history_range')
-    workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    workspace.stage_buttons[1].click(); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     assert not w.polish_history.list(p)
     assert 'ช่วงบท' in w.statusBar().currentMessage()
@@ -362,7 +364,7 @@ def test_legacy_default_only_clear_polish_name(names, expected):
 def test_history_copy_survives_window_close(window):
     w, p, workspace, errors = window
     assert hasattr(workspace, 'history_range')
-    workspace.history_range.setText('1-5'); workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    workspace.history_range.setText('1-5'); workspace.stage_buttons[1].click(); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     paths = [Path(u.toLocalFile()) for u in QApplication.clipboard().mimeData().urls()]
     w._close_export_reminder_accepted = True; w.close()
@@ -375,7 +377,7 @@ def test_save_for_review_does_not_copy_or_advance(window):
     clipboard_before = [url.toLocalFile() for url in QApplication.clipboard().mimeData().urls()]
     selection_before = w.si
     counter_before = p.verified_goal_count
-    workspace.save_for_review_button.click()
+    w.save_for_review()
     wait_until(lambda: not w.history_busy())
     items = w.polish_history.list(p)
     assert len(items) == 1 and items[0].manifest['review_status'] == 'รอตรวจ'
@@ -434,10 +436,10 @@ def test_history_auto_resume_uses_successful_snapshot_events_and_ignores_display
     page._update_progress_summary()
     page.render()
     assert page._recommended.manifest['snapshot_id'] == next_batch.manifest['snapshot_id']
-    assert 'เคยคัดลอกแล้ว 2 ชุด' in page.progress_summary.text()
+    assert 'ชุดที่คัดลอกแล้ว 2 ชุด' in page.progress_summary.text()
     assert page.findChildren(QPushButton, 'setHistoryResumePosition') == []
     assert page.previous_button.text() == '← ชุดก่อนหน้า'
-    assert page.resume_button.text() == 'ไปจุดทำงานต่อ'
+    assert page.resume_button.text() == 'ไปชุดถัดไป'
     active_rows = [page.card_layout.itemAt(i).widget() for i in range(page.card_layout.count())
                    if page.card_layout.itemAt(i).widget() is not None]
     assert len(active_rows) == 3
@@ -482,14 +484,14 @@ def test_failed_save_blocks_stage_snapshot(window, monkeypatch):
     editor = workspace.editor.open_file(w.repo.profile_dir(p.id) / 'a.txt')
     editor.insertPlainText('unsaved work')
     monkeypatch.setattr(workspace.editor, 'save_editor', lambda *args, **kwargs: False)
-    workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    workspace.stage_buttons[1].click(); w.save_for_review()
     assert w.polish_history.list(p) == []
 
 
 def test_cached_history_follows_changed_main_folder(window, tmp_path):
     from dataclasses import asdict
     w, p, workspace, errors = window
-    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     w.open_polish_history(); wait_until(lambda: not w.history_busy())
     w.utility_back.click()
@@ -518,7 +520,7 @@ def test_multistage_zip_keeps_all_stages_and_snapshot_context(window):
 
 def test_reopened_window_recovers_old_context_from_disk(window):
     w, p, workspace, errors = window
-    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     w._close_export_reminder_accepted = True; w.close()
     Path(p.context_path).write_bytes(b'latest context after restart')
@@ -546,7 +548,7 @@ def test_history_opened_during_snapshot_loads_after_job_finishes(window, monkeyp
         assert ready.wait(3)
         return create(*args, **kwargs)
     monkeypatch.setattr(w.polish_history, 'create', pending)
-    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    workspace.history_range.setText('6-10'); workspace.stage_buttons[1].click(); w.save_for_review()
     w.open_polish_history(); ready.set()
     page = w._utility_pages['polish-history:' + p.id]
     wait_until(lambda: not w.history_busy() and len(page.snapshots) == 1)
@@ -592,7 +594,7 @@ def test_history_copy_button_shows_zip_scope_when_enabled(window):
     import zipfile
     w, p, workspace, errors = window
     workspace.history_range.setText('6-10')
-    workspace.stage_buttons[1].click(); workspace.save_for_review_button.click()
+    workspace.stage_buttons[1].click(); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     w.open_polish_history()
     wait_until(lambda: not w.history_busy())
@@ -605,7 +607,7 @@ def test_history_copy_button_shows_zip_scope_when_enabled(window):
     button = page.findChild(QPushButton, 'polishHistoryCopy')
     assert button.text() == 'คัดลอก ZIP'
     assert workspace.copy_step_button.text() == 'COPY STEP'
-    assert w.repo.load_settings().history_copy_as_zip is True
+    assert w.repo.load_settings().history_zip_for_profile(p.id) is True
     assert w.repo.load_settings().copy_files_as_zip is False
     button.click()
     wait_until(lambda: not w.history_busy())

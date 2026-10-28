@@ -5,6 +5,7 @@ import re
 
 from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QEvent
 from PySide6.QtGui import QDesktopServices
+from .theme import theme_colors
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QScrollArea, QFrame, QMenu, QInputDialog, QMessageBox, QApplication, QStyle,
     QComboBox, QToolButton, QCheckBox)
@@ -33,14 +34,13 @@ class PolishHistoryPage(QWidget):
         if self._sort_mode not in ('recent', 'chapter_desc', 'chapter_asc', 'manual'):
             self._sort_mode = 'recent'
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0)
-        subtitle = QLabel('คัดลอกเฉพาะไฟล์ในประวัติที่กด · ไม่เกี่ยวกับการคัดลอกขั้นตอนแปลหรือ Export')
+        subtitle = QLabel('จัดการและคัดลอกชุดไฟล์เกลาของนิยายเรื่องนี้')
         subtitle.setWordWrap(True); subtitle.setObjectName('mutedLabel'); layout.addWidget(subtitle)
-        self.zip_mode = QCheckBox('คัดลอกประวัติเป็น ZIP (เฉพาะรายการที่กด)')
+        self.zip_mode = QCheckBox('คัดลอกเป็น ZIP')
         self.zip_mode.setObjectName('historyCopyAsZip')
-        self.zip_mode.setChecked(self.owner.settings.history_copy_as_zip)
-        self.zip_mode.setToolTip('รวมไฟล์ของประวัติรายการเดียวเป็น ZIP · ไม่กระทบขั้นตอน Workflow')
+        self.zip_mode.setChecked(self.owner.settings.history_zip_for_profile(self.profile.id))
+        self.zip_mode.setToolTip('คัดลอกเฉพาะไฟล์ของชุดที่เลือกเป็น ZIP')
         self.zip_mode.toggled.connect(self._change_zip_mode)
-        layout.addWidget(self.zip_mode)
         self.progress_summary = QLabel()
         self.progress_summary.setObjectName('historyProgressSummary')
         self.progress_summary.setWordWrap(True)
@@ -50,7 +50,7 @@ class PolishHistoryPage(QWidget):
         self.previous_button.setObjectName('previousHistoryBatch')
         self.previous_button.clicked.connect(self.go_to_previous)
         navigation.addWidget(self.previous_button)
-        self.resume_button = QPushButton('ไปจุดทำงานต่อ')
+        self.resume_button = QPushButton('ไปชุดถัดไป')
         self.resume_button.setObjectName('goToRecommendedHistory')
         self.resume_button.clicked.connect(self.go_to_resume)
         navigation.addWidget(self.resume_button)
@@ -65,18 +65,17 @@ class PolishHistoryPage(QWidget):
         self._viewport_restore_timer.setSingleShot(True)
         self._viewport_restore_timer.timeout.connect(self._restore_viewport)
         tools = QHBoxLayout()
-        self.search = QLineEdit(); self.search.setPlaceholderText('ค้นหาเลขบทหรือช่วงบท…')
-        self.search.setAccessibleName('ค้นหาประวัติช่วงบท')
+        self.search = QLineEdit(); self.search.setPlaceholderText('ค้นหาช่วงบท...')
+        self.search.setAccessibleName('ค้นหาช่วงบท')
         self.search.textChanged.connect(self.render); tools.addWidget(self.search, 1)
-        self.refresh_button = QPushButton('Refresh'); self.refresh_button.clicked.connect(self.refresh)
-        tools.addWidget(self.refresh_button); layout.addLayout(tools)
+        layout.addLayout(tools)
         sort_tools = QHBoxLayout()
         sort_label = QLabel('จัดเรียง:')
         sort_label.setObjectName('mutedLabel')
         sort_tools.addWidget(sort_label)
         self.sort_selector = QComboBox()
         self.sort_selector.setObjectName('polishHistorySort')
-        self.sort_selector.setAccessibleName('จัดเรียงประวัติตามเลขบทหรือเวลา')
+        self.sort_selector.setAccessibleName('จัดเรียงชุดงานตามเลขบทหรือเวลา')
         for label, value in (
             ('ล่าสุดก่อน', 'recent'),
             ('เลขบท: มาก → น้อย', 'chapter_desc'),
@@ -89,6 +88,7 @@ class PolishHistoryPage(QWidget):
         )
         self.sort_selector.currentIndexChanged.connect(self._change_sort)
         sort_tools.addWidget(self.sort_selector)
+        sort_tools.addWidget(self.zip_mode)
         sort_tools.addStretch(1)
         layout.addLayout(sort_tools)
         self.status = QLabel(); self.status.setWordWrap(True); layout.addWidget(self.status)
@@ -123,14 +123,18 @@ class PolishHistoryPage(QWidget):
         return super().eventFilter(watched, event)
 
     def _change_zip_mode(self, enabled):
-        previous = self.owner.settings.history_copy_as_zip
-        self.owner.settings.history_copy_as_zip = enabled
+        preferences = self.owner.settings.history_copy_as_zip_by_profile
+        previous = preferences.get(self.profile.id)
+        preferences[self.profile.id] = enabled
         try:
             self.owner.repo.save_settings(self.owner.settings)
         except (OSError, ValueError) as error:
-            self.owner.settings.history_copy_as_zip = previous
+            if previous is None:
+                preferences.pop(self.profile.id, None)
+            else:
+                preferences[self.profile.id] = previous
             self.zip_mode.blockSignals(True)
-            self.zip_mode.setChecked(previous)
+            self.zip_mode.setChecked(self.owner.settings.history_zip_for_profile(self.profile.id))
             self.zip_mode.blockSignals(False)
             self.failed('บันทึกโหมดคัดลอก ZIP ไม่สำเร็จ: ' + str(error))
             return
@@ -140,7 +144,7 @@ class PolishHistoryPage(QWidget):
 
     def refresh(self):
         if self.owner._history_pending:
-            self.status.setText('กำลังรอการบันทึกประวัติ…')
+            self.status.setText('กำลังรอการบันทึกชุดงาน…')
             if not self._refresh_queued and self.owner._history_workers:
                 self._refresh_queued = True
                 def after_job():
@@ -161,10 +165,10 @@ class PolishHistoryPage(QWidget):
         self.snapshots = snapshots
         count = sum(x.manifest.get('file_count', 0) for x in snapshots if not x.error)
         size = sum(sum(e['size'] for e in x.manifest['files']) for x in snapshots if not x.error)
-        self.status.setText(f'{len(snapshots)} ประวัติ · {count} ไฟล์ · {size / (1024 * 1024):,.2f} MB')
+        self.status.setText(f'{len(snapshots)} ชุดงาน · {count} ไฟล์ · {size / (1024 * 1024):,.2f} MB')
         self._update_progress_summary()
         self.render()
-        if not self._user_navigated:
+        if not self._user_navigated and self._navigation_snapshot_id is None:
             QTimer.singleShot(0, self.go_to_resume)
 
     def _progress_key(self):
@@ -183,19 +187,21 @@ class PolishHistoryPage(QWidget):
         candidate = self._recommended_snapshot(forward)
         self._recommended = candidate
         copied = self._copied_snapshot_ids(events)
-        if not copied and state.get('snapshot_id'):
+        if state.get('snapshot_id'):
             copied.add(str(state['snapshot_id']))
+        copied.intersection_update(self._snapshot_id(item) for item in self.snapshots)
         skipped = self._skipped_ranges(copied, forward)
         timestamp = state.get('timestamp')
         timestamp = last_event.get('timestamp')
         if timestamp:
             try: timestamp = datetime.fromisoformat(timestamp).astimezone().strftime('%d/%m/%Y %H:%M')
             except (ValueError, TypeError): pass
+        chapter_snapshots_for_summary = self._chapter_ordered_snapshots()
         self.progress_summary.setText(
-            f"ประวัติทั้งหมด {len(self.snapshots)} ชุด · เคยคัดลอกแล้ว {len(copied)} ชุด\n"
+            f"ชุดงานทั้งหมด {len(self.snapshots)} ชุด · ชุดที่คัดลอกแล้ว {len(copied)} ชุด\n"
             f"คัดลอกล่าสุด: {'บท ' + str(last).replace('-', '–') if last else 'ไม่มีข้อมูล'}"
             f"{(' · ' + str(timestamp)) if timestamp else ''}    "
-            f"ชุดถัดไป: {'บท ' + str(candidate.manifest.get('chapter_range')).replace('-', '–') if candidate else 'ถึงรายการสุดท้ายแล้ว'}"
+            f"ชุดถัดไป: {'บท ' + str(candidate.manifest.get('chapter_range')).replace('-', '–') if candidate else ('ถึงรายการสุดท้ายแล้ว' if chapter_snapshots_for_summary else 'ไม่มีข้อมูล')}"
             f"    รายการที่ข้ามไว้: {skipped} ชุด"
         )
         chapter_snapshots = self._chapter_ordered_snapshots()
@@ -298,7 +304,7 @@ class PolishHistoryPage(QWidget):
         if snapshot is None:
             ordered = self._chapter_ordered_snapshots()
             if not ordered:
-                self.status.setText('ยังไม่มีชุดประวัติที่พร้อมใช้งาน')
+                self.status.setText('ยังไม่มีชุดงานที่พร้อมใช้งาน')
                 return
             snapshot = ordered[-1]
             self.status.setText('ถึงรายการสุดท้ายแล้ว · แสดงชุดล่าสุดที่มีเลขบท')
@@ -491,9 +497,9 @@ class PolishHistoryPage(QWidget):
             if is_recommended:
                 card.setProperty('recommendedNext', True)
                 card.setStyleSheet('QFrame#polishHistoryRow[recommendedNext="true"] { border: 2px solid #4386d8; border-radius: 7px; }')
-            rows = QHBoxLayout(card); rows.setContentsMargins(8, 0, 8, 0); rows.setSpacing(6)
+            rows = QHBoxLayout(card); rows.setContentsMargins(10, 8, 10, 8); rows.setSpacing(8)
             # Global button styling enforces a 48 px hit target on Windows.
-            card.setMinimumHeight(60)
+            card.setMinimumHeight(86)
             # Keep number → chapter/details → copy as one left-aligned group.
             # Destructive actions stay isolated on the far right.
             sequence = QLabel(str(index + 1))
@@ -504,10 +510,8 @@ class PolishHistoryPage(QWidget):
             sequence.setAccessibleName(f'ลำดับ {index + 1}')
             rows.addWidget(sequence)
             text_column = QVBoxLayout(); text_column.setContentsMargins(0, 0, 0, 0); text_column.setSpacing(0)
-            # Keep the chapter details and copy action grouped at the left.
-            # Giving this layout a stretch factor pushed the copy button to the
-            # horizontal center on wide windows.
-            rows.addLayout(text_column)
+            # Reserve the right edge for actions and let details wrap as needed.
+            rows.addLayout(text_column, 1)
             span = snapshot.manifest.get('chapter_range')
             title = QLabel(('บท ' + str(span).replace('-', '–')) if span else 'รอระบุช่วงบท')
             title.setObjectName('historyRangeTitle')
@@ -522,20 +526,22 @@ class PolishHistoryPage(QWidget):
             badge_text = ('✓  คัดลอกแล้ว' if copied else ('→  ชุดถัดไป' if is_recommended else '○  ยังไม่ได้คัดลอก'))
             badge = QLabel(badge_text)
             badge.setObjectName('historyCopyState')
-            badge.setStyleSheet('font-size: 16px; font-weight: 700; color: #24834a;' if copied else
-                                ('font-size: 16px; font-weight: 700; color: #2868b2;' if is_recommended else
-                                 'font-size: 14px; color: palette(mid);'))
+            colors = theme_colors(self.owner.settings.appearance)
+            copied_color = '#91B9FF' if colors['app'] == '#181D27' else '#20539b'
+            badge.setStyleSheet(f'font-size: 16px; font-weight: 700; color: {copied_color};' if copied else
+                                (f"font-size: 16px; font-weight: 700; color: {colors['accent']};" if is_recommended else
+                                 f"font-size: 14px; color: {colors['secondary']};"))
             text_column.addWidget(badge)
-            zipped = self.owner.settings.history_copy_as_zip
+            zipped = self.owner.settings.history_zip_for_profile(self.profile.id)
             copy = QPushButton('คัดลอก ZIP' if zipped else 'คัดลอก')
             copy.setObjectName('polishHistoryCopy')
-            copy.setFixedHeight(32)
+            copy.setMinimumHeight(40)
             copy.setToolTip('รวมไฟล์ทั้งหมดของรายการนี้เป็น ZIP เดียว · วางด้วย Ctrl+V' if zipped
                             else 'คัดลอกไฟล์ทั้งหมดของรายการนี้ · วางด้วย Ctrl+V')
             changed_payload = snapshot.error.startswith('ไฟล์ในประวัติถูกแก้ไขหรือ Hash ไม่ตรง:')
             copy.setEnabled(not snapshot.error or changed_payload)
             if changed_payload:
-                copy.setToolTip('ไฟล์ในประวัติถูกแก้ไข · คลิกเพื่อยืนยันไฟล์ที่แก้แล้วและคัดลอก')
+                copy.setToolTip('ไฟล์ของชุดงานถูกแก้ไข · คลิกเพื่อยืนยันไฟล์ที่แก้แล้วและคัดลอก')
             copy.setAccessibleName(f'ลำดับ {index + 1} ' + title.text() + ' คัดลอกไฟล์ทั้งหมด')
             copy.clicked.connect(lambda _=False, s=snapshot: self.copy_snapshot(s))
             rows.addWidget(copy)
@@ -543,7 +549,7 @@ class PolishHistoryPage(QWidget):
                 up = QToolButton()
                 up.setObjectName('polishHistoryMoveUp')
                 up.setText('↑')
-                up.setToolTip('เลื่อนประวัติขึ้น')
+                up.setToolTip('เลื่อนชุดงานขึ้น')
                 up.setAccessibleName(f'เลื่อนบท {span} ขึ้น')
                 up.setFixedWidth(25)
                 up.setFixedHeight(28)
@@ -553,35 +559,45 @@ class PolishHistoryPage(QWidget):
                 down = QToolButton()
                 down.setObjectName('polishHistoryMoveDown')
                 down.setText('↓')
-                down.setToolTip('เลื่อนประวัติลง')
+                down.setToolTip('เลื่อนชุดงานลง')
                 down.setAccessibleName(f'เลื่อนบท {span} ลง')
                 down.setFixedWidth(25)
                 down.setFixedHeight(28)
                 down.setEnabled(index < len(found) - 1 and not self.search.text().strip())
                 down.clicked.connect(lambda _=False, s=snapshot: self._move_snapshot(s, 1))
                 rows.addWidget(down)
-            rows.addStretch(1)
             delete = QPushButton(); delete.setObjectName('polishHistoryDelete')
             delete.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
-            delete.setToolTip('ลบประวัตินี้ไปยังถังรีไซเคิล')
-            delete.setAccessibleName(f'ลำดับ {index + 1} ' + title.text() + ' ลบประวัตินี้ไปยังถังรีไซเคิล')
-            delete.setFixedWidth(32)
-            delete.setFixedHeight(32)
+            delete.setToolTip('ลบชุดงานนี้ไปยังถังรีไซเคิล')
+            delete.setAccessibleName(f'ลำดับ {index + 1} ' + title.text() + ' ลบชุดงานนี้ไปยังถังรีไซเคิล')
+            delete.setMinimumSize(40, 40)
             delete.setStyleSheet('QPushButton:hover { background: #f6caca; color: #782020; }')
             delete.clicked.connect(lambda _=False, s=snapshot, b=delete: self.delete_snapshot(s, b))
             rows.addWidget(delete)
             more = QPushButton('⋯'); more.setAccessibleName(f'ลำดับ {index + 1} ' + title.text() + ' ตัวเลือกเพิ่มเติม')
             more.clicked.connect(lambda _=False, s=snapshot, b=more: self.more_menu(s, b))
-            more.setFixedSize(28, 32); rows.addWidget(more)
-            try: stamp = datetime.fromisoformat(snapshot.manifest['created_at']).astimezone().strftime('%H:%M')
+            more.setMinimumSize(40, 40); rows.addWidget(more)
+            try: stamp = datetime.fromisoformat(snapshot.manifest['created_at']).astimezone().strftime('%d/%m/%Y %H:%M')
             except (KeyError, ValueError, TypeError): stamp = snapshot.path.name
             review_status = snapshot.manifest.get('review_status', 'รอตรวจ')
+            size = sum(entry.get('size', 0) for entry in snapshot.manifest.get('files', [])) if not snapshot.error else None
             detail = QLabel(
-                f'{stamp} · {snapshot.manifest.get("file_count", 0) if not snapshot.error else "?"} ไฟล์ · ตรวจ: {review_status}'
+                f'{snapshot.manifest.get("file_count", 0) if not snapshot.error else "?"} ไฟล์'
+                + (f' · {size / (1024 * 1024):,.2f} MB' if size is not None else '')
+                + f' · สร้าง {stamp} · ตรวจ: {review_status}'
             )
-            detail.setWordWrap(False); detail.setObjectName('historyCopyState')
+            detail.setWordWrap(True); detail.setObjectName('historyCopyState')
             detail.setToolTip(f'สถานะคัดลอก: {badge_text}\nสถานะตรวจคำแปล: {review_status}')
-            detail.setStyleSheet('font-size: 12px; color: palette(mid);'); text_column.addWidget(detail)
+            detail.setStyleSheet(f"font-size: 14px; color: {colors['secondary']};"); text_column.addWidget(detail)
+            copy_events = [event for event in self._copy_events() if str(event.get('snapshot_id')) == snapshot_id]
+            if copy_events:
+                copy_time = max(str(event.get('timestamp') or '') for event in copy_events)
+                try: copy_time = datetime.fromisoformat(copy_time).astimezone().strftime('%d/%m/%Y %H:%M')
+                except (ValueError, TypeError): pass
+                if copy_time:
+                    copied_at = QLabel('คัดลอกล่าสุด ' + copy_time)
+                    copied_at.setObjectName('mutedLabel')
+                    text_column.addWidget(copied_at)
             if snapshot.error:
                 error = QLabel('ตรวจพบข้อผิดพลาด: ' + snapshot.error); error.setWordWrap(True)
                 text_column.addWidget(error)
@@ -591,7 +607,7 @@ class PolishHistoryPage(QWidget):
             self.card_layout.addWidget(card)
             self._cards_by_id[self._snapshot_id(snapshot)] = card
         if not found:
-            empty = QLabel('ยังไม่มีประวัติ\nเลือกขั้นตอนใน Settings แล้วคลิกขั้นตอนเพื่อบันทึกไฟล์'
+            empty = QLabel('ยังไม่มีชุดงาน\nชุดไฟล์จะปรากฏเมื่อระบบบันทึก Snapshot'
                            if not self.snapshots else 'ไม่พบช่วงบทที่ค้นหา')
             empty.setWordWrap(True); empty.setObjectName('emptyStateDescription'); self.card_layout.addWidget(empty)
         self.card_layout.addStretch()
@@ -609,19 +625,19 @@ class PolishHistoryPage(QWidget):
             self.owner.copy_history_snapshot(self.profile, snapshot)
             return
         if not snapshot.error.startswith('ไฟล์ในประวัติถูกแก้ไขหรือ Hash ไม่ตรง:'):
-            self.failed('ไฟล์ประวัติเสียหายหรือหายไป ไม่สามารถคัดลอกได้')
+            self.failed('ไฟล์ชุดงานเสียหายหรือหายไป ไม่สามารถคัดลอกได้')
             return
         confirmation = QMessageBox.question(
-            self, 'ยืนยันไฟล์ที่แก้ไขในประวัติ',
-            'ไฟล์สำรองในประวัติชุดนี้ถูกแก้ไขหลังบันทึก\\n\\n'
+            self, 'ยืนยันไฟล์ที่แก้ไขในชุดงาน',
+            'ไฟล์สำรองในชุดงานนี้ถูกแก้ไขหลังบันทึก\\n\\n'
             'หากคุณแก้ไขไฟล์นี้โดยตั้งใจ ให้กด Yes เพื่อเก็บ Hash เดิม'
-            ' ไว้เป็นประวัติ ตรวจไฟล์ที่แก้ใหม่ แล้วคัดลอก\\n\\n'
+            ' ไว้เป็นข้อมูลสำรอง ตรวจไฟล์ที่แก้ใหม่ แล้วคัดลอก\\n\\n'
             'หากไม่ได้แก้เอง ให้กด No และตรวจไฟล์ก่อน',
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if confirmation != QMessageBox.Yes:
             return
-        zipped = self.owner.settings.history_copy_as_zip
+        zipped = self.owner.settings.history_zip_for_profile(self.profile.id)
         def operation():
             modified = self.owner.polish_history.accept_snapshot_edits(
                 self.profile, snapshot.path
@@ -645,14 +661,14 @@ class PolishHistoryPage(QWidget):
             try:
                 self.owner._record_history_copy_success(self.profile, snapshot, count, zipped)
             except Exception as exc:
-                self.failed('คัดลอกไฟล์แล้ว แต่บันทึกประวัติการคัดลอกไม่สำเร็จ: ' + str(exc))
+                self.failed('คัดลอกไฟล์แล้ว แต่บันทึกสถานะการคัดลอกไม่สำเร็จ: ' + str(exc))
                 return
             self.refresh()
         self.owner.run_history_job(operation, success, self.failed)
 
     def delete_snapshot(self, snapshot, button=None):
         if self.owner.history_busy():
-            self.status.setText('กำลังจัดการประวัติ กรุณารอสักครู่')
+            self.status.setText('กำลังจัดการชุดงาน กรุณารอสักครู่')
             return
         mime = QApplication.clipboard().mimeData()
         urls = [u.toLocalFile() for u in mime.urls()] if mime else []
@@ -664,9 +680,9 @@ class PolishHistoryPage(QWidget):
                 except RuntimeError:
                     # A concurrent history refresh may already have rebuilt the row.
                     pass
-            self.failed('ลบประวัติไม่สำเร็จ: ' + str(error))
+            self.failed('ลบชุดงานไม่สำเร็จ: ' + str(error))
         def deleted(_):
-            self.status.setText('ย้ายประวัติไปยังถังรีไซเคิลแล้ว · Clipboard คงเดิม')
+            self.status.setText('ย้ายชุดงานไปยังถังรีไซเคิลแล้ว · Clipboard คงเดิม')
             self.refresh()
         self.owner.run_history_job(lambda: self.owner.polish_history.delete(self.profile, snapshot.path, urls),
                                    deleted, failed)
@@ -679,7 +695,7 @@ class PolishHistoryPage(QWidget):
         status.setEnabled(not snapshot.error)
         open_folder = menu.addAction('เปิดโฟลเดอร์')
         verify = menu.addAction('ตรวจสอบไฟล์อีกครั้ง')
-        delete = menu.addAction('ลบประวัติไปยังถังรีไซเคิล')
+        delete = menu.addAction('ลบชุดงานไปยังถังรีไซเคิล')
         action = menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
         if action == open_folder:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(snapshot.path)))

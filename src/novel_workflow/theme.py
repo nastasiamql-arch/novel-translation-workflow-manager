@@ -146,7 +146,10 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QLabel#historyRangeTitle {{ color: {c['text']}; font-size: 11pt; font-weight: 600; }}
     QLabel#historySequenceNumber {{ color: {c['text']}; background: {c['surface2']}; border: 1px solid {c['border']}; border-radius: 7px; padding: 2px 3px; font-size: 12pt; font-weight: 700; }}
     QFrame#polishHistoryRow {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 6px; }}
-    QFrame#polishHistoryRow QPushButton, QFrame#polishHistoryRow QToolButton {{ min-height: 24px; max-height: 32px; padding: 2px 7px; }}
+    QFrame#polishHistoryRow QPushButton, QFrame#polishHistoryRow QToolButton {{ min-height: 36px; max-height: 48px; padding: 2px 7px; }}
+    QFrame#polishHistoryRow QPushButton#polishHistoryCopy {{ background: {c['primary']}; color: {c['primary_text']}; }}
+    QFrame#polishHistoryRow QPushButton#polishHistoryCopy:hover {{ background: {c['primary_hover']}; }}
+    QFrame#polishHistoryRow QPushButton#polishHistoryCopy:disabled {{ background: {c['surface2']}; color: {c['disabled_text']}; }}
     QPushButton#polishHistoryCopy {{ background: {c['primary']}; color: {c['primary_text']}; border: 0; border-radius: 8px; padding: 7px 16px; font-weight: 600; }}
     QPushButton#polishHistoryCopy:hover {{ background: {c['primary_hover']}; }}
     QPushButton#polishHistoryCopy[keyboardFocus="true"] {{ border: 2px solid {c['focus']}; }}

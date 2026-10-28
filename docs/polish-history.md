@@ -6,10 +6,13 @@ workflow step by stable ID; `None` explicitly disables it. Old documents without
 this field auto-select only a unique explicit polish name, never a row index or
 the default review step. Settings can select any custom step.
 
-Clicking the configured stage saves using the existing editor contract, then
-snapshots only its linked files before clipboard delivery. Work runs off
-the UI thread with visible status; application close waits for an active job.
-Other workflow steps retain their existing enabled-file and ZIP behavior.
+The Novel Polish page displays the existing disk-backed sets for the current
+novel. Translator Export captures pending-review snapshots under its existing
+conditions; clicking a workflow stage copies its files without creating a
+snapshot. Snapshot work runs off the UI thread with visible status, and the
+application waits for an active job before closing. The ZIP choice on Novel
+Polish is stored per novel, with the previous global preference used as the
+fallback for existing profiles. Workflow copy preferences remain independent.
 
 ## Storage and integrity
 

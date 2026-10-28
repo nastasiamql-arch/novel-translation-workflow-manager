@@ -311,12 +311,9 @@ class WorkspacePage(QWidget):
         step_header.addWidget(self.copy_step_button)
         sidebar_layout.addLayout(step_header)
         history_row = QHBoxLayout()
-        self.history_button = QPushButton('ประวัติ')
+        self.history_button = QPushButton('Novel Polish')
         self.history_button.clicked.connect(lambda: self.owner.open_polish_history())
         history_row.addWidget(self.history_button)
-        self.save_for_review_button = QPushButton('บันทึกไว้รอตรวจ')
-        self.save_for_review_button.clicked.connect(lambda: self.owner.save_for_review())
-        history_row.addWidget(self.save_for_review_button)
         self.history_range = QLineEdit()
         self.history_range.setPlaceholderText('ช่วงบท เช่น 6-10')
         self.history_range.setAccessibleName('ช่วงบทสำหรับประวัติใหม่')
@@ -325,13 +322,16 @@ class WorkspacePage(QWidget):
         history_row.addWidget(self.history_range, 1)
         sidebar_layout.addLayout(history_row)
         sidebar_layout.addWidget(self.vocabulary_button)
-        self.txt_vocabulary_shortcut = QPushButton("จากไฟล์ TXT · แบ่งชุด / แยกบท")
+        tools_heading = QLabel("เครื่องมือทำงาน")
+        tools_heading.setObjectName("sectionHeading")
+        sidebar_layout.addWidget(tools_heading)
+        self.txt_vocabulary_shortcut = QPushButton("หาศัพท์")
         self.txt_vocabulary_shortcut.setObjectName("txtVocabularyShortcut")
         self.txt_vocabulary_shortcut.clicked.connect(
             lambda checked=False: self.owner.open_txt_vocabulary(self.profile_id)
         )
         sidebar_layout.addWidget(self.txt_vocabulary_shortcut)
-        self.translation_batch_shortcut = QPushButton("แปลหลายบท")
+        self.translation_batch_shortcut = QPushButton("แปล")
         self.translation_batch_shortcut.setObjectName("translationBatchShortcut")
         self.translation_batch_shortcut.clicked.connect(
             lambda checked=False: self.owner.open_translation_batches(self.profile_id)
@@ -1261,6 +1261,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         for workspace in getattr(self, "workspaces", {}).values():
             workspace.editor.set_appearance(self.settings.appearance)
             workspace.refresh_export_status()
+        for page in getattr(self, "_utility_pages", {}).values():
+            if isinstance(page, PolishHistoryPage):
+                page.render()
 
     def show_submit_toast(self, message):
         self.submit_toast.show_message(message)
@@ -1302,7 +1305,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def open_polish_history(self):
         if not self.profile: return
         key = 'polish-history:' + self.profile.id
-        self._show_utility_page(key, 'ประวัติไฟล์ขั้นตอนเกลา', lambda: PolishHistoryPage(self, self.profile))
+        self._show_utility_page(key, 'Novel Polish', lambda: PolishHistoryPage(self, self.profile))
         self._utility_pages[key].profile = self.profile
         self._utility_pages[key].refresh()
 
@@ -1319,7 +1322,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 # Update the existing buttons in place. Qt deleteLater() keeps old
                 # card widgets discoverable until the event loop processes them.
                 for button in page.findChildren(QPushButton, 'polishHistoryCopy'):
-                    history_zip = self.settings.history_copy_as_zip
+                    history_zip = self.settings.history_zip_for_profile(page.profile.id)
                     button.setText('คัดลอก ZIP' if history_zip else 'คัดลอก')
                     button.setToolTip(
                         'รวมไฟล์ทั้งหมดของรายการนี้เป็น ZIP เดียว · วางด้วย Ctrl+V' if history_zip
@@ -1332,7 +1335,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.statusBar().showMessage(message + ' · วางด้วย Ctrl+V', 7000)
 
     def copy_history_snapshot(self, profile, snapshot):
-        zipped = self.settings.history_copy_as_zip
+        zipped = self.settings.history_zip_for_profile(profile.id)
         def operation():
             paths = self.polish_history.clipboard_paths(profile, snapshot.path, zipped=zipped)
             count = len(paths)
@@ -1351,7 +1354,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 self._record_history_copy_success(profile, snapshot, result[1], zipped)
             except Exception as exc:
                 self.statusBar().showMessage(
-                    'คัดลอกไฟล์แล้ว แต่บันทึกประวัติการคัดลอกไม่สำเร็จ: ' + str(exc), 8000
+                    'คัดลอกไฟล์แล้ว แต่บันทึกสถานะการคัดลอกไม่สำเร็จ: ' + str(exc), 8000
                 )
         self.run_history_job(operation, publish)
 
@@ -1489,6 +1492,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self._utility_pages[key] = page
             self.utility_stack.addWidget(page)
         self.utility_title.setText(title)
+        self.utility_refresh.setVisible(key.startswith("polish-history:"))
         self.utility_back.setText("← กลับไปทำงาน" if self.profile else "← คลังนิยาย")
         self.utility_stack.setCurrentWidget(page)
         self._active_utility_page = key
@@ -1704,7 +1708,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if hasattr(self, 'settings_history_step'):
             self.settings_history_step.blockSignals(True)
             self.settings_history_step.clear()
-            self.settings_history_step.addItem('ปิดการบันทึกประวัติ', None)
+            self.settings_history_step.addItem('ปิดการบันทึกชุดงาน', None)
             for step in self.profile.workflow.steps:
                 self.settings_history_step.addItem(step.name, step.id)
             current = self.settings_history_step.findData(self.profile.polish_history_step_id)
@@ -2483,6 +2487,10 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.utility_title = QLabel()
         self.utility_title.setObjectName("pageTitle")
         utility_header.addWidget(self.utility_title, 1)
+        self.utility_refresh = QPushButton("รีเฟรชรายการ")
+        self.utility_refresh.clicked.connect(lambda: self.utility_stack.currentWidget().refresh())
+        self.utility_refresh.hide()
+        utility_header.addWidget(self.utility_refresh)
         utility_layout.addLayout(utility_header)
         self.utility_stack = QStackedWidget()
         utility_layout.addWidget(self.utility_stack, 1)
@@ -3326,7 +3334,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
     def _sync_stage_buttons(workspace):
         profile = workspace.owner.profile
         workspace.history_range.setVisible(bool(profile and profile.polish_history_step_id))
-        workspace.save_for_review_button.setVisible(bool(profile and profile.polish_history_step_id))
         for index, button in enumerate(workspace.stage_buttons):
             active = (
                 not workspace.vocabulary_mode

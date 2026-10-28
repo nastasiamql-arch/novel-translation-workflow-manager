@@ -249,6 +249,12 @@ def main():
                     if child.isVisible() and child.layout(): assert_layout(child)
                 if os.environ.get('PALANTIR_UI_CAPTURE'):
                     win.grab().save(f'build/history-{appearance}-{dimensions[0]}.png')
+            win.showMaximized(); app.processEvents(); QTest.qWait(50)
+            assert_layout(win.utility_page)
+            assert_layout(history)
+            for child in history.cards.findChildren(QWidget):
+                if child.isVisible() and child.layout(): assert_layout(child)
+            win.showNormal(); app.processEvents()
         win.utility_back.click()
         assert win.workspace_stack.currentWidget() is ws
         win.close(); app.processEvents()

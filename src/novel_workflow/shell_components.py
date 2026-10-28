@@ -150,7 +150,7 @@ class NavigationSidebar(QFrame):
         for key, icon, title in [
             ('today', '◷', 'วันนี้'),
             ('library', '▦', 'คลังนิยาย'),
-            ('workspace', '▤', 'พื้นที่ทำงาน'),
+            ('workspace', '▤', 'Editor'),
             ('novel-inspector', '☷', 'ตรวจสอบไฟล์นิยาย'),
             ('settings', '⚙', 'ตั้งค่า'),
         ]:

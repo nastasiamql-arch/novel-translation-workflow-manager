@@ -273,6 +273,7 @@ class NovelGroup:
 class AppSettings:
     copy_files_as_zip: bool = False
     history_copy_as_zip: bool = False
+    history_copy_as_zip_by_profile: dict[str, bool] = field(default_factory=dict)
     history_zip_migrated: bool = False
     appearance: str = "Light"
     appearance_migrated: bool = False
@@ -312,6 +313,9 @@ class AppSettings:
     txt_export_end: int = 100
     txt_export_current: int = 1
     shared_vocabulary_instruction_path: str | None = None
+
+    def history_zip_for_profile(self, profile_id):
+        return self.history_copy_as_zip_by_profile.get(profile_id, self.history_copy_as_zip)
 
 @dataclass
 class WorkflowTemplate:

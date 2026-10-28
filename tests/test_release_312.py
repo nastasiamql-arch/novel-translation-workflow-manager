@@ -136,7 +136,7 @@ def test_native_recycle_bin_receives_snapshot(history):
 
 def test_compact_history_delete_has_no_confirmation(window, monkeypatch):
     w, p, ws, errors = window
-    ws.history_range.setText('6-10'); ws.stage_buttons[1].click(); ws.save_for_review_button.click()
+    ws.history_range.setText('6-10'); ws.stage_buttons[1].click(); w.save_for_review()
     wait_until(lambda: not w.history_busy())
     w.open_polish_history(); wait_until(lambda: not w.history_busy())
     page = w._utility_pages['polish-history:' + p.id]
