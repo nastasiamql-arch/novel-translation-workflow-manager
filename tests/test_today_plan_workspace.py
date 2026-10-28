@@ -21,13 +21,13 @@ def test_today_plan_daily_and_confirmed_export(tmp_path):
     assert today_plan_labels(today_plan_snapshot(planner, profile, today)) == (
         "วันนี้ 0 / 5 บท", "เหลือ 5 บท", "0%", 0
     )
-    record_translator_export(profile, [1, 2], source_path="Translator.txt")
+    record_translator_export(profile, [1, 2], source_path="Translator.txt", digest="a"*64, exported_path="out.txt", event_id="one")
     repo.save_profile(profile)
     snap = today_plan_snapshot(planner, profile, today)
     assert snap["completed"] == 2
     assert today_plan_labels(snap) == ("วันนี้ 2 / 5 บท", "เหลือ 3 บท", "40%", 40)
     # Re-export the same chapters: the ledger deduplicates confirmed chapters.
-    record_translator_export(profile, [1, 2], source_path="Translator.txt")
+    record_translator_export(profile, [1, 2], source_path="Translator.txt", digest="a"*64, exported_path="out.txt", event_id="two")
     repo.save_profile(profile)
     assert today_plan_snapshot(planner, profile, today)["completed"] == 2
 
