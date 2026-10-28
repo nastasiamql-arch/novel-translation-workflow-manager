@@ -25,7 +25,7 @@ class NovelHeader(QFrame):
         super().__init__()
         self.repo = repo
         self.setObjectName('novelHeader')
-        layout = QHBoxLayout(self); layout.setContentsMargins(9,4,9,4); layout.setSpacing(8)
+        layout = QHBoxLayout(self); layout.setContentsMargins(8,2,8,2); layout.setSpacing(6)
         self.cover = QLabel(); self.cover.setObjectName('activeNovelCover')
         self.cover.setFixedSize(34, 44); self.cover.setAlignment(Qt.AlignCenter)
         self.cover.setAccessibleName('ปกนิยายที่กำลังทำงาน')
