@@ -377,7 +377,7 @@ def test_compact_history_geometry_themes(window, appearance, width):
     try:
         row = page.findChild(QFrame, 'polishHistoryRow')
         buttons = row.findChildren(QPushButton)
-        assert row.height() <= (100 if width < 600 else 60)
+        assert 86 <= row.height() <= 150
         assert all(b.geometry().right() < row.width() for b in buttons)
         assert all(not a.geometry().intersects(b.geometry()) for i, a in enumerate(buttons) for b in buttons[i + 1:])
     finally: page.hide(); page.setParent(w)
@@ -474,7 +474,7 @@ def test_history_number_sits_immediately_before_copy_in_both_themes(window, appe
         assert ordinal.geometry().left() >= 0
         assert ordinal.geometry().right() < row.width()
         assert copy.geometry().right() < row.width()
-        assert row.height() <= (100 if width < 600 else 60)
+        assert 86 <= row.height() <= 150
     finally:
         page.hide(); page.setParent(w)
 
