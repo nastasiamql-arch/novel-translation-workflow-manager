@@ -579,6 +579,7 @@ class WorkspacePage(QWidget):
         editor_layout.addWidget(self.novel_header)
         self.today_plan_bar = TodayPlanBar(owner.repo, self.profile_id,
             lambda: owner.open_story_planner(self.profile_id))
+        self.today_plan_bar.apply_appearance(owner.settings.appearance)
         self.today_plan_bar.refresh(profile)
         editor_layout.addWidget(self.today_plan_bar)
         editor_layout.addWidget(self.editor_header)
