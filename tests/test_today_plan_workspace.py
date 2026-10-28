@@ -91,8 +91,23 @@ def test_workspace_bar_reused_and_navigation_persistence(tmp_path):
         window.navigation.brand_toggle.click()
         window._persist_workspace_session()
         assert repo.load_settings().navigation_collapsed
+        # No plan opens the existing daily planner with this novel selected.
+        bar.open_button.click()
+        assert window.main_pages.currentWidget() is window.today_page
+        assert window.today_page.profile_combo.currentData() == profile.id
+        assert window.today_page.editor.isVisible()
+        window.navigate("workspace")
+        assert window.workspace_stack.currentWidget() is ws
+        assert ws.today_plan_bar is bar
+
+        # A long-term schedule opens the existing story-specific planner.
+        planner = TranslationPlanner(repo)
+        planner.save_story_schedule(profile.id, "daily", final_chapter=15,
+                                    start_day=date.today(), daily_target=5)
+        bar.refresh(profile)
         bar.open_button.click()
         assert window._active_utility_page == "story-planner"
+        assert window._utility_pages["story-planner"].profile_id == profile.id
         window.return_from_utility_page()
         assert window.workspace_stack.currentWidget() is ws
         assert ws.today_plan_bar is bar
