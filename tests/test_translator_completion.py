@@ -124,7 +124,8 @@ def test_real_exports_6_to_10_then_11_to_15_and_corrections_count_ten(translator
     saved=w.repo.list_profiles()[0]
     assert daily_chapter_count(saved)==10 and goal_progress(saved)==(10,5,100)
     assert w.si==original_step and QApplication.clipboard().text()=='unrelated clipboard'
-    assert 'วันนี้ +10 บท' in ws.novel_header.progress.text()
+    assert 'วันนี้ +10 บท' in w.progress_status.fullText()
+    assert 'วันนี้ +' not in ws.novel_header.progress.text()
     assert not errors
 
 
@@ -164,7 +165,8 @@ def test_dashboard_library_header_and_goal_agree(translator):
     assert 'แปลสำเร็จ 5/5 บท ✓' in labels
     card=next(w.profile_cards.item(i) for i in range(w.profile_cards.count()) if w.profile_cards.item(i).data(256)==p.id)
     assert card.text() == saved.name
-    assert 'วันนี้ +5 บท' in ws.novel_header.progress.text()
+    assert 'วันนี้ +5 บท' in w.progress_status.fullText()
+    assert 'วันนี้ +' not in ws.novel_header.progress.text()
 
 
 def test_date_rollover_refreshes_header_without_new_exports(window,monkeypatch):
@@ -174,10 +176,12 @@ def test_date_rollover_refreshes_header_without_new_exports(window,monkeypatch):
     w.repo.save_profile(p)
     monkeypatch.setattr(progress,'local_day',lambda *a:'2026-10-13')
     w.refresh_translation_progress()
-    assert 'วันนี้ +2 บท' in ws.novel_header.progress.text()
+    assert 'วันนี้ +2 บท' in w.progress_status.fullText()
+    assert 'วันนี้ +' not in ws.novel_header.progress.text()
     monkeypatch.setattr(progress,'local_day',lambda *a:'2026-10-14')
     w.progress_timer.timeout.emit()
-    assert 'วันนี้ 0 บท' in ws.novel_header.progress.text()
+    assert 'วันนี้ +0 บท' in w.progress_status.fullText()
+    assert 'วันนี้ +' not in ws.novel_header.progress.text()
 
 
 @pytest.mark.parametrize('appearance',['Light','Dark'])
@@ -288,7 +292,8 @@ def test_header_never_uses_default_context_chapter_or_verified_line(window):
     record(p,[322,323])
     ws.novel_header.refresh(p,323)
     assert 'Export ล่าสุด: บท 322–323' in ws.novel_header.progress.text()
-    assert 'วันนี้ +2 บท' in ws.novel_header.progress.text()
+    assert daily_chapter_count(p) == 2
+    assert 'วันนี้ +' not in ws.novel_header.progress.text()
 
 
 @pytest.mark.parametrize('phase',['after_txt','after_context','after_statistics','after_commit'])
