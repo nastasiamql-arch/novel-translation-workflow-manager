@@ -92,7 +92,7 @@ def test_workspace_bar_reused_and_navigation_persistence(tmp_path):
         window._persist_workspace_session()
         assert repo.load_settings().navigation_collapsed
         bar.open_button.click()
-        assert window._active_utility_page == f"story-planner:{profile.id}"
+        assert window._active_utility_page == "story-planner"
         window.return_from_utility_page()
         assert window.workspace_stack.currentWidget() is ws
         assert ws.today_plan_bar is bar
