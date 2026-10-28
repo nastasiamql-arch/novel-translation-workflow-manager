@@ -257,6 +257,23 @@ def application_stylesheet(appearance: str = "Dark") -> str:
     QListWidget::item:focus, QTreeWidget::item:focus, QTreeView::item:focus, QTableView::item:focus {{ outline: 0; border: 0; }}
     QHeaderView::section {{ color: {c['secondary']}; background: {c['sidebar']}; border: 0; border-bottom: 1px solid {c['border']}; padding: 7px; }}
     QScrollArea#txtVocabularyBatchScroll {{ background: transparent; border: 0; }}
+    QFrame#translationBatchRow {{ background: {c['surface']}; border: 1px solid {c['border']}; border-left: 3px solid {c['border']}; border-radius: 7px; }}
+    QFrame#translationBatchRow[batchVisual="copied"] {{ background: {c['surface2']}; border-left-color: {c['secondary']}; }}
+    QFrame#translationBatchRow[batchVisual="next"] {{ background: {c['item_selection']}; border: 1px solid {c['accent']}; border-left: 4px solid {c['accent']}; }}
+    QFrame#translationBatchRow[batchVisual="review"] {{ border-left: 3px solid {c['warning']}; }}
+    QFrame#translationBatchRow:hover {{ background: {c['hover']}; }}
+    QLabel#translationBatchNumber {{ font-size: 11pt; color: {c['secondary']}; font-weight: 700; }}
+    QLabel#translationBatchRange {{ font-size: 11pt; color: {c['text']}; font-weight: 700; }}
+    QLabel#translationBatchCount {{ color: {c['secondary']}; font-size: 10pt; }}
+    QLabel[batchCopyStatus="copied"] {{ color: {c['secondary']}; font-weight: 600; }}
+    QLabel[batchCopyStatus="new"] {{ color: {c['text']}; }}
+    QLabel[batchCopyStatus="next"] {{ color: {c['accent']}; font-weight: 700; }}
+    QLabel[batchCopyStatus="review"] {{ color: {c['warning']}; font-weight: 700; }}
+    QFrame#translationBatchRow QPushButton[batchDetails="true"] {{ background: transparent; border: 0; color: {c['secondary']}; padding: 4px 6px; }}
+    QFrame#translationBatchRow QPushButton[batchDetails="true"]:hover {{ background: {c['hover']}; color: {c['text']}; }}
+    QFrame#translationBatchRow QPushButton[batchCopyAction="repeat"] {{ background: {c['surface2']}; border: 1px solid {c['control_border']}; color: {c['text']}; }}
+    QFrame#translationBatchRow QPushButton[batchCopyAction="primary"] {{ background: {c['primary']}; border: 1px solid {c['primary']}; color: {c['primary_text']}; font-weight: 700; }}
+    QFrame#translationBatchRow QPushButton[batchCopyAction="primary"]:hover {{ background: {c['primary_hover']}; }}
     QFrame#txtVocabularyRow {{ background: transparent; border: 0; border-bottom: 1px solid {c['border']}; border-radius: 0; }}
     QFrame#txtVocabularyRow:hover {{ background: {c['hover']}; }}
     QLabel#txtVocabularyBatchNumber {{ color: {c['secondary']}; font-size: 10pt; font-weight: 600; }}

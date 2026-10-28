@@ -10,7 +10,7 @@ from novel_workflow.storage import ProjectRepository
 from novel_workflow.translation_batch_page import TranslationBatchPage
 
 
-def test_translation_batch_86_copy_preserves_viewport_and_row(tmp_path):
+def test_translation_batch_86_copy_preserves_viewport_and_row(tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     repo = ProjectRepository(tmp_path / "repo")
     profile = NovelProfile()
@@ -54,6 +54,13 @@ def test_translation_batch_86_copy_preserves_viewport_and_row(tmp_path):
         status = page.findChild(QLabel, "translationBatchStatus86")
         assert button is not None and status is not None
         row = button.parent()
+        # Deliberately jumping ahead must request confirmation, but repeated
+        # copies of the same already-copied old group must never request it.
+        prompts = []
+        def confirm(skipped, target):
+            prompts.append((skipped.index, target.index))
+            return True
+        monkeypatch.setattr(page, "_confirm_skipped_group", confirm)
 
         for copy_number in (1, 2):
             button.click()
@@ -69,6 +76,7 @@ def test_translation_batch_86_copy_preserves_viewport_and_row(tmp_path):
             assert "คัดลอกแล้ว" in status.text()
             assert "คัดลอกอีกครั้ง" in button.text()
             assert len(load_history(repo, profile.id, "translation")) == copy_number
+        assert prompts == [(1, 86)]
     finally:
         if page._load_worker and page._load_worker.isRunning():
             page._load_worker.wait(20000)

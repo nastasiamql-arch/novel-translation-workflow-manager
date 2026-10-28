@@ -104,6 +104,7 @@ class TranslationBatchPage(QWidget):
         self._groups = ()
         self._rendered = 0
         self._visible = ()
+        self._row_widgets = {}
         self._busy = False
         self._load_worker = None
         self._load_queued = False
@@ -468,6 +469,7 @@ class TranslationBatchPage(QWidget):
             self.refresh()
 
     def _clear_rows(self):
+        self._row_widgets.clear()
         while self.rows.count():
             item = self.rows.takeAt(0)
             if item.widget():
@@ -486,36 +488,73 @@ class TranslationBatchPage(QWidget):
         self._append_rows(limit=max(35, previous_count))
         self._restore_scroll(old)
 
+    def _next_actionable_group(self):
+        """First not-yet-copied or stale group in chapter order."""
+        return next((g for g in self._groups if self._group_status(g) != "copied"), None)
+
+    def _style_row(self, group, row, status_label, button, next_group):
+        """Update existing widgets in place to preserve late-batch scroll position."""
+        status = self._group_status(group)
+        is_next = next_group is not None and group.index == next_group.index
+        visual = "next" if is_next else status
+        status_label.setText(
+            "● ชุดถัดไป · " + ("ต้องตรวจใหม่" if status == "review" else "ยังไม่ได้คัดลอก")
+            if is_next else {
+                "copied": "✓ คัดลอกแล้ว",
+                "review": "⚠ ต้องตรวจใหม่",
+                "new": "○ ยังไม่ได้คัดลอก",
+            }[status]
+        )
+        row.setProperty("batchVisual", visual)
+        status_label.setProperty("batchCopyStatus", visual)
+        button.setProperty("batchCopyAction", "repeat" if status == "copied" else "primary")
+        button.setText(
+            "คัดลอกอีกครั้ง" if status == "copied" else
+            "คัดลอกใหม่" if status == "review" else
+            "คัดลอก ZIP" if self.copy_mode.currentData() else "คัดลอก"
+        )
+        for widget in (row, status_label, button):
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+            widget.update()
+
+    def _update_row_states(self):
+        """Repaint rendered rows only; never rebuild the lazy list after a copy."""
+        next_group = self._next_actionable_group()
+        for group, row, status_label, button in self._row_widgets.values():
+            self._style_row(group, row, status_label, button, next_group)
+
     def _append_rows(self, limit=35):
         if self._busy:
             return
         self._busy = True
         try:
             end = min(len(self._visible), self._rendered + limit)
+            next_group = self._next_actionable_group()
             for group in self._visible[self._rendered:end]:
                 row = QFrame()
                 layout = QGridLayout(row)
-                layout.setContentsMargins(7, 4, 7, 4)
-                layout.setHorizontalSpacing(8)
+                layout.setContentsMargins(10, 5, 8, 5)
+                layout.setHorizontalSpacing(9)
                 row.setObjectName("translationBatchRow")
-                row.setMinimumHeight(48)
-                layout.addWidget(QLabel(f"{group.index:02d}"), 0, 0)
+                row.setMinimumHeight(52)
+                number_label = QLabel(f"{group.index:02d}")
+                number_label.setObjectName("translationBatchNumber")
+                layout.addWidget(number_label, 0, 0)
                 chapter_label = QLabel(f"{group.start:04d}–{group.end:04d}")
+                chapter_label.setObjectName("translationBatchRange")
                 layout.addWidget(chapter_label, 0, 1)
-                layout.addWidget(QLabel(str(len(group.chapters))), 0, 2)
-                status = self._group_status(group)
-                status_text = {"copied": "✓ คัดลอกแล้ว", "review": "ต้องตรวจใหม่",
-                               "new": "ยังไม่ได้คัดลอก"}[status]
-                status_label = QLabel(status_text)
+                count_label = QLabel(str(len(group.chapters)))
+                count_label.setObjectName("translationBatchCount")
+                layout.addWidget(count_label, 0, 2)
+                status_label = QLabel()
                 status_label.setObjectName(f"translationBatchStatus{group.index}")
                 layout.addWidget(status_label, 0, 3)
                 details = QPushButton("รายละเอียด")
+                details.setProperty("batchDetails", True)
                 details.setCheckable(True)
                 layout.addWidget(details, 0, 4)
-                button_label = ("คัดลอกอีกครั้ง" if status == "copied" else
-                                "ต้องตรวจใหม่ · คัดลอก" if status == "review" else
-                                "คัดลอก ZIP" if self.copy_mode.currentData() else "คัดลอก")
-                button = QPushButton(button_label)
+                button = QPushButton()
                 button.setObjectName(f"translationBatchCopy{group.index}")
                 button.setMinimumHeight(36)
                 button.clicked.connect(lambda _checked=False, g=group, b=button: self.copy_group(g, b))
@@ -528,6 +567,8 @@ class TranslationBatchPage(QWidget):
                 filenames.setVisible(False)
                 details.toggled.connect(filenames.setVisible)
                 self.rows.addWidget(filenames)
+                self._row_widgets[group.index] = (group, row, status_label, button)
+                self._style_row(group, row, status_label, button, next_group)
             self._rendered = end
         finally:
             self._busy = False
@@ -537,9 +578,40 @@ class TranslationBatchPage(QWidget):
         if bar.maximum() and position >= bar.maximum() - max(70, bar.pageStep() // 2):
             self._append_rows()
 
+    def _confirm_skipped_group(self, skipped, target):
+        """Let intentional skips proceed, or navigate back without modifying progress."""
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Warning)
+        dialog.setWindowTitle("ตรวจสอบก่อนข้ามชุด")
+        dialog.setText(
+            f"ชุด {skipped.index} (บท {skipped.start:04d}–{skipped.end:04d}) "
+            "ยังไม่ได้คัดลอกหรือจำเป็นต้องตรวจใหม่"
+        )
+        dialog.setInformativeText(
+            f"คุณเลือกคัดลอกชุด {target.index} (บท {target.start:04d}–{target.end:04d})\n"
+            "หากตั้งใจข้าม สามารถกลับมาคัดลอกชุดเก่าหรือคัดลอกซ้ำได้ทุกเมื่อ"
+        )
+        go_back = dialog.addButton(f"กลับไปชุด {skipped.index}", QMessageBox.AcceptRole)
+        proceed = dialog.addButton(f"คัดลอกชุด {target.index} ต่อ", QMessageBox.ActionRole)
+        dialog.addButton("ยกเลิก", QMessageBox.RejectRole)
+        dialog.setDefaultButton(go_back)
+        dialog.exec()
+        if dialog.clickedButton() is go_back:
+            self._scroll_to_group(skipped)
+        return dialog.clickedButton() is proceed
+
     def copy_group(self, group, button=None):
         if not self._source or (self._copy_worker and self._copy_worker.isRunning()):
             return
+        # Never interrupt re-copying an older batch (e.g. the AI did not reply).
+        # Confirm only a *new* forward selection with unfinished earlier batches.
+        if self._group_status(group) == "new":
+            skipped = next((
+                candidate for candidate in self._groups
+                if candidate.index < group.index and self._group_status(candidate) != "copied"
+            ), None)
+            if skipped is not None and not self._confirm_skipped_group(skipped, group):
+                return
         if group.missing:
             result = QMessageBox.question(
                 self, "บทไม่ครบ",
@@ -606,11 +678,8 @@ class TranslationBatchPage(QWidget):
                 f"✓ คัดลอกบท {group.start}–{group.end} สำเร็จ · {len(copied)} ไฟล์ · วางด้วย Ctrl+V")
             if button:
                 button.setText("คัดลอกอีกครั้ง")
-            # A successful copy only changes this row's status. Recreating the
-            # lazy list drops its scroll range and jumps away from late batches.
-            status_label = self.findChild(QLabel, f"translationBatchStatus{group.index}")
-            if status_label is not None:
-                status_label.setText("✓ คัดลอกแล้ว")
+            # Update visible state without recreating rows or moving the viewport.
+            self._update_row_states()
             self._update_history_summary()
         except (OSError, ValueError) as exc:
             self._copy_failed(str(exc))
@@ -714,5 +783,4 @@ class TranslationBatchPage(QWidget):
                 return
 
     def _go_to_next_uncopied(self):
-        group = next((g for g in self._groups if self._group_status(g) == "new"), None)
-        self._scroll_to_group(group)
+        self._scroll_to_group(self._next_actionable_group())
