@@ -35,6 +35,10 @@ def main():
         ws = window.workspaces[profile.id]
         ws.editor.open_file(chapters / "0001.txt")
         screenshots = []
+        from novel_workflow.translation_planner import TranslationPlanner
+        planner = TranslationPlanner(repo)
+        planner.save(date.today(), profile.id, "daily", target_chapters=359)
+        ws.refresh_today_plan(profile)
         for appearance in ("Dark", "Light"):
             window.settings.appearance = appearance
             window.apply_theme()
@@ -58,9 +62,12 @@ def main():
                     viewport = page.scroll
                 QTest.qWait(200)
                 ws.set_focus_mode(False)
+                window.navigation.set_collapsed(True)
                 app.processEvents()
                 normal_width = viewport.width()
                 normal_height = viewport.height()
+                assert ws.today_plan_bar.isVisible()
+                assert ws.today_plan_bar.progress.isVisible()
                 filename = f"{appearance.lower()}-{page_name}-normal.png"
                 assert window.grab().save(str(output / filename))
                 screenshots.append(filename)
@@ -71,6 +78,13 @@ def main():
                 assert window.grab().save(str(output / filename))
                 screenshots.append(filename)
                 print(f"{appearance} {page_name}: normal {normal_width}x{normal_height}, focus {viewport.width()}x{viewport.height()}", flush=True)
+        for nav_collapsed in (False, True):
+            window.navigation.set_collapsed(nav_collapsed)
+            ws.open_editor()
+            app.processEvents()
+            filename = f"editor-navigation-{'icon-only' if nav_collapsed else 'expanded'}.png"
+            assert window.grab().save(str(output / filename))
+            screenshots.append(filename)
         window.resize(900, 600)
         app.processEvents()
         assert window.grab().save(str(output / "narrow-focus.png"))
