@@ -578,7 +578,7 @@ class WorkspacePage(QWidget):
             lambda: self.owner._close_novel_tab(self.profile_id))
         editor_layout.addWidget(self.novel_header)
         self.today_plan_bar = TodayPlanBar(owner.repo, self.profile_id,
-            lambda: owner.open_story_planner(self.profile_id))
+            lambda: owner.open_workspace_today_plan(self.profile_id))
         self.today_plan_bar.apply_appearance(owner.settings.appearance)
         self.today_plan_bar.refresh(profile)
         editor_layout.addWidget(self.today_plan_bar)
@@ -1698,6 +1698,37 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             return TranslationDashboardDialog(self, profiles, self.repo, self.refresh_translation_progress)
 
         self._show_utility_page("progress", "ความคืบหน้าการแปล", create_dashboard)
+
+    def open_workspace_today_plan(self, profile_id):
+        """Open the existing editor for the plan type displayed by TodayPlanBar."""
+        if not any(profile.id == profile_id for profile in self.repo.list_profiles()):
+            return
+        from .translation_planner import TranslationPlanner
+        from PySide6.QtCore import QDate
+        planner = TranslationPlanner(self.repo)
+        try:
+            has_story_schedule = planner.story_schedule(profile_id) is not None
+        except (OSError, ValueError):
+            # Keep the existing Story Planner available to diagnose invalid data.
+            self.open_story_planner(profile_id)
+            return
+        if has_story_schedule:
+            self.open_story_planner(profile_id)
+            return
+        # Daily/focus/rest plans belong to the original TodayPage, not the
+        # story schedule editor. Selecting the profile must not switch workspace.
+        self.today_page.refresh()
+        index = self.today_page.profile_combo.findData(profile_id)
+        if index < 0:
+            return
+        self.today_page.profile_combo.setCurrentIndex(index)
+        self.today_page.day.setDate(QDate.currentDate())
+        self.today_page.refresh()
+        self.main_pages.setCurrentWidget(self.today_page)
+        self._sync_navigation()
+        if self.today_page.planner.active_for_day(date.today(), profile_id=profile_id) is None:
+            self.today_page.editor.show()
+            self.today_page._load_day()
 
     def open_story_planner(self, profile_id):
         """Show the plan only for the currently selected novel."""
