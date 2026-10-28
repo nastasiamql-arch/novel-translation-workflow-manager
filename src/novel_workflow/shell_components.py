@@ -80,9 +80,8 @@ class NovelHeader(QFrame):
         if getattr(self, "_cover_key", None) != cover_key:
             self._cover_key = cover_key
             self._render_cover(profile)
-        today = daily_chapter_count(profile)
-        today_text = f'วันนี้ +{today:,} บท' if today else 'วันนี้ 0 บท'
-        self.progress.setText(f'{completion_label(profile)}  ·  {today_text}')
+        # Today's confirmed exports live in the shared TodayPlanBar below.
+        self.progress.setText(completion_label(profile))
         self.progress.setToolTip(completion_tooltip(profile))
         from .translation_progress import goal_progress
         goal = goal_progress(profile)
