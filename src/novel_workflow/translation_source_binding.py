@@ -59,8 +59,8 @@ def translation_reference_files(entries, source_path=None, selected_id=None):
     source = _check_path(source_path) if source_path else None
     originals = {source} if source and source.is_file() else set()
     if source and source.is_dir():
-        from .vocabulary_batches import scan_chapter_files
-        originals.update(_check_path(c.path) for c in scan_chapter_files(source))
+        from .translation_batches import fast_folder_snapshot
+        originals.update(path for _, path, _ in fast_folder_snapshot(source))
     result, seen = [], set()
     for entry in entries:
         if entry.id == selected_id or entry.dynamic_reference == "CURRENT_SOURCE_CHAPTER":

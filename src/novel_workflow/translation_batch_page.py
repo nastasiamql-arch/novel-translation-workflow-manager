@@ -791,7 +791,9 @@ class TranslationBatchPage(QWidget):
         self._copy_pending = (group, button, self._source, self.mode.currentData(),
                               time.perf_counter())
         bundle = self._ready_bundles.get(group.index)
-        if bundle is not None and bundle.is_current():
+        if bundle is not None:
+            # _publish_ready checks the cheap bundle guard and the full source
+            # snapshot exactly once before publishing to Qt Clipboard.
             self._publish_ready(group, bundle)
             return
         self._ready_bundles.pop(group.index, None)
@@ -814,7 +816,16 @@ class TranslationBatchPage(QWidget):
                 or pending_group.index != group.index):
             self._finish_copy()
             return
-        if not bundle.is_current():
+        try:
+            if not bundle.is_current():
+                raise ValueError("ชุดไฟล์ที่เตรียมไว้เปลี่ยนแล้ว")
+            selected_paths = tuple(
+                chapter.path for chapter in chapters_for_group(source, group)
+                if chapter.path is not None)
+            validate_translation_source(
+                source, text=self.state.get("draft") if mode == "paste" else None,
+                selected_paths=selected_paths)
+        except (OSError, ValueError):
             self._ready_bundles.pop(group.index, None)
             if button is not None:
                 button.setEnabled(False)

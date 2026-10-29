@@ -50,7 +50,8 @@ class ReadyBundle:
 
 def _watch(source, group, references, files, entry, timings):
     selected = chapters_for_group(source, group)
-    inputs = [p for p, _ in source.signatures]
+    inputs = ([chapter.path for chapter in selected if chapter.path is not None]
+              if source.folder is not None else [p for p, _ in source.signatures])
     inputs.extend(references)
     paths = tuple(dict.fromkeys([*inputs, *files]))
     watched = tuple((Path(path), _stat(path)) for path in paths)
@@ -126,7 +127,8 @@ def prepare_cached_bundle(source, group, references, cache_directory, *,
     try:
         t = time.perf_counter()
         files = prepare_translation_batch(
-            source, group, references, entry, as_zip=as_zip, pasted_text=pasted_text)
+            source, group, references, entry, as_zip=as_zip,
+            pasted_text=pasted_text, validated=True)
         preparation_ms = (time.perf_counter() - t) * 1000
         manifest = {
             "schema": CACHE_SCHEMA, "key": key,
