@@ -96,7 +96,7 @@ def prepare_cached_bundle(source, group, references, cache_directory, *,
         manifest_path = entry / "manifest.json"
         try:
             manifest = read_json(manifest_path, None)
-            if not isinstance(manifest, dict) or manifest.get("key") != key:
+            if (not isinstance(manifest, dict) or json.dumps(manifest.get("key"), sort_keys=True) != json.dumps(key, sort_keys=True)):
                 continue
             rels = manifest["files"]
             digests = manifest["digests"]

@@ -849,10 +849,11 @@ class TranslationBatchPage(QWidget):
         if self.profile_id:
             try:
                 source_chapters = chapters_for_group(self._source, group)
+                verified_hashes = {path: digest.hex() for path, digest in self._source.signatures}
                 fingerprints = {
                     str(chapter.number): (
                         hashlib.sha256(chapter.content).hexdigest()
-                        if chapter.content is not None else file_digest(chapter.path).hex()
+                        if chapter.content is not None else verified_hashes[chapter.path]
                     ) for chapter in source_chapters
                 }
                 event = record_copy(
