@@ -201,11 +201,11 @@ def test_unsafe_sections_stay_unchanged_even_when_unstructured_allowed(text):
 
 
 @pytest.mark.parametrize('marker', ['[จบตอน]', '[จบบท]'])
-@pytest.mark.parametrize('newline', ['\\n', '\\r\\n'])
+@pytest.mark.parametrize('newline', ['\n', '\r\n'])
 def test_copy_all_rows_verbatim_like_ctrl_c(marker, newline):
     novel = newline.join(['บทที่ 750', 'เนื้อหา', marker]) + newline
     raw_rows = [
-        '李来福\\tหลี่ไหลฝู\\tชาย\\tคำอธิบาย  ',
+        '李来福\tหลี่ไหลฝู\tชาย\tคำอธิบาย  ',
         'จีน ไทย - คำอธิบายใด ๆ',
         'plain text  with   spaces',
         ' ',
@@ -213,7 +213,7 @@ def test_copy_all_rows_verbatim_like_ctrl_c(marker, newline):
         '| term | meaning |',
         '| --- | --- |',
         '| 李来福 | หลี่ไหลฝู |',
-        '李来福\\tหลี่ไหลฝู\\tชาย\\tคำอธิบาย  ',
+        '李来福\tหลี่ไหลฝู\tชาย\tคำอธิบาย  ',
     ]
     raw = newline.join(raw_rows)
     result = extract_new_vocabulary(novel + 'คำศัพท์ใหม่:' + newline + raw)
@@ -225,8 +225,8 @@ def test_copy_all_rows_verbatim_like_ctrl_c(marker, newline):
 
 
 def test_blank_line_heading_copies_any_layout_without_end_marker():
-    novel = 'บทที่ 750\\nเนื้อหา\\n'
-    text = novel + '\\nคำศัพท์ใหม่\\nanything AI provides: คำศัพท์ 🪄'
+    novel = 'บทที่ 750\nเนื้อหา\n'
+    text = novel + '\nคำศัพท์ใหม่\nanything AI provides: คำศัพท์ 🪄'
     result = extract_new_vocabulary(text)
     assert result.status == 'extracted'
     assert result.cleaned_text == novel
@@ -234,33 +234,33 @@ def test_blank_line_heading_copies_any_layout_without_end_marker():
 
 
 def test_two_sections_end_at_next_chapter_without_blank_separator():
-    text = ('บทที่ 750\\nเนื้อหา\\n[จบตอน]\\nคำศัพท์ใหม่\\n'
-            'คัดลอกทุกคำ แม้ไม่ใช่ตาราง\\n'
-            'บทที่ 751\\nเนื้อหาตอนใหม่\\n[จบบท]\\nคำศัพท์ใหม่\\n'
+    text = ('บทที่ 750\nเนื้อหา\n[จบตอน]\nคำศัพท์ใหม่\n'
+            'คัดลอกทุกคำ แม้ไม่ใช่ตาราง\n'
+            'บทที่ 751\nเนื้อหาตอนใหม่\n[จบบท]\nคำศัพท์ใหม่\n'
             'second block: 还行')
     result = extract_new_vocabulary(text)
     assert result.status == 'extracted'
-    assert result.cleaned_text == ('บทที่ 750\\nเนื้อหา\\n[จบตอน]\\n'
-                                   'บทที่ 751\\nเนื้อหาตอนใหม่\\n[จบบท]\\n')
-    assert result.vocabulary_text == 'คัดลอกทุกคำ แม้ไม่ใช่ตาราง\\nsecond block: 还行'
+    assert result.cleaned_text == ('บทที่ 750\nเนื้อหา\n[จบตอน]\n'
+                                   'บทที่ 751\nเนื้อหาตอนใหม่\n[จบบท]\n')
+    assert result.vocabulary_text == 'คัดลอกทุกคำ แม้ไม่ใช่ตาราง\nsecond block: 还行'
     assert result.vocabulary_count == 2
 
 
 def test_empty_or_mixed_sentinel_rejected_without_modification():
-    for tail in ['', '\\n', '\\n[-]\\n李来福 หลี่ไหลฝู', '\\n李来福 หลี่ไหลฝู\\n[-]']:
-        text = 'บทที่ 751\\n[จบบท]\\nคำศัพท์ใหม่' + tail
+    for tail in ['', '\n', '\n[-]\n李来福 หลี่ไหลฝู', '\n李来福 หลี่ไหลฝู\n[-]']:
+        text = 'บทที่ 751\n[จบบท]\nคำศัพท์ใหม่' + tail
         result = extract_new_vocabulary(text)
         assert result.status == 'ambiguous'
         assert result.cleaned_text == result.original_text == text
 
 
 def test_headings_in_prose_are_not_sections():
-    text = 'บทที่ 751\\nคำศัพท์ใหม่ถือเป็นคำบอกเล่า\\nเนื้อหา'
+    text = 'บทที่ 751\nคำศัพท์ใหม่ถือเป็นคำบอกเล่า\nเนื้อหา'
     assert extract_new_vocabulary(text).cleaned_text == text
 
 
 def test_crlf_bom_without_heading_is_byte_identical():
-    text = '\\ufeffบทที่ 751\\r\\nเนื้อหา  \\r\\n[จบตอน]\\r\\n'
+    text = '\ufeffบทที่ 751\r\nเนื้อหา  \r\n[จบตอน]\r\n'
     result = extract_new_vocabulary(text)
     assert result.status == 'none'
     assert result.original_text == result.cleaned_text == text
