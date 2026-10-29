@@ -199,3 +199,46 @@ def test_export_after_chapter_end_without_blank_line(translator, ending, section
         assert items[0]['text'] == section
     assert w.update_context_from_translator(ws)
     assert sum(item['count'] for item in load_queue(w.repo, p.id)['items']) == expected
+
+
+def test_export_accepts_mixed_vocabulary_format_from_user_screenshot(translator):
+    w, p, ws, source, errors = translator
+    novel = 'บทที่ 750\nเนื้อเรื่อง 李来福\n[จบตอน]'
+    rows = ('枪支弹药 อาวุธปืนและกระสุน - อาวุธปืนและเครื่องกระสุน\n'
+            '领导包间 ห้องอาหารส่วนตัว - ห้องรับประทานอาหาร\n'
+            '李来福\tหลี่ไหลฝู\tชาย\tตัวละคร')
+    editor = ws.editor._current_editor()
+    editor.setPlainText(novel + '\nคำศัพท์ใหม่\n' + rows)
+    assert w.update_context_from_translator(ws)
+    assert source.read_text(encoding='utf-8').rstrip('\n') == novel
+    assert editor.toPlainText().rstrip('\n') == novel
+    assert Path(p.context_path).read_bytes() == source.read_bytes()
+    exports = list((Path(p.main_folder) / 'Context Exports').glob('*.txt'))
+    assert len(exports) == 1 and exports[0].read_bytes() == source.read_bytes()
+    items = load_queue(w.repo, p.id)['items']
+    assert len(items) == 1 and items[0]['count'] == 3
+    assert items[0]['text'] == rows
+    assert w.update_context_from_translator(ws)
+    assert len(load_queue(w.repo, p.id)['items']) == 1
+
+
+def test_unstructured_section_requires_explicit_opt_in(translator, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    w, p, ws, source, errors = translator
+    novel = 'บทที่ 750\nเนื้อเรื่อง\n[จบตอน]'
+    original = novel + '\nคำศัพท์ใหม่\n李来福 เดินกลับเข้าบ้าน'
+    editor = ws.editor._current_editor()
+    editor.setPlainText(original)
+    old_context = Path(p.context_path).read_bytes()
+    monkeypatch.setattr(QMessageBox, 'exec', lambda self: QMessageBox.No)
+    assert not w.update_context_from_translator(ws)
+    assert source.read_text(encoding='utf-8').rstrip('\n') == original
+    assert Path(p.context_path).read_bytes() == old_context
+    assert not load_queue(w.repo, p.id)['items']
+    monkeypatch.setattr(QMessageBox, 'exec', lambda self: QMessageBox.Yes)
+    assert w.update_context_from_translator(ws)
+    assert source.read_text(encoding='utf-8').rstrip('\n') == novel
+    assert Path(p.context_path).read_bytes() == source.read_bytes()
+    items = load_queue(w.repo, p.id)['items']
+    assert len(items) == 1
+    assert items[0]['text'] == '李来福 เดินกลับเข้าบ้าน'
