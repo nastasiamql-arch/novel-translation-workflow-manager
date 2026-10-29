@@ -22,7 +22,14 @@ class ExtractionResult:
 
 
 _HEADING = re.compile(r"^[ \t]*คำศัพท์ใหม่[ \t]*[:：]?[ \t]*$")
+_END_MARKER = re.compile(r"^[ \t]*\[(?:จบตอน|จบบท)\][ \t]*$")
 _ROW = re.compile(r"^[^\S\r\n]*[\u3400-\u9fff\uf900-\ufaff]+(?:\t+|[^\S\r\n]{2,})\S")
+# A single space has no unambiguous column separator in free-form Thai.
+# Require a Chinese term, Thai name, explicit gender field and description.
+_SINGLE_SPACE_ROW = re.compile(
+    r"^[ \t]*[\u3400-\u9fff\uf900-\ufaff]+ [\u0e01-\u0e5b]+ "
+    r"(?:ชาย|หญิง|ไม่ระบุ) [\u0e01-\u0e5b].*$"
+)
 
 
 def extract_new_vocabulary(text: str) -> ExtractionResult:
@@ -35,11 +42,16 @@ def extract_new_vocabulary(text: str) -> ExtractionResult:
         return ExtractionResult(text, text, "", 0, status, warning)
     if not headings:
         return unchanged("none")
-    chapters = [i for i, line in enumerate(lines) if _TRANSLATOR_CHAPTER_LINE.match(line)]
+    chapters = [i for i, line in enumerate(lines)
+                if _TRANSLATOR_CHAPTER_LINE.match(line.lstrip("\ufeff"))]
     spans, blocks, count = [], [], 0
     for index in headings:
-        if index == 0 or lines[index - 1].strip():
-            return unchanged("ambiguous", ("ไม่สามารถยืนยันขอบเขตหัวข้อคำศัพท์",))
+        # A known, full-line end marker is a verified boundary even without
+        # a blank line; arbitrary nonblank prose remains unsafe.
+        if index == 0 or (lines[index - 1].strip() and not
+                          _END_MARKER.fullmatch(lines[index - 1].rstrip("\r\n"))):
+            return unchanged("ambiguous", (
+                f"ไม่สามารถยืนยันขอบเขตหัวข้อคำศัพท์ที่บรรทัด {index + 1}",))
         boundary = next ( (i for i in chapters if i > index), len(lines))
         if any(index < i < boundary for i in headings):
             return unchanged("ambiguous", ("พบหัวข้อคำศัพท์ซ้ำในบทเดียวกัน",))
@@ -51,7 +63,8 @@ def extract_new_vocabulary(text: str) -> ExtractionResult:
         nonempty = [line for line in body if line.strip()]
         if len(nonempty) == 1 and nonempty[0].strip() == "[-]":
             pass
-        elif nonempty and all(_ROW.match(line) for line in nonempty):
+        elif nonempty and all(_ROW.match(line) or _SINGLE_SPACE_ROW.fullmatch(line)
+                              for line in nonempty):
             first = next(i for i, line in enumerate(body) if line.strip())
             last = len(body) - next(i for i, line in enumerate(reversed(body)) if line.strip())
             blocks.append("".join(lines[index + 1 + first:index + 1 + last]).rstrip("\r\n"))
