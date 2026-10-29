@@ -4545,32 +4545,6 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             from .vocabulary_extraction import extract_new_vocabulary
             original_text = translator_bytes.decode('utf-8-sig')
             extraction = extract_new_vocabulary(original_text)
-            if extraction.status == 'ambiguous' and extraction.reviewable:
-                # A structurally bounded section may contain a genuinely new
-                # AI formatting style. Offer an opt-in instead of deleting prose
-                # automatically or forcing users to hand-edit the Translator.
-                candidate = extract_new_vocabulary(original_text, allow_unstructured=True)
-                if candidate.status == 'extracted':
-                    confirm = QMessageBox(self)
-                    confirm.setWindowTitle('ตรวจรายการคำศัพท์ก่อน Export')
-                    confirm.setIcon(QMessageBox.Warning)
-                    confirm.setText(
-                        'พบหัวข้อคำศัพท์ใหม่หลังเครื่องหมายจบบท แต่รูปแบบรายการไม่เป็นมาตรฐาน\n'
-                        'หากยืนยัน ข้อความหลังหัวข้อนี้จะถูกย้ายไปคำศัพท์รอตรวจ'
-                        ' และจะไม่อยู่ใน Translator, TXT หรือ Context'
-                    )
-                    confirm.setInformativeText(
-                        f'โปรดตรวจข้อความที่จะย้าย ({candidate.vocabulary_count} บรรทัด)\n'
-                        + candidate.vocabulary_text[:350]
-                    )
-                    confirm.setDetailedText(candidate.vocabulary_text[:20000])
-                    confirm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-                    confirm.button(QMessageBox.Yes).setText('ยืนยันย้ายไปคำศัพท์รอตรวจ')
-                    confirm.button(QMessageBox.No).setText('ยกเลิก Export')
-                    confirm.setDefaultButton(QMessageBox.No)
-                    if confirm.exec() != QMessageBox.Yes:
-                        return False
-                    extraction = candidate
             if extraction.status == 'ambiguous':
                 raise ValueError('ไม่สามารถแยกคำศัพท์ได้อย่างปลอดภัย: ' + ' · '.join(extraction.warnings))
             clean_bytes = ((b'\xef\xbb\xbf' if translator_bytes.startswith(b'\xef\xbb\xbf') else b'')
@@ -4881,7 +4855,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 QApplication.clipboard().setText(extraction.vocabulary_text)
                 if QApplication.clipboard().text() != extraction.vocabulary_text:
                     raise OSError('clipboard verification failed')
-                vocabulary_message = f' · แยกคำศัพท์ {extraction.vocabulary_count} รายการ · คัดลอกแล้ว'
+                vocabulary_message = f' · คัดลอกคำศัพท์ {extraction.vocabulary_count} บรรทัดไปคำศัพท์รอตรวจแล้ว'
             except Exception:
                 vocabulary_message = ' · คัดลอกคำศัพท์อัตโนมัติไม่สำเร็จ · สามารถคัดลอกจากคำศัพท์รอตรวจได้'
         self.statusBar().showMessage(f'Export สำเร็จ{vocabulary_message}', 10000)
