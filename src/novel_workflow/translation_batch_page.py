@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import tempfile
 import hashlib
+import os
+import time
+from threading import Lock
 from copy import deepcopy
 from pathlib import Path
 
@@ -10,21 +13,23 @@ from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
-    QGridLayout, QSizePolicy,
+    QGridLayout, QSizePolicy, QApplication,
 )
 
 from .translation_batches import (
     chapters_for_group, find_translation_groups, load_translation_source, translation_groups,
     validate_translation_source,
 )
-from .translation_batch_clipboard import prepare_translation_batch
+from .translation_clipboard_cache import (
+    prepare_cached_bundle, pin_clipboard_bundle, cleanup_translation_cache,
+)
 from .clipboard_files import copy_file_paths
 from .translation_source_binding import (
     enabled_translation_attachments, source_candidates, translation_reference_files,
 )
 from .vocabulary_batches import split_missing_numbers
 from .batch_copy_history import (
-    group_copy_status, load_history, record_copy, source_identity, source_revision,
+    index_group_copy_status, load_history, record_copy, source_identity, source_revision,
 )
 from .workflow_archive import file_digest
 
@@ -45,37 +50,84 @@ class TranslationSourceWorker(QThread):
             self.failed.emit(str(exc))
 
 
-class TranslationCopyWorker(QThread):
-    prepared = Signal(object)
-    failed = Signal(str)
+class TranslationPrewarmWorker(QThread):
+    """One bounded prioritized background producer; Qt Clipboard stays on GUI."""
+    prepared = Signal(object, object)
+    failed = Signal(object, str)
 
-    def __init__(self, source, group, repo, assembler, profile, source_path,
-                 source_id, cache_path, *, as_zip, pasted_text):
+    def __init__(self, source, repo, assembler, profile, source_path, source_id,
+                 cache_path, *, identity, revision, batch_size, as_zip, pasted_text):
         super().__init__()
-        self.source, self.group = source, group
-        self.repo, self.assembler, self.profile = repo, assembler, profile
+        self.source, self.repo, self.assembler, self.profile = source, repo, assembler, profile
         self.source_path, self.source_id = source_path, source_id
-        self.cache_path, self.as_zip, self.pasted_text = cache_path, as_zip, pasted_text
+        self.cache_path, self.identity, self.revision = cache_path, identity, revision
+        self.batch_size, self.as_zip, self.pasted_text = batch_size, as_zip, pasted_text
+        self._lock = Lock()
+        self._queue = []
+        self._active = None
+        self._cancelled = False
+
+    def request(self, group, *, priority=False):
+        with self._lock:
+            if self._cancelled:
+                return
+            if self._active is not None and self._active.index == group.index:
+                return
+            self._queue = [g for g in self._queue if g.index != group.index]
+            self._queue.insert(0, group) if priority else self._queue.append(group)
+            del self._queue[4:]
+
+    def cancel(self):
+        with self._lock:
+            self._cancelled = True
+            self._queue.clear()
+
+    def pending_indices(self):
+        with self._lock:
+            return {g.index for g in self._queue} | (
+                {self._active.index} if self._active is not None else set())
 
     def run(self):
         try:
-            # Resolving reference folders can traverse thousands of files.
-            # Both resolution and bundle preparation stay off the GUI thread.
-            entries = enabled_translation_attachments(
-                self.repo, self.assembler, self.profile)
+            entries = enabled_translation_attachments(self.repo, self.assembler, self.profile)
             selected_path = self.source_path
             if self.source_id:
-                chosen = next((item for item in entries if item.id == self.source_id), None)
+                chosen = next((e for e in entries if e.id == self.source_id), None)
                 if chosen is None or chosen.path is None:
                     raise ValueError("ต้นฉบับจากขั้นตอนแปลไม่พร้อมใช้งาน")
                 selected_path = chosen.path
-            references = translation_reference_files(
-                entries, selected_path, self.source_id)
-            self.prepared.emit(prepare_translation_batch(
-                self.source, self.group, references, self.cache_path,
-                as_zip=self.as_zip, pasted_text=self.pasted_text))
-        except (OSError, ValueError, UnicodeError) as exc:
-            self.failed.emit(str(exc))
+            references = translation_reference_files(entries, selected_path, self.source_id)
+        except (OSError, ValueError, UnicodeError, TypeError) as exc:
+            with self._lock:
+                tasks = tuple(self._queue)
+                self._queue.clear()
+            for group in tasks:
+                self.failed.emit(group, str(exc))
+            return
+        processed = 0
+        while True:
+            with self._lock:
+                if self._cancelled or not self._queue:
+                    self._active = None
+                    break
+                group = self._queue.pop(0)
+                self._active = group
+            try:
+                bundle = prepare_cached_bundle(
+                    self.source, group, references, self.cache_path,
+                    identity=self.identity, revision=self.revision,
+                    batch_size=self.batch_size, as_zip=self.as_zip,
+                    pasted_text=self.pasted_text,
+                )
+                self.prepared.emit(group, bundle)
+            except (OSError, ValueError, UnicodeError, TypeError, KeyError) as exc:
+                self.failed.emit(group, str(exc))
+            processed += 1
+        if processed >= 4:
+            try:
+                cleanup_translation_cache(self.cache_path)
+            except (OSError, ValueError):
+                pass
 
 
 class TranslationBatchPage(QWidget):
@@ -110,6 +162,10 @@ class TranslationBatchPage(QWidget):
         self._load_queued = False
         self._copy_worker = None
         self._copy_pending = None
+        self._retired_workers = []
+        self._ready_bundles = {}
+        self._cache_errors = {}
+        self._history_statuses = {}
         self._initialized = False
         self.setObjectName("translationBatchPage")
         outer = QVBoxLayout(self)
@@ -312,6 +368,7 @@ class TranslationBatchPage(QWidget):
             "Draft เฉพาะนิยายเรื่องนี้" if is_paste
             else self.state.get("path", "") if mode in ("file", "folder") else ""
         )
+        self._invalidate_prepared()
         self._source = None
         self._groups = ()
         self._clear_rows()
@@ -338,6 +395,7 @@ class TranslationBatchPage(QWidget):
     def _step_selected(self, *_):
         if self.mode.currentData() == "step":
             self.state["attachment_id"] = self.source_picker.currentData() or ""
+            self._invalidate_prepared()
             self._source = None
             self._groups = ()
             self._clear_rows()
@@ -360,6 +418,7 @@ class TranslationBatchPage(QWidget):
 
     def _draft_changed(self):
         self.state["draft"] = self.pasted_text.toPlainText()
+        self._invalidate_prepared()
         self._source = None
         self._groups = ()
         self._clear_rows()
@@ -372,14 +431,19 @@ class TranslationBatchPage(QWidget):
         self.state["size"] = self.size.value()
         self._persist()
         if self._source:
+            self._invalidate_prepared()
             self._groups = translation_groups(self._source, self.size.value())
+            self._reindex_history()
             self._refresh_rows()
+            self._schedule_prewarm()
 
     def _copy_mode_changed(self, *_):
         self.state["zip"] = bool(self.copy_mode.currentData())
         self._persist()
         if self._source:
+            self._invalidate_prepared()
             self._refresh_rows()
+            self._schedule_prewarm()
 
     def _step_path(self):
         entries = enabled_translation_attachments(self.repo, self.assembler, self._profile())
@@ -407,6 +471,7 @@ class TranslationBatchPage(QWidget):
         else:
             self.path_label.setToolTip("")
         self.summary.setText("กำลังตรวจต้นฉบับ…")
+        self._invalidate_prepared()
         self._source = None
         self._groups = ()
         self._clear_rows()
@@ -439,6 +504,7 @@ class TranslationBatchPage(QWidget):
         self._source_revision = source_revision(manifest)
         if self.profile_id:
             self._history = load_history(self.repo, self.profile_id, "translation")
+        self._reindex_history()
         missing = split_missing_numbers(tuple(
             type("Segment", (), {"number": chapter.number}) for chapter in source.chapters))
         counts = self._history_summary()
@@ -448,6 +514,7 @@ class TranslationBatchPage(QWidget):
             + (f" · ต้องตรวจใหม่ {counts['review']} ชุด" if counts['review'] else "")
             + (f" · ขาดบท {', '.join(map(str, missing[:20]))}" if missing else ""))
         self._refresh_rows()
+        self._schedule_prewarm()
         saved_scroll = int(self.state.get("scroll", 0) or 0)
         if saved_scroll:
             QTimer.singleShot(0, lambda value=saved_scroll: self._restore_scroll(value))
@@ -492,6 +559,101 @@ class TranslationBatchPage(QWidget):
         """First not-yet-copied or stale group in chapter order."""
         return next((g for g in self._groups if self._group_status(g) != "copied"), None)
 
+    def _reindex_history(self):
+        self._history_statuses = index_group_copy_status(
+            self._history, identity=self._source_identity,
+            revision=self._source_revision, groups=self._groups)
+
+    def _invalidate_prepared(self):
+        self._ready_bundles.clear()
+        self._cache_errors.clear()
+        worker = self._copy_worker
+        if worker is not None:
+            worker.cancel()
+            if worker.isRunning():
+                self._retired_workers.append(worker)
+            else:
+                worker.deleteLater()
+            self._copy_worker = None
+        self._copy_pending = None
+
+    def _schedule_prewarm(self, focus=None):
+        if not self._source or not self._groups:
+            return
+        worker = self._copy_worker
+        if worker is None or not worker.isRunning():
+            profile = deepcopy(self._profile())
+            mode = self.mode.currentData()
+            worker = TranslationPrewarmWorker(
+                self._source, self.repo, self.assembler, profile,
+                self.state.get("path") if mode in ("folder", "file") else None,
+                self.state.get("attachment_id") if mode == "step" else None,
+                self.repo.root / "cache" / "clipboard" / "translation" / profile.id,
+                identity=self._source_identity, revision=self._source_revision,
+                batch_size=self.size.value(), as_zip=bool(self.copy_mode.currentData()),
+                pasted_text=self.state.get("draft") if mode == "paste" else None,
+            )
+            worker.prepared.connect(self._prewarm_ready)
+            worker.failed.connect(self._prewarm_failed)
+            worker.finished.connect(lambda w=worker: self._prewarm_finished(w))
+            self._copy_worker = worker
+            start_worker = True
+        else:
+            start_worker = False
+        if focus is not None and focus.index not in self._ready_bundles:
+            worker.request(focus, priority=True)
+        first = self._next_actionable_group()
+        if first is not None:
+            start = next((i for i, g in enumerate(self._groups)
+                          if g.index == first.index), 0)
+            for group in self._groups[start:start + 4]:
+                if group.index not in self._ready_bundles:
+                    worker.request(group)
+        if start_worker:
+            worker.start()
+        self._update_row_states()
+
+    def _prewarm_ready(self, group, bundle):
+        worker = self.sender()
+        if (worker is not self._copy_worker or self._source is not worker.source
+                or self._source_revision != worker.revision
+                or bool(self.copy_mode.currentData()) != worker.as_zip):
+            return
+        self._ready_bundles[group.index] = bundle
+        self._cache_errors.pop(group.index, None)
+        if self._copy_pending is not None and self._copy_pending[0].index == group.index:
+            self._publish_ready(group, bundle)
+        else:
+            self._update_row_states()
+
+    def _prewarm_failed(self, group, reason):
+        if self.sender() is not self._copy_worker:
+            return
+        self._cache_errors[group.index] = reason
+        if self._copy_pending is not None and self._copy_pending[0].index == group.index:
+            self._copy_failed(reason)
+            self._finish_copy()
+        else:
+            self._update_row_states()
+
+    def _prewarm_finished(self, worker):
+        if worker in self._retired_workers:
+            self._retired_workers.remove(worker)
+        if worker is self._copy_worker:
+            self._copy_worker = None
+        worker.deleteLater()
+        if self._copy_pending is not None and self._source is not None:
+            self._schedule_prewarm(self._copy_pending[0])
+
+    def _finish_copy(self):
+        if self._copy_pending is None:
+            return
+        _, button, _, _, _ = self._copy_pending
+        if button is not None:
+            button.setEnabled(True)
+        self._copy_pending = None
+        self._update_row_states()
+
     def _style_row(self, group, row, status_label, button, next_group):
         """Update existing widgets in place to preserve late-batch scroll position."""
         status = self._group_status(group)
@@ -505,6 +667,13 @@ class TranslationBatchPage(QWidget):
                 "new": "○ ยังไม่ได้คัดลอก",
             }[status]
         )
+        bundle = self._ready_bundles.get(group.index)
+        if bundle is not None and bundle.is_current():
+            status_label.setText(status_label.text() + " · พร้อมคัดลอก")
+        elif group.index in self._cache_errors:
+            status_label.setText(status_label.text() + " · เตรียมไม่สำเร็จ")
+        elif self._copy_worker is not None and group.index in self._copy_worker.pending_indices():
+            status_label.setText(status_label.text() + " · กำลังเตรียม")
         row.setProperty("batchVisual", visual)
         status_label.setProperty("batchCopyStatus", visual)
         button.setProperty("batchCopyAction", "repeat" if status == "copied" else "primary")
@@ -601,10 +770,9 @@ class TranslationBatchPage(QWidget):
         return dialog.clickedButton() is proceed
 
     def copy_group(self, group, button=None):
-        if not self._source or (self._copy_worker and self._copy_worker.isRunning()):
+        if not self._source or self._copy_pending is not None:
             return
-        # Never interrupt re-copying an older batch (e.g. the AI did not reply).
-        # Confirm only a *new* forward selection with unfinished earlier batches.
+        # Re-copying an old group never warns about skipped new groups.
         if self._group_status(group) == "new":
             skipped = next((
                 candidate for candidate in self._groups
@@ -620,50 +788,75 @@ class TranslationBatchPage(QWidget):
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if result != QMessageBox.Yes:
                 return
+        self._copy_pending = (group, button, self._source, self.mode.currentData(),
+                              time.perf_counter())
+        bundle = self._ready_bundles.get(group.index)
+        if bundle is not None and bundle.is_current():
+            self._publish_ready(group, bundle)
+            return
+        self._ready_bundles.pop(group.index, None)
+        if button is not None:
+            button.setEnabled(False)
+            button.setText("กำลังเตรียมไฟล์…")
+        self.summary.setText(
+            f"กำลังเตรียมชุดบท {group.start}–{group.end} · ยังไม่เปลี่ยน Clipboard")
         try:
-            profile = deepcopy(self._profile())
-            mode = self.mode.currentData()
-            chosen = self.state.get("path") if mode in ("file", "folder") else None
-            selected_id = self.state.get("attachment_id") if mode == "step" else None
-            worker = TranslationCopyWorker(
-                self._source, group, self.repo, self.assembler, profile,
-                chosen, selected_id,
-                self.repo.root / "cache" / "clipboard" / "translation" / profile.id,
-                as_zip=bool(self.copy_mode.currentData()),
-                pasted_text=self.pasted_text.toPlainText() if self.mode.currentData() == "paste" else None)
-            self._copy_worker = worker
-            self._copy_pending = (group, button, self._source, mode)
-            if button:
-                button.setEnabled(False)
-                button.setText("กำลังเตรียมไฟล์…")
-            self.summary.setText(f"กำลังเตรียมชุดบท {group.start}–{group.end} · ยังไม่เปลี่ยน Clipboard")
-            worker.prepared.connect(self._copy_ready)
-            worker.failed.connect(self._copy_failed)
-            worker.finished.connect(self._copy_finished)
-            worker.start()
+            self._schedule_prewarm(group)
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "คัดลอกไม่สำเร็จ", str(exc))
+            self._copy_failed(str(exc))
+            self._finish_copy()
 
-    def _copy_ready(self, files):
+    def _publish_ready(self, group, bundle):
         if self._copy_pending is None:
             return
-        group, button, source, mode = self._copy_pending
-        if source is not self._source or mode != self.mode.currentData():
-            self.summary.setText("ต้นฉบับเปลี่ยนแล้ว กรุณาคัดลอกชุดใหม่")
+        pending_group, button, source, mode, clicked_at = self._copy_pending
+        if (source is not self._source or mode != self.mode.currentData()
+                or pending_group.index != group.index):
+            self._finish_copy()
             return
+        if not bundle.is_current():
+            self._ready_bundles.pop(group.index, None)
+            if button is not None:
+                button.setEnabled(False)
+                button.setText("ต้องตรวจใหม่…")
+            self._schedule_prewarm(group)
+            return
+        t = time.perf_counter()
         try:
-            copied = copy_file_paths(files)  # Qt Clipboard must only change on the GUI thread.
-            self.state["last_range"] = f"{group.start}-{group.end}"
-            self.state["last_copied_start"] = group.start
-            self.state["last_copied_end"] = group.end
-            if self.profile_id:
+            copied = copy_file_paths(bundle.files)
+            actual = tuple(Path(url.toLocalFile()).resolve()
+                           for url in QApplication.clipboard().mimeData().urls())
+            if actual != copied:
+                raise OSError("Clipboard ไม่ได้เก็บชุดไฟล์ตามที่ร้องขอ")
+        except (OSError, ValueError, AttributeError) as exc:
+            self._copy_failed(str(exc))
+            self._finish_copy()
+            return
+        publish_ms = (time.perf_counter() - t) * 1000
+        click_ms = (time.perf_counter() - clicked_at) * 1000
+        pin_error = None
+        try:
+            pin_clipboard_bundle(
+                self.repo.root / "cache" / "clipboard" / "translation" / self.profile_id,
+                bundle)
+        except (OSError, ValueError) as exc:
+            pin_error = str(exc)
+        self.state["last_range"] = f"{group.start}-{group.end}"
+        self.state["last_copied_start"] = group.start
+        self.state["last_copied_end"] = group.end
+        history_error = None
+        t = time.perf_counter()
+        if self.profile_id:
+            try:
                 source_chapters = chapters_for_group(self._source, group)
+                verified_hashes = {path: digest.hex() for path, digest in self._source.signatures}
                 fingerprints = {
-                    str(chapter.number): hashlib.sha256(
-                        chapter.content if chapter.content is not None else file_digest(chapter.path)
-                    ).hexdigest() for chapter in source_chapters
+                    str(chapter.number): (
+                        hashlib.sha256(chapter.content).hexdigest()
+                        if chapter.content is not None else verified_hashes[chapter.path]
+                    ) for chapter in source_chapters
                 }
-                record_copy(
+                event = record_copy(
                     self.repo, self.profile_id, "translation",
                     identity=self._source_identity, revision=self._source_revision,
                     start=group.start, end=group.end,
@@ -672,46 +865,47 @@ class TranslationBatchPage(QWidget):
                     copy_mode="zip" if self.copy_mode.currentData() else "files",
                     copied_file_count=len(copied), chapter_fingerprints=fingerprints,
                 )
-                self._history = load_history(self.repo, self.profile_id, "translation")
-            self._persist()
+                self._history.append(event)
+                self._reindex_history()
+            except (OSError, ValueError, TypeError) as exc:
+                history_error = str(exc)
+        history_ms = (time.perf_counter() - t) * 1000
+        self._persist()
+        if history_error or pin_error:
+            self.summary.setText(
+                f"✓ Clipboard พร้อมวาง · {len(copied)} ไฟล์"
+                + (" · บันทึกประวัติไม่สำเร็จ: " + history_error if history_error else "")
+                + (" · ป้องกัน Cache ไม่สำเร็จ: " + pin_error if pin_error else ""))
+        else:
             self.summary.setText(
                 f"✓ คัดลอกบท {group.start}–{group.end} สำเร็จ · {len(copied)} ไฟล์ · วางด้วย Ctrl+V")
-            if button:
-                button.setText("คัดลอกอีกครั้ง")
-            # Update visible state without recreating rows or moving the viewport.
-            self._update_row_states()
+        if os.getenv("NOVELWORKFLOW_COPY_PERF"):
+            print("translation_copy_perf", {
+                "cache_hit": bundle.timings.get("cache_hit"),
+                "clipboard_ms": round(publish_ms, 2),
+                "click_to_clipboard_ms": round(click_ms, 2),
+                "history_ms": round(history_ms, 2),
+            })
+        self._finish_copy()
+        if not history_error:
             self._update_history_summary()
-        except (OSError, ValueError) as exc:
-            self._copy_failed(str(exc))
+        # No scroll position is changed; only rendered row widgets are repainted.
+        QTimer.singleShot(0, self._schedule_prewarm)
 
     def _copy_failed(self, reason):
         self.summary.setText("คัดลอกไม่สำเร็จ: " + reason)
         QMessageBox.warning(self, "คัดลอกไม่สำเร็จ", reason)
 
     def _copy_finished(self):
-        finished_group = None
-        if self._copy_pending:
-            finished_group, button, _, _ = self._copy_pending
-            if button:
-                button.setEnabled(True)
-                if button.text() == "กำลังเตรียมไฟล์…":
-                    button.setText("คัดลอก ZIP" if self.copy_mode.currentData() else "คัดลอก")
-        self._copy_pending = None
-        # In filtered lists a copied 'new' or 'review' row no longer belongs
-        # in the result. Refilter after releasing the worker's button, not
-        # while the worker still holds it as an in-flight control.
-        if (finished_group is not None
-                and self.history_filter.currentData() in ("new", "review")
-                and self._group_status(finished_group) == "copied"):
-            self._refresh_rows()
-        worker = self._copy_worker
-        self._copy_worker = None
-        if worker:
-            worker.deleteLater()
+        # Retained for compatibility with other page integrations.
+        self._finish_copy()
 
     def closeEvent(self, event):
         if ((self._load_worker and self._load_worker.isRunning()) or
-                (self._copy_worker and self._copy_worker.isRunning())):
+                (self._copy_worker and self._copy_worker.isRunning()) or
+                any(worker.isRunning() for worker in self._retired_workers)):
+            if self._copy_worker is not None:
+                self._copy_worker.cancel()
             event.ignore()
             self.summary.setText("กำลังอ่านหรือเตรียมไฟล์ กรุณารอสักครู่ก่อนปิดหน้าต่าง")
             return
@@ -723,11 +917,7 @@ class TranslationBatchPage(QWidget):
         self._flush_draft()
 
     def _group_status(self, group):
-        return group_copy_status(
-            self._history, identity=self._source_identity, revision=self._source_revision,
-            start=group.start, end=group.end,
-            chapter_numbers=[chapter.number for chapter in group.chapters],
-        )
+        return self._history_statuses.get(group.index, "new")
 
     def _history_summary(self):
         statuses = [self._group_status(group) for group in self._groups]

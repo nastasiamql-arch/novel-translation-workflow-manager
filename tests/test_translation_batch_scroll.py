@@ -65,7 +65,8 @@ def test_translation_batch_86_copy_preserves_viewport_and_row(tmp_path, monkeypa
         for copy_number in (1, 2):
             button.click()
             worker = page._copy_worker
-            assert worker is not None and worker.wait(20000)
+            if worker is not None:
+                assert worker.wait(20000)
             app.processEvents()
             # The original row is still alive and the list remains rendered
             # beyond the first 35 groups; no jump to group 1/26.

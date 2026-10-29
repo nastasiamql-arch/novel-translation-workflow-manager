@@ -14,8 +14,8 @@ def _copy_and_finish(page, app, index):
     assert button is not None
     button.click()
     worker = page._copy_worker
-    assert worker is not None
-    assert worker.wait(20000)
+    if worker is not None:
+        assert worker.wait(20000)
     app.processEvents()
     assert "สำเร็จ" in page.summary.text()
 

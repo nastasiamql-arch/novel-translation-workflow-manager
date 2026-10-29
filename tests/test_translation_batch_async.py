@@ -59,8 +59,9 @@ def test_translation_batch_copy_uses_background_worker_and_exact_files(tmp_path)
         button = page.findChild(QPushButton, "translationBatchCopy1")
         assert button is not None
         button.click()
-        assert page._copy_worker is not None
-        assert page._copy_worker.wait(20000)
+        worker = page._copy_worker
+        if worker is not None:
+            assert worker.wait(20000)
         app.processEvents()
         mime = app.clipboard().mimeData()
         paths = [Path(url.toLocalFile()) for url in mime.urls()]
