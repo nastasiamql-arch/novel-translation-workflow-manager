@@ -172,3 +172,30 @@ def test_crash_recovers_translator_and_queue_together(tmp_path, phase):
         assert context.read_bytes() == b'old context'
         assert not load_queue(repo, profile.id)['items']
         assert not list((tmp_path / 'Context Exports').glob('*.txt'))
+
+
+@pytest.mark.parametrize('ending', ['[จบตอน]', '[จบบท]'])
+@pytest.mark.parametrize('section, expected', [
+    ('李来福\tหลี่ไหลฝู\tชาย\tตัวละคร\n来福\tไหลฝู\tชาย\tชื่อเรียก', 2),
+    ('[-]', 0),
+])
+def test_export_after_chapter_end_without_blank_line(translator, ending, section, expected):
+    w, p, ws, source, errors = translator
+    novel = f'บทที่ 6\nเนื้อเรื่อง 李来福\n{ending}'
+    original = novel + '\nคำศัพท์ใหม่\n' + section
+    ws.editor._current_editor().setPlainText(original)
+
+    assert w.update_context_from_translator(ws)
+    cleaned = source.read_text(encoding='utf-8').rstrip('\n')
+    assert cleaned == novel
+    assert ws.editor._current_editor().toPlainText().rstrip('\n') == novel
+    assert Path(p.context_path).read_bytes() == source.read_bytes()
+    exports = list((Path(p.main_folder) / 'Context Exports').glob('*.txt'))
+    assert len(exports) == 1
+    assert exports[0].read_bytes() == source.read_bytes()
+    items = load_queue(w.repo, p.id)['items']
+    assert sum(item['count'] for item in items) == expected
+    if expected:
+        assert items[0]['text'] == section
+    assert w.update_context_from_translator(ws)
+    assert sum(item['count'] for item in load_queue(w.repo, p.id)['items']) == expected
