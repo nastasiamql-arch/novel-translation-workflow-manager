@@ -43,7 +43,6 @@ def test_multiple_chapters_with_verified_boundaries():
 
 @pytest.mark.parametrize('text', [
     'เนื้อหา\nคำศัพท์ใหม่\n李来福\tหลี่ไหลฝู',
-    'เนื้อหา\n\nคำศัพท์ใหม่\nข้อความนิยายต่อไป',
     'เนื้อหา\n\nคำศัพท์ใหม่\n李来福\tหลี่ไหลฝู\nบทที่ 2\nเนื้อหา',
     'เนื้อหา\n\nคำศัพท์ใหม่\n[-]\n\nคำศัพท์ใหม่\n[-]',
     'เนื้อหา\n\nคำศัพท์ใหม่\n',
@@ -105,8 +104,6 @@ def test_two_chapters_with_end_marker_sections():
 @pytest.mark.parametrize('text', [
     'บทที่ 1\n李来福 เดินกลับเข้าบ้าน\nคำศัพท์ใหม่\n李来福\tหลี่ไหลฝู',
     'บทที่ 1\nเนื้อหา\n[จบตอน] และต่อไป\nคำศัพท์ใหม่\n李来福\tหลี่ไหลฝู',
-    'บทที่ 1\nเนื้อหา\n[จบตอน]\nคำศัพท์ใหม่\n李来福 เดินกลับเข้าบ้าน',
-    'บทที่ 1\nเนื้อหา\n[จบตอน]\nคำศัพท์ใหม่\n李来福\tหลี่ไหลฝู\nประโยคนิยายต่อ',
     'บทที่ 1\nเนื้อหา\n[จบตอน]\nคำศัพท์ใหม่\n李来福\tหลี่ไหลฝู\nคำศัพท์ใหม่\n来福\tไหลฝู',
 ])
 def test_verified_end_rejects_ambiguous_rows_or_boundaries(text):
@@ -152,7 +149,7 @@ def test_varied_vocab_rows_after_verified_end(row, marker):
     assert result.vocabulary_count == 1
 
 
-def test_markdown_table_preserves_raw_layout_and_counts_only_data_rows():
+def test_markdown_table_preserves_raw_layout_and_counts_lines():
     novel = 'บทที่ 750\nจบเรื่อง\n[จบตอน]\n'
     table = ('| 中文 | ไทย | คำอธิบาย |\n'
              '| --- | --- | --- |\n'
@@ -161,7 +158,7 @@ def test_markdown_table_preserves_raw_layout_and_counts_only_data_rows():
     result = extract_new_vocabulary(novel + 'คำศัพท์ใหม่\n' + table)
     assert result.status == 'extracted'
     assert result.cleaned_text == novel
-    assert result.vocabulary_count == 2
+    assert result.vocabulary_count == 4  # Counts copied nonempty lines, not inferred words.
     assert result.vocabulary_text == table
 
 
@@ -176,18 +173,17 @@ def test_mixed_rows_keep_duplicates_and_line_endings(newline):
     assert result.vocabulary_count == 3
 
 
-def test_unknown_layout_needs_explicit_review_and_never_silently_deletes_prose():
+def test_new_unstructured_layout_is_copied_automatically():
     novel = 'บทที่ 750\nข้อความ\n[จบตอน]\n'
-    text = novel + 'คำศัพท์ใหม่\n李来福 เดินกลับเข้าบ้าน'
-    first = extract_new_vocabulary(text)
-    assert first.status == 'ambiguous'
-    assert first.reviewable
-    assert first.cleaned_text == first.original_text == text
-    assert first.vocabulary_count == 0
-    reviewed = extract_new_vocabulary(text, allow_unstructured=True)
-    assert reviewed.status == 'extracted'
-    assert reviewed.cleaned_text == novel
-    assert reviewed.vocabulary_text == '李来福 เดินกลับเข้าบ้าน'
+    block = '李来福 เดินกลับเข้าบ้าน\n(คำศัพท์อิสระ) 📖 中文 THAI'
+    text = novel + 'คำศัพท์ใหม่\n' + block
+    result = extract_new_vocabulary(text)
+    assert result.status == 'extracted'
+    assert not result.reviewable
+    assert result.cleaned_text == novel
+    assert result.vocabulary_text == block
+    assert result.vocabulary_count == 2
+    assert extract_new_vocabulary(text, allow_unstructured=True) == result
 
 
 @pytest.mark.parametrize('text', [
@@ -195,7 +191,6 @@ def test_unknown_layout_needs_explicit_review_and_never_silently_deletes_prose()
     'บทที่ 750\nคำศัพท์ใหม่\n李来福 เดินกลับเข้าบ้าน',
     'บทที่ 750\n[จบตอน]\nคำศัพท์ใหม่\n[-]\n李来福 - หลี่ไหลฝู',
     'บทที่ 750\n[จบตอน]\nคำศัพท์ใหม่\n李来福 - หลี่ไหลฝู\nคำศัพท์ใหม่\n来福 - ไหลฝู',
-    'บทที่ 750\n[จบตอน]\nคำศัพท์ใหม่\n李来福 - หลี่ไหลฝู\nบทที่ 751\nเรื่องถัดไป',
 ])
 def test_unsafe_sections_stay_unchanged_even_when_unstructured_allowed(text):
     first = extract_new_vocabulary(text)
@@ -203,3 +198,69 @@ def test_unsafe_sections_stay_unchanged_even_when_unstructured_allowed(text):
     assert first.cleaned_text == text
     assert reviewed.cleaned_text == text
     assert reviewed.status in {'ambiguous', 'none'}
+
+
+@pytest.mark.parametrize('marker', ['[จบตอน]', '[จบบท]'])
+@pytest.mark.parametrize('newline', ['\n', '\r\n'])
+def test_copy_all_rows_verbatim_like_ctrl_c(marker, newline):
+    novel = newline.join(['บทที่ 750', 'เนื้อหา', marker]) + newline
+    raw_rows = [
+        '李来福\tหลี่ไหลฝู\tชาย\tคำอธิบาย  ',
+        'จีน ไทย - คำอธิบายใด ๆ',
+        'plain text  with   spaces',
+        ' ',
+        '📘 note (เก็บไว้ตรวจภายหลัง)',
+        '| term | meaning |',
+        '| --- | --- |',
+        '| 李来福 | หลี่ไหลฝู |',
+        '李来福\tหลี่ไหลฝู\tชาย\tคำอธิบาย  ',
+    ]
+    raw = newline.join(raw_rows)
+    result = extract_new_vocabulary(novel + 'คำศัพท์ใหม่:' + newline + raw)
+    assert result.status == 'extracted'
+    assert result.original_text == novel + 'คำศัพท์ใหม่:' + newline + raw
+    assert result.cleaned_text == novel
+    assert result.vocabulary_text == raw
+    assert result.vocabulary_count == 8
+
+
+def test_blank_line_heading_copies_any_layout_without_end_marker():
+    novel = 'บทที่ 750\nเนื้อหา\n'
+    text = novel + '\nคำศัพท์ใหม่\nanything AI provides: คำศัพท์ 🪄'
+    result = extract_new_vocabulary(text)
+    assert result.status == 'extracted'
+    assert result.cleaned_text == novel
+    assert result.vocabulary_text == 'anything AI provides: คำศัพท์ 🪄'
+
+
+def test_two_sections_end_at_next_chapter_without_blank_separator():
+    text = ('บทที่ 750\nเนื้อหา\n[จบตอน]\nคำศัพท์ใหม่\n'
+            'คัดลอกทุกคำ แม้ไม่ใช่ตาราง\n'
+            'บทที่ 751\nเนื้อหาตอนใหม่\n[จบบท]\nคำศัพท์ใหม่\n'
+            'second block: 还行')
+    result = extract_new_vocabulary(text)
+    assert result.status == 'extracted'
+    assert result.cleaned_text == ('บทที่ 750\nเนื้อหา\n[จบตอน]\n'
+                                   'บทที่ 751\nเนื้อหาตอนใหม่\n[จบบท]\n')
+    assert result.vocabulary_text == 'คัดลอกทุกคำ แม้ไม่ใช่ตาราง\nsecond block: 还行'
+    assert result.vocabulary_count == 2
+
+
+def test_empty_or_mixed_sentinel_rejected_without_modification():
+    for tail in ['', '\n', '\n[-]\n李来福 หลี่ไหลฝู', '\n李来福 หลี่ไหลฝู\n[-]']:
+        text = 'บทที่ 751\n[จบบท]\nคำศัพท์ใหม่' + tail
+        result = extract_new_vocabulary(text)
+        assert result.status == 'ambiguous'
+        assert result.cleaned_text == result.original_text == text
+
+
+def test_headings_in_prose_are_not_sections():
+    text = 'บทที่ 751\nคำศัพท์ใหม่ถือเป็นคำบอกเล่า\nเนื้อหา'
+    assert extract_new_vocabulary(text).cleaned_text == text
+
+
+def test_crlf_bom_without_heading_is_byte_identical():
+    text = '\ufeffบทที่ 751\r\nเนื้อหา  \r\n[จบตอน]\r\n'
+    result = extract_new_vocabulary(text)
+    assert result.status == 'none'
+    assert result.original_text == result.cleaned_text == text
