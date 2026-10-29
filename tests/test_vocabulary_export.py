@@ -34,7 +34,7 @@ def test_export_cleans_and_queues(translator, section, expected):
 
 def test_ambiguous_export_preserves_source_and_context(translator):
     w, p, ws, source, errors = translator
-    text = 'บทที่ 6\nนิยาย\n\nคำศัพท์ใหม่\nข้อความที่แยกไม่ได้'
+    text = 'บทที่ 6\nนิยาย\nคำศัพท์ใหม่\nข้อความที่แยกไม่ได้'
     ws.editor._current_editor().setPlainText(text)
     old_context = Path(p.context_path).read_bytes()
     assert not w.update_context_from_translator(ws)
