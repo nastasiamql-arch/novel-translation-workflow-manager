@@ -1,3 +1,10 @@
+## v6.13.0 — Clean Translator Export and Vocabulary Queue
+- Extract clearly bounded new-vocabulary sections during Translator Export, keeping uncertain text intact and asking for review.
+- Save the cleaned Translator, TXT, Context, export status and profile-scoped pending vocabulary within the existing recovery transaction.
+- Preserve the original Translator in the pre-export Polish History snapshot and retain unsent vocabulary across restarts.
+- Copy extracted vocabulary automatically after a successful export, with a compact queue for copying and deleting pending batches.
+- Add parser, transaction rollback, crash recovery, clipboard, profile isolation and UI regression coverage.
+
 ## v6.11.0 — Compact Navigation & Today's Translation Plan
 
 - Open the workspace with 60-pixel icon-only global navigation for new settings; preserve existing expanded/collapsed preferences separately from Focus Mode.

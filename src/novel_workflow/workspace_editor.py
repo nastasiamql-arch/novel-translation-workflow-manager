@@ -1350,6 +1350,9 @@ class EditorTabs(QWidget):
             timer = getattr(editor, "autosave_timer", None)
             if timer is not None:
                 timer.stop()
+            position = editor.textCursor().position()
+            vertical = editor.verticalScrollBar().value()
+            horizontal = editor.horizontalScrollBar().value()
             editor.blockSignals(True)
             raw = path.read_bytes()
             normalized = normalize_editor_text(path, text)
@@ -1358,6 +1361,11 @@ class EditorTabs(QWidget):
             editor.compact_pasted_empty_lines = editor.clean_empty_lines
             editor.setProperty("implicitPasteNewline", False)
             editor.setPlainText(normalized)
+            cursor = editor.textCursor()
+            cursor.setPosition(min(position, editor.document().characterCount() - 1))
+            editor.setTextCursor(cursor)
+            editor.verticalScrollBar().setValue(vertical)
+            editor.horizontalScrollBar().setValue(horizontal)
             editor.disk_digest = hashlib.sha256(raw).digest()
             editor.disk_bom = raw.startswith(b'\xef\xbb\xbf')
             editor.disk_newline = detect_newline(raw.decode('utf-8-sig'))

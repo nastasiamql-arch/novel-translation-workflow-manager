@@ -35,7 +35,13 @@ def recover_export(repo, profile_id):
         raise ExportRecoveryConflict(f'Export ค้างและ Profile ถูกแก้จากภายนอก · เก็บไฟล์ทั้งหมดไว้: {profile_path}')
     context = Path(profile.get('context_path') or '').expanduser().resolve()
     root = Path(profile.get('main_folder') or folder).expanduser().resolve()
-    allowed = {context, profile_path, (folder / 'export_status.json').resolve()}
+    from .models import NovelProfile
+    from .chapter_number_reference import _bound_paths
+    bound = _bound_paths(repo, NovelProfile.from_dict(profile))
+    allowed = {context, profile_path, (folder / 'export_status.json').resolve(),
+               (folder / 'pending_vocabulary.json').resolve()}
+    allowed.update(path for path in bound if path.name.casefold().endswith('translator.txt')
+                   and path.name.casefold() != 'translator.txt')
     export_folder = root / 'Context Exports'
     entries = []
     for entry in journal['entries']:

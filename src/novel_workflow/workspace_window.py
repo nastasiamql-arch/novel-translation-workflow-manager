@@ -495,6 +495,12 @@ class WorkspacePage(QWidget):
         self.chapter_number_button.hide()
         header_layout.addWidget(self.chapter_number_button)
         header_layout.addWidget(self.update_context_button)
+        self.vocabulary_queue_button = QToolButton(self.editor_header)
+        self.vocabulary_queue_button.setAccessibleName('คำศัพท์รอตรวจ')
+        self.vocabulary_queue_button.setToolTip('ดู คัดลอก หรือลบคำศัพท์ที่แยกจาก Export')
+        self.vocabulary_queue_button.clicked.connect(self.open_vocabulary_queue)
+        self.vocabulary_queue_button.hide()
+        header_layout.addWidget(self.vocabulary_queue_button)
         self.export_status_label = QLabel("ยังไม่ทราบสถานะการส่งออก", self.editor_header)
         self.export_status_label.setObjectName("exportStatusLabel")
         self.export_status_label.setMinimumWidth(132)
@@ -884,6 +890,9 @@ class WorkspacePage(QWidget):
         self.chapter_number_button.setText(label)
         self.chapter_number_button.setToolTip(tooltip)
         self.update_context_button.setVisible(allowed)
+        self.vocabulary_queue_button.setVisible(allowed)
+        if allowed:
+            self.refresh_vocabulary_queue()
         self.export_status_label.setVisible(allowed)
         self._export_binding_editor = editor
         self._export_binding_path = self.owner._export_path_key(path) if path else None
@@ -891,6 +900,23 @@ class WorkspacePage(QWidget):
         self._export_status_editor = editor if allowed else None
         self._export_status_path = self.owner._export_path_key(path) if allowed else None
         self.refresh_export_status(editor if allowed else None, verified=allowed)
+
+    def refresh_vocabulary_queue(self):
+        from .vocabulary_queue import load_queue
+        try:
+            count = sum(row['count'] for row in load_queue(self.owner.repo, self.profile_id)['items'])
+            self.vocabulary_queue_button.setText(f'คำศัพท์รอตรวจ ({count})')
+        except (OSError, ValueError):
+            self.vocabulary_queue_button.setText('คำศัพท์รอตรวจ (!)')
+
+    def open_vocabulary_queue(self):
+        from .vocabulary_queue_dialog import VocabularyQueueDialog
+        try:
+            if self.owner.profile and self.owner.profile.id == self.profile_id:
+                VocabularyQueueDialog(self.owner.repo, self.owner.profile, self,
+                                      changed=self.refresh_vocabulary_queue).exec()
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, 'เปิดคำศัพท์รอตรวจไม่ได้', str(exc))
 
     def refresh_export_status(self, editor=None, *, verified=False):
         if editor is None:
@@ -4510,12 +4536,21 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 raise OSError("ไม่พบไฟล์ Context ที่ผูกกับโปรไฟล์นี้")
             translator_bytes = source.read_bytes()
             source_digest = hashlib.sha256(translator_bytes).digest()
+            from .vocabulary_extraction import extract_new_vocabulary
+            original_text = translator_bytes.decode('utf-8-sig')
+            extraction = extract_new_vocabulary(original_text)
+            if extraction.status == 'ambiguous':
+                raise ValueError('ไม่สามารถแยกคำศัพท์ได้อย่างปลอดภัย: ' + ' · '.join(extraction.warnings))
+            clean_bytes = ((b'\xef\xbb\xbf' if translator_bytes.startswith(b'\xef\xbb\xbf') else b'')
+                           + extraction.cleaned_text.encode('utf-8'))
+            clean_digest = (source_digest if clean_bytes == translator_bytes
+                            else hashlib.sha256(clean_bytes).digest())
             from .translation_progress import translator_chapters
-            confirmed_chapters = translator_chapters(translator_bytes)
+            confirmed_chapters = translator_chapters(clean_bytes)
             if source_digest != editor.disk_digest:
                 raise OSError("Translator ถูกแก้ไขจากภายนอก")
             original_digest = hashlib.sha256(context.read_bytes()).digest()
-            chapter_range = translator_chapter_range(translator_bytes)
+            chapter_range = translator_chapter_range(clean_bytes)
             history_range = chapter_range
             if chapter_range is None:
                 entered_range, accepted = QInputDialog.getText(
@@ -4541,6 +4576,15 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             initial_attachment_signature = attachment_signature(planned)
             if not any(path.resolve() == context for path, _target, _item, _ctx in planned):
                 raise OSError("ยังไม่ได้เลือกไฟล์ Context ในขั้นตอนตรวจคำแปล")
+            # When cleaning the Translator, preserve its exact pre-export bytes
+            # in the existing history snapshot even if the step did not link it.
+            snapshot_signature = initial_attachment_signature
+            if clean_bytes != translator_bytes and not any(path.resolve() == source for path, *_ in planned):
+                step_for_snapshot.files.append(StepFile(
+                    label=source.name, reference_type='external_file', path=str(source),
+                    order=max((item.order for item in step_for_snapshot.files), default=-1) + 1))
+                snapshot_plan, _ = self.polish_history._plan(profile_for_snapshot, step_for_snapshot)
+                snapshot_signature = attachment_signature(snapshot_plan)
             root = (Path(profile.main_folder).expanduser() if profile.main_folder.strip()
                     else self.repo.profile_dir(profile.id))
             if not root.is_dir():
@@ -4562,7 +4606,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             target = export_folder / target_name
             if not os.access(export_folder, os.W_OK):
                 raise OSError("ไม่มีสิทธิ์เขียนในโฟลเดอร์ Context Exports")
-        except (OSError, ValueError, TypeError) as exc:
+        except (OSError, ValueError, TypeError, UnicodeError) as exc:
             QMessageBox.warning(self, "Export ไม่ได้", str(exc))
             return False
 
@@ -4666,13 +4710,18 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                  entry["order"], entry["enabled"], entry["is_context"])
                 for entry in manifest.get("files", [])
             )
-            if saved_attachment_signature != initial_attachment_signature:
+            if saved_attachment_signature != snapshot_signature:
                 raise OSError("รายการไฟล์ใน Snapshot ไม่ตรงกับชุดที่ยืนยันไว้ก่อน Export")
             saved_context = next((entry for entry in manifest.get("files", [])
                                   if entry.get("is_context") and
                                   Path(entry.get("original_path", "")).resolve() == context), None)
             if saved_context is None or saved_context.get("sha256") != original_digest.hex():
                 raise OSError("ตรวจสอบ Snapshot แล้วไม่พบ Context เวอร์ชันก่อน Export")
+            if clean_bytes != translator_bytes and not any(
+                    Path(entry.get('original_path', '')).resolve() == source
+                    and entry.get('sha256') == source_digest.hex()
+                    for entry in manifest.get('files', [])):
+                raise OSError('ไม่พบ Translator ก่อน Export ใน Snapshot')
             snapshot_verified = True
             fresh_profile = self._translator_profile_for_path(profile_id, source)
             if (fresh_profile is None
@@ -4688,16 +4737,35 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 raise OSError("พบไฟล์ชื่อเดียวกันระหว่างเตรียม Export กรุณาลองอีกครั้ง")
             if hashlib.sha256(context.read_bytes()).digest() != original_digest:
                 raise OSError("Context ถูกแก้ไขจากภายนอกระหว่างการยืนยัน")
-            staged_files.append((target, _stage_bytes_file(target, translator_bytes)))
-            staged_files.append((context, _stage_bytes_file(context, translator_bytes)))
+            staged_files.append((target, _stage_bytes_file(target, clean_bytes)))
+            staged_files.append((context, _stage_bytes_file(context, clean_bytes)))
             with self.repo.profile_lock:
                 from .translation_progress import record_translator_export
+                from .vocabulary_queue import load_queue, queue_path
                 import uuid
                 event = record_translator_export(fresh_profile, confirmed_chapters,
-                    source_path=str(source), digest=source_digest.hex(), exported_path=str(target),
+                    source_path=str(source), digest=clean_digest.hex(), exported_path=str(target),
                     event_id=uuid.uuid4().hex, snapshot_path=str(snapshot.path))
-                profile_path = self.repo.profile_dir(profile_id) / 'profile.json'
+                queue_file = queue_path(self.repo, profile_id)
                 from .workflow_archive import file_digest
+                queue_before_digest = (file_digest(queue_file) if extraction.has_vocabulary and queue_file.exists() else None)
+                queue = load_queue(self.repo, profile_id) if extraction.has_vocabulary else None
+                added_vocabulary = False
+                if extraction.has_vocabulary and not any(
+                        item['source_digest'] == source_digest.hex() and item.get('source_path') == str(source)
+                        for item in queue['items']):
+                    queue['items'].append({'id': uuid.uuid4().hex, 'profile_id': profile_id,
+                        'source_export_id': event['event_id'], 'source_path': str(source),
+                        'source_digest': source_digest.hex(), 'chapter_range': chapter_range,
+                        'created_at': event['completed_at'], 'count': extraction.vocabulary_count,
+                        'text': extraction.vocabulary_text})
+                    staged_queue = _stage_bytes_file(queue_file, b'')
+                    staged_files.append((queue_file, staged_queue))
+                    write_json(staged_queue, queue)
+                    added_vocabulary = True
+                if clean_bytes != translator_bytes:
+                    staged_files.append((source, _stage_bytes_file(source, clean_bytes)))
+                profile_path = self.repo.profile_dir(profile_id) / 'profile.json'
                 profile_before_digest = file_digest(profile_path)
                 staged_profile = _stage_bytes_file(profile_path, b'')
                 staged_files.append((profile_path, staged_profile))
@@ -4705,7 +4773,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 records = deepcopy(self._export_records(profile_id))
                 key = self._export_path_key(source)
                 records[key] = {'profile_id': profile_id, 'translator_path': key,
-                    'digest': source_digest.hex(), 'exported_at': event['completed_at'],
+                    'digest': clean_digest.hex(), 'exported_at': event['completed_at'],
                     'exported_txt_path': str(target), 'pending': False,
                     'event_id': event['event_id'], 'chapter_range': event['chapter_range'],
                     'context_updated': True, 'status': 'committed'}
@@ -4715,8 +4783,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 staged_files.append((status_path, staged_status))
                 write_json(staged_status, records)
                 def verify_transaction():
-                    if target.read_bytes() != translator_bytes or context.read_bytes() != translator_bytes:
+                    if (target.read_bytes() != clean_bytes or context.read_bytes() != clean_bytes
+                            or (clean_bytes != translator_bytes and source.read_bytes() != clean_bytes)):
                         raise OSError('ตรวจสอบหลังเขียนพบว่าไฟล์ TXT หรือ Context ไม่ตรงกับ Translator')
+                    if added_vocabulary and load_queue(self.repo, profile_id) != queue:
+                        raise OSError('ตรวจสอบคำศัพท์รอตรวจไม่สำเร็จ')
                     persisted = read_json(profile_path, {})
                     if not any(e.get('event_id') == event['event_id'] for e in persisted.get('translator_export_events', [])):
                         raise OSError('บันทึกสถิติ Translator Export ไม่สำเร็จ')
@@ -4724,13 +4795,16 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 if journal_path.exists(): raise OSError('ยังมี Export ค้างที่ต้องตรวจสอบก่อน Export ใหม่')
                 def verify_before():
                     current_status_digest = file_digest(status_path) if status_path.exists() else None
+                    current_queue_digest = (file_digest(queue_file)
+                                            if extraction.has_vocabulary and queue_file.exists() else None)
                     if (file_digest(context) != original_digest or file_digest(source) != source_digest
                             or file_digest(profile_path) != profile_before_digest
-                            or current_status_digest != status_before_digest):
+                            or current_status_digest != status_before_digest
+                            or current_queue_digest != queue_before_digest):
                         raise OSError('ไฟล์ถูกแก้ไขจากภายนอกระหว่างเตรียม Export · ไม่เขียนทับข้อมูล')
                 def prepare_destination(destination, staged):
                     if destination == profile_path.resolve():
-                        if target.read_bytes() != translator_bytes or context.read_bytes() != translator_bytes:
+                        if target.read_bytes() != clean_bytes or context.read_bytes() != clean_bytes:
                             raise OSError('ตรวจสอบ TXT/Context ก่อนบันทึกสถิติไม่สำเร็จ')
                         when = datetime.now().astimezone()
                         event['completed_at'] = when.isoformat(timespec='microseconds')
@@ -4760,15 +4834,25 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
         self.ps_list = [fresh_profile if p.id == profile_id else p for p in self.ps_list]
         self.profile = fresh_profile
-        workspace.editor.apply_external_update(context, visible_text)
+        if clean_bytes != translator_bytes:
+            workspace.editor.apply_external_update(source, extraction.cleaned_text)
+        workspace.editor.apply_external_update(context, extraction.cleaned_text)
+        workspace.refresh_vocabulary_queue()
         workspace.refresh_export_status()
         self.refresh_translation_progress()
         count = snapshot.manifest["file_count"]
         if not confirmed_chapters:
             QMessageBox.warning(self, 'ยังยืนยันจำนวนบทไม่ได้', 'Export สำเร็จ แต่ไม่พบหัวบทที่ตรวจสอบได้ จึงไม่ได้เพิ่มยอดแปลเสร็จ')
-        self.statusBar().showMessage(
-            f"สำรอง {history_step.name} บท {history_range} สำเร็จ · {count} ไฟล์ · Export {target.name} สำเร็จ", 8000
-        )
+        vocabulary_message = ''
+        if added_vocabulary:
+            try:
+                QApplication.clipboard().setText(extraction.vocabulary_text)
+                if QApplication.clipboard().text() != extraction.vocabulary_text:
+                    raise OSError('clipboard verification failed')
+                vocabulary_message = f' · แยกคำศัพท์ {extraction.vocabulary_count} รายการ · คัดลอกแล้ว'
+            except Exception:
+                vocabulary_message = ' · คัดลอกคำศัพท์อัตโนมัติไม่สำเร็จ · สามารถคัดลอกจากคำศัพท์รอตรวจได้'
+        self.statusBar().showMessage(f'Export สำเร็จ{vocabulary_message}', 10000)
         QMessageBox.information(
             self, "Export สำเร็จ",
             f"สำรอง {history_step.name} บท {history_range} สำเร็จ\n"

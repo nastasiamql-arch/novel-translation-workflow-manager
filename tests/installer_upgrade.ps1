@@ -98,7 +98,10 @@ $oldChromeProfile = Join-Path $dataDir 'chrome-ai-profile'
 New-Item -ItemType Directory -Path $oldChromeProfile -Force | Out-Null
 $oldChromeData = Join-Path $oldChromeProfile 'KeepMe.test'
 Set-Content -LiteralPath $oldChromeData -Value 'preserve local Chrome profile' -Encoding UTF8
-$preservedFiles = @($profilePath, $settingsPath, $contextPath, $novelPath, $recoveryPath, $oldAIJobs, $oldAIResponse, $oldChromeData) + $historyFiles
+$pendingVocabulary = Join-Path $profileDir 'pending_vocabulary.json'
+$queueFixture = @{version=1; items=@(@{id='upgrade-fixture'; profile_id=$profileId; text='term'; count=1; source_digest='fixture'})} | ConvertTo-Json -Depth 5
+[IO.File]::WriteAllText($pendingVocabulary, $queueFixture, [Text.UTF8Encoding]::new($false))
+$preservedFiles = @($profilePath, $settingsPath, $contextPath, $novelPath, $recoveryPath, $oldAIJobs, $oldAIResponse, $oldChromeData, $pendingVocabulary) + $historyFiles
 $preservedHashes = @{}
 foreach ($path in $preservedFiles) { $preservedHashes[$path] = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
 $unrelated = Join-Path $installDir 'user-note.txt'
