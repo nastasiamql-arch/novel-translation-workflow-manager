@@ -25,8 +25,8 @@ class ExtractionResult:
         return self.vocabulary_count > 0
 
 
-_HEADING = re.compile(r"^[ \\t]*คำศัพท์ใหม่[ \\t]*[:：]?[ \\t]*$")
-_END_MARKER = re.compile(r"^[ \\t]*\\[(?:จบตอน|จบบท)\\][ \\t]*$")
+_HEADING = re.compile(r"^[ \t]*คำศัพท์ใหม่[ \t]*[:：]?[ \t]*$")
+_END_MARKER = re.compile(r"^[ \t]*\[(?:จบตอน|จบบท)\][ \t]*$")
 
 
 def extract_new_vocabulary(text: str, *, allow_unstructured: bool = False) -> ExtractionResult:
