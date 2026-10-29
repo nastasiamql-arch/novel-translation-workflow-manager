@@ -117,3 +117,41 @@ def revision_summary(events, *, identity: str, revision: str, groups) -> dict:
         "next_index": next((i for i, status in enumerate(statuses) if status != "copied"), None),
         "statuses": statuses,
     }
+
+
+def index_group_copy_status(events, *, identity: str, revision: str, groups) -> dict[int, str]:
+    """Compute all group statuses in one indexed pass over matching events.
+
+    The public group_copy_status contract remains unchanged for other callers.
+    """
+    from bisect import bisect_left
+    groups = tuple(groups)
+    if not groups:
+        return {}
+    starts = [g.start for g in groups]
+    status = {g.index: "new" for g in groups}
+    signatures = {
+        (g.start, g.end, tuple(c.number for c in g.chapters)): g.index
+        for g in groups
+    }
+    matching = (e for e in events if e.get("source_identity") == identity)
+    for event in matching:
+        lo, hi = event.get("start"), event.get("end")
+        if not isinstance(lo, int) or not isinstance(hi, int):
+            continue
+        exact = (lo, hi, tuple(event.get("chapter_numbers") or ()))
+        index = signatures.get(exact)
+        if index is not None and event.get("source_revision") == revision:
+            status[index] = "copied"
+        # An earlier revision or differing group covering a chapter requires
+        # review unless this exact group has already been copied.
+        offset = max(0, bisect_left(starts, lo) - 1)
+        while offset < len(groups) and groups[offset].start <= hi:
+            group = groups[offset]
+            overlap = group.end >= lo or any(
+                c.number in event.get("chapter_numbers", ()) for c in group.chapters
+            )
+            if overlap and status[group.index] == "new":
+                status[group.index] = "review"
+            offset += 1
+    return status
