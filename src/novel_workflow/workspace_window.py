@@ -503,7 +503,9 @@ class WorkspacePage(QWidget):
         header_layout.addWidget(self.vocabulary_queue_button)
         self.export_status_label = QLabel("ยังไม่ทราบสถานะการส่งออก", self.editor_header)
         self.export_status_label.setObjectName("exportStatusLabel")
-        self.export_status_label.setMinimumWidth(132)
+        self.export_status_label.setMinimumWidth(0)
+        self.export_status_label.setMaximumWidth(132)
+        self.export_status_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self.export_status_label.hide()
         header_layout.addWidget(self.export_status_label)
         find_button = QToolButton()
@@ -565,9 +567,13 @@ class WorkspacePage(QWidget):
         self.refresh_context_update_button()
         self.bind_history()
         self.more_menu.addAction("ค้นหา · Ctrl+H", self.editor.show_find)
+        self.more_menu.addAction("เลิกทำ · Ctrl+Z", lambda: self.editor._current_editor().undo())
+        self.more_menu.addAction("ทำซ้ำ · Ctrl+Y", lambda: self.editor._current_editor().redo())
         self.more_menu.addAction("ลดขนาดตัวอักษร", lambda: self.owner.adjust_editor_font_size(-1))
         self.more_menu.addAction("เพิ่มขนาดตัวอักษร", lambda: self.owner.adjust_editor_font_size(1))
-        self.editor_header.overflow_controls = [(self.font_size_label, 500), (find_button, 420), (decrease_font, 340), (increase_font, 340)]
+        self.editor_header.overflow_controls = [(self.font_size_label, 600), (find_button, 600),
+                                                (decrease_font, 600), (increase_font, 600),
+                                                (self.undo_button, 600), (self.redo_button, 600)]
         self.update_profile_status(_profile_status(profile))
         editor_layout = QVBoxLayout()
         editor_layout.setContentsMargins(0, 0, 0, 0)
