@@ -5,6 +5,7 @@ progress counters or workflow state is ever mutated here.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -99,6 +100,41 @@ def translation_groups(source: TranslationSource, size: int = 5):
         tuple(ChapterFile(c.number, c.path or Path(c.filename)) for c in source.chapters), size
     )
 
+_REPARSE_POINT = 0x400
+
+
+def fast_folder_snapshot(folder: Path):
+    """Scan numbered TXT files once and refuse unsafe file reparse points.
+
+    Callers checking external paths first validate the folder and its parent
+    chain with _check_path(). Windows DirEntry stat may not expose an inode,
+    so compare size, nanosecond mtime and ctime.
+    """
+    directory = Path(folder)
+    if not directory.is_dir():
+        raise ValueError(f"ไม่พบโฟลเดอร์ต้นฉบับ: {directory}")
+    from .vocabulary_batches import _FILENAME_NUMBER
+    found = {}
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if not entry.name.casefold().endswith(".txt"):
+                continue
+            info = entry.stat(follow_symlinks=False)
+            if entry.is_symlink() or getattr(info, "st_file_attributes", 0) & _REPARSE_POINT:
+                raise ValueError(f"Symbolic links and junctions are not archived: {entry.path}")
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            match = _FILENAME_NUMBER.fullmatch(Path(entry.name).stem)
+            if not match:
+                continue
+            number = int(match.group(1))
+            if number in found:
+                raise ValueError(
+                    f"มีไฟล์เลขบท {number:04d} ซ้ำ: {found[number][0].name}, {entry.name}")
+            found[number] = (directory / entry.name,
+                             (info.st_size, info.st_mtime_ns, info.st_ctime_ns))
+    return tuple((number, *found[number]) for number in sorted(found))
+
 
 def validate_translation_source(source: TranslationSource, *, text: str | None = None,
                                 selected_paths=None):
@@ -106,15 +142,18 @@ def validate_translation_source(source: TranslationSource, *, text: str | None =
     if source.raw_text is not None and source.raw_text != text:
         raise ValueError("Draft เปลี่ยนหลัง Preview กรุณาตรวจหัวบทใหม่")
     if source.folder is not None:
-        current = tuple((_check_path(c.path), c.number) for c in scan_chapter_files(source.folder))
+        folder = _check_path(source.folder)
+        snapshot = fast_folder_snapshot(folder)
+        current = tuple((path, number) for number, path, _ in snapshot)
         original = tuple((c.path, c.number) for c in source.chapters)
         if current != original:
             raise ValueError("รายการไฟล์บทเปลี่ยน กรุณารีเฟรชก่อนคัดลอก")
     # Unselected files cannot affect this batch's contents; their metadata
     # still detects modifications, additions, removals and path replacement.
     if selected_paths is not None and source.folder is not None and source.file_stats:
-        for path, expected in source.file_stats:
-            if _stat_signature(_check_path(path)) != expected:
+        expected_stats = {path: signature[:3] for path, signature in source.file_stats}
+        for _, path, signature in snapshot:
+            if expected_stats.get(path) != signature:
                 raise ValueError(f"ต้นฉบับเปลี่ยนหลัง Preview: {path.name} กรุณารีเฟรช")
         selected = {Path(path).resolve() for path in selected_paths}
         fingerprints = ((path, digest) for path, digest in source.signatures
