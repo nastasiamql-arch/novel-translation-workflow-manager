@@ -110,11 +110,55 @@ def deleted_ranges(old: str, new: str):
         yield start, i
 
 
+def normalize_translator_text(text: str) -> str:
+    """Remove whitespace-only story lines but preserve vocabulary sections verbatim."""
+    from .recovery import _TRANSLATOR_CHAPTER_LINE
+
+    pieces = re.split(r'(\r\n|[\n\r\u2028\u2029\u0085])', text)
+    rows = [(pieces[i], pieces[i + 1] if i + 1 < len(pieces) else '')
+            for i in range(0, len(pieces), 2)]
+    heading = re.compile(r'^[ \t]*คำศัพท์ใหม่[ \t]*[:：]?[ \t]*
+    if not cleans_file_text(path) or is_vocabulary(path, text):
+        return text
+    if path.stem.casefold().endswith('context'):
+        return normalize_context_text(text)
+    return normalize_novel_text(text)
+
+
+def vocabulary_warnings(text: str) -> list[int]:
+    """One-based incomplete row numbers; report only, never repair columns."""
+    return [i for i, line in enumerate(LINE_SEPARATOR.split(text), 1)
+            if line != '' and line.count('\t') != 3]
+
+
+def detect_newline(text: str) -> str:
+    separators = LINE_SEPARATOR.findall(text)
+    return max(dict.fromkeys(separators), key=separators.count) if separators else '\n'
+)
+    heading_indices = {i for i, (body, _sep) in enumerate(rows)
+                       if heading.fullmatch(body)}
+    keep_boundary = {i - 1 for i in heading_indices
+                     if i > 0 and not rows[i - 1][0].strip()}
+    kept = []
+    in_vocabulary = False
+    for i, (body, separator) in enumerate(rows):
+        if _TRANSLATOR_CHAPTER_LINE.match(body.lstrip('\ufeff')):
+            in_vocabulary = False
+        if i in heading_indices:
+            in_vocabulary = True
+        if body.strip() or in_vocabulary or i in keep_boundary:
+            kept.append((body, separator))
+    return ''.join(body + (sep if i < len(kept) - 1 else '')
+                   for i, (body, sep) in enumerate(kept))
+
+
 def normalize_file_text(path: Path, text: str) -> str:
     if not cleans_file_text(path) or is_vocabulary(path, text):
         return text
     if path.stem.casefold().endswith('context'):
         return normalize_context_text(text)
+    if path.stem.casefold().endswith('translator'):
+        return normalize_translator_text(text)
     return normalize_novel_text(text)
 
 

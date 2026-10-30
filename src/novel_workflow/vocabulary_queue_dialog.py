@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QLabel, QMessageBox,
-                               QPushButton, QScrollArea, QTextEdit, QVBoxLayout, QWidget)
+                               QPushButton, QTextEdit, QVBoxLayout)
 from .vocabulary_queue import load_queue, save_queue
 
 
@@ -12,12 +12,10 @@ class VocabularyQueueDialog(QDialog):
         layout = QVBoxLayout(self)
         self.summary = QLabel()
         layout.addWidget(self.summary)
-        area = QScrollArea()
-        area.setWidgetResizable(True)
-        self.body = QWidget()
-        self.rows = QVBoxLayout(self.body)
-        area.setWidget(self.body)
-        layout.addWidget(area)
+        self.combined_text = QTextEdit(self)
+        self.combined_text.setObjectName('pendingVocabularyText')
+        self.combined_text.setReadOnly(True)
+        layout.addWidget(self.combined_text, 1)
         actions = QHBoxLayout()
         copy_all = QPushButton('คัดลอกทั้งหมด')
         copy_all.clicked.connect(self.copy_all)
@@ -32,35 +30,21 @@ class VocabularyQueueDialog(QDialog):
     def refresh(self):
         self.data = load_queue(self.repo, self.profile.id)
         items = self.data['items']
-        self.summary.setText(f"นิยาย: {self.profile.name}\nรอตรวจ: {sum(x['count'] for x in items)} คำศัพท์ · จำนวนชุด: {len(items)}")
-        while self.rows.count():
-            item = self.rows.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
-        if not items:
-            self.rows.addWidget(QLabel('ไม่มีคำศัพท์รอตรวจ'))
-        for row in items:
-            box = QWidget()
-            layout = QVBoxLayout(box)
-            layout.addWidget(QLabel(f"บท {row.get('chapter_range') or 'ไม่ระบุ'} · {row['count']} คำศัพท์ · Export: {row.get('created_at', '')}"))
-            text = QTextEdit()
-            text.setReadOnly(True)
-            text.setPlainText(row['text'])
-            text.setMinimumHeight(90)
-            layout.addWidget(text)
-            actions = QHBoxLayout()
-            copy = QPushButton('คัดลอกชุดนี้')
-            copy.clicked.connect(lambda checked=False, value=row['text']: QApplication.clipboard().setText(value))
-            remove = QPushButton('ลบชุดนี้')
-            remove.clicked.connect(lambda checked=False, value=row: self.remove(value))
-            actions.addWidget(copy); actions.addWidget(remove)
-            layout.addLayout(actions)
-            self.rows.addWidget(box)
-        self.rows.addStretch()
-        if self.changed: self.changed()
+        self.summary.setText(
+            f"นิยาย: {self.profile.name}\nรอตรวจทั้งหมด: {sum(x['count'] for x in items)} คำศัพท์"
+        )
+        self.combined_text.setPlainText(self._combined_text(items))
+        if self.changed:
+            self.changed()
+
+    @staticmethod
+    def _combined_text(items):
+        # Keep transactionally separate queue records, but render one document.
+        return '\n'.join(row['text'] for row in items)
 
     def copy_all(self):
         if self.data['items']:
-            QApplication.clipboard().setText('\n'.join(row['text'] for row in self.data['items']))
+            QApplication.clipboard().setText(self._combined_text(self.data['items']))
 
     def remove(self, row):
         if QMessageBox.question(self, 'ลบคำศัพท์', f"ต้องการลบคำศัพท์ชุดนี้จำนวน {row['count']} รายการหรือไม่?") != QMessageBox.Yes:

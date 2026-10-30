@@ -199,3 +199,30 @@ def test_autosave_preserves_disk_and_typing(tmp_path):
 def test_normalization_preserves_nonempty_line_characters(raw, expected):
     from novel_workflow.text_normalization import remove_empty_lines
     assert remove_empty_lines(raw) == expected
+
+
+def test_translator_compacts_spaced_story_lines_without_damaging_vocabulary():
+    from novel_workflow.text_normalization import normalize_editor_text
+    original = (
+        '[A]中文ข้อความ\n[B]ภาษาไทย\n\u3000\n'
+        '[A]下一句\n[B]อีกประโยค\n \t \n'
+        'คำศัพท์ใหม่\n李来福\tหลี่ไหลฝู\n\n'
+        '来福\tไหลฝู\n\nบทที่ 2\n'
+        '[A]ตอนถัดไป\n \n[B]ถัดไป'
+    )
+    expected = (
+        '[A]中文ข้อความ\n[B]ภาษาไทย\n'
+        '[A]下一句\n[B]อีกประโยค\n\n'
+        'คำศัพท์ใหม่\n李来福\tหลี่ไหลฝู\n\n'
+        '来福\tไหลฝู\n\nบทที่ 2\n'
+        '[A]ตอนถัดไป\n[B]ถัดไป'
+    )
+    assert normalize_editor_text(Path('ExampleTranslator.txt'), original) == expected
+    assert normalize_editor_text(Path('ExampleTranslator.txt'), expected) == expected
+    assert normalize_editor_text(Path('ordinary.txt'), original) != expected
+
+
+def test_translator_cleaner_does_not_touch_vocab_files():
+    from novel_workflow.text_normalization import normalize_editor_text
+    original = '甲\tก\t\t\n\u3000\n乙\tข\t\t'
+    assert normalize_editor_text(Path('vocabulary.txt'), original) == original

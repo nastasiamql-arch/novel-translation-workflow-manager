@@ -29,7 +29,7 @@ def test_export_cleans_and_queues(translator, section, expected):
     assert QApplication.clipboard().text() == (items[0]['text'] if expected else 'keep clipboard')
     assert w.update_context_from_translator(ws)
     assert len(load_queue(w.repo, p.id)['items']) == bool(expected)
-    assert ws.export_status_label.text() == 'Exported'
+    assert ws.export_status_label.text() == '✓ ส่งออกแล้ว'
 
 
 def test_ambiguous_export_preserves_source_and_context(translator):
@@ -261,3 +261,41 @@ def test_unbounded_heading_preserves_context_and_source(translator):
     assert source.read_text(encoding='utf-8').rstrip('\n') == original
     assert Path(p.context_path).read_bytes() == old_context
     assert not load_queue(w.repo, p.id)['items']
+
+
+def test_pending_vocabulary_merges_all_batches_in_one_editor(translator):
+    from PySide6.QtWidgets import QPushButton
+    from novel_workflow.vocabulary_queue_dialog import VocabularyQueueDialog
+    w, p, ws, source, _errors = translator
+    editor = ws.editor._current_editor()
+    for chapter, body in [
+        (6, '李来福\tหลี่ไหลฝู'),
+        (7, '来福\tไหลฝู\n刘佳\tหลิวเจีย'),
+    ]:
+        editor.setPlainText(f'บทที่ {chapter}\nเนื้อหา\n\nคำศัพท์ใหม่\n{body}')
+        assert w.update_context_from_translator(ws)
+    dialog = VocabularyQueueDialog(w.repo, p, ws)
+    combined = '李来福\tหลี่ไหลฝู\n来福\tไหลฝู\n刘佳\tหลิวเจีย'
+    assert dialog.combined_text.toPlainText() == combined
+    assert 'จำนวนชุด' not in dialog.summary.text()
+    assert [button.text() for button in dialog.findChildren(QPushButton)] == [
+        'คัดลอกทั้งหมด', 'ล้างทั้งหมด', 'ปิด'
+    ]
+    dialog.copy_all()
+    assert QApplication.clipboard().text() == combined
+    assert len(load_queue(w.repo, p.id)['items']) == 2
+    dialog.close()
+
+
+def test_export_warning_before_and_after_export(translator):
+    w, p, ws, source, _errors = translator
+    ws.refresh_context_update_button()
+    assert w._translator_export_status(p.id, source) == 'not_exported'
+    assert ws.export_status_label.text() == '⚠ ยังไม่ได้ Export'
+    assert ws.update_context_button.text() == '⚠ Export'
+    assert w.update_context_from_translator(ws)
+    assert ws.export_status_label.text() == '✓ ส่งออกแล้ว'
+    assert ws.update_context_button.text() == '✓ Export'
+    ws.editor._current_editor().insertPlainText('\nแก้ไขเพิ่ม')
+    assert ws.export_status_label.text() == '⚠ ต้อง Export ใหม่'
+    assert ws.update_context_button.text() == '⚠ Export'

@@ -495,19 +495,19 @@ class WorkspacePage(QWidget):
         self.chapter_number_button.hide()
         header_layout.addWidget(self.chapter_number_button)
         header_layout.addWidget(self.update_context_button)
+        self.export_status_label = QLabel("ยังไม่ได้ Export", self.editor_header)
+        self.export_status_label.setObjectName("exportStatusLabel")
+        self.export_status_label.setMinimumWidth(0)
+        self.export_status_label.setMaximumWidth(158)
+        self.export_status_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self.export_status_label.hide()
+        header_layout.addWidget(self.export_status_label)
         self.vocabulary_queue_button = QToolButton(self.editor_header)
         self.vocabulary_queue_button.setAccessibleName('คำศัพท์รอตรวจ')
         self.vocabulary_queue_button.setToolTip('ดู คัดลอก หรือลบคำศัพท์ที่แยกจาก Export')
         self.vocabulary_queue_button.clicked.connect(self.open_vocabulary_queue)
         self.vocabulary_queue_button.hide()
         header_layout.addWidget(self.vocabulary_queue_button)
-        self.export_status_label = QLabel("ยังไม่ทราบสถานะการส่งออก", self.editor_header)
-        self.export_status_label.setObjectName("exportStatusLabel")
-        self.export_status_label.setMinimumWidth(0)
-        self.export_status_label.setMaximumWidth(132)
-        self.export_status_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        self.export_status_label.hide()
-        header_layout.addWidget(self.export_status_label)
         find_button = QToolButton()
         find_button.setText("ค้นหา")
         find_button.setAccessibleName("ค้นหาในไฟล์ปัจจุบัน")
@@ -956,15 +956,25 @@ class WorkspacePage(QWidget):
                 export_detail = f"Export ล่าสุด: บท {chapter_range} · {exported_at}"
             elif exported_at:
                 export_detail = f"Export ล่าสุด: {exported_at}"
-            if status == "not_exported":
+            if status == "not_exported" and record.get('digest'):
                 export_detail += "\nTranslator เปลี่ยนหลัง Export · ต้อง Export เนื้อหาปัจจุบันใหม่"
-        self.export_status_label.setText({
-            "exported": "Exported",
-            "not_exported": "Modified Since Export" if record and record.get('digest') else "Not Exported",
-            "unknown": "Export Status Unknown",
-            "error": "ตรวจสอบสถานะ Export ไม่สำเร็จ",
-        }[status])
+        if status == "not_exported" and not record.get('digest'):
+            export_detail = "Translator นี้ยังไม่ได้ Export · กด Export เพื่อบันทึกงานแปล"
+        labels = {
+            "exported": "✓ ส่งออกแล้ว",
+            "not_exported": "⚠ ต้อง Export ใหม่" if record.get('digest') else "⚠ ยังไม่ได้ Export",
+            "unknown": "ไม่ทราบสถานะ Export",
+            "error": "⚠ ตรวจ Export ไม่ได้",
+        }
+        message = labels[status]
+        self.export_status_label.setText(message)
+        self.export_status_label.setAccessibleName(message)
         self.export_status_label.setToolTip(export_detail)
+        self.update_context_button.setText("✓ Export" if status == "exported" else "⚠ Export")
+        self.update_context_button.setToolTip(
+            export_detail or ("ส่งออก Translator เป็น TXT และอัปเดต Context"
+                              if status == "exported" else message)
+        )
         colors = theme_colors(self.owner.settings.appearance)
         if status in {"not_exported", "error"}:
             foreground, background = colors["warning"], colors["surface2"]
@@ -4310,8 +4320,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         if not record:
             if editor is not None and EditorTabs._dirty(editor) and not editor.property('normalizationPending'):
                 self._mark_export_pending(profile_id, path)
-                return "not_exported"
-            return "unknown"
+            # An untouched Translator without an export record still needs Export.
+            return "not_exported"
         try:
             from .workflow_archive import file_digest
             digest = file_digest(path)
