@@ -12,6 +12,36 @@ from novel_workflow.workspace_window import MainWindow
 from test_release_36 import setup_profile
 
 
+def test_numbering_table_preserves_original_and_proposes_without_writing(tmp_path):
+    repo, profile, _ = setup_profile(tmp_path)
+    source = repo.profile_dir(profile.id) / 'source' / 'SEG.txt'
+    source.parent.mkdir(exist_ok=True)
+    original = '\n'.join(f'第{i}章 标题{i}\n内容' for i in range(374, 381))
+    source.write_text(original, encoding='utf-8')
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(repo)
+    window.select_profile(next(i for i, p in enumerate(window.ps_list) if p.id == profile.id))
+    workspace = window.workspaces[profile.id]
+    editor = workspace.editor.open_file(source)
+    dialog = ChapterNumberDialog(workspace, editor, source)
+    assert dialog.table.cellWidget(0, 3) is None
+    assert dialog.table.cellWidget(0, 4) is dialog.spins[0]
+    assert '374' in dialog.table.item(0, 3).text()
+    assert dialog.table.item(0, 3).toolTip().endswith('标题374')
+    assert [s.value() for s in dialog.spins] == list(range(374, 381))
+    dialog.start_number.setValue(381)
+    dialog.propose_sequence()
+    assert [s.value() for s in dialog.spins] == list(range(381, 388))
+    assert all(c.isChecked() for c in dialog.checks)
+    assert dialog.table.item(0, 5).text().startswith('เปลี่ยน')
+    dialog.spins[0].setValue(374)
+    assert not dialog.checks[0].isChecked() and dialog.checks[1].isChecked()
+    assert editor.toPlainText() == original and source.read_text(encoding='utf-8') == original
+    dialog.reject()
+    window._close_export_reminder_accepted = True
+    window.close()
+
+
 def test_unbound_translator_sibling_is_accepted_only_within_owned_profile_dir(tmp_path):
     repo = ProjectRepository(tmp_path)
     profile = NovelProfile(name="SEG")

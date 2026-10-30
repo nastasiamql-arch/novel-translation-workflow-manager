@@ -7,11 +7,70 @@ from PySide6.QtWidgets import QApplication
 from novel_workflow.text_normalization import remove_empty_lines
 from novel_workflow.workspace_editor import CodeEditor, EditorTabs
 from test_txt_export import app, panel
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 
 
 VOCAB = '康斯坦丁\tคอนสแตนติน\tชาย\tชื่อเรียกคอนสแตนติน ฟอน นอยรัทในวงประชุมผู้นำนาซี'
 RAW = '\nไทย 中文\n\n \n\t\n\u00a0\n  English\t \n\n끝'
 CLEAN = 'ไทย 中文\n \n\t\n\u00a0\n  English\t \n끝'
+
+
+def test_find_replace_stays_visible_and_undoes_unicode_replacement(tmp_path):
+    app()
+    first = tmp_path / 'first.txt'; first.write_text('ไทย 中文 abc 中文', encoding='utf-8')
+    second = tmp_path / 'second.md'; second.write_text('中文 other', encoding='utf-8')
+    tabs = EditorTabs(); tabs.resize(500, 450); tabs.show(); tabs.activateWindow()
+    editor = tabs.open_file(first); other = tabs.open_file(second)
+    tabs.tabs.setCurrentWidget(editor); editor.setFocus(); QTest.qWait(30)
+    QTest.keyClick(editor, Qt.Key_F, Qt.ControlModifier)
+    assert tabs.find_panel.isVisible() and tabs.replace_row.isVisible()
+    assert tabs.find_input.hasFocus()
+    tabs.find_input.setText('中文')
+    assert tabs.find_count.text() == '1/2'
+    QTest.keyClick(tabs.find_input, Qt.Key_Return)
+    assert tabs.find_count.text() == '2/2'
+    QTest.keyClick(tabs.find_input, Qt.Key_Return, Qt.ShiftModifier)
+    assert tabs.find_count.text() == '1/2'
+    editor.setFocus(); QApplication.processEvents()
+    assert tabs.find_panel.isVisible()
+    tabs.tabs.setCurrentWidget(other); QApplication.processEvents()
+    assert tabs.find_panel.isVisible() and tabs.find_count.text().endswith('/1')
+    tabs.tabs.setCurrentWidget(editor); tabs.resize(360, 400); QApplication.processEvents()
+    assert tabs.find_panel.isVisible() and tabs.rect().contains(tabs.find_panel.geometry())
+    QTest.keyClick(editor, Qt.Key_H, Qt.ControlModifier)
+    assert tabs.replace_input.hasFocus()
+    tabs.replace_input.setText('替换更长')
+    tabs._find_next()
+    tabs.replace_current_button.click()
+    assert editor.toPlainText().count('替换更长') == 1
+    editor.undo()
+    assert editor.toPlainText() == 'ไทย 中文 abc 中文'
+    tabs.replace_all_button.click()
+    assert editor.toPlainText() == 'ไทย 替换更长 abc 替换更长'
+    assert other.toPlainText() == '中文 other'
+    editor.undo()
+    assert editor.toPlainText() == 'ไทย 中文 abc 中文'
+    tabs.find_input.setFocus(); QTest.keyClick(tabs.find_input, Qt.Key_Escape)
+    assert not tabs.find_panel.isVisible()
+
+
+def test_find_large_document_refreshes_after_text_changes(tmp_path):
+    app()
+    path = tmp_path / 'large.md'
+    path.write_text(('ไทย abc 中文\n' * 5000) + 'end', encoding='utf-8')
+    tabs = EditorTabs(); tabs.show()
+    editor = tabs.open_file(path)
+    tabs.show_find(); tabs.find_input.setText('中文')
+    assert tabs.find_count.text().endswith('/5000')
+    tabs.find_input.setText('ไม่พบ')
+    assert tabs.find_count.text() == '0/0'
+    tabs.find_input.setText('end')
+    assert tabs.find_count.text().endswith('/1')
+    editor.moveCursor(editor.textCursor().MoveOperation.End)
+    editor.insertPlainText('end')
+    QTest.qWait(250)
+    assert tabs.find_count.text().endswith('/2')
 
 
 @pytest.fixture(autouse=True)

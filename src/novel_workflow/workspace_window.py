@@ -511,7 +511,7 @@ class WorkspacePage(QWidget):
         find_button = QToolButton()
         find_button.setText("ค้นหา")
         find_button.setAccessibleName("ค้นหาในไฟล์ปัจจุบัน")
-        find_button.setToolTip("ค้นหาในไฟล์ปัจจุบัน  ·  Ctrl+H")
+        find_button.setToolTip("ค้นหาในไฟล์ปัจจุบัน  ·  Ctrl+F")
         find_button.clicked.connect(self.editor.show_find)
         header_layout.addWidget(find_button)
         decrease_font = QToolButton()
@@ -566,7 +566,7 @@ class WorkspacePage(QWidget):
         self.editor.tabs.currentChanged.connect(lambda _index: self.refresh_context_update_button())
         self.refresh_context_update_button()
         self.bind_history()
-        self.more_menu.addAction("ค้นหา · Ctrl+H", self.editor.show_find)
+        self.more_menu.addAction("ค้นหา · Ctrl+F", self.editor.show_find)
         self.more_menu.addAction("เลิกทำ · Ctrl+Z", lambda: self.editor._current_editor().undo())
         self.more_menu.addAction("ทำซ้ำ · Ctrl+Y", lambda: self.editor._current_editor().redo())
         self.more_menu.addAction("ลดขนาดตัวอักษร", lambda: self.owner.adjust_editor_font_size(-1))
@@ -899,7 +899,7 @@ class WorkspacePage(QWidget):
         self.vocabulary_queue_button.setVisible(allowed)
         if allowed:
             self.refresh_vocabulary_queue()
-        self.export_status_label.setVisible(allowed)
+        self.export_status_label.hide()
         self._export_binding_editor = editor
         self._export_binding_path = self.owner._export_path_key(path) if path else None
         self._export_binding_allowed = allowed
@@ -972,10 +972,16 @@ class WorkspacePage(QWidget):
         self.export_status_label.setText(message)
         self.export_status_label.setAccessibleName(message)
         self.export_status_label.setToolTip(export_detail)
-        self.update_context_button.setText("✓ Export" if status == "exported" else "⚠ Export")
+        button_labels = {
+            "exported": "✓ Export แล้ว",
+            "not_exported": "↻ Export ใหม่" if record.get('digest') else "⚠ ยังไม่ได้ Export",
+            "unknown": "⚠ ตรวจ Export ไม่ได้",
+            "error": "⚠ ตรวจ Export ไม่ได้",
+        }
+        self.update_context_button.setText(button_labels[status])
+        self.update_context_button.setAccessibleName(button_labels[status])
         self.update_context_button.setToolTip(
-            export_detail or ("ส่งออก Translator เป็น TXT และอัปเดต Context"
-                              if status == "exported" else message)
+            f"Translator: {path}\n" + (export_detail or message)
         )
         colors = theme_colors(self.owner.settings.appearance)
         if status in {"not_exported", "error"}:
@@ -988,7 +994,7 @@ class WorkspacePage(QWidget):
             f"QLabel#exportStatusLabel {{ color:{foreground}; background:{background}; "
             "border:1px solid " + colors["border"] + "; border-radius:3px; padding:2px 6px; }}"
         )
-        self.export_status_label.show()
+        self.export_status_label.hide()
         if (self.editor._dirty(editor) and status != "exported"
                 and editor.toPlainText() != editor.property('documentSavedText')):
             self.owner._mark_export_pending(self.profile_id, path)

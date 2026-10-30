@@ -1,3 +1,9 @@
+## v6.13.5 — Chapter Numbering and Editor Controls
+
+- Show original chapter headings and proposed numbers in their correct columns, with clear row status and full-title tooltips.
+- Present Translator Export status on a single button while retaining existing export checks and recovery.
+- Keep Find and Replace visible together, with separate Ctrl+F and Ctrl+H focus, responsive placement, and search updates across editor tabs.
+
 ## v6.13.0 — Clean Translator Export and Vocabulary Queue
 - Extract clearly bounded new-vocabulary sections during Translator Export, keeping uncertain text intact and asking for review.
 - Save the cleaned Translator, TXT, Context, export status and profile-scoped pending vocabulary within the existing recovery transaction.

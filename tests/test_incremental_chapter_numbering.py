@@ -196,15 +196,15 @@ def test_manual_volume_boundary_is_persisted_without_modifying_source(tmp_path):
     editor.setPlainText(text)
     assert ws.editor.save_editor(editor, quiet=True)
     dialog = ChapterNumberDialog(ws, editor, source)
-    assert dialog.table.item(2, 5).text() == "เลขย้อนกลับ"
+    assert dialog.table.item(2, 5).text() == "ไม่เปลี่ยน · เลขย้อนกลับ"
     dialog.table.setCurrentCell(2, 1)
     dialog.toggle_volume_start()
-    assert dialog.table.item(2, 5).text() == "ปกติ"
+    assert dialog.table.item(2, 5).text() == "ไม่เปลี่ยน"
     assert 2 in dialog.manual_volume_starts
     assert source.read_text(encoding="utf-8") == text
     reopened = ChapterNumberDialog(ws, editor, source)
     assert reopened.manual_volume_starts == {2}
-    assert reopened.table.item(2, 5).text() == "ปกติ"
+    assert reopened.table.item(2, 5).text() == "ไม่เปลี่ยน"
     reopened.start_number.setValue(99)
     reopened.propose_sequence()
     assert [spin.value() for spin in reopened.spins] == [99, 100, 1, 2]

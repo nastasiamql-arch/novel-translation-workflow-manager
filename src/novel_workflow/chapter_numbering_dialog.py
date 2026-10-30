@@ -219,13 +219,21 @@ class ChapterNumberDialog(QDialog):
             ):
                 item = QTableWidgetItem(value)
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                if col == 3:
+                    item.setToolTip(f"{heading.number} · {heading.title}")
+                elif col == 1:
+                    item.setTextAlignment(Qt.AlignCenter)
+                elif col == 5:
+                    item.setData(Qt.UserRole, value)
                 self.table.setItem(i, col, item)
             spin = QSpinBox()
             spin.setRange(1, 2_147_483_647)
             spin.setValue(heading.number)
-            self.table.setCellWidget(i, 3, spin)
+            spin.setAlignment(Qt.AlignCenter)
+            self.table.setCellWidget(i, 4, spin)
             self.spins.append(spin)
-            spin.valueChanged.connect(lambda _value, check=checkbox: check.setChecked(True))
+            spin.valueChanged.connect(lambda value, row=i: self._number_changed(row, value))
+            self._number_changed(i, heading.number, select=False)
         layout.addWidget(self.table, 1)
         self.result = QLabel(
             duplicate_summary + "\nกดเรียงเลขต่อเนื่องเพื่อเสนอเลขใหม่ หรือแก้เลขทีละบท แล้วเลือกยืนยัน"
@@ -315,7 +323,7 @@ class ChapterNumberDialog(QDialog):
         issues = chapter_issues(self.headings, self.original, self.manual_volume_starts)
         for i in range(len(self.headings)):
             self.table.item(i, 2).setText(self._volume_label(i, groups))
-            self.table.item(i, 5).setText(issues[i])
+            self._set_row_status(i, issues[i])
         duplicate_count = sum("ซ้ำ" in issue for issue in issues)
         likely_count = sum("น่าจะเป็นรายการเดียวกัน" in issue for issue in issues)
         gap_count = sum("กระโดด" in issue for issue in issues)
@@ -326,6 +334,20 @@ class ChapterNumberDialog(QDialog):
             f"เลขซ้ำ {duplicate_count} · เลขกระโดด {gap_count} · เลขย้อน {reverse_count}\n"
             "เลขข้ามเล่มไม่ถือว่าซ้ำ · ยังไม่ได้แก้ไฟล์ต้นฉบับ"
         )
+
+    def _set_row_status(self, row, issue=None):
+        item = self.table.item(row, 5)
+        if issue is not None:
+            item.setData(Qt.UserRole, issue)
+        issue = item.data(Qt.UserRole) or "ปกติ"
+        change = "เปลี่ยน" if self.spins[row].value() != self.headings[row].number else "ไม่เปลี่ยน"
+        item.setText(f"{change} · {issue}" if issue != "ปกติ" else change)
+        item.setToolTip(issue)
+
+    def _number_changed(self, row, value, *, select=True):
+        if select:
+            self.checks[row].setChecked(value != self.headings[row].number)
+        self._set_row_status(row)
 
     def toggle_volume_start(self):
         row = self.table.currentRow()

@@ -292,10 +292,20 @@ def test_export_warning_before_and_after_export(translator):
     ws.refresh_context_update_button()
     assert w._translator_export_status(p.id, source) == 'not_exported'
     assert ws.export_status_label.text() == '⚠ ยังไม่ได้ Export'
-    assert ws.update_context_button.text() == '⚠ Export'
+    assert ws.update_context_button.text() == '⚠ ยังไม่ได้ Export'
+    assert ws.export_status_label.isHidden()
     assert w.update_context_from_translator(ws)
     assert ws.export_status_label.text() == '✓ ส่งออกแล้ว'
-    assert ws.update_context_button.text() == '✓ Export'
+    assert ws.update_context_button.text() == '✓ Export แล้ว'
     ws.editor._current_editor().insertPlainText('\nแก้ไขเพิ่ม')
     assert ws.export_status_label.text() == '⚠ ต้อง Export ใหม่'
-    assert ws.update_context_button.text() == '⚠ Export'
+    assert ws.update_context_button.text() == '↻ Export ใหม่'
+
+
+def test_export_recovery_error_is_not_displayed_as_success(translator):
+    w, p, ws, source, _errors = translator
+    w.repo.export_recovery_errors[p.id] = 'recovery failed'
+    ws.refresh_export_status()
+    assert ws.update_context_button.text() == '⚠ ตรวจ Export ไม่ได้'
+    assert 'recovery failed' in ws.update_context_button.toolTip()
+    assert ws.export_status_label.isHidden()

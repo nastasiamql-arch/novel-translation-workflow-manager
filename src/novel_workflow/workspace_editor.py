@@ -981,6 +981,7 @@ class EditorTabs(QWidget):
 
         self.find_panel = QFrame(self)
         self.find_panel.setObjectName("editorFindPanel")
+        layout.insertWidget(0, self.find_panel)
         panel_layout = QVBoxLayout(self.find_panel)
         panel_layout.setContentsMargins(10, 8, 10, 8)
         panel_layout.setSpacing(6)
@@ -988,7 +989,7 @@ class EditorTabs(QWidget):
         find_row.setSpacing(6)
         self.find_input = QLineEdit(self.find_panel)
         self.find_input.setPlaceholderText("ค้นหาในไฟล์…")
-        self.find_input.setMinimumWidth(230)
+        self.find_input.setMinimumWidth(40)
         self.find_count = QLabel("0/0", self.find_panel)
         self.find_count.setMinimumWidth(42)
         self.find_count.setAlignment(Qt.AlignCenter)
@@ -996,11 +997,9 @@ class EditorTabs(QWidget):
         previous.setToolTip("ผลก่อนหน้า · Shift+Enter")
         next_match = QPushButton("↓", self.find_panel)
         next_match.setToolTip("ผลถัดไป · Enter")
-        self.replace_toggle = QPushButton("แทนที่", self.find_panel)
         close_find = QPushButton("×", self.find_panel)
         close_find.setToolTip("ปิด · Esc")
-        for widget in (self.find_input, self.find_count, previous, next_match,
-                       self.replace_toggle, close_find):
+        for widget in (self.find_input, self.find_count, previous, next_match, close_find):
             find_row.addWidget(widget)
         panel_layout.addLayout(find_row)
 
@@ -1010,19 +1009,17 @@ class EditorTabs(QWidget):
         replace_layout.setSpacing(6)
         self.replace_input = QLineEdit(self.replace_row)
         self.replace_input.setPlaceholderText("แทนที่ด้วย…")
-        self.replace_input.setMinimumWidth(230)
+        self.replace_input.setMinimumWidth(40)
         self.replace_current_button = QPushButton("แทนที่", self.replace_row)
         self.replace_all_button = QPushButton("แทนที่ทั้งหมด", self.replace_row)
         replace_layout.addWidget(self.replace_input, 1)
         replace_layout.addWidget(self.replace_current_button)
         replace_layout.addWidget(self.replace_all_button)
         panel_layout.addWidget(self.replace_row)
-        self.replace_row.hide()
 
         previous.clicked.connect(lambda: self._find_next(backward=True))
         next_match.clicked.connect(self._find_next)
         close_find.clicked.connect(self.close_find)
-        self.replace_toggle.clicked.connect(self._toggle_replace)
         self.replace_current_button.clicked.connect(self._replace_current)
         self.replace_all_button.clicked.connect(self._replace_all)
         self.replace_input.returnPressed.connect(self._replace_current)
@@ -1030,9 +1027,15 @@ class EditorTabs(QWidget):
         self.find_input.returnPressed.connect(self._find_next)
         self.find_panel.hide()
         self._place_find_panel()
-        self._find_shortcut = QShortcut(QKeySequence("Ctrl+H"), self)
+        self._find_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
         self._find_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self._find_shortcut.activated.connect(self.show_find)
+        self._replace_shortcut = QShortcut(QKeySequence("Ctrl+H"), self)
+        self._replace_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self._replace_shortcut.activated.connect(self.show_replace)
+        self._find_previous_shortcut = QShortcut(QKeySequence("Shift+Return"), self.find_input)
+        self._find_previous_shortcut.setContext(Qt.WidgetShortcut)
+        self._find_previous_shortcut.activated.connect(lambda: self._find_next(backward=True))
         self._escape_shortcut = QShortcut(QKeySequence("Escape"), self)
         self._escape_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self._escape_shortcut.activated.connect(self.close_find)
@@ -1604,16 +1607,14 @@ class EditorTabs(QWidget):
         self._place_find_panel()
 
     def _place_find_panel(self):
-        if hasattr(self, "find_panel"):
-            self.find_panel.adjustSize()
-            self.find_panel.move(max(8, self.width() - self.find_panel.width() - 22), 14)
-            self.find_panel.raise_()
+        # The layout keeps the panel inside the available width and above the tabs.
+        pass
 
     def set_appearance(self, appearance):
         self.appearance = appearance
         self.colors = editor_colors(appearance)
         colors = self.colors
-        self.tabs.setStyleSheet(
+        stylesheet = (
             f"""
             QTabWidget#editorTabs::pane {{
                 background: {colors['background']}; border: 0; border-radius: 0;
@@ -1661,15 +1662,11 @@ class EditorTabs(QWidget):
             QFrame#editorFindPanel QLabel {{ color: {colors['foreground']}; }}
             """
         )
+        self.tabs.setStyleSheet(stylesheet)
+        self.find_panel.setStyleSheet(stylesheet)
         for index in range(self.tabs.count()):
             self.tabs.widget(index).set_appearance(appearance)
         self._place_find_panel()
-
-    def _toggle_replace(self):
-        self.replace_row.setVisible(not self.replace_row.isVisible())
-        self._place_find_panel()
-        if self.replace_row.isVisible():
-            self.replace_input.setFocus(Qt.ShortcutFocusReason)
 
     def show_find(self):
         editor = self._current_editor()
@@ -1684,11 +1681,18 @@ class EditorTabs(QWidget):
         if not selected:
             self.find_input.selectAll()
 
+    def show_replace(self):
+        self.show_find()
+        self.replace_input.setFocus(Qt.ShortcutFocusReason)
+
     def close_find(self):
         if self.find_panel.isVisible():
             self.find_panel.hide()
+            self._find_update_timer.stop()
             editor = self._current_editor()
             if editor:
+                editor._find_query = ""
+                editor._find_matches_cache = []
                 editor.setFocus(Qt.ShortcutFocusReason)
                 editor.highlight_current_line()
 
@@ -1802,3 +1806,10 @@ class EditorTabs(QWidget):
                 return
         self._active_editor = editor
         self._update_status(index)
+        if hasattr(self, "find_panel") and self.find_panel.isVisible():
+            if previous is not None and previous is not editor:
+                previous_editor = previous.editor if isinstance(previous, TxtExportTab) else previous
+                previous_editor._find_query = ""
+                previous_editor._find_matches_cache = []
+                previous_editor.highlight_current_line()
+            self._update_find_matches()
