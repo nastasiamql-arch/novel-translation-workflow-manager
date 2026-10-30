@@ -130,7 +130,9 @@ def normalize_translator_text(text: str) -> str:
         if i in heading_indices:
             in_vocabulary = True
         if body.strip() or in_vocabulary or i in keep_boundary:
-            kept.append((body, separator))
+            # Keep a structural blank before vocabulary, not its whitespace.
+            kept.append(('', separator) if i in keep_boundary and not body.strip()
+                        else (body, separator))
     return ''.join(body + (sep if i < len(kept) - 1 else '')
                    for i, (body, sep) in enumerate(kept))
 
