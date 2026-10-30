@@ -47,7 +47,7 @@ def cleans_file_text(path: Path) -> bool:
         return False
     if names & STRUCTURED_FOLDERS or is_vocabulary(path):
         return False
-    if re.search(r'(?:prompt|style|config|settings|glossary|characters?|vocab(?:ulary)?|translator)(?:[_. -]|$)', path.stem, re.I):
+    if re.search(r'(?:prompt|style|config|settings|glossary|characters?|vocab(?:ulary)?)(?:[_. -]|$)', path.stem, re.I):
         return False
     return True
 

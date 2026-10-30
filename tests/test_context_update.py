@@ -144,7 +144,7 @@ def test_bound_translator_updates_only_its_profile_context(tmp_path, monkeypatch
 
     editor.moveCursor(editor.textCursor().MoveOperation.End)
     editor.insertPlainText("x")
-    assert workspace.export_status_label.text() == "Modified Since Export"
+    assert workspace.export_status_label.text() == "⚠ ต้อง Export ใหม่"
     editor.undo()
     workspace._confirm_export_digest()
     assert workspace.export_status_label.text() == "✓ ส่งออกแล้ว"
@@ -419,7 +419,7 @@ def test_translator_button_is_hidden_for_unbound_and_other_tabs(tmp_path):
     workspace.editor.tabs.setCurrentWidget(workspace.editor.export_tab)
     assert workspace.update_context_button.isHidden()
     assert all(action.text() != "Export" for action in workspace.more_menu.actions())
-    assert workspace.update_context_button.text() == "⚠ Export"
+    assert workspace.update_context_button.text() == "Export"
     assert workspace.update_context_button.toolTip() == "ส่งออก Translator เป็น TXT และอัปเดต Context"
     window.close()
 
