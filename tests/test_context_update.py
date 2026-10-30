@@ -101,9 +101,9 @@ def test_bound_translator_updates_only_its_profile_context(tmp_path, monkeypatch
     window.refresh_profiles(first.id)
     workspace = window._workspace(window.profile)
     editor = workspace.editor.open_file(translator)
-    assert workspace.export_status_label.text() == "Export Status Unknown"
+    assert workspace.export_status_label.text() == "⚠ ยังไม่ได้ Export"
     editor.setPlainText("บทที่ 77\nTemplate\nชื่อตัวละครเดิมและคำแนะนำการแปล")
-    assert workspace.export_status_label.text() == "Not Exported"
+    assert workspace.export_status_label.text() == "⚠ ยังไม่ได้ Export"
     monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.Yes)
     monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
     warnings = []
@@ -112,7 +112,7 @@ def test_bound_translator_updates_only_its_profile_context(tmp_path, monkeypatch
     assert workspace.update_context_button.isHidden() is False
     original = editor.toPlainText()
     assert window.update_context_from_translator(workspace)
-    assert workspace.export_status_label.text() == "Exported"
+    assert workspace.export_status_label.text() == "✓ ส่งออกแล้ว"
 
     assert context.read_text(encoding="utf-8") == original
     assert translator.read_text(encoding="utf-8") == original
@@ -147,7 +147,7 @@ def test_bound_translator_updates_only_its_profile_context(tmp_path, monkeypatch
     assert workspace.export_status_label.text() == "Modified Since Export"
     editor.undo()
     workspace._confirm_export_digest()
-    assert workspace.export_status_label.text() == "Exported"
+    assert workspace.export_status_label.text() == "✓ ส่งออกแล้ว"
     assert not list(context.parent.glob(".palantir-recovery/*.bak"))
     window.close()
 
@@ -419,7 +419,7 @@ def test_translator_button_is_hidden_for_unbound_and_other_tabs(tmp_path):
     workspace.editor.tabs.setCurrentWidget(workspace.editor.export_tab)
     assert workspace.update_context_button.isHidden()
     assert all(action.text() != "Export" for action in workspace.more_menu.actions())
-    assert workspace.update_context_button.text() == "Export"
+    assert workspace.update_context_button.text() == "⚠ Export"
     assert workspace.update_context_button.toolTip() == "ส่งออก Translator เป็น TXT และอัปเดต Context"
     window.close()
 

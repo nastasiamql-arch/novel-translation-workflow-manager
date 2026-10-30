@@ -940,6 +940,8 @@ class WorkspacePage(QWidget):
             self._export_status_editor = None
             self._export_status_path = None
             self.export_status_label.hide()
+            self.update_context_button.setText("Export")
+            self.update_context_button.setToolTip("ส่งออก Translator เป็น TXT และอัปเดต Context")
             return
         self._export_status_editor = editor
         self._export_status_path = key
