@@ -20,6 +20,7 @@ from .chapter_numbering import (
 )
 from .chapter_number_reference import resolve_translator_reference, should_auto_propose
 from .storage import read_json, write_json
+from .safe_dialogs import confirm_scrollable, fit_dialog
 
 
 def _digest(text):
@@ -146,7 +147,7 @@ class ChapterNumberDialog(QDialog):
             workspace.owner.repo, workspace.profile_id, self.path, open_texts
         )
         self.setWindowTitle("ตรวจเลขบทต้นฉบับ · " + self.path.name)
-        self.resize(1080, 650)
+        fit_dialog(self, 1080, 650)
         layout = QVBoxLayout(self)
         intro = QLabel(
             f"ไฟล์: {self.path.name} · พบหัวบท {len(self.headings)} บท\n"
@@ -458,27 +459,34 @@ class ChapterNumberDialog(QDialog):
             if not self._file_unchanged():
                 raise ValueError("ไฟล์ถูกแก้จากภายนอก · กรุณาตรวจความต่างก่อน")
             lines = self.original.splitlines()
-            removed_text = "\n".join(f"บรรทัด {line}: {lines[line - 1]}" for line in removed_lines)
-            kept = []
             removed = set(removed_lines)
+            latest_kept = {}
+            kept = []
             for heading in self.headings:
-                if heading.line in removed and heading.line > 1:
-                    previous = next((item for item in reversed(self.headings)
-                                     if item.line < heading.line and item.line not in removed
-                                     and item.number == heading.number
-                                     and "".join(item.title.split()) == "".join(heading.title.split())), None)
-                    if previous is not None:
-                        kept.append(f"บรรทัด {previous.line}: {lines[previous.line - 1]}")
-            preview = (
-                f"ไฟล์: {self.path}\n\nก่อนแก้ · คงหัวบทแรกไว้:\n"
-                + "\n".join(kept + ["ลบ: " + item.split(": ", 1)[1] for item in removed_text.splitlines()])
-                + "\n\nหลังแก้:\n" + "\n".join(kept)
-                + "\n\nลบเฉพาะบรรทัดหัวบทที่ระบุไว้ เนื้อหาบรรทัดอื่นจะคงเดิมและมีสำเนาสำรองสำหรับย้อนคืน."
+                key = (heading.number, "".join(heading.title.split()))
+                if heading.line in removed:
+                    preceding = latest_kept.get(key)
+                    if preceding is not None:
+                        kept.append(f"บรรทัด {preceding.line}: {lines[preceding.line - 1]}")
+                else:
+                    latest_kept[key] = heading
+            removed_entries = [
+                f"บรรทัด {line}: {lines[line - 1]}" for line in removed_lines
+            ]
+            details = (
+                f"ไฟล์: {self.path}\n\nหัวบทที่เก็บไว้:\n"
+                + "\n".join(kept)
+                + "\n\nหัวบทที่จะลบ:\n" + "\n".join(removed_entries)
+                + "\n\nลบเฉพาะบรรทัดหัวบทที่ระบุไว้ เนื้อหาบรรทัดอื่นยังคงเดิมและมีสำเนาสำรองสำหรับย้อนคืน."
             )
-            if QMessageBox.question(
-                self, "ตรวจ Preview ก่อนลบหัวบทซ้ำ", preview,
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-            ) != QMessageBox.Yes:
+            summary = (
+                f"พบหัวบท {len(self.headings)} รายการ · "
+                f"จะลบหัวบทซ้ำ {len(removed_lines)} บรรทัด · "
+                f"คงหัวบท {len(self.headings) - len(removed_lines)} รายการ"
+            )
+            if not confirm_scrollable(
+                self, "ตรวจ Preview ก่อนลบหัวบทซ้ำ", summary, details,
+            ):
                 return
             history = self._read_history()
             event = self._save_snapshot(self.original, expected, [])
@@ -648,26 +656,27 @@ class ChapterNumberDialog(QDialog):
                 return True
             if not self._file_unchanged():
                 raise ValueError("ไฟล์ถูกแก้จากภายนอก · กรุณาตรวจความต่างก่อน")
-            preview = "\n".join(f"บรรทัด {line}: {a} → {b}" for line, a, b in changes[:15])
-            if len(changes) > 15:
-                preview += f"\n…และอีก {len(changes) - 15} บท"
-            if removed_lines:
-                lines = self.original.splitlines()
-                deleted = "\n".join(
-                    f"ลบเฉพาะบรรทัด {line}: {lines[line - 1]}"
-                    for line in removed_lines[:12]
+            if not automatic:
+                changes_preview = "\n".join(
+                    f"บรรทัด {line}: {before} → {after}"
+                    for line, before, after in changes
                 )
-                if len(removed_lines) > 12:
-                    deleted += f"\n…และอีก {len(removed_lines) - 12} บรรทัด"
-                preview += f"\n\n{deleted}"
-            if not automatic and QMessageBox.question(
-                self, "ยืนยันแก้เลขบทต้นฉบับ",
-                f"ไฟล์: {self.path.name}\nเปลี่ยนเลข {len(changes)} บท · "
-                f"ลบหัวบทซ้ำ {len(removed_lines)} บรรทัด\n\n{preview}\n\n"
-                "ตรวจว่าบทไม่ได้หายจริงก่อนยืนยัน · รักษาเนื้อหานิยายเดิม",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-            ) != QMessageBox.Yes:
-                return
+                source_lines = self.original.splitlines()
+                removed_preview = "\n".join(
+                    f"ลบเฉพาะบรรทัด {line}: {source_lines[line - 1]}"
+                    for line in removed_lines
+                )
+                details = (
+                    f"ไฟล์: {self.path}\n\nรายการแก้เลข:\n{changes_preview}"
+                    f"\n\nหัวบทที่จะลบ:\n{removed_preview}\n\n"
+                    "ตรวจว่าบทไม่ได้หายจริงก่อนยืนยัน · รักษาเนื้อหานิยายเดิม"
+                )
+                if not confirm_scrollable(
+                    self, "ยืนยันแก้เลขบทต้นฉบับ",
+                    f"เปลี่ยนเลข {len(changes)} บท · ลบหัวบทซ้ำ {len(removed_lines)} บรรทัด",
+                    details,
+                ):
+                    return
             history = self._read_history()
             event = self._save_snapshot(self.original, expected, changes)
             if removed_lines:
