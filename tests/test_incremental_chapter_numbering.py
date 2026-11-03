@@ -219,7 +219,7 @@ def test_manual_one_confirmation_removes_copies_and_fixes_real_numbers(tmp_path,
                 "　　第67章 捧杀（累计发布3200字）\n"
                 "正文数字3200不能动\n"
                 "第67章 反击\n正文\n"
-                "第68章 归来\n")
+                "第68章 归来")
     editor.setPlainText(original)
     assert ws.editor.save_editor(editor, quiet=True)
     dialog = ChapterNumberDialog(ws, editor, source)
@@ -236,7 +236,7 @@ def test_manual_one_confirmation_removes_copies_and_fixes_real_numbers(tmp_path,
     expected = ("第67章 捧杀（累计发布3200字）\n"
                 "正文数字3200不能动\n"
                 "第68章 反击\n正文\n"
-                "第69章 归来\n")
+                "第69章 归来")
     assert editor.toPlainText() == expected
     assert source.read_text(encoding="utf-8") == expected
     assert len(confirmations) == 1
