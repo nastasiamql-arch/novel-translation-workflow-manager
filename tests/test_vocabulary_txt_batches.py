@@ -359,12 +359,10 @@ def test_bulk_1000_chapters_lazy_scroll_search_and_copy_without_jump(tmp_path):
     assert [Path(url.toLocalFile()).stem[:4] for url in urls] == [
         "0961", "0962", "0963", "0964", "0965"
     ]
-    detail = page.findChild(QPushButton, "txtVocabularyDetails193")
-    assert detail is not None
-    assert "ดูรายชื่อไฟล์" in detail.text()
-    detail.click()
-    app.processEvents()
-    assert "ซ่อนรายชื่อไฟล์" in detail.text()
+    assert page._selected_group.index == 193
+    assert "0961  0961 章节.txt" in page.batch_workspace.text.toPlainText()
+    assert page.findChild(QPushButton, "txtVocabularyDetails193") is None
+    assert page.scroll.verticalScrollBar().value() == position
     page.close()
 
 

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from .batch_master_detail import BatchRow, BatchWorkspace, batch_key
 from .clipboard_files import copy_file_paths
 from .vocabulary_zip import create_txt_batch_zip
 from .vocabulary_source_binding import (
@@ -79,11 +80,13 @@ class TxtVocabularyPage(QWidget):
         self._restore_scroll_value = int(self.state.get("scroll", 0) or 0)
         self._copy_buttons = []
         self._display_references = None
+        self._reference_error = ""
         self._segments = ()
         self._preview_input = None
         self._groups = ()
         self._rendered_count = 0
         self._batch_widgets = []
+        self._selected_group = None
         self._loading = False
         self.setObjectName("txtVocabularyPage")
 
@@ -241,7 +244,9 @@ class TxtVocabularyPage(QWidget):
         self.scroll.setWidget(self.cards)
         self.scroll.verticalScrollBar().valueChanged.connect(self._load_on_scroll)
         self.scroll.verticalScrollBar().valueChanged.connect(lambda value: self._state_changed(scroll=int(value)))
-        batch_layout.addWidget(self.scroll, 1)
+        self.batch_workspace = BatchWorkspace(self.scroll)
+        self.batch_workspace.copy.clicked.connect(self._copy_selected)
+        batch_layout.addWidget(self.batch_workspace, 1)
         self.tabs.addTab(batch_page, "คัดลอกเป็นชุด")
 
         paste_page = QWidget()
@@ -581,9 +586,13 @@ class TxtVocabularyPage(QWidget):
 
     def _clear_cards(self, *, clear_groups=True):
         if clear_groups:
+            self._selected_group = None
+            if hasattr(self, "batch_workspace"):
+                self.batch_workspace.clear_selection("เลือกต้นฉบับเพื่อดูชุดงาน")
             self._groups = ()
             self._visible_groups = ()
         self._display_references = None
+        self._reference_error = ""
         while self.cards_layout.count():
             item = self.cards_layout.takeAt(0)
             widget = item.widget()
@@ -656,6 +665,7 @@ class TxtVocabularyPage(QWidget):
             + (f" · ขาด {missing_count} บท (แจ้งก่อนคัดลอก)" if missing_count else "")
         )
         self._append_next()
+        self._restore_selection()
         if old_scroll:
             QTimer.singleShot(0, lambda: self.scroll.verticalScrollBar().setValue(old_scroll))
         elif self._restore_scroll_value:
@@ -667,6 +677,7 @@ class TxtVocabularyPage(QWidget):
         if self._loading or self._rendered_count >= len(self._visible_groups):
             return
         self._loading = True
+        self.cards.setUpdatesEnabled(False)
         try:
             until = min(len(self._visible_groups), self._rendered_count + limit)
             while self._rendered_count < until:
@@ -674,7 +685,90 @@ class TxtVocabularyPage(QWidget):
                 self._batch_widgets.append(self._make_card(batch))
                 self._rendered_count += 1
         finally:
+            self.cards.setUpdatesEnabled(True)
             self._loading = False
+
+    def _restore_selection(self):
+        saved = self.state.get("selected_batch")
+        group = next((g for g in self._visible_groups
+                      if batch_key(self.profile_id, self._source_identity,
+                                   self._source_revision, g) == saved), None)
+        if group is None:
+            group = next(iter(self._visible_groups), None)
+        if group is None:
+            self._selected_group = None
+            self.batch_workspace.clear_selection("ไม่พบชุดที่ตรงกับเงื่อนไข")
+            return
+        self._select_group(group, switch=False, persist=False)
+
+    def _select_group(self, group, *, switch=True, persist=True):
+        if group not in self._visible_groups:
+            return
+        previous = self._selected_group
+        self._selected_group = group
+        if persist:
+            self.state["selected_batch"] = batch_key(
+                self.profile_id, self._source_identity, self._source_revision, group)
+            self._save()
+        for current, color in ((previous, "transparent"), (group, "#488bd6")):
+            if current in self._visible_groups:
+                index = self._visible_groups.index(current)
+                if index < len(self._batch_widgets):
+                    self._batch_widgets[index].setStyleSheet(
+                        f"QFrame#txtVocabularyRow {{ border: 2px solid {color}; }}")
+        status = {"new": "ยังไม่ได้คัดลอก", "copied": "คัดลอกแล้ว",
+                  "review": "ต้องตรวจใหม่"}[self._group_status(group)]
+        lines = [f"จำนวนบท: {len(group.chapters)}", f"สถานะ: {status}", "", "ไฟล์ต้นฉบับ:"]
+        count = next((count for _button, count, current in self._copy_buttons if current == group), None)
+        if count is None:
+            if self.bound_mode:
+                count = len(group.chapters) + len(self._display_references or ())
+            else:
+                paths = [ch.path for ch in group.chapters]
+                paths.extend(Path(path) for path in (self.state.get("glossary_1"),
+                                                     self.state.get("glossary_2")) if path)
+                count = len({str(path.expanduser().resolve()).casefold() for path in paths})
+        lines.insert(1, f"จำนวนไฟล์: {count}")
+        lines.extend(f"{ch.number:04d}  {ch.path.name}" for ch in group.chapters)
+        lines.extend(("", "ไฟล์อ้างอิง:"))
+        if self.bound_mode:
+            lines.extend(str(path) for path in (self._display_references or ()))
+            if self._reference_error:
+                lines.append("⚠ " + self._reference_error)
+        else:
+            for n in (1, 2):
+                path = self.state.get(f"glossary_{n}")
+                lines.append(f"คำศัพท์ {n} · {Path(path).name if path else 'ยังไม่ได้เลือก'}"
+                             + (" · ไฟล์หาย" if path and not Path(path).expanduser().is_file() else ""))
+        if group.missing:
+            lines.extend(("", "บทที่ขาด: " + ", ".join(map(str, group.missing))))
+        self.batch_workspace.show_selection(
+            f"ชุด {group.index} · บท {group.start:04d}–{group.end:04d}",
+            "\n".join(lines), switch=switch)
+
+    def _copy_selected(self):
+        group = self._selected_group
+        if group is None:
+            return
+        for button, _count, current in self._copy_buttons:
+            if current == group:
+                if button.isEnabled():
+                    button.click()
+                return
+        self._scroll_to_group(group)
+        self._copy_selected()
+
+    def _move_selection(self, group, offset):
+        index = self._visible_groups.index(group) + offset
+        if not 0 <= index < len(self._visible_groups):
+            return
+        if self._rendered_count <= index:
+            self._append_next(limit=index + 1 - self._rendered_count)
+        target = self._visible_groups[index]
+        row = self._batch_widgets[index]
+        self.scroll.ensureWidgetVisible(row, 4, 12)
+        self._select_group(target, switch=False)
+        row.setFocus(Qt.OtherFocusReason)
 
     def _load_on_scroll(self, position):
         bar = self.scroll.verticalScrollBar()
@@ -683,10 +777,15 @@ class TxtVocabularyPage(QWidget):
 
     def _make_card(self, group):
         """One compact, single-column Explorer-like row; details start collapsed."""
-        row = QFrame()
+        row = BatchRow()
         row.setObjectName("txtVocabularyRow")
+        color = "#488bd6" if group == self._selected_group else "transparent"
+        row.setStyleSheet(f"QFrame#txtVocabularyRow {{ border: 2px solid {color}; }}")
+        row.setAccessibleName(f"ชุด {group.index} บท {group.start} ถึง {group.end}")
+        row.selected.connect(lambda g=group: self._select_group(g))
+        row.move.connect(lambda offset, g=group: self._move_selection(g, offset))
         row.setFrameShape(QFrame.NoFrame)
-        row.setMaximumHeight(68)  # A single row must never fill the entire scroll viewport.
+        row.setFixedHeight(max(44, row.fontMetrics().height() + 20))
         layout = QVBoxLayout(row)
         layout.setContentsMargins(8, 3, 8, 3)
         layout.setSpacing(0)
@@ -727,6 +826,7 @@ class TxtVocabularyPage(QWidget):
             except (OSError, ValueError) as exc:
                 unique_count = len(group.chapters)
                 missing_references = [str(exc)]
+                self._reference_error = str(exc)
         else:
             references = [self.state.get(f"glossary_{n}") for n in (1, 2)]
             paths = [ch.path for ch in group.chapters] + [
@@ -746,14 +846,6 @@ class TxtVocabularyPage(QWidget):
         count.setMinimumWidth(75)
         count.setToolTip("จำนวนไฟล์ต้นฉบับและไฟล์ที่เปิดใช้งานในขั้นตอนหาศัพท์เดิม")
         top.addWidget(count)
-
-        detail_button = QPushButton("ดูรายชื่อไฟล์ ▾")
-        detail_button.setObjectName(f"txtVocabularyDetails{group.index}")
-        detail_button.setProperty("batchDetails", True)
-        detail_button.setFlat(True)
-        detail_button.setCursor(Qt.PointingHandCursor)
-        detail_button.setToolTip("ขยายหรือซ่อนรายชื่อไฟล์")
-        top.addWidget(detail_button)
 
         copy_status = self._group_status(group, verify=True)
         copy = QPushButton(
@@ -777,49 +869,6 @@ class TxtVocabularyPage(QWidget):
         top.addWidget(copy)
         layout.addLayout(top)
 
-        detail = QWidget()
-        detail.setObjectName("txtVocabularyDetail")
-        details = QVBoxLayout(detail)
-        details.setContentsMargins(38, 4, 4, 8)
-        details.setSpacing(4)
-        for chapter in group.chapters:
-            label = QLabel(f"{chapter.number:04d}  {chapter.path.name}")
-            label.setObjectName("mutedLabel")
-            label.setWordWrap(True)
-            label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            details.addWidget(label)
-        if self.bound_mode:
-            reference_labels = [
-                f"{entry.label} · {entry.path.name if entry.path else 'ไฟล์หาย'}"
-                for entry in references
-            ]
-        else:
-            reference_labels = [
-                f"คำศัพท์ {n} · {Path(path).name if path else 'ยังไม่ได้เลือก'}"
-                for n, path in enumerate(references, 1)
-            ]
-        for text in reference_labels:
-            label = QLabel(text)
-            label.setObjectName("mutedLabel")
-            label.setWordWrap(True)
-            details.addWidget(label)
-        if group.missing:
-            warning = QLabel("บทที่ขาด: " + ", ".join(f"{n:04d}" for n in group.missing[:30]))
-            warning.setObjectName("mutedLabel")
-            warning.setWordWrap(True)
-            details.addWidget(warning)
-        detail.setVisible(False)
-
-        def toggle_details():
-            before = self.scroll.verticalScrollBar().value()
-            showing = not detail.isVisible()
-            row.setMaximumHeight(16777215 if showing else 68)
-            detail.setVisible(showing)
-            detail_button.setText("ซ่อนรายชื่อไฟล์ ▴" if showing else "ดูรายชื่อไฟล์ ▾")
-            QTimer.singleShot(0, lambda: self.scroll.verticalScrollBar().setValue(before))
-        detail_button.clicked.connect(toggle_details)
-        layout.addWidget(detail)
-
         self.cards_layout.addWidget(row)
         return row
 
@@ -834,10 +883,7 @@ class TxtVocabularyPage(QWidget):
         if index < 0:
             QMessageBox.information(self, "ไม่พบเลขบท", f"ไม่มีบท {number:04d} ในช่วงที่เลือก")
             return
-        while self._rendered_count <= index:
-            self._append_next()
-        card = self._batch_widgets[index]
-        QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(card, 4, 12))
+        self._scroll_to_group(self._groups[index])
 
     def copy_batch(self, group, button: QPushButton):
         """Same file-URL clipboard semantics as the existing workflow copy."""
@@ -917,6 +963,8 @@ class TxtVocabularyPage(QWidget):
         QTimer.singleShot(
             0, lambda: self.scroll.verticalScrollBar().setValue(preserved_scroll)
         )
+        if self._selected_group == group:
+            self._select_group(group, switch=False, persist=False)
 
     def invalidate_preview(self):
         self._segments = ()
@@ -1138,6 +1186,7 @@ class TxtVocabularyPage(QWidget):
         self._clear_cards(clear_groups=False)
         self._append_next()
         self._restore_scroll(old)
+        self._restore_selection()
 
     def _scroll_to_group(self, group):
         if group is None:
@@ -1148,9 +1197,17 @@ class TxtVocabularyPage(QWidget):
             index = self._visible_groups.index(group)
         except ValueError:
             return
-        while self._rendered_count <= index:
-            self._append_next()
-        self.scroll.ensureWidgetVisible(self._batch_widgets[index], 4, 12)
+        if self._rendered_count <= index:
+            needed = index + 1 - self._rendered_count
+            self._append_next(limit=((needed + 35) // 36) * 36)
+        row = self._batch_widgets[index]
+        self.batch_workspace.show_list()
+        def navigate():
+            if index >= len(self._batch_widgets) or self._batch_widgets[index] is not row:
+                return
+            self.scroll.ensureWidgetVisible(row, 4, 12)
+            self._select_group(group)
+        QTimer.singleShot(0, navigate)
 
     def _go_to_last_copied(self):
         groups = {(group.start, group.end, tuple(ch.number for ch in group.chapters)): group
