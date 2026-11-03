@@ -39,6 +39,7 @@ from .workspace_editor import EditorTabs, _stage_text_file, _cleanup_staged_text
 from .recovery import commit_staged
 from .storage import read_json, write_json
 from .theme import theme_colors, editor_colors
+from .safe_dialogs import confirm_scrollable, ScrollableConfirmation
 from . import __version__
 from .update_bootstrap import launch_update, read_update_result
 from .updater import UpdateError, UpdateInfo, check_for_update, download_update
@@ -2492,8 +2493,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         def delete_file():
             paths=selected_paths()
             if not paths:return
-            names="\n".join(path.name for path in paths[:10])
-            if QMessageBox.question(self,"ลบไฟล์",f"ลบ {len(paths)} ไฟล์ถาวรใช่ไหม?\n{names}") != QMessageBox.Yes:return
+            names="\n".join(path.name for path in paths)
+            if not confirm_scrollable(
+                self, "ลบไฟล์", f"ลบ {len(paths)} ไฟล์ถาวรใช่ไหม?", names,
+            ):
+                return
             removed=set();errors=[]
             for path in paths:
                 try:path.unlink();removed.add(path)
@@ -2504,7 +2508,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 step.files=[file for file in step.files if file.reference_type == "external_file" or not file.path or self.repo.resolve_project_path(profile.id,file.path) not in removed]
             profile.working_files=[file for file in profile.working_files if file.reference_type == "external_file" or not file.path or self.repo.resolve_project_path(profile.id,file.path) not in removed]
             self.save();self.refresh_files();refresh(search.text())
-            if errors:QMessageBox.warning(self,"ลบบางไฟล์ไม่ได้","\n".join(errors))
+            if errors:
+                message = ScrollableConfirmation(
+                    self, "ลบบางไฟล์ไม่ได้", f"ลบไม่สำเร็จ {len(errors)} รายการ",
+                    "\n".join(errors),
+                )
+                message.confirm.hide()
+                message.exec()
         delete.clicked.connect(delete_file)
         actions.addWidget(delete)
         layout.addLayout(actions)
@@ -2907,13 +2917,14 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         worker.start()
 
     def _offer_update(self, update: UpdateInfo):
-        notes = update.notes[:1600] if update.notes else "ไม่มีรายละเอียดการเปลี่ยนแปลง"
+        notes = update.notes if update.notes else "ไม่มีรายละเอียดการเปลี่ยนแปลง"
         dialog = QMessageBox(self)
         dialog.setWindowTitle("มีอัปเดตใหม่")
         dialog.setText(
             f"เวอร์ชันปัจจุบัน: v{__version__}\n"
-            f"เวอร์ชันใหม่: v{update.version}\n\nรายละเอียดการเปลี่ยนแปลง:\n{notes}"
+            f"เวอร์ชันใหม่: v{update.version}\n\nรายละเอียดการเปลี่ยนแปลงอยู่ในปุ่ม Show Details"
         )
+        dialog.setDetailedText(notes)
         install = dialog.addButton("อัปเดตเลย", QMessageBox.AcceptRole)
         dialog.addButton("ไว้ทีหลัง", QMessageBox.RejectRole)
         dialog.setDefaultButton(install)
@@ -4411,7 +4422,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         dialog = QMessageBox(self)
         dialog.setWindowTitle(title)
         dialog.setIcon(QMessageBox.Warning)
-        dialog.setText(details)
+        dialog.setText("มีงานแปลที่ยังไม่ได้ Export · เลือกการดำเนินการ")
+        dialog.setDetailedText(details)
         export_button = dialog.addButton("Export Now", QMessageBox.AcceptRole)
         later_button = dialog.addButton("Later", QMessageBox.ActionRole)
         cancel_button = dialog.addButton("Cancel", QMessageBox.RejectRole)
@@ -4434,7 +4446,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         dialog = QMessageBox(self)
         dialog.setWindowTitle("ยังไม่ได้ Export งานแปล!")
         dialog.setIcon(QMessageBox.Warning)
-        dialog.setText(f"มีงานแปลที่ยังไม่ได้ Export จากครั้งก่อน\nTranslator: {pending_path}")
+        dialog.setText("มีงานแปลที่ยังไม่ได้ Export จากครั้งก่อน")
+        dialog.setDetailedText(f"Translator: {pending_path}")
         export_button = dialog.addButton("Export Now", QMessageBox.AcceptRole)
         dialog.addButton("Later", QMessageBox.ActionRole)
         dialog.exec()
@@ -4449,9 +4462,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         dialog = QMessageBox(self)
         dialog.setWindowTitle("ยังไม่ได้ Export งานแปล!")
         dialog.setIcon(QMessageBox.Warning)
-        dialog.setText(
-            f"Translator: {path}\n\nมีงานแปลที่ยังไม่ได้ Export การวางนี้จะแทนที่ข้อความส่วนใหญ่ของไฟล์"
-        )
+        dialog.setText("มีงานแปลที่ยังไม่ได้ Export การวางนี้จะแทนที่ข้อความส่วนใหญ่ของไฟล์")
+        dialog.setDetailedText(f"Translator: {path}")
         export_button = dialog.addButton("Export Now", QMessageBox.AcceptRole)
         keep_button = dialog.addButton("Keep Editing", QMessageBox.RejectRole)
         replace_button = dialog.addButton("Replace Anyway", QMessageBox.DestructiveRole)
@@ -4660,7 +4672,9 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             preview.setWindowTitle("ยืนยัน Export")
             preview.setIcon(QMessageBox.Information)
             preview.setText(
-                f"สำรองไฟล์ขั้นตอนตรวจคำแปลก่อน แล้วสร้างไฟล์ TXT และแทนที่ Context ทั้งหมด?\n"
+                "สำรองไฟล์ขั้นตอนตรวจคำแปลก่อน แล้วสร้างไฟล์ TXT และแทนที่ Context ทั้งหมด?"
+            )
+            preview.setDetailedText(
                 f"TXT: {target.name}\n{chapter_label}\n"
                 f"Translator: {source}\nContext: {context}"
             )
