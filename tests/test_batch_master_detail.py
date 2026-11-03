@@ -33,7 +33,11 @@ def test_vocabulary_selection_is_read_only_and_restores_only_same_source(tmp_pat
     QApplication.clipboard().setText('unchanged')
     page._scroll_to_group(page._groups[85])
     app.processEvents()
+    app.processEvents()
+    app.processEvents()
     row = page._batch_widgets[85]
+    y = row.mapTo(page.scroll.viewport(), row.rect().topLeft()).y()
+    assert 0 <= y < page.scroll.viewport().height()
     height = row.height()
     QTest.mouseClick(row, Qt.LeftButton)
     app.processEvents()
@@ -42,9 +46,15 @@ def test_vocabulary_selection_is_read_only_and_restores_only_same_source(tmp_pat
     assert row.height() == height
     assert QApplication.clipboard().text() == 'unchanged'
     assert saved['selected_batch']['index'] == 86
+    scroll_before = page.scroll.verticalScrollBar().value()
+    assert scroll_before > 0
     page.close()
     reopened = TxtVocabularyPage(saved, lambda state: None, source)
+    reopened.resize(1400, 800)
+    reopened.show()
+    QTest.qWait(300)
     assert reopened._selected_group.index == 86
+    assert reopened.scroll.verticalScrollBar().value() == scroll_before
     reopened.batch_size.setValue(2)
     assert reopened._selected_group.index == 1
     reopened.history_filter.setCurrentIndex(reopened.history_filter.findData('copied'))
@@ -78,7 +88,11 @@ def test_translation_selection_and_navigation_do_not_copy(tmp_path):
         QApplication.clipboard().setText('unchanged')
         page._scroll_to_group(page._groups[85])
         app.processEvents()
+        app.processEvents()
+        app.processEvents()
         row = page._row_widgets[86][1]
+        y = row.mapTo(page.scroll.viewport(), row.rect().topLeft()).y()
+        assert 0 <= y < page.scroll.viewport().height()
         height = row.height()
         QTest.keyClick(row, Qt.Key_Space)
         app.processEvents()
@@ -111,10 +125,14 @@ def test_vocabulary_1000_batches_remain_lazy_and_select_last(tmp_path):
     assert len(page._batch_widgets) == 36
     page._scroll_to_group(page._groups[-1])
     app.processEvents()
+    app.processEvents()
+    app.processEvents()
     assert page._selected_group.index == 1000
     assert '1000 ไทย中文.txt' in page.batch_workspace.text.toPlainText()
     assert len(page._batch_widgets) == 1000
     assert page._batch_widgets[-1].height() == page._batch_widgets[0].height()
+    y = page._batch_widgets[-1].mapTo(page.scroll.viewport(), page._batch_widgets[-1].rect().topLeft()).y()
+    assert 0 <= y < page.scroll.viewport().height()
     page.close()
     app.processEvents()
 

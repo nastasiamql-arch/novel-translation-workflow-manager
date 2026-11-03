@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from .safe_dialogs import confirm_scrollable
-from .batch_master_detail import BatchRow, BatchWorkspace, batch_key
+from .batch_master_detail import BatchRow, BatchWorkspace, batch_key, cancel_scroll_restore, restore_scroll_when_ready
 
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
@@ -553,6 +553,7 @@ class TranslationBatchPage(QWidget):
             self.refresh()
 
     def _clear_rows(self):
+        cancel_scroll_restore(self.scroll)
         self._row_widgets.clear()
         if hasattr(self, "batch_workspace") and not self._groups:
             self._selected_group = None
@@ -1043,9 +1044,15 @@ class TranslationBatchPage(QWidget):
         )
 
     def _restore_scroll(self, value):
-        while self._rendered < len(self._visible) and self.scroll.verticalScrollBar().maximum() < value:
-            self._append_rows()
-        self.scroll.verticalScrollBar().setValue(value)
+        row = self.rows.itemAt(0).widget() if self.rows.count() else None
+        if row is not None:
+            step = max(1, row.height() + self.rows.spacing())
+            needed = min(len(self._visible), (value + self.scroll.viewport().height()) // step + 2)
+            if self._rendered < needed:
+                self._append_rows(limit=needed - self._rendered)
+            self.rows.activate()
+            self.rows_host.adjustSize()
+        restore_scroll_when_ready(self.scroll, value)
 
     def _filter_changed(self, *_):
         self.state["filter"] = self.history_filter.currentData() or "all"
@@ -1071,6 +1078,8 @@ class TranslationBatchPage(QWidget):
             def navigate():
                 if self._row_widgets.get(group.index, (None, None))[1] is not row:
                     return
+                self.rows.activate()
+                self.rows_host.adjustSize()
                 self.scroll.ensureWidgetVisible(row, 4, 12)
                 self._select_group(group)
             QTimer.singleShot(0, navigate)

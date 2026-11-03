@@ -1,7 +1,9 @@
 """Regression: copying a late translation batch must not reset its scroll position."""
 import os
+import time
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from novel_workflow.batch_copy_history import load_history
@@ -68,6 +70,13 @@ def test_translation_batch_86_copy_preserves_viewport_and_row(tmp_path, monkeypa
             if worker is not None:
                 assert worker.wait(20000)
             app.processEvents()
+            # A prewarm worker may finish while the requested copy is queued;
+            # its finished handler then starts a replacement worker. Wait for
+            # the copy itself rather than assuming one worker is sufficient.
+            deadline = time.monotonic() + 20
+            while page._copy_pending is not None and time.monotonic() < deadline:
+                QTest.qWait(20)
+            assert page._copy_pending is None
             # The original row is still alive and the list remains rendered
             # beyond the first 35 groups; no jump to group 1/26.
             assert page._rendered >= 86

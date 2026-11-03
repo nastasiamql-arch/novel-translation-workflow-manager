@@ -1,5 +1,5 @@
 """Small presentation helpers shared by the two batch pages."""
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 
@@ -7,6 +7,48 @@ def batch_key(profile_id, identity, revision, group):
     return {"profile": profile_id, "source": identity, "revision": revision,
             "index": group.index, "start": group.start, "end": group.end,
             "chapters": [chapter.number for chapter in group.chapters]}
+
+
+def cancel_scroll_restore(scroll):
+    bar = scroll.verticalScrollBar()
+    bar.setProperty("batchRestoreGeneration", (bar.property("batchRestoreGeneration") or 0) + 1)
+
+
+def restore_scroll_when_ready(scroll, value):
+    """Wait for Qt to publish the new range after lazy rows are laid out."""
+    bar = scroll.verticalScrollBar()
+    cancel_scroll_restore(scroll)
+    generation = bar.property("batchRestoreGeneration")
+    initial = bar.value()
+    active = True
+    def finish(_minimum=None, maximum=None):
+        nonlocal active
+        maximum = bar.maximum() if maximum is None else maximum
+        if not active or maximum < value:
+            return
+        active = False
+        try:
+            bar.rangeChanged.disconnect(finish)
+        except (RuntimeError, TypeError):
+            return
+        if bar.property("batchRestoreGeneration") == generation and bar.value() == initial:
+            bar.setValue(value)
+    if bar.maximum() >= value:
+        bar.setValue(value)
+        return
+    bar.rangeChanged.connect(finish)
+    def fallback():
+        nonlocal active
+        if not active:
+            return
+        active = False
+        try:
+            bar.rangeChanged.disconnect(finish)
+        except (RuntimeError, TypeError):
+            return
+        if bar.property("batchRestoreGeneration") == generation and bar.value() == initial:
+            bar.setValue(value)
+    QTimer.singleShot(250, fallback)
 
 
 class BatchRow(QFrame):

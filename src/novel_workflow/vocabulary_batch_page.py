@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from .batch_master_detail import BatchRow, BatchWorkspace, batch_key
+from .batch_master_detail import BatchRow, BatchWorkspace, batch_key, cancel_scroll_restore, restore_scroll_when_ready
 from .clipboard_files import copy_file_paths
 from .vocabulary_zip import create_txt_batch_zip
 from .vocabulary_source_binding import (
@@ -585,6 +585,7 @@ class TxtVocabularyPage(QWidget):
         self.preview_paste()
 
     def _clear_cards(self, *, clear_groups=True):
+        cancel_scroll_restore(self.scroll)
         if clear_groups:
             self._selected_group = None
             if hasattr(self, "batch_workspace"):
@@ -1170,9 +1171,15 @@ class TxtVocabularyPage(QWidget):
             self._save()
 
     def _restore_scroll(self, value):
-        while self._rendered_count < len(self._visible_groups) and self.scroll.verticalScrollBar().maximum() < value:
-            self._append_next()
-        self.scroll.verticalScrollBar().setValue(value)
+        row = self._batch_widgets[0] if self._batch_widgets else None
+        if row is not None:
+            step = max(1, row.height() + self.cards_layout.spacing())
+            needed = min(len(self._visible_groups), (value + self.scroll.viewport().height()) // step + 2)
+            if self._rendered_count < needed:
+                self._append_next(limit=needed - self._rendered_count)
+            self.cards_layout.activate()
+            self.cards.adjustSize()
+        restore_scroll_when_ready(self.scroll, value)
 
     def _apply_history_filter(self):
         selected = self.history_filter.currentData() if hasattr(self, "history_filter") else "all"
@@ -1206,6 +1213,8 @@ class TxtVocabularyPage(QWidget):
         def navigate():
             if index >= len(self._batch_widgets) or self._batch_widgets[index] is not row:
                 return
+            self.cards_layout.activate()
+            self.cards.adjustSize()
             self.scroll.ensureWidgetVisible(row, 4, 12)
             self._select_group(group)
         QTimer.singleShot(0, navigate)
