@@ -19,7 +19,8 @@ class BulkGlossaryTests(unittest.TestCase):
         self.repo = ProjectRepository(root / 'data')
         main = root / 'novel'; main.mkdir()
         self.step = WorkflowStep(name='Polish')
-        self.profile = NovelProfile(main_folder=str(main), workflow=Workflow([self.step]),
+        self.translation = WorkflowStep(name='แปล')
+        self.profile = NovelProfile(main_folder=str(main), workflow=Workflow([self.translation, self.step]),
                                     polish_history_step_id=self.step.id)
         self.repo.save_profile(self.profile)
         self.source = self.repo.profile_dir(self.profile.id) / 'glossary' / 'terms.txt'
@@ -28,6 +29,7 @@ class BulkGlossaryTests(unittest.TestCase):
         prompt.write_bytes(b'prompt unchanged')
         self.step.files = [StepFile(path='glossary/terms.txt', file_type='glossary'),
                            StepFile(path='prompt.txt', order=1)]
+        self.translation.files = [StepFile(path='glossary/terms.txt', file_type='glossary')]
         self.service = PolishHistory(self.repo, AssemblyService(self.repo))
 
     def test_many_snapshots_preserve_bytes_metadata_and_zip(self):
@@ -57,13 +59,50 @@ class BulkGlossaryTests(unittest.TestCase):
     def test_ambiguous_source_does_not_write(self):
         snap = self.service.create(self.profile, self.step, '1')
         other = self.repo.profile_dir(self.profile.id) / 'other.txt'; other.write_bytes(b'other')
-        self.step.files.append(StepFile(path='other.txt', file_type='glossary'))
+        self.translation.files.append(StepFile(path='other.txt', file_type='glossary'))
         self.source.write_bytes(b'new')
         before = (snap.path / 'manifest.json').read_bytes()
         with self.assertRaises(ValueError):
             self.service.update_all_glossaries(self.profile, self.step.id)
         self.assertEqual((snap.path / 'manifest.json').read_bytes(), before)
         self.service.validate(self.profile, snap.path)
+
+    def test_only_translation_source_and_moved_snapshot_binding(self):
+        snap = self.service.create(self.profile, self.step, '1')
+        other = self.repo.profile_dir(self.profile.id) / 'other.txt'
+        other.write_bytes(b'unrelated')
+        self.profile.workflow.steps.append(WorkflowStep(name='ตรวจคำแปล', files=[
+            StepFile(path='other.txt', file_type='glossary')]))
+        moved = self.repo.profile_dir(self.profile.id) / 'moved.txt'
+        moved.write_bytes(b'new source')
+        self.translation.files = [StepFile(path='moved.txt', label='Glossary', file_type='custom')]
+        result = self.service.update_all_glossaries(self.profile, self.step.id)
+        self.assertEqual((result['updated'], result['errors']), (1, []))
+        self.assertEqual(self.service.validate(self.profile, snap.path)[0].read_bytes(), b'new source')
+        self.assertEqual(other.read_bytes(), b'unrelated')
+
+    def test_missing_translation_glossary_never_uses_other_step(self):
+        snap = self.service.create(self.profile, self.step, '1')
+        before = (snap.path / 'manifest.json').read_bytes()
+        self.translation.files.clear()
+        with self.assertRaisesRegex(ValueError, 'ขั้นตอนแปล'):
+            self.service.update_all_glossaries(self.profile, self.step.id)
+        self.assertEqual((snap.path / 'manifest.json').read_bytes(), before)
+
+    def test_external_source_and_duplicate_binding(self):
+        snap = self.service.create(self.profile, self.step, '1')
+        external = Path(self.temp.name) / 'new-terms.txt'
+        external.write_bytes(b'external source')
+        self.translation.files = [StepFile(path=str(external), reference_type='external_file', file_type='glossary'),
+                                  StepFile(path=str(external), reference_type='external_file', file_type='glossary')]
+        result = self.service.update_all_glossaries(self.profile, self.step.id)
+        self.assertEqual((result['updated'], result['errors']), (1, []))
+        self.assertEqual(self.service.validate(self.profile, snap.path)[0].read_bytes(), b'external source')
+
+    def test_duplicate_translation_steps_are_rejected(self):
+        self.profile.workflow.steps.append(WorkflowStep(name='แปล'))
+        with self.assertRaisesRegex(ValueError, 'หลายขั้นตอน'):
+            self.service.update_all_glossaries(self.profile, self.step.id)
 
     def test_manifest_write_failure_rolls_back(self):
         snap = self.service.create(self.profile, self.step, '1')
@@ -177,7 +216,7 @@ class BulkGlossaryTests(unittest.TestCase):
         snap = self.service.create(self.profile, self.step, '1')
         alias = self.source.parent / 'alias.txt'
         alias.symlink_to(self.source)
-        self.step.files[0].path = 'glossary/alias.txt'
+        self.translation.files[0].path = 'glossary/alias.txt'
         with self.assertRaises(ValueError):
             self.service.update_all_glossaries(self.profile, self.step.id)
         self.service.validate(self.profile, snap.path)

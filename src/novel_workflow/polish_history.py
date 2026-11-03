@@ -535,18 +535,31 @@ class PolishHistory:
         """
         if not step_id or not any(s.id == step_id for s in profile.workflow.steps):
             raise ValueError('กรุณาตั้งค่าขั้นตอน Novel Polish ก่อน')
+        # Step names identify translation; duplicate matches are unsafe.
+        translations = [step for step in profile.workflow.steps
+                        if step.name.strip().casefold() in {'แปล', 'translate', 'translation', 'translator'}]
+        if len(translations) != 1:
+            raise ValueError('ไม่พบขั้นตอนแปลที่ระบุได้แน่ชัด หรือมีขั้นตอนแปลหลายขั้นตอน')
+        translation = translations[0]
+
+        def is_glossary(item):
+            label = (item.label or '').strip().casefold()
+            path = (item.path or '').replace('\\', '/')
+            return (item.file_type == 'glossary' or label in {'glossary', 'คำศัพท์'}
+                    or (item.reference_type == 'repository_file'
+                        and path.split('/')[0].casefold() == 'glossary'))
+
+        bindings = [item for item in translation.files if item.enabled and is_glossary(item)]
         sources = set()
-        for step in profile.workflow.steps:
-            for item in step.files:
-                repository_glossary = (item.reference_type == 'repository_file' and item.path
-                                       and Path(item.path).parts[:1] == ('glossary',))
-                if item.enabled and (item.file_type == 'glossary' or repository_glossary):
-                    source = resolve_attachment(self.repo, self.assembler, profile, item)
-                    if not source.is_file():
-                        raise ValueError('Glossary ต้นทางต้องเป็นไฟล์เดียว')
-                    sources.add(source)
+        for item in bindings:
+            source = resolve_attachment(self.repo, self.assembler, profile, item)
+            if not source.is_file():
+                raise ValueError('ไม่พบไฟล์ Glossary ต้นทางในขั้นตอนแปล หรือไม่ใช่ไฟล์')
+            sources.add(source)
+        if not sources:
+            raise ValueError('ไม่พบ Glossary ที่เปิดใช้งานในขั้นตอนแปล')
         if len(sources) != 1:
-            raise ValueError('ไม่สามารถระบุ Glossary ต้นทางได้แน่ชัด กรุณาตรวจการตั้งค่าไฟล์ Glossary')
+            raise ValueError('ขั้นตอนแปลมี Glossary หลายไฟล์ กรุณาตรวจการตั้งค่า')
         source = sources.pop()
         history_root = self.root(profile)
         if source.is_relative_to(history_root):
@@ -590,16 +603,28 @@ class PolishHistory:
                 counted = True
                 self._validate_manifest(profile, path, manifest)
                 targets = []
+                links = {link['id']: link for link in manifest['attachments']}
+                if len(links) != len(manifest['attachments']):
+                    raise ValueError('ข้อมูลการเชื่อมไฟล์คำศัพท์กำกวม')
                 for entry in manifest['files']:
                     if entry['is_context']: continue
-                    try:
-                        original = Path(entry['original_path']).expanduser().absolute()
-                        if os.path.normcase(str(original)) != os.path.normcase(str(source)): continue
-                    except (ValueError, OSError):
-                        continue
-                    links = [link for link in manifest.get('attachments', []) if link.get('id') == entry['attachment_id']]
-                    if len(links) != 1:
+                    link = links.get(entry['attachment_id'])
+                    if link is None:
                         raise ValueError('ข้อมูลการเชื่อมไฟล์คำศัพท์กำกวม')
+                    label = (link.get('label') or '').strip().casefold()
+                    link_path = (link.get('path') or '').replace('\\', '/')
+                    explicit = (link.get('file_type') == 'glossary'
+                                or label in {'glossary', 'คำศัพท์'}
+                                or (link.get('reference_type') == 'repository_file'
+                                    and link_path.split('/')[0].casefold() == 'glossary'))
+                    same_source = (os.path.normcase(os.path.abspath(entry['original_path']))
+                                   == os.path.normcase(str(source)))
+                    if not (explicit or same_source): continue
+                    # A folder binding may include arbitrary files; do not guess.
+                    siblings = [e for e in manifest['files']
+                                if e['attachment_id'] == entry['attachment_id']]
+                    if len(siblings) != 1:
+                        raise ValueError('ไฟล์คำศัพท์ในชุดงานกำกวม: การเชื่อมไฟล์มีหลายไฟล์')
                     targets.append(entry['snapshot_path'])
                 if not targets:
                     results['skipped'].append((path.name, 'ไม่พบไฟล์คำศัพท์ที่ยืนยันตัวตนได้'))

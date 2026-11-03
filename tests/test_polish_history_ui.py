@@ -624,6 +624,7 @@ def test_bulk_glossary_button_runs_in_background_and_preserves_clipboard(window,
     glossary = w.repo.profile_dir(p.id) / 'glossary' / 'terms.txt'
     glossary.write_bytes(b'old')
     step = p.workflow.steps[1]
+    p.workflow.steps[0].files.append(StepFile(path='glossary/terms.txt', file_type='glossary', order=2))
     step.files.append(StepFile(path='glossary/terms.txt', file_type='glossary', order=2))
     snapshot = w.polish_history.create(p, step, '1-5')
     glossary.write_bytes('ใหม่ 中文'.encode())

@@ -1537,7 +1537,8 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             lines = [f"ชุดงานทั้งหมด: {result['total']}",
                      f"อัปเดตสำเร็จ: {result['updated']}",
                      f"เป็นไฟล์ล่าสุดแล้ว: {result['unchanged']}",
-                     f"ข้าม: {len(result['skipped'])}", f"ผิดพลาด: {len(result['errors'])}"]
+                     f"ข้าม: {len(result['skipped'])}", f"ผิดพลาด: {len(result['errors'])}",
+                     'ไม่ได้เก็บสำรองคำศัพท์เดิม จึงไม่สามารถรับประกันการย้อนคืนได้']
             for label, reason in result['skipped'] + result['errors']:
                 lines.append(f'{label}: {reason}')
             self.statusBar().showMessage('ตรวจสอบการอัปเดตคำศัพท์เสร็จแล้ว', 8000)
