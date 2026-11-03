@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from .chapter_numbering import (
     chapter_groups, chapter_issues, duplicate_heading_removal_plan, preview_renumber,
-    scan_chapters, format_heading_number,
+    preview_chapter_repairs, safe_duplicate_heading_indices, scan_chapters, format_heading_number,
 )
 from .chapter_number_reference import resolve_translator_reference, should_auto_propose
 from .storage import read_json, write_json
@@ -47,6 +47,35 @@ def _replace_headings(editor, original, headings, changes):
     finally:
         cursor.endEditBlock()
 
+
+def _apply_chapter_repairs(editor, original, headings, changes, removed_lines):
+    """Apply all planned numeral edits and line deletions in one undo block."""
+    spans = []
+    for i, new in changes.items():
+        heading = headings[i]
+        if new != heading.number:
+            spans.append((
+                heading.number_start, heading.number_end,
+                format_heading_number(new, original[heading.number_start:heading.number_end]),
+            ))
+    offsets = []
+    offset = 0
+    for line in original.splitlines(keepends=True):
+        offsets.append((offset, offset + len(line)))
+        offset += len(line)
+    spans.extend((offsets[line - 1][0], offsets[line - 1][1], "") for line in removed_lines)
+    cursor = QTextCursor(editor.document())
+    cursor.beginEditBlock()
+    try:
+        for start, end, value in sorted(spans, reverse=True):
+            cursor.setPosition(_qt_position(original, start))
+            cursor.setPosition(_qt_position(original, end), QTextCursor.KeepAnchor)
+            if value:
+                cursor.insertText(value)
+            else:
+                cursor.removeSelectedText()
+    finally:
+        cursor.endEditBlock()
 
 
 def apply_automatic_without_dialog(workspace, editor, path, expected, changes):
@@ -201,10 +230,10 @@ class ChapterNumberDialog(QDialog):
         gap_count = sum("กระโดด" in issue for issue in issues)
         reverse_count = sum("ย้อนกลับ" in issue for issue in issues)
         duplicate_summary = (
-            f"สรุปผลตรวจ · หัวบท {len(self.headings)} · เลขซ้ำ {duplicate_count} "
-            f"(หัวบทที่น่าจะซ้ำติดกัน {likely_duplicate_count}) · "
+            f"สรุปผลตรวจ · บทจริง {len(self.headings) - likely_duplicate_count} · "
+            f"หัวบทซ้ำที่ลบได้ {likely_duplicate_count} · เลขซ้ำ {duplicate_count} · "
             f"เลขกระโดด {gap_count} · เลขย้อนกลับ {reverse_count}\n"
-            "ระบบไม่ลบหัวบทหรือเปลี่ยนเลขให้อัตโนมัติ กรุณาดูเนื้อหาและตัวอย่างก่อนยืนยัน"
+            "การแก้เลขที่ยืนยันจะลบหัวบทซ้ำที่ปลอดภัยในครั้งเดียว · กรุณาตรวจ Preview"
         )
         for i, heading in enumerate(self.headings):
             checkbox = QCheckBox()
@@ -330,7 +359,8 @@ class ChapterNumberDialog(QDialog):
         reverse_count = sum("ย้อนกลับ" in issue for issue in issues)
         self.remove_duplicates_button.setEnabled(likely_count > 0)
         self.result.setText(
-            f"ตรวจใหม่ · {len(self.headings)} บท · {max(groups, default=0) + 1} ช่วงเล่ม · "
+            f"ตรวจใหม่ · บทจริง {len(self.headings) - likely_count} · "
+            f"หัวบทซ้ำที่ลบได้ {likely_count} · {max(groups, default=0) + 1} ช่วงเล่ม · "
             f"เลขซ้ำ {duplicate_count} · เลขกระโดด {gap_count} · เลขย้อน {reverse_count}\n"
             "เลขข้ามเล่มไม่ถือว่าซ้ำ · ยังไม่ได้แก้ไฟล์ต้นฉบับ"
         )
@@ -498,14 +528,20 @@ class ChapterNumberDialog(QDialog):
     def propose_sequence(self):
         first = self.start_number.value()
         groups = chapter_groups(self.headings, self.manual_volume_starts)
+        duplicates = safe_duplicate_heading_indices(self.original, self.manual_volume_starts, self.headings)
         changed = 0
         previous_proposal = None
+        previous_kept = None
         for i, (heading, spin, check) in enumerate(zip(self.headings, self.spins, self.checks)):
+            if i in duplicates:
+                spin.setValue(heading.number)
+                check.setChecked(False)
+                continue
             if i < self.verified_prefix_count:
                 proposed = heading.number
-            elif i == self.verified_prefix_count:
+            elif previous_kept is None or previous_kept < self.verified_prefix_count:
                 proposed = first
-            elif groups[i] != groups[i - 1]:
+            elif groups[i] != groups[previous_kept]:
                 # A confirmed new volume keeps its original local start.
                 proposed = heading.number
             else:
@@ -513,12 +549,14 @@ class ChapterNumberDialog(QDialog):
             if proposed > 2_147_483_647:
                 QMessageBox.warning(self, "เลขบทไม่ถูกต้อง", "เลขบทใหม่เกินช่วงที่รองรับ")
                 return
+            previous_kept = i
             previous_proposal = proposed
             spin.setValue(proposed)
             check.setChecked(proposed != heading.number)
             changed += proposed != heading.number
         self.result.setText(
-            f"เสนอแก้ {changed} บท · แยกเลขตามเล่มที่ระบุไว้ · กรุณาตรวจก่อนยืนยัน"
+            f"เสนอแก้เลข {changed} บท · ลบหัวบทซ้ำที่ปลอดภัย {len(duplicates)} บรรทัด · "
+            "กรุณาตรวจ Preview ก่อนยืนยัน"
         )
 
     def _proposal(self, all_rows):
@@ -529,10 +567,10 @@ class ChapterNumberDialog(QDialog):
             for i, (spin, check) in enumerate(zip(self.spins, self.checks))
             if (all_rows or check.isChecked()) and spin.value() != self.headings[i].number
         }
-        expected, changes = preview_renumber(
+        expected, changes, removed_lines = preview_chapter_repairs(
             self.original, requested, self.manual_volume_starts
         )
-        return requested, expected, changes
+        return requested, expected, changes, removed_lines
 
     def apply_all(self):
         self._apply(True)
@@ -591,8 +629,20 @@ class ChapterNumberDialog(QDialog):
 
     def _apply(self, all_rows, *, automatic=False):
         try:
-            requested, expected, changes = self._proposal(all_rows)
-            if not changes:
+            if automatic:
+                # Verified unattended append repairs must remain numeral-only.
+                requested = {
+                    i: spin.value()
+                    for i, (spin, check) in enumerate(zip(self.spins, self.checks))
+                    if check.isChecked() and spin.value() != self.headings[i].number
+                }
+                expected, changes = preview_renumber(
+                    self.original, requested, self.manual_volume_starts
+                )
+                removed_lines = []
+            else:
+                requested, expected, changes, removed_lines = self._proposal(all_rows)
+            if not changes and not removed_lines:
                 if not automatic:
                     QMessageBox.information(self, "ไม่พบรายการที่ต้องแก้", "ไม่มีเลขบทที่เลือกให้เปลี่ยน")
                 return True
@@ -601,16 +651,33 @@ class ChapterNumberDialog(QDialog):
             preview = "\n".join(f"บรรทัด {line}: {a} → {b}" for line, a, b in changes[:15])
             if len(changes) > 15:
                 preview += f"\n…และอีก {len(changes) - 15} บท"
+            if removed_lines:
+                lines = self.original.splitlines()
+                deleted = "\n".join(
+                    f"ลบเฉพาะบรรทัด {line}: {lines[line - 1]}"
+                    for line in removed_lines[:12]
+                )
+                if len(removed_lines) > 12:
+                    deleted += f"\n…และอีก {len(removed_lines) - 12} บรรทัด"
+                preview += f"\n\n{deleted}"
             if not automatic and QMessageBox.question(
                 self, "ยืนยันแก้เลขบทต้นฉบับ",
-                f"ไฟล์: {self.path.name}\nเปลี่ยน {len(changes)} หัวบท\n\n{preview}\n\n"
-                "ตรวจว่าบทไม่ได้หายจริงก่อนยืนยัน · เปลี่ยนเฉพาะเลขหัวบท",
+                f"ไฟล์: {self.path.name}\nเปลี่ยนเลข {len(changes)} บท · "
+                f"ลบหัวบทซ้ำ {len(removed_lines)} บรรทัด\n\n{preview}\n\n"
+                "ตรวจว่าบทไม่ได้หายจริงก่อนยืนยัน · รักษาเนื้อหานิยายเดิม",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No
             ) != QMessageBox.Yes:
                 return
             history = self._read_history()
             event = self._save_snapshot(self.original, expected, changes)
-            _replace_headings(self.editor, self.original, self.headings, requested)
+            if removed_lines:
+                event["operation"] = "repair-chapters-and-duplicates"
+                event["removed_lines"] = removed_lines
+                _apply_chapter_repairs(
+                    self.editor, self.original, self.headings, requested, removed_lines
+                )
+            else:
+                _replace_headings(self.editor, self.original, self.headings, requested)
             if self.editor.toPlainText() != expected:
                 self.editor.undo()
                 raise ValueError("ข้อความหลังแก้ไม่ตรงกับ Preview · ย้อนการแก้แล้ว")
@@ -622,7 +689,7 @@ class ChapterNumberDialog(QDialog):
             if not automatic:
                 QMessageBox.information(
                     self, "แก้เลขบทสำเร็จ",
-                    f"แก้ {len(changes)} หัวบทใน {self.path.name} แล้ว\n"
+                    f"แก้เลข {len(changes)} บท · ลบหัวบทซ้ำ {len(removed_lines)} บรรทัดใน {self.path.name}\n"
                     "สำรองข้อความก่อนแก้ไว้สำหรับย้อนคืน\n"
                     "ไม่มีการ Export หรือแก้ไฟล์ Translator/Context"
                 )

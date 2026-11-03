@@ -175,3 +175,90 @@ def test_fullwidth_indented_narrative_reference_is_not_a_chapter_candidate():
     assert [h.number for h in scan_chapters(text)] == [641, 642]
     assert len(edits) == 2
     assert "　　第三章的文字不应算作章节。" in result
+
+
+@pytest.mark.parametrize(("source", "expected", "removed"), [
+    ("第67章 捧杀（累计发布3200字）\n\n　　第67章 捧杀（累计发布3200字）\n正文\n",
+     "第67章 捧杀（累计发布3200字）\n\n正文\n", [3]),
+    ("第67章 捧杀\n第67章 捧杀\n第67章 捧杀\n正文", "第67章 捧杀\n正文", [2, 3]),
+    ("第67章 捧杀\r\n第67章 捧杀\r\n正文\r\n", "第67章 捧杀\r\n正文\r\n", [2]),
+    ("第67章 捧杀（完）\n第67章 捧杀（累计发布3200字）\n正文",
+     "第67章 捧杀（完）\n第67章 捧杀（累计发布3200字）\n正文", []),
+    ("第67章 捧杀\n正文\n第67章 捧杀\n内容",
+     "第67章 捧杀\n正文\n第67章 捧杀\n内容", []),
+    ("目录\n第67章 捧杀\n第67章 捧杀\n第68章 反击\n正文",
+     "目录\n第67章 捧杀\n第67章 捧杀\n第68章 反击\n正文", []),
+    ("第67章 New Year\n第67章 NewYear\n正文",
+     "第67章 New Year\n第67章 NewYear\n正文", []),
+    ("第一卷\n第67章 捧杀\n第二卷\n第67章 捧杀\n正文",
+     "第一卷\n第67章 捧杀\n第二卷\n第67章 捧杀\n正文", []),
+    ("第67章\n第67章\n正文", "第67章\n第67章\n正文", []),
+    ("> 第67章 捧杀\n> 第67章 捧杀\n正文",
+     "> 第67章 捧杀\n> 第67章 捧杀\n正文", []),
+])
+def test_precise_safe_duplicate_matrix(source, expected, removed):
+    from novel_workflow.chapter_numbering import preview_chapter_repairs
+    assert duplicate_heading_removal_plan(source) == (expected, removed)
+    assert preview_chapter_repairs(source, {}) == (expected, [], removed)
+
+
+def test_combined_repair_renumbers_logical_chapters_only_and_is_idempotent():
+    from novel_workflow.chapter_numbering import preview_chapter_repairs, safe_duplicate_heading_indices
+    source = ("第67章 捧杀（累计发布3200字）\r\n"
+              "　　第67章 捧杀（累计发布3200字）\r\n"
+              "正文有3200字，不能改。\r\n"
+              "第67章 反击\r\n正文\r\n第68章 归来\r\n")
+    headings = scan_chapters(source)
+    assert safe_duplicate_heading_indices(source) == {1}
+    assert [h.number for h in headings] == [67, 67, 67, 68]
+    result, changes, removed = preview_chapter_repairs(source, {2: 68, 3: 69})
+    assert removed == [2]
+    assert changes == [(4, 67, 68), (6, 68, 69)]
+    assert result == ("第67章 捧杀（累计发布3200字）\r\n"
+                      "正文有3200字，不能改。\r\n"
+                      "第68章 反击\r\n正文\r\n第69章 归来\r\n")
+    assert preview_chapter_repairs(result, {}) == (result, [], [])
+
+
+def test_combined_repair_mixed_formats_and_custom_start():
+    from novel_workflow.chapter_numbering import preview_chapter_repairs
+    raw = ("第六十七章 捧杀\n第六十七章 捧杀\n内容123\n"
+           "第六十七章 反击\n第六十八章 归来\n")
+    fixed, updates, removed = preview_chapter_repairs(raw, {0: 100, 2: 101, 3: 102})
+    assert removed == [2]
+    assert updates == [(1, 67, 100), (4, 67, 101), (5, 68, 102)]
+    assert "第一百章 捧杀" in fixed
+    assert "第一百零一章 反击" in fixed
+    assert "第一百零二章 归来" in fixed
+    assert "内容123" in fixed
+
+
+def test_combined_repair_refuses_collision_and_does_not_modify_input():
+    from novel_workflow.chapter_numbering import preview_chapter_repairs
+    source = "第67章 捧杀\n第67章 捧杀\n第67章 反击\n"
+    # A no-op preview must preserve ambiguous sources; explicit conflicting edits fail.
+    assert preview_chapter_repairs(source, {})[1] == []
+    with pytest.raises(ValueError, match="collide"):
+        preview_chapter_repairs(source, {2: 67})
+    with pytest.raises(ValueError, match="scheduled for removal"):
+        preview_chapter_repairs(source, {1: 68})
+    assert duplicate_heading_removal_plan(source)[1] == [2]
+
+
+def test_large_document_offsets_and_multiple_independent_groups():
+    from novel_workflow.chapter_numbering import preview_chapter_repairs
+    middle = "普通正文 9999 和第777章的文本。\n" * 12000
+    source = ("第9章 开始\n第9章 开始\n" + middle +
+              "第10章 后续\n\n第10章 后续\n" + middle + "第11章 终章\n")
+    fixed, edits, removed = preview_chapter_repairs(source, {0: 20, 2: 21, 4: 22})
+    assert removed == [2, 12005]
+    assert [h.number for h in scan_chapters(fixed)] == [20, 21, 22]
+    assert fixed.count(middle) == 2
+    assert fixed.count("普通正文") == 24000
+    assert preview_chapter_repairs(fixed, {}) == (fixed, [], [])
+
+
+def test_volume_boundaries_never_deduplicate_across_manual_breaks():
+    from novel_workflow.chapter_numbering import preview_chapter_repairs
+    raw = "第1章 开始\n第1章 开始\n正文\n"
+    assert preview_chapter_repairs(raw, {}, {1}) == (raw, [], [])

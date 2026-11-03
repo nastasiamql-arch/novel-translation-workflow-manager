@@ -211,3 +211,44 @@ def test_manual_volume_boundary_is_persisted_without_modifying_source(tmp_path):
     reopened.close()
     dialog.close()
     _close(window)
+
+
+def test_manual_one_confirmation_removes_copies_and_fixes_real_numbers(tmp_path, monkeypatch):
+    repo, profile, window, ws, editor, source, _translator, _messages = _window(tmp_path)
+    original = ("第67章 捧杀（累计发布3200字）\n"
+                "　　第67章 捧杀（累计发布3200字）\n"
+                "正文数字3200不能动\n"
+                "第67章 反击\n正文\n"
+                "第68章 归来\n")
+    editor.setPlainText(original)
+    assert ws.editor.save_editor(editor, quiet=True)
+    dialog = ChapterNumberDialog(ws, editor, source)
+    dialog.start_number.setValue(67)
+    dialog.propose_sequence()
+    assert [spin.value() for spin in dialog.spins] == [67, 67, 68, 69]
+    confirmations = []
+    def confirm(_parent, _title, text, *_args):
+        confirmations.append(text)
+        return QMessageBox.Yes
+    monkeypatch.setattr(QMessageBox, "question", confirm)
+    monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
+    dialog.apply_all()
+    expected = ("第67章 捧杀（累计发布3200字）\n"
+                "正文数字3200不能动\n"
+                "第68章 反击\n正文\n"
+                "第69章 归来\n")
+    assert editor.toPlainText() == expected
+    assert source.read_text(encoding="utf-8") == expected
+    assert len(confirmations) == 1
+    assert "ลบหัวบทซ้ำ 1" in confirmations[0]
+    history_path = repo.profile_dir(profile.id) / "chapter_numbering" / "history.json"
+    event = json.loads(history_path.read_text(encoding="utf-8"))["events"][-1]
+    assert event["operation"] == "repair-chapters-and-duplicates"
+    assert event["removed_lines"] == [2]
+    assert [(change["original"], change["corrected"]) for change in event["changes"]] == [(67, 68), (68, 69)]
+    # Restoration remains one operation even when it combined both edit kinds.
+    fresh = ChapterNumberDialog(ws, editor, source)
+    fresh.restore_latest()
+    assert editor.toPlainText() == original
+    assert source.read_text(encoding="utf-8") == original
+    _close(window)
