@@ -543,12 +543,19 @@ def test_export_without_chapter_heading_uses_visible_timestamp_name(tmp_path, mo
     monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.Yes)
     monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
     monkeypatch.setattr("novel_workflow.workspace_window.QInputDialog.getText", lambda *_args: ("1-5", True))
-    monkeypatch.setattr(
-        QMessageBox, "setDetailedText",
-        lambda *_args: pytest.fail("Export confirmation must not receive novel text"),
-    )
+    confirmation_details = []
+
+    def check_export_details(_dialog, details):
+        # Long file paths may be scrollable, but the source novel content
+        # must never be included in the confirmation presentation.
+        assert "Translator:" in details and "Context:" in details
+        assert "A sentence containing numbers 1 and 5" not in details
+        confirmation_details.append(details)
+
+    monkeypatch.setattr(QMessageBox, "setDetailedText", check_export_details)
 
     assert window.update_context_from_translator(workspace), warnings
+    assert len(confirmation_details) == 1
     exports = list((folder / "Context Exports").glob("ABCTranslator *.txt"))
     assert len(exports) == 1
     assert exports[0].name.startswith("ABCTranslator 20")
