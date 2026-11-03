@@ -584,8 +584,8 @@ def test_split_submit_preview_lists_files_and_requires_confirmation(tmp_path, mo
     export.editor.setPlainText("บทที่ 1 First\none\nบทที่ 3 Third\nthree")
     prompts = []
     monkeypatch.setattr(
-        QMessageBox, "question",
-        lambda *_args: prompts.append(_args[2]) or QMessageBox.No,
+        "novel_workflow.workspace_editor.confirm_scrollable",
+        lambda _parent, _title, summary, details: prompts.append(summary + "\n" + details) or False,
     )
 
     export.submit_button.click()
