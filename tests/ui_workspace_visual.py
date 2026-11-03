@@ -36,6 +36,7 @@ def main():
         ws = window.workspaces[profile.id]
         ws.editor.open_file(chapters / "0001.txt")
         screenshots = []
+        translation_page = None
         from novel_workflow.translation_planner import TranslationPlanner
         planner = TranslationPlanner(repo)
         planner.save(date.today(), profile.id, "daily", target_chapters=359)
@@ -57,6 +58,7 @@ def main():
                     viewport = page.scroll
                 else:
                     page = ws.open_translation_batches()
+                    translation_page = page
                     page.state["path"] = str(chapters)
                     page.mode.setCurrentIndex(page.mode.findData("folder"))
                     page.refresh()
@@ -110,6 +112,23 @@ def main():
         app.processEvents()
         assert window.grab().save(str(output / "narrow-focus.png"))
         print("Saved real PySide6 workspace visual captures:", ", ".join(screenshots), flush=True)
+        # The translator prewarms archive/file content in QThreads. On Windows,
+        # deleting the temporary chapters while a worker is still reading them
+        # raises WinError 32 even though the screenshot checks have passed.
+        if translation_page is not None:
+            translation_page._load_queued = False
+            translation_page._invalidate_prepared()
+            workers = [
+                worker for worker in (
+                    translation_page._load_worker,
+                    *translation_page._retired_workers,
+                ) if worker is not None
+            ]
+            for worker in workers:
+                if hasattr(worker, "cancel"):
+                    worker.cancel()
+                assert worker.wait(20000), "Visual QA source worker still running"
+            app.processEvents()
         ws.file_tree.setModel(None)
         ws.file_model.setRootPath("")
         window.close()
