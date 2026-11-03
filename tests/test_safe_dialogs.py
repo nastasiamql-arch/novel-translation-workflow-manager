@@ -17,7 +17,6 @@ def app():
 
 @pytest.mark.parametrize("count", [0, 1, 10, 50, 100, 1000, 10000])
 def test_scrollable_details_preserve_every_line(app, monkeypatch, count):
-    monkeypatch.setattr(safe_dialogs, "fit_dialog", lambda dialog: original_fit(dialog))
     details = "\n".join(f"{i} 中文 ไทย " + "very_long_filename_" * 10 for i in range(count))
     dialog = safe_dialogs.ScrollableConfirmation(None, "ตรวจ", "รายการตรวจ", details)
     dialog.show()
@@ -36,16 +35,12 @@ def test_scrollable_details_preserve_every_line(app, monkeypatch, count):
         dialog.close()
 
 
-original_fit = safe_dialogs.fit_dialog
-
-
 @pytest.mark.parametrize("width,height", [(900, 600), (1280, 720), (1366, 768), (1920, 1080)])
 def test_size_limit_with_multiple_screen_shapes(app, monkeypatch, width, height):
-    class FakeScreen:
-        def availableGeometry(self):
-            return QRect(0, 0, width, height)
-
-    monkeypatch.setattr(safe_dialogs.QApplication, "primaryScreen", lambda: FakeScreen())
+    monkeypatch.setattr(
+        safe_dialogs, "_available_geometry",
+        lambda _parent: QRect(0, 0, width, height),
+    )
     dlg = safe_dialogs.ScrollableConfirmation(None, "ตรวจ", "รายการ", "第12章\n" * 1000)
     dlg.show()
     app.processEvents()
