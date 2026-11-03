@@ -791,6 +791,7 @@ class TranslationBatchPage(QWidget):
             self._style_row(group, row, status_label, button, next_group)
         if self._selected_group in self._visible:
             self._select_group(self._selected_group, switch=False, persist=False)
+        self.batch_workspace.reflow()
 
     def _append_rows(self, limit=35):
         if self._busy:

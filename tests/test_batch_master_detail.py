@@ -85,6 +85,16 @@ def test_translation_selection_and_navigation_do_not_copy(tmp_path):
     try:
         assert page._load_worker.wait(20000)
         app.processEvents()
+        page.resize(1280, 720)
+        first_status = page._row_widgets[1][2]
+        first_button = page._row_widgets[1][3]
+        first_status.setText('● ชุดถัดไป · ยังไม่ได้คัดลอก · กำลังเตรียม')
+        page.batch_workspace.reflow()
+        app.processEvents()
+        right = first_button.mapTo(page.scroll.viewport(), first_button.rect().topRight()).x()
+        assert right <= page.scroll.viewport().width()
+        page.resize(1400, 800)
+        app.processEvents()
         QApplication.clipboard().setText('unchanged')
         page._scroll_to_group(page._groups[85])
         app.processEvents()
