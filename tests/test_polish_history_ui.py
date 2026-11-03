@@ -653,3 +653,43 @@ def test_bulk_glossary_button_runs_in_background_and_preserves_clipboard(window,
     assert QApplication.clipboard().text() == 'keep clipboard'
     assert 'อัปเดตสำเร็จ: 1' in notices[0]
     assert any(path.read_bytes() == glossary.read_bytes() for path in w.polish_history.validate(p, snapshot.path))
+
+
+def test_bulk_glossary_refuses_dirty_editor_until_autosave(window):
+    w, p, workspace, errors = window
+    glossary = w.repo.profile_dir(p.id) / 'glossary' / 'terms.txt'
+    glossary.write_bytes(b'old')
+    p.workflow.steps[0].files.append(StepFile(path='glossary/terms.txt', file_type='glossary'))
+    p.workflow.steps[1].files.append(StepFile(path='glossary/terms.txt', file_type='glossary'))
+    snapshot = w.polish_history.create(p, p.workflow.steps[1], '1')
+    tab = workspace.editor.open_file(glossary)
+    tab.setPlainText('unsaved change')
+    tab.autosave_timer.stop()
+    assert workspace.editor._dirty(tab)
+    w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
+    w.utility_update_glossaries.click()
+    assert any('บันทึกอัตโนมัติไม่เสร็จ' in error for error in errors)
+    assert glossary.read_bytes() == b'old'
+    assert any(path.read_bytes() == b'old' for path in w.polish_history.validate(p, snapshot.path))
+
+
+def test_bulk_glossary_uses_open_file_with_historical_identity(window, monkeypatch):
+    w, p, workspace, errors = window
+    glossary = w.repo.root.parent / 'unusual-name.txt'
+    glossary.write_bytes(b'old')
+    p.workflow.steps[1].files.append(StepFile(path=str(glossary), reference_type='external_file',
+                                              file_type='glossary'))
+    snapshot = w.polish_history.create(p, p.workflow.steps[1], '1')
+    glossary.write_bytes(b'new')
+    workspace.editor.open_file(glossary)
+    notices = []
+    monkeypatch.setattr(QMessageBox, 'information', lambda *args: notices.append(args[-1]))
+    w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
+    w.utility_update_glossaries.click()
+    wait_until(lambda: bool(notices))
+    wait_until(lambda: not w.history_busy())
+    assert not errors
+    assert 'อัปเดตสำเร็จ: 1' in notices[0]
+    assert any(path.read_bytes() == b'new' for path in w.polish_history.validate(p, snapshot.path))

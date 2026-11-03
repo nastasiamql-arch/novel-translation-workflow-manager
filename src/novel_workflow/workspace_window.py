@@ -1485,13 +1485,15 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         return (self._history_pending or bool(self._pending_export_snapshots)
                 or any(w.isRunning() for w in self._history_workers))
 
-    def run_history_job(self, operation, success, failure=None):
+    def run_history_job(self, operation, success, failure=None, progress=None):
         if self._history_pending:
             self.statusBar().showMessage('กำลังจัดการประวัติ กรุณารอสักครู่', 3000)
             return
         self._history_pending = True
         self.statusBar().showMessage('กำลังตรวจสอบและบันทึกไฟล์ประวัติ…')
-        worker = HistoryWorker(operation, self)
+        worker = HistoryWorker(operation, self, with_progress=progress is not None)
+        if progress is not None:
+            worker.progress.connect(progress)
         self._history_workers.append(worker)
         def complete(result):
             self._history_pending = False
@@ -1530,9 +1532,47 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         profile = deepcopy(self.profile)
         step_id = profile.polish_history_step_id
         page = self._utility_pages.get('polish-history:' + profile.id)
+        protected_editors = []
+        fallback_source = None
+        try:
+            workspace = self.workspaces.get(profile.id)
+            editor = workspace.editor if workspace else None
+            open_paths = tuple(path for index in range(editor.tabs.count())
+                               if (path := editor._path(editor.tabs.widget(index))) is not None) if editor else ()
+            try:
+                source = self.polish_history.glossary_source(profile)
+            except ValueError as error:
+                if str(error) != 'ไม่พบ Glossary ที่เปิดใช้งานในขั้นตอนแปล':
+                    raise
+                source = self.polish_history.glossary_source(
+                    profile, snapshots=page.snapshots if page else (), editor_paths=open_paths)
+                fallback_source = source
+            if workspace:
+                import hashlib
+                for index in range(editor.tabs.count()):
+                    tab = editor.tabs.widget(index)
+                    path = editor._path(tab)
+                    if path is not None and path == source:
+                        if editor._dirty(tab):
+                            raise ValueError('ไฟล์คำศัพท์ยังบันทึกอัตโนมัติไม่เสร็จ กรุณารอแล้วลองอีกครั้ง')
+                        if hashlib.sha256(source.read_bytes()).digest() != tab.disk_digest:
+                            raise ValueError('ไฟล์คำศัพท์บนดิสก์ไม่ตรงกับ Editor กรุณาตรวจสอบก่อนอัปเดต')
+                        protected_editors.append((tab, tab.isReadOnly()))
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, 'อัปเดตคำศัพท์ไม่ได้', str(error))
+            return
+        for tab, _ in protected_editors:
+            tab.setReadOnly(True)
+        def restore_editors():
+            for tab, was_read_only in protected_editors:
+                try:
+                    tab.setReadOnly(was_read_only)
+                except RuntimeError:
+                    pass  # The tab may have been closed while the worker ran.
         self.utility_update_glossaries.setEnabled(False)
         if page: page.status.setText('กำลังตรวจสอบและอัปเดตคำศัพท์ทุกชุด…')
         def finished(result):
+            restore_editors()
             self.utility_update_glossaries.setEnabled(True)
             lines = [f"ชุดงานทั้งหมด: {result['total']}",
                      f"อัปเดตสำเร็จ: {result['updated']}",
@@ -1545,10 +1585,19 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if page: page.refresh(read_only=True)
             QMessageBox.information(self, 'ผลการอัปเดตคำศัพท์', '\n'.join(lines))
         def failed(error):
+            restore_editors()
             self.utility_update_glossaries.setEnabled(True)
             if page: page.status.setText('อัปเดตคำศัพท์ไม่สำเร็จ')
             QMessageBox.warning(self, 'อัปเดตคำศัพท์ไม่ได้', str(error))
-        self.run_history_job(lambda: self.polish_history.update_all_glossaries(profile, step_id), finished, failed)
+        def update(report):
+            if fallback_source is not None:
+                return self.polish_history.update_all_glossaries(
+                    profile, step_id, report, fallback_source=fallback_source, editor_paths=open_paths)
+            return self.polish_history.update_all_glossaries(profile, step_id, report)
+        def progress(done, total):
+            if page:
+                page.status.setText(f'กำลังอัปเดต Glossary {done}/{total} ชุด…')
+        self.run_history_job(update, finished, failed, progress)
 
     def update_copy_mode_labels(self):
         """Reflect the persisted clipboard mode without changing Export controls."""

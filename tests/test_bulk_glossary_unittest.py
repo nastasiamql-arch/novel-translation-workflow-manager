@@ -67,6 +67,88 @@ class BulkGlossaryTests(unittest.TestCase):
         self.assertEqual((snap.path / 'manifest.json').read_bytes(), before)
         self.service.validate(self.profile, snap.path)
 
+    def test_prefixed_legacy_filename_bound_to_translation(self):
+        source = Path(self.profile.main_folder) / 'NDRGlossary.txt'
+        source.write_bytes(b'old')
+        binding = dict(path=str(source), reference_type='external_file',
+                       file_type='custom', label='NDRGlossary.txt')
+        self.translation.files = [StepFile(**binding)]
+        self.step.files = [StepFile(**binding)]
+        snap = self.service.create(self.profile, self.step, '1')
+        source.write_bytes(b'new\r\n')
+        result = self.service.update_all_glossaries(self.profile, self.step.id)
+        self.assertEqual((result['updated'], result['errors']), (1, []))
+        self.assertEqual(self.service.validate(self.profile, snap.path)[0].read_bytes(), b'new\r\n')
+
+    def test_multiple_legacy_glossary_names_are_ambiguous(self):
+        self.translation.files = []
+        for name in ('ABCGlossary.txt', 'OtherGlossary.txt'):
+            path = Path(self.profile.main_folder) / name
+            path.write_bytes(b'terms')
+            self.translation.files.append(StepFile(path=str(path), reference_type='external_file'))
+        with self.assertRaisesRegex(ValueError, 'หลายไฟล์'):
+            self.service.glossary_source(self.profile)
+
+    def test_working_file_fallback_for_current_profile(self):
+        source = Path(self.profile.main_folder) / 'ABCGlossary.txt'
+        source.write_bytes(b'old')
+        binding = dict(path=str(source), reference_type='external_file', label=source.name)
+        self.translation.files.clear()
+        self.profile.working_files = [StepFile(**binding)]
+        self.step.files = [StepFile(**binding)]
+        snap = self.service.create(self.profile, self.step, '1')
+        source.write_bytes(b'new')
+        result = self.service.update_all_glossaries(self.profile, self.step.id)
+        self.assertEqual((result['updated'], result['errors']), (1, []))
+        self.assertEqual(self.service.validate(self.profile, snap.path)[0].read_bytes(), b'new')
+
+    def test_main_folder_historical_identity_can_resolve_source(self):
+        source = Path(self.profile.main_folder) / 'NovelGlossary.md'
+        source.write_bytes(b'old')
+        self.translation.files.clear()
+        self.step.files = [StepFile(path=str(source), reference_type='external_file',
+                                    label='NovelGlossary.md')]
+        snap = self.service.create(self.profile, self.step, '1')
+        source.write_bytes(b'new')
+        snapshots = self.service.list(self.profile, step_id=self.step.id, read_only=True)
+        selected = self.service.glossary_source(self.profile, snapshots=snapshots)
+        self.assertEqual(selected, source)
+        result = self.service.update_all_glossaries(self.profile, self.step.id, fallback_source=selected)
+        self.assertEqual((result['updated'], result['errors']), (1, []))
+        self.assertEqual(self.service.validate(self.profile, snap.path)[0].read_bytes(), b'new')
+
+    def test_editor_path_needs_historical_identity(self):
+        source = Path(self.temp.name) / 'arbitrary-name.txt'
+        source.write_bytes(b'old')
+        self.translation.files.clear()
+        self.step.files = [StepFile(path=str(source), reference_type='external_file', file_type='glossary')]
+        snap = self.service.create(self.profile, self.step, '1')
+        snapshots = self.service.list(self.profile, step_id=self.step.id, read_only=True)
+        with self.assertRaises(ValueError):
+            self.service.glossary_source(self.profile, snapshots=snapshots)
+        selected = self.service.glossary_source(self.profile, snapshots=snapshots, editor_paths=[source])
+        self.assertEqual(selected, source)
+        source.write_bytes(b'new')
+        result = self.service.update_all_glossaries(self.profile, self.step.id,
+                                                    fallback_source=selected, editor_paths=[source])
+        self.assertEqual(result['updated'], 1)
+        self.assertEqual(self.service.validate(self.profile, snap.path)[0].read_bytes(), b'new')
+
+    def test_historical_candidates_are_rejected_when_ambiguous(self):
+        self.translation.files.clear()
+        files = []
+        for name in ('FirstGlossary.txt', 'SecondGlossary.txt'):
+            source = Path(self.profile.main_folder) / name
+            source.write_bytes(name.encode())
+            files.append(StepFile(path=str(source), reference_type='external_file'))
+        self.step.files = files
+        snapshot = self.service.create(self.profile, self.step, '1')
+        original = (snapshot.path / 'manifest.json').read_bytes()
+        snapshots = self.service.list(self.profile, step_id=self.step.id, read_only=True)
+        with self.assertRaisesRegex(ValueError, 'หลายไฟล์'):
+            self.service.glossary_source(self.profile, snapshots=snapshots)
+        self.assertEqual((snapshot.path / 'manifest.json').read_bytes(), original)
+
     def test_only_translation_source_and_moved_snapshot_binding(self):
         snap = self.service.create(self.profile, self.step, '1')
         other = self.repo.profile_dir(self.profile.id) / 'other.txt'

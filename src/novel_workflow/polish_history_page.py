@@ -14,13 +14,15 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineE
 class HistoryWorker(QThread):
     succeeded = Signal(object)
     failed = Signal(object)
+    progress = Signal(int, int)
 
-    def __init__(self, operation, parent):
+    def __init__(self, operation, parent, with_progress=False):
         super().__init__(parent)
         self.operation = operation
+        self.with_progress = with_progress
 
     def run(self):
-        try: self.succeeded.emit(self.operation())
+        try: self.succeeded.emit(self.operation(self.progress.emit) if self.with_progress else self.operation())
         except Exception as exc: self.failed.emit(exc)
 
 

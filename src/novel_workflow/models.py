@@ -271,6 +271,7 @@ class NovelGroup:
 
 @dataclass
 class AppSettings:
+    advanced_chapter_options_expanded: bool = False
     copy_files_as_zip: bool = False
     history_copy_as_zip: bool = False
     history_copy_as_zip_by_profile: dict[str, bool] = field(default_factory=dict)
