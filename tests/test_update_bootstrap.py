@@ -61,9 +61,18 @@ def test_detached_helper_simulated_upgrade_preserves_data_and_path(tmp_path,exit
         install_dir=str(install),size=len(payload),sha256=hashlib.sha256(payload).hexdigest(),
         version='3.4.0',result=str(result),log=str(log)))
     helper=data/'helper.ps1'; helper.write_text(HELPER,encoding='utf-8-sig')
-    completed=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
-        '-File',str(helper),'-Manifest',str(manifest)],capture_output=True,text=True,timeout=30)
-    assert completed.returncode==0,(completed.stdout,completed.stderr)
+    # The helper intentionally relaunches the visible application. On Windows,
+    # a detached .cmd child can inherit stdout/stderr pipes after PowerShell has
+    # exited, making subprocess.run(capture_output=True) wait forever for EOF.
+    # Redirect to a file so the assertion measures the helper's process exit,
+    # not the lifetime of the newly launched application.
+    import tempfile
+    with tempfile.TemporaryFile(mode='w+t', encoding='utf-8', errors='replace') as output:
+        completed=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+            '-File',str(helper),'-Manifest',str(manifest)],stdout=output,stderr=subprocess.STDOUT,timeout=30)
+        output.seek(0)
+        diagnostic=output.read()
+    assert completed.returncode==0,diagnostic
     import json
     outcome=json.loads(result.read_text(encoding='utf-8-sig'))
     assert outcome['success']==(exit_code==0 and probe_exit==0),outcome
