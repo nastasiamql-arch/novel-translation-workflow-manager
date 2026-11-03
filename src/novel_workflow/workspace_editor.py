@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from .theme import editor_colors
+from .safe_dialogs import confirm_scrollable, ScrollableConfirmation
 from .models import AppSettings
 from .recovery import commit_staged, translator_chapter_range
 from .storage import data_root, write_json
@@ -444,17 +445,19 @@ class TxtExportTab(QWidget):
                 if collisions:
                     errors.append("ชื่อไฟล์ซ้ำกับไฟล์ที่มีอยู่: " + ", ".join(collisions))
             if errors:
-                QMessageBox.warning(
+                dialog = ScrollableConfirmation(
                     self, "ตรวจสอบไฟล์ก่อนส่งออกไม่ผ่าน",
-                    f"ตรวจพบ {len(chapters)} บท\n\n{preview}\n\nข้อผิดพลาด:\n" + "\n".join(errors),
+                    f"ตรวจพบ {len(chapters)} บท · ข้อผิดพลาด {len(errors)} รายการ",
+                    f"ไฟล์ที่ตรวจ:\n{preview}\n\nข้อผิดพลาด:\n" + "\n".join(errors),
                 )
+                dialog.confirm.setVisible(False)
+                dialog.exec()
                 return False
-            answer = QMessageBox.question(
+            if not confirm_scrollable(
                 self, "ตรวจสอบไฟล์ก่อนส่งออก",
-                f"ตรวจพบบท {len(chapters)} บท จะสร้างไฟล์ต่อไปนี้หรือไม่?\n\n{preview}",
-                QMessageBox.Yes | QMessageBox.No,
-            )
-            if answer != QMessageBox.Yes:
+                f"ตรวจพบบท {len(chapters)} บท จะสร้างไฟล์ต่อไปนี้หรือไม่?",
+                preview,
+            ):
                 return False
             return self.export()
         except (OSError, ValueError) as exc:
