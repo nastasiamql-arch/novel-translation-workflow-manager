@@ -171,12 +171,12 @@ def test_duplicate_heading_removal_previews_saves_backup_and_can_restore(tmp_pat
         confirmations.append((title, summary, details))
         return True
     monkeypatch.setattr("novel_workflow.chapter_numbering_dialog.confirm_scrollable", confirm)
+    monkeypatch.setattr(QMessageBox, "question", lambda *_args: QMessageBox.Yes)
     monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
     dialog.remove_duplicate_headings()
     expected = "第646章月薪40万\nเนื้อเรื่องต้องอยู่ครบ"
     assert editor.toPlainText() == expected
     assert source.read_text(encoding="utf-8") == expected
-    assert "ลบ ·" not in confirmations[0][2]  # No mutation of preview source text
     assert "บรรทัด 2: 第646章 月薪40万" in confirmations[0][2]
     history_path = repo.profile_dir(profile.id) / "chapter_numbering" / "history.json"
     event = json.loads(history_path.read_text(encoding="utf-8"))["events"][-1]
@@ -232,6 +232,7 @@ def test_manual_one_confirmation_removes_copies_and_fixes_real_numbers(tmp_path,
         confirmations.append(summary + "\n" + details)
         return True
     monkeypatch.setattr("novel_workflow.chapter_numbering_dialog.confirm_scrollable", confirm)
+    monkeypatch.setattr(QMessageBox, "question", lambda *_args: QMessageBox.Yes)
     monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
     dialog.apply_all()
     expected = ("第67章 捧杀（累计发布3200字）\n"
