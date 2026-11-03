@@ -687,6 +687,7 @@ class TxtVocabularyPage(QWidget):
         finally:
             self.cards.setUpdatesEnabled(True)
             self._loading = False
+        self.batch_workspace.reflow()
 
     def _restore_selection(self):
         saved = self.state.get("selected_batch")

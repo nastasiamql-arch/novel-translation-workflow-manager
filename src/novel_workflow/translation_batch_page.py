@@ -837,6 +837,7 @@ class TranslationBatchPage(QWidget):
         finally:
             self.rows_host.setUpdatesEnabled(True)
             self._busy = False
+        self.batch_workspace.reflow()
 
     def _on_scroll(self, position):
         bar = self.scroll.verticalScrollBar()

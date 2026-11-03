@@ -129,6 +129,9 @@ def test_workspace_switches_to_list_and_detail_views_when_narrow(tmp_path):
     page.show()
     app.processEvents()
     workspace = page.batch_workspace
+    assert workspace._narrow
+    copy_button = page._copy_buttons[0][0]
+    assert copy_button.mapTo(page.scroll.viewport(), copy_button.rect().topRight()).x() <= page.scroll.viewport().width()
     workspace.setFixedWidth(450)
     app.processEvents()
     assert workspace._narrow

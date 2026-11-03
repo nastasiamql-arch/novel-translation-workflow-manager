@@ -72,8 +72,15 @@ class BatchWorkspace(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # Measure the actual controls using the active font and logical pixels.
-        threshold = max(720, self.fontMetrics().horizontalAdvance("รายละเอียดชุดงานที่เลือก  รายการชุดงาน  คัดลอกอีกครั้ง") * 2)
+        self.reflow()
+
+    def reflow(self):
+        # Leave enough room for the widest compact row and a larger detail pane.
+        # The row's size hint includes its translated labels and action button.
+        row = self.list_widget.findChild(BatchRow)
+        row_width = row.minimumSizeHint().width() if row is not None else 0
+        threshold = max(720, int((row_width + 24) * 2.5),
+                        self.fontMetrics().horizontalAdvance("รายละเอียดชุดงานที่เลือก  รายการชุดงาน  คัดลอกอีกครั้ง") * 2)
         narrow = self.width() < threshold
         if narrow != self._narrow:
             self._narrow = narrow
