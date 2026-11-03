@@ -6,8 +6,7 @@ from PySide6.QtWidgets import (
 )
 
 
-def fit_dialog(dialog, width=800, height=560):
-    parent = dialog.parentWidget()
+def _available_geometry(parent):
     screen = None
     if parent is not None:
         window = parent.window()
@@ -16,7 +15,12 @@ def fit_dialog(dialog, width=800, height=560):
         if screen is None:
             screen = QApplication.screenAt(window.mapToGlobal(window.rect().center()))
     screen = screen or QApplication.primaryScreen()
-    available = screen.availableGeometry()
+    return screen.availableGeometry()
+
+
+def fit_dialog(dialog, width=800, height=560):
+    parent = dialog.parentWidget()
+    available = _available_geometry(parent)
     max_width = max(1, int(available.width() * 0.90))
     max_height = max(1, int(available.height() * 0.84))
     dialog.setMaximumSize(max_width, max_height)
