@@ -11,6 +11,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from .safe_dialogs import confirm_scrollable
+from .batch_master_detail import BatchRow, BatchWorkspace, batch_key, cancel_scroll_restore, restore_scroll_when_ready
 
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
@@ -56,6 +57,7 @@ class TranslationPrewarmWorker(QThread):
     """One bounded prioritized background producer; Qt Clipboard stays on GUI."""
     prepared = Signal(object, object)
     failed = Signal(object, str)
+    references_ready = Signal(object, str)
 
     def __init__(self, source, repo, assembler, profile, source_path, source_id,
                  cache_path, *, identity, revision, batch_size, as_zip, pasted_text):
@@ -100,12 +102,14 @@ class TranslationPrewarmWorker(QThread):
                 selected_path = chosen.path
             references = translation_reference_files(entries, selected_path, self.source_id)
         except (OSError, ValueError, UnicodeError, TypeError) as exc:
+            self.references_ready.emit((), str(exc))
             with self._lock:
                 tasks = tuple(self._queue)
                 self._queue.clear()
             for group in tasks:
                 self.failed.emit(group, str(exc))
             return
+        self.references_ready.emit(references, "")
         processed = 0
         while True:
             with self._lock:
@@ -159,6 +163,7 @@ class TranslationBatchPage(QWidget):
         self._rendered = 0
         self._visible = ()
         self._row_widgets = {}
+        self._selected_group = None
         self._busy = False
         self._load_worker = None
         self._load_queued = False
@@ -168,6 +173,8 @@ class TranslationBatchPage(QWidget):
         self._ready_bundles = {}
         self._cache_errors = {}
         self._history_statuses = {}
+        self._display_references = ()
+        self._reference_error = "กำลังตรวจไฟล์อ้างอิง…"
         self._initialized = False
         self.setObjectName("translationBatchPage")
         outer = QVBoxLayout(self)
@@ -306,11 +313,10 @@ class TranslationBatchPage(QWidget):
         column_layout = QGridLayout(self.columns)
         column_layout.setContentsMargins(7, 3, 7, 3)
         column_layout.setHorizontalSpacing(8)
-        for col, label in enumerate(("ชุด", "ช่วงบท", "จำนวนบท", "สถานะ", "รายละเอียด", "การทำงาน")):
+        for col, label in enumerate(("ชุด", "ช่วงบท", "จำนวนบท", "สถานะ", "", "การทำงาน")):
             column_layout.addWidget(QLabel(label), 0, col)
         column_layout.setColumnStretch(1, 2)
         column_layout.setColumnStretch(3, 2)
-        outer.addWidget(self.columns)
         self.scroll = QScrollArea()
         self.scroll.setObjectName("translationBatchScroll")
         self.scroll.setWidgetResizable(True)
@@ -323,7 +329,14 @@ class TranslationBatchPage(QWidget):
         self.scroll.setWidget(self.rows_host)
         self.scroll.verticalScrollBar().valueChanged.connect(self._on_scroll)
         self.scroll.verticalScrollBar().valueChanged.connect(lambda value: self._state_changed(scroll=int(value)))
-        outer.addWidget(self.scroll, 4)
+        list_panel = QWidget()
+        list_layout = QVBoxLayout(list_panel)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.addWidget(self.columns)
+        list_layout.addWidget(self.scroll, 1)
+        self.batch_workspace = BatchWorkspace(list_panel)
+        self.batch_workspace.copy.clicked.connect(self._copy_selected)
+        outer.addWidget(self.batch_workspace, 4)
         self._mode_changed()
         self._initialized = True
         if current_mode in ("folder", "file") and self.state.get("path"):
@@ -444,7 +457,7 @@ class TranslationBatchPage(QWidget):
         self._persist()
         if self._source:
             self._invalidate_prepared()
-            self._refresh_rows()
+            self._update_row_states()
             self._schedule_prewarm()
 
     def _step_path(self):
@@ -504,6 +517,8 @@ class TranslationBatchPage(QWidget):
                          hashlib.sha256(chapter.content).hexdigest()
                          if chapter.content is not None else "") for chapter in source.chapters)
         self._source_revision = source_revision(manifest)
+        self._display_references = ()
+        self._reference_error = "กำลังตรวจไฟล์อ้างอิง…"
         if self.profile_id:
             self._history = load_history(self.repo, self.profile_id, "translation")
         self._reindex_history()
@@ -538,7 +553,11 @@ class TranslationBatchPage(QWidget):
             self.refresh()
 
     def _clear_rows(self):
+        cancel_scroll_restore(self.scroll)
         self._row_widgets.clear()
+        if hasattr(self, "batch_workspace") and not self._groups:
+            self._selected_group = None
+            self.batch_workspace.clear_selection("เลือกต้นฉบับเพื่อดูชุดงาน")
         while self.rows.count():
             item = self.rows.takeAt(0)
             if item.widget():
@@ -556,6 +575,70 @@ class TranslationBatchPage(QWidget):
         # Recreate enough rows to represent the previous offset before restoring.
         self._append_rows(limit=max(35, previous_count))
         self._restore_scroll(old)
+        self._restore_selection()
+
+    def _restore_selection(self):
+        saved = self.state.get("selected_batch")
+        selected = next((g for g in self._visible
+                         if batch_key(self.profile_id, self._source_identity,
+                                      self._source_revision, g) == saved), None)
+        if selected is None:
+            selected = next(iter(self._visible), None)
+        if selected is None:
+            self._selected_group = None
+            self.batch_workspace.clear_selection("ไม่พบชุดที่ตรงกับเงื่อนไข")
+            return
+        self._select_group(selected, switch=False, persist=False)
+
+    def _select_group(self, group, *, switch=True, persist=True):
+        if group not in self._visible:
+            return
+        previous = self._selected_group
+        self._selected_group = group
+        if persist:
+            self.state["selected_batch"] = batch_key(
+                self.profile_id, self._source_identity, self._source_revision, group)
+            self._persist()
+        for current, selected in ((previous, False), (group, True)):
+            widgets = self._row_widgets.get(current.index) if current is not None else None
+            if widgets is not None:
+                widgets[1].setStyleSheet("QFrame#translationBatchRow { border: 2px solid #488bd6; }"
+                                         if selected else "")
+        status = {"new": "ยังไม่ได้คัดลอก", "copied": "คัดลอกแล้ว",
+                  "review": "ต้องตรวจใหม่"}[self._group_status(group)]
+        lines = [f"จำนวนบท: {len(group.chapters)}",
+                 f"จำนวนไฟล์: {len(group.chapters) + len(self._display_references)}",
+                 f"สถานะ: {status}", "", "ไฟล์ต้นฉบับ:"]
+        lines.extend(f"{chapter.number:04d}  {chapter.path.name}" for chapter in group.chapters)
+        lines.extend(("", "ไฟล์อ้างอิง:"))
+        lines.extend(str(path) for path in self._display_references)
+        if self._reference_error:
+            lines.append("⚠ " + self._reference_error)
+        if group.missing:
+            lines.extend(("", "บทที่ขาด: " + ", ".join(map(str, group.missing))))
+        self.batch_workspace.show_selection(
+            f"ชุด {group.index} · บท {group.start:04d}–{group.end:04d}",
+            "\n".join(lines), switch=switch)
+        self.batch_workspace.copy.setEnabled(self._copy_pending is None)
+
+    def _copy_selected(self):
+        group = self._selected_group
+        if group is None:
+            return
+        widgets = self._row_widgets.get(group.index)
+        self.copy_group(group, widgets[3] if widgets else None)
+
+    def _move_selection(self, group, offset):
+        index = self._visible.index(group) + offset
+        if not 0 <= index < len(self._visible):
+            return
+        while self._rendered <= index:
+            self._append_rows()
+        target = self._visible[index]
+        row = self._row_widgets[target.index][1]
+        self.scroll.ensureWidgetVisible(row, 4, 12)
+        self._select_group(target, switch=False)
+        row.setFocus(Qt.OtherFocusReason)
 
     def _next_actionable_group(self):
         """First not-yet-copied or stale group in chapter order."""
@@ -597,6 +680,7 @@ class TranslationBatchPage(QWidget):
             )
             worker.prepared.connect(self._prewarm_ready)
             worker.failed.connect(self._prewarm_failed)
+            worker.references_ready.connect(self._references_ready)
             worker.finished.connect(lambda w=worker: self._prewarm_finished(w))
             self._copy_worker = worker
             start_worker = True
@@ -614,6 +698,14 @@ class TranslationBatchPage(QWidget):
         if start_worker:
             worker.start()
         self._update_row_states()
+
+    def _references_ready(self, references, error):
+        if self.sender() is not self._copy_worker:
+            return
+        self._display_references = references
+        self._reference_error = error
+        if self._selected_group in self._visible:
+            self._select_group(self._selected_group, switch=False, persist=False)
 
     def _prewarm_ready(self, group, bundle):
         worker = self.sender()
@@ -684,6 +776,9 @@ class TranslationBatchPage(QWidget):
             "คัดลอกใหม่" if status == "review" else
             "คัดลอก ZIP" if self.copy_mode.currentData() else "คัดลอก"
         )
+        button.setEnabled(self._copy_pending is None)
+        if self._copy_pending is not None and self._copy_pending[0].index == group.index:
+            button.setText("กำลังเตรียมไฟล์…")
         for widget in (row, status_label, button):
             widget.style().unpolish(widget)
             widget.style().polish(widget)
@@ -694,21 +789,28 @@ class TranslationBatchPage(QWidget):
         next_group = self._next_actionable_group()
         for group, row, status_label, button in self._row_widgets.values():
             self._style_row(group, row, status_label, button, next_group)
+        if self._selected_group in self._visible:
+            self._select_group(self._selected_group, switch=False, persist=False)
+        self.batch_workspace.reflow()
 
     def _append_rows(self, limit=35):
         if self._busy:
             return
         self._busy = True
+        self.rows_host.setUpdatesEnabled(False)
         try:
             end = min(len(self._visible), self._rendered + limit)
             next_group = self._next_actionable_group()
             for group in self._visible[self._rendered:end]:
-                row = QFrame()
+                row = BatchRow()
                 layout = QGridLayout(row)
                 layout.setContentsMargins(10, 5, 8, 5)
                 layout.setHorizontalSpacing(9)
                 row.setObjectName("translationBatchRow")
-                row.setMinimumHeight(52)
+                row.setFixedHeight(max(52, row.fontMetrics().height() + 24))
+                row.setAccessibleName(f"ชุด {group.index} บท {group.start} ถึง {group.end}")
+                row.selected.connect(lambda g=group: self._select_group(g))
+                row.move.connect(lambda offset, g=group: self._move_selection(g, offset))
                 number_label = QLabel(f"{group.index:02d}")
                 number_label.setObjectName("translationBatchNumber")
                 layout.addWidget(number_label, 0, 0)
@@ -721,10 +823,6 @@ class TranslationBatchPage(QWidget):
                 status_label = QLabel()
                 status_label.setObjectName(f"translationBatchStatus{group.index}")
                 layout.addWidget(status_label, 0, 3)
-                details = QPushButton("รายละเอียด")
-                details.setProperty("batchDetails", True)
-                details.setCheckable(True)
-                layout.addWidget(details, 0, 4)
                 button = QPushButton()
                 button.setObjectName(f"translationBatchCopy{group.index}")
                 button.setMinimumHeight(36)
@@ -733,16 +831,15 @@ class TranslationBatchPage(QWidget):
                 layout.setColumnStretch(1, 2)
                 layout.setColumnStretch(3, 2)
                 self.rows.addWidget(row)
-                filenames = QLabel(", ".join(c.path.name for c in group.chapters))
-                filenames.setWordWrap(True)
-                filenames.setVisible(False)
-                details.toggled.connect(filenames.setVisible)
-                self.rows.addWidget(filenames)
                 self._row_widgets[group.index] = (group, row, status_label, button)
                 self._style_row(group, row, status_label, button, next_group)
+                if group == self._selected_group:
+                    row.setStyleSheet("QFrame#translationBatchRow { border: 2px solid #488bd6; }")
             self._rendered = end
         finally:
+            self.rows_host.setUpdatesEnabled(True)
             self._busy = False
+        self.batch_workspace.reflow()
 
     def _on_scroll(self, position):
         bar = self.scroll.verticalScrollBar()
@@ -791,6 +888,7 @@ class TranslationBatchPage(QWidget):
                 return
         self._copy_pending = (group, button, self._source, self.mode.currentData(),
                               time.perf_counter())
+        self.batch_workspace.copy.setEnabled(False)
         bundle = self._ready_bundles.get(group.index)
         if bundle is not None:
             # _publish_ready checks the cheap bundle guard and the full source
@@ -947,9 +1045,15 @@ class TranslationBatchPage(QWidget):
         )
 
     def _restore_scroll(self, value):
-        while self._rendered < len(self._visible) and self.scroll.verticalScrollBar().maximum() < value:
-            self._append_rows()
-        self.scroll.verticalScrollBar().setValue(value)
+        row = self.rows.itemAt(0).widget() if self.rows.count() else None
+        if row is not None:
+            step = max(1, row.height() + self.rows.spacing())
+            needed = min(len(self._visible), (value + self.scroll.viewport().height()) // step + 2)
+            if self._rendered < needed:
+                self._append_rows(limit=needed - self._rendered)
+            self.rows.activate()
+            self.rows_host.adjustSize()
+        restore_scroll_when_ready(self.scroll, value)
 
     def _filter_changed(self, *_):
         self.state["filter"] = self.history_filter.currentData() or "all"
@@ -967,11 +1071,19 @@ class TranslationBatchPage(QWidget):
             index = self._visible.index(group)
         except ValueError:
             return
-        while self._rendered <= index:
-            self._append_rows()
-        row = self.rows.itemAt(index * 2).widget()
+        if self._rendered <= index:
+            self._append_rows(limit=index + 1 - self._rendered)
+        row = self.rows.itemAt(index).widget()
         if row:
-            self.scroll.ensureWidgetVisible(row, 4, 12)
+            self.batch_workspace.show_list()
+            def navigate():
+                if self._row_widgets.get(group.index, (None, None))[1] is not row:
+                    return
+                self.rows.activate()
+                self.rows_host.adjustSize()
+                self.scroll.ensureWidgetVisible(row, 4, 12)
+                self._select_group(group)
+            QTimer.singleShot(0, navigate)
 
     def _go_to_last_copied(self):
         groups = { (g.start, g.end, tuple(c.number for c in g.chapters)): g for g in self._groups }
