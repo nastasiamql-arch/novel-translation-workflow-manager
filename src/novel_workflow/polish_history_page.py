@@ -142,14 +142,14 @@ class PolishHistoryPage(QWidget):
         self.owner.update_copy_mode_labels()
         self._update_progress_summary()
 
-    def refresh(self):
+    def refresh(self, *, read_only=False):
         if self.owner._history_pending:
             self.status.setText('กำลังรอการบันทึกชุดงาน…')
             if not self._refresh_queued and self.owner._history_workers:
                 self._refresh_queued = True
                 def after_job():
                     self._refresh_queued = False
-                    self.refresh()
+                    self.refresh(read_only=read_only)
                 self.owner._history_workers[-1].finished.connect(after_job)
             return
         self.status.setText('กำลังตรวจสอบไฟล์และ Hash…')
@@ -157,18 +157,18 @@ class PolishHistoryPage(QWidget):
         urls = [u.toLocalFile() for u in mime.urls()] if mime else []
         step_id = self.profile.polish_history_step_id
         self.owner.run_history_job(
-            lambda: self.owner.polish_history.list(self.profile, step_id=step_id, clipboard_paths=urls),
-            self.loaded, self.failed,
+            lambda: self.owner.polish_history.list(self.profile, step_id=step_id, clipboard_paths=urls, read_only=read_only),
+            lambda snapshots: self.loaded(snapshots, auto_resume=not read_only), self.failed,
         )
 
-    def loaded(self, snapshots):
+    def loaded(self, snapshots, *, auto_resume=True):
         self.snapshots = snapshots
         count = sum(x.manifest.get('file_count', 0) for x in snapshots if not x.error)
         size = sum(sum(e['size'] for e in x.manifest['files']) for x in snapshots if not x.error)
         self.status.setText(f'{len(snapshots)} ชุดงาน · {count} ไฟล์ · {size / (1024 * 1024):,.2f} MB')
         self._update_progress_summary()
         self.render()
-        if not self._user_navigated and self._navigation_snapshot_id is None:
+        if auto_resume and not self._user_navigated and self._navigation_snapshot_id is None:
             QTimer.singleShot(0, self.go_to_resume)
 
     def _progress_key(self):

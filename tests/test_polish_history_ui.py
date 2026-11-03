@@ -616,3 +616,39 @@ def test_history_copy_button_shows_zip_scope_when_enabled(window):
     with zipfile.ZipFile(files[0]) as archived:
         assert len(archived.namelist()) == 2
     assert not errors
+
+
+def test_bulk_glossary_button_runs_in_background_and_preserves_clipboard(window, monkeypatch):
+    from threading import Event
+    w, p, workspace, errors = window
+    glossary = w.repo.profile_dir(p.id) / 'glossary' / 'terms.txt'
+    glossary.write_bytes(b'old')
+    step = p.workflow.steps[1]
+    step.files.append(StepFile(path='glossary/terms.txt', file_type='glossary', order=2))
+    snapshot = w.polish_history.create(p, step, '1-5')
+    glossary.write_bytes('ใหม่ 中文'.encode())
+    w.open_polish_history()
+    wait_until(lambda: not w.history_busy())
+    gate = Event()
+    original = w.polish_history.update_all_glossaries
+    def blocked(*args):
+        if not gate.wait(10): raise TimeoutError('worker timeout')
+        return original(*args)
+    monkeypatch.setattr(w.polish_history, 'update_all_glossaries', blocked)
+    notices = []
+    monkeypatch.setattr(QMessageBox, 'information', lambda *args: notices.append(args[-1]))
+    QApplication.clipboard().setText('keep clipboard')
+    button = w.utility_update_glossaries
+    assert button.isVisible() and button.objectName() == 'polishHistoryUpdateAllGlossaries'
+    try:
+        button.click()
+        wait_until(lambda: not button.isEnabled())
+        assert w.history_busy()
+    finally:
+        gate.set()
+    wait_until(lambda: bool(notices))
+    wait_until(lambda: not w.history_busy())
+    assert button.isEnabled() and not errors
+    assert QApplication.clipboard().text() == 'keep clipboard'
+    assert 'อัปเดตสำเร็จ: 1' in notices[0]
+    assert any(path.read_bytes() == glossary.read_bytes() for path in w.polish_history.validate(p, snapshot.path))

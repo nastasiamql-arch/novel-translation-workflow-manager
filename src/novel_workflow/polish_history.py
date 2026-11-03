@@ -11,6 +11,7 @@ import tempfile
 import uuid
 import zipfile
 import threading
+import copy
 from functools import wraps
 
 _history_lock = threading.RLock()
@@ -525,7 +526,160 @@ class PolishHistory:
         return self._validate_manifest(profile, path, manifest)
 
     @serialized
-    def list(self, profile, step_id=None, *, verify=True, clipboard_paths=()):
+    def update_all_glossaries(self, profile, step_id):
+        """Replace only payloads bound to the one explicitly configured glossary.
+
+        No history list migration, clipboard, or persistent backup is involved.
+        A process crash between payload and manifest replacement leaves a hash
+        mismatch, which normal validation reports instead of silently accepting.
+        """
+        if not step_id or not any(s.id == step_id for s in profile.workflow.steps):
+            raise ValueError('กรุณาตั้งค่าขั้นตอน Novel Polish ก่อน')
+        sources = set()
+        for step in profile.workflow.steps:
+            for item in step.files:
+                repository_glossary = (item.reference_type == 'repository_file' and item.path
+                                       and Path(item.path).parts[:1] == ('glossary',))
+                if item.enabled and (item.file_type == 'glossary' or repository_glossary):
+                    source = resolve_attachment(self.repo, self.assembler, profile, item)
+                    if not source.is_file():
+                        raise ValueError('Glossary ต้นทางต้องเป็นไฟล์เดียว')
+                    sources.add(source)
+        if len(sources) != 1:
+            raise ValueError('ไม่สามารถระบุ Glossary ต้นทางได้แน่ชัด กรุณาตรวจการตั้งค่าไฟล์ Glossary')
+        source = sources.pop()
+        history_root = self.root(profile)
+        if source.is_relative_to(history_root):
+            raise ValueError('Glossary ต้นทางต้องไม่อยู่ใน Polish History')
+        before = source.stat()
+        content = source.read_bytes()
+        after = source.stat()
+        source_hash = hashlib.sha256(content).hexdigest()
+        if (before.st_size, before.st_mtime_ns, before.st_ino) != (after.st_size, after.st_mtime_ns, after.st_ino) or _hash(source) != source_hash:
+            raise OSError('ไฟล์คำศัพท์ต้นทางเปลี่ยนระหว่างอ่าน')
+        root = history_root
+        results = {'total': 0, 'updated': 0, 'unchanged': 0, 'skipped': [], 'errors': []}
+        if not root.exists(): return results
+        candidates = []
+        for item in root.iterdir():
+            if item.name.startswith('.staging-'): continue
+            try:
+                _check_path(item)
+                if not item.is_dir(): continue
+                if item.name == f'{step_id}-{profile.id}' and not (item / 'manifest.json').exists():
+                    candidates.extend(item.iterdir())
+                elif ((item / 'manifest.json').exists() or ' บท ' in item.name
+                      or '-บท ' in item.name or ' รอระบุช่วงบท ' in item.name):
+                    candidates.append(item)
+            except (OSError, ValueError) as exc:
+                results['total'] += 1
+                results['errors'].append((item.name, str(exc)))
+        plans = []
+        for path in candidates:
+            manifest = {}
+            counted = False
+            try:
+                path = self._snapshot_path(profile, path)
+                manifest_path = _check_path(path / 'manifest.json')
+                raw = manifest_path.read_bytes()
+                manifest = _read_manifest(manifest_path)
+                if not isinstance(manifest, dict): raise ValueError('Invalid manifest')
+                if manifest.get('profile_id') != profile.id or manifest.get('step_id') != step_id:
+                    continue
+                results['total'] += 1
+                counted = True
+                self._validate_manifest(profile, path, manifest)
+                targets = []
+                for entry in manifest['files']:
+                    if entry['is_context']: continue
+                    try:
+                        original = Path(entry['original_path']).expanduser().absolute()
+                        if os.path.normcase(str(original)) != os.path.normcase(str(source)): continue
+                    except (ValueError, OSError):
+                        continue
+                    links = [link for link in manifest.get('attachments', []) if link.get('id') == entry['attachment_id']]
+                    if len(links) != 1:
+                        raise ValueError('ข้อมูลการเชื่อมไฟล์คำศัพท์กำกวม')
+                    targets.append(entry['snapshot_path'])
+                if not targets:
+                    results['skipped'].append((path.name, 'ไม่พบไฟล์คำศัพท์ที่ยืนยันตัวตนได้'))
+                    continue
+                plans.append((path, raw, manifest, targets))
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                if not counted: results['total'] += 1
+                results['errors'].append((path.name, str(exc)))
+        for path, raw, manifest, targets in plans:
+            originals = []
+            written_manifest = None
+            try:
+                if _hash(_check_path(source)) != source_hash:
+                    raise OSError('ไฟล์คำศัพท์ต้นทางเปลี่ยนระหว่างอัปเดต')
+                manifest_path = _check_path(path / 'manifest.json')
+                if manifest_path.read_bytes() != raw:
+                    raise OSError('Manifest เปลี่ยนระหว่างอัปเดต')
+                self._validate_manifest(profile, path, manifest)
+                changes = []
+                updated = copy.deepcopy(manifest)
+                for entry in updated['files']:
+                    if entry['snapshot_path'] not in targets: continue
+                    payload = _check_path(path / entry['snapshot_path'])
+                    old = payload.read_bytes()
+                    if len(old) != entry['size'] or hashlib.sha256(old).hexdigest() != entry['sha256']:
+                        raise OSError('ไฟล์คำศัพท์ในชุดงานเปลี่ยนระหว่างตรวจสอบ')
+                    if old == content: continue
+                    changes.append((payload, old))
+                    entry['size'], entry['sha256'] = len(content), source_hash
+                if not changes:
+                    results['unchanged'] += 1
+                    continue
+                updated['content_hash'] = _fingerprint(updated['files'], updated.get('attachments', []))
+                for payload, old in changes:
+                    if _check_path(payload).read_bytes() != old or manifest_path.read_bytes() != raw:
+                        raise OSError('ไฟล์เปลี่ยนระหว่างอัปเดต')
+                    self._replace_bytes(payload, content)
+                    originals.append((payload, old))
+                if manifest_path.read_bytes() != raw or _hash(_check_path(source)) != source_hash:
+                    raise OSError('ไฟล์ต้นทางหรือ Manifest เปลี่ยนระหว่างอัปเดต')
+                write_json(manifest_path, updated)
+                written_manifest = manifest_path.read_bytes()
+                self.validate(profile, path)
+                results['updated'] += 1
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                rollback_error = None
+                try:
+                    if originals:
+                        current_manifest = _check_path(path / 'manifest.json').read_bytes()
+                        if current_manifest != raw and current_manifest != written_manifest:
+                            raise OSError('Manifest ถูกแก้จากภายนอกระหว่างอัปเดต')
+                        if any(_check_path(payload).read_bytes() != content for payload, _ in originals):
+                            raise OSError('ไฟล์คำศัพท์ถูกแก้จากภายนอกระหว่างอัปเดต')
+                    for payload, old in reversed(originals): self._replace_bytes(payload, old)
+                    if originals:
+                        self._replace_bytes(path / 'manifest.json', raw)
+                        self.validate(profile, path)
+                except (OSError, ValueError, KeyError, TypeError) as rollback:
+                    rollback_error = rollback
+                detail = str(exc)
+                if rollback_error: detail += f' · ต้องตรวจความสมบูรณ์ด้วยตนเอง: {rollback_error}'
+                results['errors'].append((path.name, detail))
+        return results
+
+    @staticmethod
+    def _replace_bytes(path, content):
+        _check_path(path)
+        fd, name = tempfile.mkstemp(dir=path.parent, prefix='.glossary-', suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'wb') as out:
+                out.write(content); out.flush(); os.fsync(out.fileno())
+            if _hash(Path(name)) != hashlib.sha256(content).hexdigest():
+                raise OSError('Temporary glossary hash mismatch')
+            _check_path(path)
+            os.replace(name, path)
+        finally:
+            Path(name).unlink(missing_ok=True)
+
+    @serialized
+    def list(self, profile, step_id=None, *, verify=True, clipboard_paths=(), read_only=False):
         root = self.root(profile)
         if not root.exists(): return []
         result = []
@@ -569,7 +723,7 @@ class PolishHistory:
                 warning = ''
                 expected = self._directory_name(manifest)
                 needs_move = legacy or not (path.name == expected or path.name.startswith(expected + ' ('))
-                if needs_move and verify:
+                if needs_move and verify and not read_only:
                     old = path
                     try:
                         if not any(s.id == manifest['step_id'] for s in profile.workflow.steps):
@@ -588,7 +742,8 @@ class PolishHistory:
                 result.append(Snapshot(path, manifest, warning=warning))
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 result.append(Snapshot(path, manifest if isinstance(manifest, dict) else {}, str(exc)))
-        self._migrate_numbers(profile, result)
+        if not read_only:
+            self._migrate_numbers(profile, result)
         if step_id: result = [x for x in result if x.manifest.get('step_id') == step_id]
         return sorted(result, key=lambda x: (str(x.manifest.get('created_at', x.path.name)),
                                             str(x.manifest.get('snapshot_id', ''))), reverse=True)

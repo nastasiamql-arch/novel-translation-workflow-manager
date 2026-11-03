@@ -1522,6 +1522,33 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self._utility_pages[key].profile = self.profile
         self._utility_pages[key].refresh()
 
+    def update_all_history_glossaries(self):
+        if not self.profile or self.history_busy():
+            self.statusBar().showMessage('กำลังจัดการประวัติ กรุณารอสักครู่', 4000)
+            return
+        from copy import deepcopy
+        profile = deepcopy(self.profile)
+        step_id = profile.polish_history_step_id
+        page = self._utility_pages.get('polish-history:' + profile.id)
+        self.utility_update_glossaries.setEnabled(False)
+        if page: page.status.setText('กำลังตรวจสอบและอัปเดตคำศัพท์ทุกชุด…')
+        def finished(result):
+            self.utility_update_glossaries.setEnabled(True)
+            lines = [f"ชุดงานทั้งหมด: {result['total']}",
+                     f"อัปเดตสำเร็จ: {result['updated']}",
+                     f"เป็นไฟล์ล่าสุดแล้ว: {result['unchanged']}",
+                     f"ข้าม: {len(result['skipped'])}", f"ผิดพลาด: {len(result['errors'])}"]
+            for label, reason in result['skipped'] + result['errors']:
+                lines.append(f'{label}: {reason}')
+            self.statusBar().showMessage('ตรวจสอบการอัปเดตคำศัพท์เสร็จแล้ว', 8000)
+            if page: page.refresh(read_only=True)
+            QMessageBox.information(self, 'ผลการอัปเดตคำศัพท์', '\n'.join(lines))
+        def failed(error):
+            self.utility_update_glossaries.setEnabled(True)
+            if page: page.status.setText('อัปเดตคำศัพท์ไม่สำเร็จ')
+            QMessageBox.warning(self, 'อัปเดตคำศัพท์ไม่ได้', str(error))
+        self.run_history_job(lambda: self.polish_history.update_all_glossaries(profile, step_id), finished, failed)
+
     def update_copy_mode_labels(self):
         """Reflect the persisted clipboard mode without changing Export controls."""
         zipped = self.settings.copy_files_as_zip
@@ -1706,6 +1733,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             self.utility_stack.addWidget(page)
         self.utility_title.setText(title)
         self.utility_refresh.setVisible(key.startswith("polish-history:"))
+        self.utility_update_glossaries.setVisible(key.startswith("polish-history:"))
         self.utility_back.setText("← กลับไปทำงาน" if self.profile else "← คลังนิยาย")
         self.utility_stack.setCurrentWidget(page)
         self._active_utility_page = key
@@ -2761,6 +2789,11 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         self.utility_refresh.clicked.connect(lambda: self.utility_stack.currentWidget().refresh())
         self.utility_refresh.hide()
         utility_header.addWidget(self.utility_refresh)
+        self.utility_update_glossaries = QPushButton('อัปเดตคำศัพท์ทั้งหมด')
+        self.utility_update_glossaries.setObjectName('polishHistoryUpdateAllGlossaries')
+        self.utility_update_glossaries.clicked.connect(self.update_all_history_glossaries)
+        self.utility_update_glossaries.hide()
+        utility_header.addWidget(self.utility_update_glossaries)
         utility_layout.addLayout(utility_header)
         self.utility_stack = QStackedWidget()
         utility_layout.addWidget(self.utility_stack, 1)
