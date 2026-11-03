@@ -10,6 +10,8 @@ from copy import deepcopy
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
+from .safe_dialogs import confirm_scrollable
+
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
@@ -781,12 +783,11 @@ class TranslationBatchPage(QWidget):
             if skipped is not None and not self._confirm_skipped_group(skipped, group):
                 return
         if group.missing:
-            result = QMessageBox.question(
+            if not confirm_scrollable(
                 self, "บทไม่ครบ",
-                "ขาดบท " + ", ".join(map(str, group.missing))
-                + "\nคัดลอกเฉพาะบทที่มีอยู่หรือไม่?",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if result != QMessageBox.Yes:
+                f"ขาดบท {len(group.missing)} บท · คัดลอกเฉพาะบทที่มีอยู่หรือไม่?",
+                "เลขบทที่ขาด:\n" + "\n".join(map(str, group.missing)),
+            ):
                 return
         self._copy_pending = (group, button, self._source, self.mode.currentData(),
                               time.perf_counter())
