@@ -6,11 +6,13 @@ import json
 import threading
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt, QThread, Signal
+from .safe_dialogs import fit_dialog
+
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
     QProgressBar, QPushButton, QSpinBox, QSplitter, QTableView, QVBoxLayout, QHeaderView, QMenu,
-    QWidget, QDialog, QTableWidget, QTableWidgetItem, QTabWidget,
+    QWidget, QDialog, QDialogButtonBox, QTableWidget, QTableWidgetItem, QTabWidget,
 )
 
 from .novel_file_inspector import Inspection, inspect, read_source, decode_text, read_combined_chapter
@@ -576,8 +578,9 @@ class NovelFileInspectorPage(QWidget):
             return
         dialog = QDialog(self)
         dialog.setWindowTitle("เปรียบเทียบเนื้อหา")
-        dialog.resize(1100, 700)
-        layout = QHBoxLayout(dialog)
+        layout = QVBoxLayout(dialog)
+        comparison = QHBoxLayout()
+        layout.addLayout(comparison, 1)
         for row in files:
             box = QVBoxLayout()
             box.addWidget(QLabel(row.name))
@@ -588,7 +591,11 @@ class NovelFileInspectorPage(QWidget):
             except Exception as exc:
                 editor.setPlainText(str(exc))
             box.addWidget(editor)
-            layout.addLayout(box, 1)
+            comparison.addLayout(box, 1)
+        close = QDialogButtonBox(QDialogButtonBox.Close)
+        close.rejected.connect(dialog.reject)
+        layout.addWidget(close)
+        fit_dialog(dialog, 1100, 700)
         dialog.exec()
 
     def mark_selection(self, decision):
