@@ -663,7 +663,7 @@ def test_file_manager_batch_attach_and_delete_cancel(window,monkeypatch):
         if listing.item(i).text() in ('one.txt','two.txt'):listing.item(i).setSelected(True)
     next(b for b in page.findChildren(QPushButton) if b.text()=='เพิ่มในขั้นตอน').click()
     assert {'one.txt','two.txt'} <= {file.path for file in window.step().files}
-    monkeypatch.setattr(QMessageBox,'question',lambda *args:QMessageBox.No)
+    monkeypatch.setattr('novel_workflow.workspace_window.confirm_scrollable',lambda *args,**kwargs:False)
     next(b for b in page.findChildren(QPushButton) if b.text()=='ลบไฟล์').click()
     assert (root/'one.txt').exists() and (root/'two.txt').exists()
 
