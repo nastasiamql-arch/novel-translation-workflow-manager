@@ -3,7 +3,7 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QFrame, QListWidget, QPushButton, QScrollArea
+from PySide6.QtWidgets import QApplication, QFrame, QGroupBox, QListWidget, QPushButton, QScrollArea
 from novel_workflow.models import LaunchTarget, NovelProfile
 from novel_workflow.storage import ProjectRepository
 from novel_workflow.workspace_window import MainWindow
@@ -12,6 +12,31 @@ from test_release_36 import setup_profile
 
 def app():
     return QApplication.instance() or QApplication([])
+
+
+def test_advanced_chapter_panel_state_survives_reopen_and_restart(tmp_path):
+    app()
+    repo, profile, _ = setup_profile(tmp_path)
+    before = (profile.auto_review_enabled, profile.auto_chapter_number_mode)
+    window = MainWindow(repo)
+    window.settings_dialog()
+    panel = window._settings_page_state['page'].findChild(QGroupBox, 'advancedChapterOptions')
+    assert not panel.isChecked()
+    panel.setChecked(True)
+    window._restore_settings_management()
+    window.settings_dialog()
+    panel = window._settings_page_state['page'].findChild(QGroupBox, 'advancedChapterOptions')
+    assert panel.isChecked()
+    window.close()
+    window = MainWindow(ProjectRepository(repo.root))
+    window.settings_dialog()
+    panel = window._settings_page_state['page'].findChild(QGroupBox, 'advancedChapterOptions')
+    assert panel.isChecked()
+    panel.setChecked(False)
+    assert not repo.load_settings().advanced_chapter_options_expanded
+    saved = repo.load_profile(profile.id)
+    assert (saved.auto_review_enabled, saved.auto_chapter_number_mode) == before
+    window.close()
 
 
 def test_novel_settings_are_one_page_and_profile_selection_stays_in_it(tmp_path):

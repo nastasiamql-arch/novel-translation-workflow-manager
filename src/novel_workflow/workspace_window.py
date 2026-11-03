@@ -1530,9 +1530,37 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         profile = deepcopy(self.profile)
         step_id = profile.polish_history_step_id
         page = self._utility_pages.get('polish-history:' + profile.id)
+        protected_editors = []
+        try:
+            source = self.polish_history.glossary_source(profile)
+            workspace = self.workspaces.get(profile.id)
+            if workspace:
+                import hashlib
+                editor = workspace.editor
+                for index in range(editor.tabs.count()):
+                    tab = editor.tabs.widget(index)
+                    path = editor._path(tab)
+                    if path is not None and path == source:
+                        if editor._dirty(tab):
+                            raise ValueError('ไฟล์คำศัพท์ยังบันทึกอัตโนมัติไม่เสร็จ กรุณารอแล้วลองอีกครั้ง')
+                        if hashlib.sha256(source.read_bytes()).digest() != tab.disk_digest:
+                            raise ValueError('ไฟล์คำศัพท์บนดิสก์ไม่ตรงกับ Editor กรุณาตรวจสอบก่อนอัปเดต')
+                        protected_editors.append((tab, tab.isReadOnly()))
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, 'อัปเดตคำศัพท์ไม่ได้', str(error))
+            return
+        for tab, _ in protected_editors:
+            tab.setReadOnly(True)
+        def restore_editors():
+            for tab, was_read_only in protected_editors:
+                try:
+                    tab.setReadOnly(was_read_only)
+                except RuntimeError:
+                    pass  # The tab may have been closed while the worker ran.
         self.utility_update_glossaries.setEnabled(False)
         if page: page.status.setText('กำลังตรวจสอบและอัปเดตคำศัพท์ทุกชุด…')
         def finished(result):
+            restore_editors()
             self.utility_update_glossaries.setEnabled(True)
             lines = [f"ชุดงานทั้งหมด: {result['total']}",
                      f"อัปเดตสำเร็จ: {result['updated']}",
@@ -1545,6 +1573,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             if page: page.refresh(read_only=True)
             QMessageBox.information(self, 'ผลการอัปเดตคำศัพท์', '\n'.join(lines))
         def failed(error):
+            restore_editors()
             self.utility_update_glossaries.setEnabled(True)
             if page: page.status.setText('อัปเดตคำศัพท์ไม่สำเร็จ')
             QMessageBox.warning(self, 'อัปเดตคำศัพท์ไม่ได้', str(error))

@@ -525,6 +525,44 @@ class PolishHistory:
         manifest = _read_manifest(path / 'manifest.json')
         return self._validate_manifest(profile, path, manifest)
 
+    def glossary_source(self, profile, *, include_binding_strength=False):
+        """Resolve a single current translation binding, rejecting ambiguity."""
+        translations = [step for step in profile.workflow.steps
+                        if step.name.strip().casefold() in {'แปล', 'translate', 'translation', 'translator'}]
+        if len(translations) != 1:
+            raise ValueError('ไม่พบขั้นตอนแปลที่ระบุได้แน่ชัด หรือมีขั้นตอนแปลหลายขั้นตอน')
+
+        def explicit(item):
+            label = (item.label or '').strip().casefold()
+            path = (item.path or '').replace('\\', '/')
+            return (item.file_type == 'glossary' or label in {'glossary', 'คำศัพท์'}
+                    or (item.reference_type == 'repository_file'
+                        and path.split('/')[0].casefold() == 'glossary'))
+
+        items = [item for item in translations[0].files if item.enabled]
+        bindings = [item for item in items if explicit(item)]
+        strong_binding = bool(bindings)
+        if not bindings:
+            bindings = [item for item in items if item.path and
+                        'glossary' in Path(item.path.replace('\\', '/')).stem.casefold()]
+        if not bindings:
+            working = [item for item in profile.working_files if item.enabled]
+            bindings = [item for item in working if explicit(item)]
+            if not bindings:
+                bindings = [item for item in working if item.path and
+                            'glossary' in Path(item.path.replace('\\', '/')).stem.casefold()]
+        sources = {resolve_attachment(self.repo, self.assembler, profile, item) for item in bindings}
+        if not sources:
+            raise ValueError('ไม่พบ Glossary ที่เปิดใช้งานในขั้นตอนแปล')
+        if len(sources) != 1:
+            raise ValueError('ขั้นตอนแปลมี Glossary หลายไฟล์: ' + ', '.join(sorted(map(str, sources))))
+        source = sources.pop()
+        if not source.is_file():
+            raise ValueError('ไม่พบไฟล์ Glossary ต้นทางในขั้นตอนแปล หรือไม่ใช่ไฟล์')
+        if source.is_relative_to(self.root(profile)):
+            raise ValueError('Glossary ต้นทางต้องไม่อยู่ใน Polish History')
+        return (source, strong_binding) if include_binding_strength else source
+
     @serialized
     def update_all_glossaries(self, profile, step_id):
         """Replace only payloads bound to the one explicitly configured glossary.
@@ -535,35 +573,8 @@ class PolishHistory:
         """
         if not step_id or not any(s.id == step_id for s in profile.workflow.steps):
             raise ValueError('กรุณาตั้งค่าขั้นตอน Novel Polish ก่อน')
-        # Step names identify translation; duplicate matches are unsafe.
-        translations = [step for step in profile.workflow.steps
-                        if step.name.strip().casefold() in {'แปล', 'translate', 'translation', 'translator'}]
-        if len(translations) != 1:
-            raise ValueError('ไม่พบขั้นตอนแปลที่ระบุได้แน่ชัด หรือมีขั้นตอนแปลหลายขั้นตอน')
-        translation = translations[0]
-
-        def is_glossary(item):
-            label = (item.label or '').strip().casefold()
-            path = (item.path or '').replace('\\', '/')
-            return (item.file_type == 'glossary' or label in {'glossary', 'คำศัพท์'}
-                    or (item.reference_type == 'repository_file'
-                        and path.split('/')[0].casefold() == 'glossary'))
-
-        bindings = [item for item in translation.files if item.enabled and is_glossary(item)]
-        sources = set()
-        for item in bindings:
-            source = resolve_attachment(self.repo, self.assembler, profile, item)
-            if not source.is_file():
-                raise ValueError('ไม่พบไฟล์ Glossary ต้นทางในขั้นตอนแปล หรือไม่ใช่ไฟล์')
-            sources.add(source)
-        if not sources:
-            raise ValueError('ไม่พบ Glossary ที่เปิดใช้งานในขั้นตอนแปล')
-        if len(sources) != 1:
-            raise ValueError('ขั้นตอนแปลมี Glossary หลายไฟล์ กรุณาตรวจการตั้งค่า')
-        source = sources.pop()
+        source, strong_binding = self.glossary_source(profile, include_binding_strength=True)
         history_root = self.root(profile)
-        if source.is_relative_to(history_root):
-            raise ValueError('Glossary ต้นทางต้องไม่อยู่ใน Polish History')
         before = source.stat()
         content = source.read_bytes()
         after = source.stat()
@@ -619,7 +630,7 @@ class PolishHistory:
                                     and link_path.split('/')[0].casefold() == 'glossary'))
                     same_source = (os.path.normcase(os.path.abspath(entry['original_path']))
                                    == os.path.normcase(str(source)))
-                    if not (explicit or same_source): continue
+                    if not (same_source or (strong_binding and explicit)): continue
                     # A folder binding may include arbitrary files; do not guess.
                     siblings = [e for e in manifest['files']
                                 if e['attachment_id'] == entry['attachment_id']]
@@ -629,6 +640,8 @@ class PolishHistory:
                 if not targets:
                     results['skipped'].append((path.name, 'ไม่พบไฟล์คำศัพท์ที่ยืนยันตัวตนได้'))
                     continue
+                if len(targets) != 1:
+                    raise ValueError('ไฟล์คำศัพท์ในชุดงานกำกวม: พบหลายไฟล์')
                 plans.append((path, raw, manifest, targets))
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 if not counted: results['total'] += 1
