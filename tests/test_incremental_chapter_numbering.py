@@ -167,16 +167,17 @@ def test_duplicate_heading_removal_previews_saves_backup_and_can_restore(tmp_pat
     assert ws.editor.save_editor(editor, quiet=True)
     dialog = ChapterNumberDialog(ws, editor, source)
     confirmations = []
-    def confirm(_parent, title, text, *_args):
-        confirmations.append((title, text))
-        return QMessageBox.Yes
-    monkeypatch.setattr(QMessageBox, "question", confirm)
+    def confirm(_parent, title, summary, details):
+        confirmations.append((title, summary, details))
+        return True
+    monkeypatch.setattr("novel_workflow.chapter_numbering_dialog.confirm_scrollable", confirm)
     monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
     dialog.remove_duplicate_headings()
     expected = "第646章月薪40万\nเนื้อเรื่องต้องอยู่ครบ"
     assert editor.toPlainText() == expected
     assert source.read_text(encoding="utf-8") == expected
-    assert "ลบ: 第646章 月薪40万" in confirmations[0][1]
+    assert "ลบ ·" not in confirmations[0][2]  # No mutation of preview source text
+    assert "บรรทัด 2: 第646章 月薪40万" in confirmations[0][2]
     history_path = repo.profile_dir(profile.id) / "chapter_numbering" / "history.json"
     event = json.loads(history_path.read_text(encoding="utf-8"))["events"][-1]
     assert event["operation"] == "remove-duplicate-headings"
@@ -227,10 +228,10 @@ def test_manual_one_confirmation_removes_copies_and_fixes_real_numbers(tmp_path,
     dialog.propose_sequence()
     assert [spin.value() for spin in dialog.spins] == [67, 67, 68, 69]
     confirmations = []
-    def confirm(_parent, _title, text, *_args):
-        confirmations.append(text)
-        return QMessageBox.Yes
-    monkeypatch.setattr(QMessageBox, "question", confirm)
+    def confirm(_parent, _title, summary, details):
+        confirmations.append(summary + "\n" + details)
+        return True
+    monkeypatch.setattr("novel_workflow.chapter_numbering_dialog.confirm_scrollable", confirm)
     monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
     dialog.apply_all()
     expected = ("第67章 捧杀（累计发布3200字）\n"
