@@ -112,7 +112,7 @@ class BulkGlossaryTests(unittest.TestCase):
         source.write_bytes(b'new')
         snapshots = self.service.list(self.profile, step_id=self.step.id, read_only=True)
         selected = self.service.glossary_source(self.profile, snapshots=snapshots)
-        self.assertEqual(selected, source)
+        self.assertEqual(selected, source.resolve())
         result = self.service.update_all_glossaries(self.profile, self.step.id, fallback_source=selected)
         self.assertEqual((result['updated'], result['errors']), (1, []))
         self.assertEqual(self.service.validate(self.profile, snap.path)[0].read_bytes(), b'new')
@@ -127,7 +127,7 @@ class BulkGlossaryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.service.glossary_source(self.profile, snapshots=snapshots)
         selected = self.service.glossary_source(self.profile, snapshots=snapshots, editor_paths=[source])
-        self.assertEqual(selected, source)
+        self.assertEqual(selected, source.resolve())
         source.write_bytes(b'new')
         result = self.service.update_all_glossaries(self.profile, self.step.id,
                                                     fallback_source=selected, editor_paths=[source])

@@ -557,8 +557,9 @@ class PolishHistory:
             # Historical metadata may identify a current file, but never use a
             # history payload itself as the source. Limit paths to this novel's
             # main folder or files actually open in its editor.
-            main = Path(profile.main_folder).expanduser().absolute() if profile.main_folder else None
-            open_paths = {os.path.normcase(os.path.abspath(str(path))) for path in editor_paths}
+            main_path = Path(profile.main_folder).expanduser() if profile.main_folder else None
+            main = _check_path(main_path) if main_path and main_path.exists() else None
+            open_paths = {os.path.normcase(str(Path(path).resolve())) for path in editor_paths}
             for snapshot in snapshots:
                 manifest = snapshot.manifest
                 if (snapshot.error or manifest.get('profile_id') != profile.id
@@ -574,11 +575,12 @@ class PolishHistory:
                     label = str(link.get('label') or '').strip().casefold()
                     identified = (link.get('file_type') == 'glossary'
                                   or label in {'glossary', 'คำศัพท์'} or 'glossary' in name)
-                    in_scope = ((main is not None and path.parent == main)
-                                or os.path.normcase(str(path)) in open_paths)
-                    if identified and in_scope and path.exists():
+                    if identified and path.exists():
                         candidate = _check_path(path)
-                        if candidate.is_file() and not candidate.is_relative_to(self.root(profile)):
+                        in_scope = ((main is not None and candidate.parent == main)
+                                    or os.path.normcase(str(candidate)) in open_paths)
+                        if (in_scope and candidate.is_file()
+                                and not candidate.is_relative_to(self.root(profile))):
                             sources.add(candidate)
         if not sources:
             raise ValueError('ไม่พบ Glossary ที่เปิดใช้งานในขั้นตอนแปล')
