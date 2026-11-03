@@ -102,6 +102,12 @@ jobs:
             $releaseCommit = "a41d0ce49ccad34b710d062b24a026834a1e1b25"
           }
           "commit=$releaseCommit" >> $env:GITHUB_OUTPUT
+          # Checkout defaults to depth=1. Fetch bounded main history before
+          # tagging the earlier validated application commit.
+          git fetch --no-tags --depth=30 origin main
+          if ($LASTEXITCODE -ne 0) { throw "Cannot fetch release commit ancestry" }
+          git cat-file -e "${releaseCommit}^{commit}"
+          if ($LASTEXITCODE -ne 0) { throw "Validated release commit is not available" }
           git fetch --tags
           $existingTag = git tag --list $tag
           if ($existingTag -contains $tag) {
