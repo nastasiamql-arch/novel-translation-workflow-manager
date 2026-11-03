@@ -710,12 +710,12 @@ class TxtVocabularyPage(QWidget):
             self.state["selected_batch"] = batch_key(
                 self.profile_id, self._source_identity, self._source_revision, group)
             self._save()
-        for current, color in ((previous, "transparent"), (group, "#488bd6")):
+        for current, selected in ((previous, False), (group, True)):
             if current in self._visible_groups:
                 index = self._visible_groups.index(current)
                 if index < len(self._batch_widgets):
                     self._batch_widgets[index].setStyleSheet(
-                        f"QFrame#txtVocabularyRow {{ border: 2px solid {color}; }}")
+                        "QFrame#txtVocabularyRow { border: 2px solid #488bd6; }" if selected else "")
         status = {"new": "ยังไม่ได้คัดลอก", "copied": "คัดลอกแล้ว",
                   "review": "ต้องตรวจใหม่"}[self._group_status(group)]
         lines = [f"จำนวนบท: {len(group.chapters)}", f"สถานะ: {status}", "", "ไฟล์ต้นฉบับ:"]
@@ -779,8 +779,8 @@ class TxtVocabularyPage(QWidget):
         """One compact, single-column Explorer-like row; details start collapsed."""
         row = BatchRow()
         row.setObjectName("txtVocabularyRow")
-        color = "#488bd6" if group == self._selected_group else "transparent"
-        row.setStyleSheet(f"QFrame#txtVocabularyRow {{ border: 2px solid {color}; }}")
+        if group == self._selected_group:
+            row.setStyleSheet("QFrame#txtVocabularyRow { border: 2px solid #488bd6; }")
         row.setAccessibleName(f"ชุด {group.index} บท {group.start} ถึง {group.end}")
         row.selected.connect(lambda g=group: self._select_group(g))
         row.move.connect(lambda offset, g=group: self._move_selection(g, offset))

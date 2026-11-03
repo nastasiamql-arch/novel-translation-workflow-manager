@@ -598,10 +598,11 @@ class TranslationBatchPage(QWidget):
             self.state["selected_batch"] = batch_key(
                 self.profile_id, self._source_identity, self._source_revision, group)
             self._persist()
-        for current, color in ((previous, "transparent"), (group, "#488bd6")):
+        for current, selected in ((previous, False), (group, True)):
             widgets = self._row_widgets.get(current.index) if current is not None else None
             if widgets is not None:
-                widgets[1].setStyleSheet(f"QFrame#translationBatchRow {{ border: 2px solid {color}; }}")
+                widgets[1].setStyleSheet("QFrame#translationBatchRow { border: 2px solid #488bd6; }"
+                                         if selected else "")
         status = {"new": "ยังไม่ได้คัดลอก", "copied": "คัดลอกแล้ว",
                   "review": "ต้องตรวจใหม่"}[self._group_status(group)]
         lines = [f"จำนวนบท: {len(group.chapters)}",
@@ -805,7 +806,6 @@ class TranslationBatchPage(QWidget):
                 layout.setHorizontalSpacing(9)
                 row.setObjectName("translationBatchRow")
                 row.setFixedHeight(max(52, row.fontMetrics().height() + 24))
-                row.setStyleSheet("QFrame#translationBatchRow { border: 2px solid transparent; }")
                 row.setAccessibleName(f"ชุด {group.index} บท {group.start} ถึง {group.end}")
                 row.selected.connect(lambda g=group: self._select_group(g))
                 row.move.connect(lambda offset, g=group: self._move_selection(g, offset))
