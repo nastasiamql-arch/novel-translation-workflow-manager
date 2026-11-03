@@ -11,7 +11,7 @@ permissions:
 # supersede obsolete runs of the SAME version after fixing a failing test.
 # Normal main-branch releases still keep their existing non-cancellation policy.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ contains(github.event.head_commit.message, '[supersede-release]') && github.sha || 'standard' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || contains(github.event.head_commit.message, '[supersede-release]') }}
 jobs:
   test:
