@@ -5,12 +5,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from novel_workflow.models import NovelProfile
 from novel_workflow.storage import ProjectRepository
 from novel_workflow.translation_batch_page import TranslationBatchPage
+from novel_workflow.translation_clipboard_cache import prepare_cached_bundle
 
 
 def test_pending_copy_selects_immediately_but_completion_keeps_newer_selection(tmp_path, monkeypatch):
@@ -27,12 +27,17 @@ def test_pending_copy_selects_immediately_but_completion_keeps_newer_selection(t
     try:
         assert page._load_worker.wait(20000)
         app.processEvents()
-        for _ in range(500):
+        worker = page._copy_worker
+        page._invalidate_prepared()
+        if worker is not None:
+            assert worker.wait(20000)
             app.processEvents()
-            if 1 in page._ready_bundles and page._copy_worker is None:
-                break
-            QTest.qWait(10)
-        bundle = page._ready_bundles.pop(1)
+        bundle = prepare_cached_bundle(
+            page._source, page._groups[0], (),
+            repo.root / "cache" / "clipboard" / "translation" / profile.id,
+            identity=page._source_identity, revision=page._source_revision,
+            batch_size=page.size.value(), as_zip=False, pasted_text=None,
+        )
         monkeypatch.setattr(page, "_schedule_prewarm", lambda *_args: None)
         page._select_group(page._groups[1], switch=False)
         page.findChild(QPushButton, "translationBatchCopy1").click()
