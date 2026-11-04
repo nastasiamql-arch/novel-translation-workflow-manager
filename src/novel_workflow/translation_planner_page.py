@@ -284,7 +284,7 @@ class TodayPage(QWidget):
                 if not effective["scheduled"]:
                     continue
                 caught_up = effective["caught_up"]
-                target = effective["target_chapters"] or 0
+                target = 0 if caught_up else (effective["target_chapters"] or 0)
                 actual = len(confirmed_daily_activity(profile).get(today.isoformat(), set()))
                 status = 'ชนต้นฉบับแล้ว' if caught_up else ('ตามแผน' if actual >= target else 'กำลังแปล')
             elif effective and effective["source"] in ("explicit", "global_rest"):

@@ -67,8 +67,8 @@ def test_scheduler_ui_and_today_cards(tmp_path):
     rows = page.scheduler.rows
     a, b = [rows[p.id] for p in profiles]
     a.target.setValue(20)
-    a.enabled.click()
     a.weekdays[date.today().weekday()].click()
+    b.target.setValue(10)
     b.caught.click()
     b.weekdays[date.today().weekday()].click()
     app.processEvents()
@@ -110,7 +110,7 @@ def test_weekly_toggle_restores_goal_and_scroll_position(tmp_path):
     pos = page.scroll.verticalScrollBar().value()
     assert pos > 0
     row.target.setValue(20)
-    row.enabled.click()
+    row.weekdays[0].click()
     row.caught.click()
     row.caught.click()
     app.processEvents()
@@ -214,3 +214,208 @@ def test_weekly_missed_history_uses_original_goal(tmp_path, monkeypatch):
     assert result['status'] == 'missed'
     assert result['actual'] == 0
     assert result['target_chapters'] == 20
+
+
+def test_search_and_paused_schedule_are_read_only_until_resume(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    from novel_workflow.weekly_scheduler_page import WeeklySchedulerPage
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path)
+    profiles = [NovelProfile(name='เรื่องภาษาไทย'), NovelProfile(name='Example Novel')]
+    for profile in profiles:
+        repo.save_profile(profile)
+    planner = TranslationPlanner(repo)
+    planner.save_weekly_schedule(profiles[0].id, weekdays=[0], target_chapters=12,
+                                 caught_up=False, enabled=False)
+    before = planner.path.read_bytes()
+    page = WeeklySchedulerPage(repo)
+    page.refresh()
+    page.show()
+    app.processEvents()
+    page.search.setText('EXAMPLE')
+    assert page.rows[profiles[0].id].isHidden()
+    assert not page.rows[profiles[1].id].isHidden()
+    page.search.clear()
+    assert not page.rows[profiles[0].id].isHidden()
+    assert planner.path.read_bytes() == before
+    row = page.rows[profiles[0].id]
+    row.weekdays[1].click()
+    assert not planner.weekly_schedule(profiles[0].id)['enabled']
+    row.resume.click()
+    assert planner.weekly_schedule(profiles[0].id)['enabled']
+    page.close()
+
+
+def test_scheduler_cover_refresh_and_invalid_paths(tmp_path):
+    from PySide6.QtGui import QImage, QColor
+    from PySide6.QtWidgets import QApplication
+    from novel_workflow.weekly_scheduler_page import WeeklySchedulerPage
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path)
+    profiles = [NovelProfile(name='Cover', cover_image_path='cover.png'),
+                NovelProfile(name='Missing', cover_image_path='missing.png'),
+                NovelProfile(name='Unsafe', cover_image_path='../outside.png')]
+    for profile in profiles:
+        repo.save_profile(profile)
+    path = repo.resolve_project_path(profiles[0].id, 'cover.png')
+    image = QImage(100, 200, QImage.Format_RGB32)
+    image.fill(QColor('red'))
+    assert image.save(str(path))
+    original = path.read_bytes()
+    page = WeeklySchedulerPage(repo)
+    page.refresh()
+    row = page.rows[profiles[0].id]
+    pixmap = row.cover.pixmap()
+    assert not pixmap.isNull()
+    assert pixmap.width() == 32 and pixmap.height() == 64
+    assert page.rows[profiles[1].id].cover.text() == '▤'
+    assert page.rows[profiles[2].id].cover.text() == '▤'
+    assert path.read_bytes() == original
+    image.fill(QColor('blue'))
+    assert image.save(str(path))
+    page.refresh()
+    assert row.cover.pixmap().toImage().pixelColor(0, 0) == QColor('blue')
+    path.write_bytes(b'not an image')
+    page.refresh()
+    assert row.cover.text() == '▤'
+    page.close()
+
+
+def test_incomplete_new_schedule_can_be_enabled_after_reopening(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    from novel_workflow.weekly_scheduler_page import WeeklySchedulerPage
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path)
+    profile = NovelProfile(name='Incomplete')
+    repo.save_profile(profile)
+    page = WeeklySchedulerPage(repo)
+    page.refresh()
+    page.rows[profile.id].weekdays[0].click()
+    assert not page.planner.weekly_schedule(profile.id)['enabled']
+    page.close()
+    page = WeeklySchedulerPage(repo)
+    page.refresh()
+    row = page.rows[profile.id]
+    row.target.setValue(12)
+    row.target.editingFinished.emit()
+    assert page.planner.weekly_schedule(profile.id)['enabled']
+    page.close()
+
+
+def test_failed_save_keeps_ui_and_can_retry(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from novel_workflow.weekly_scheduler_page import WeeklySchedulerPage
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path)
+    profile = NovelProfile(name='Retry')
+    repo.save_profile(profile)
+    page = WeeklySchedulerPage(repo)
+    page.refresh()
+    row = page.rows[profile.id]
+    real_save = page.planner.save_weekly_schedule
+    def fail(*args, **kwargs):
+        raise OSError('disk unavailable')
+    monkeypatch.setattr(page.planner, 'save_weekly_schedule', fail)
+    row.caught.click()
+    assert row.caught.isChecked()
+    assert not row.error.isHidden()
+    assert not row.retry.isHidden()
+    assert not page.planner.path.exists()
+    monkeypatch.setattr(page.planner, 'save_weekly_schedule', real_save)
+    row.retry.click()
+    assert row.retry.isHidden()
+    assert page.planner.weekly_schedule(profile.id)['caught_up']
+    page.close()
+
+
+def test_retry_resumes_a_paused_schedule(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from novel_workflow.weekly_scheduler_page import WeeklySchedulerPage
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path)
+    profile = NovelProfile(name='Paused retry')
+    repo.save_profile(profile)
+    planner = TranslationPlanner(repo)
+    planner.save_weekly_schedule(profile.id, weekdays=[0], target_chapters=5,
+                                 caught_up=False, enabled=False)
+    page = WeeklySchedulerPage(repo)
+    page.refresh()
+    row = page.rows[profile.id]
+    real_save = page.planner.save_weekly_schedule
+    def fail(*args, **kwargs):
+        raise OSError('disk unavailable')
+    monkeypatch.setattr(page.planner, 'save_weekly_schedule', fail)
+    row.resume.click()
+    assert not planner.weekly_schedule(profile.id)['enabled']
+    monkeypatch.setattr(page.planner, 'save_weekly_schedule', real_save)
+    row.retry.click()
+    assert planner.weekly_schedule(profile.id)['enabled']
+    page.close()
+
+
+def test_today_uses_each_profiles_cover_with_caught_up_target(tmp_path):
+    from PySide6.QtGui import QColor, QImage
+    from PySide6.QtWidgets import QApplication, QFrame, QLabel, QProgressBar
+    from novel_workflow.translation_planner_page import TodayPage
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path)
+    profiles = [NovelProfile(name='Red', cover_image_path='cover.png'),
+                NovelProfile(name='Blue', cover_image_path='cover.png')]
+    planner = TranslationPlanner(repo)
+    for profile, color in zip(profiles, ('red', 'blue')):
+        repo.save_profile(profile)
+        image = QImage(30, 50, QImage.Format_RGB32)
+        image.fill(QColor(color))
+        assert image.save(str(repo.resolve_project_path(profile.id, 'cover.png')))
+        planner.save_weekly_schedule(profile.id, weekdays=[date.today().weekday()],
+                                     target_chapters=10, caught_up=(color == 'blue'))
+    page = TodayPage(repo)
+    page.refresh()
+    cards = {w.property('profileId'): w for w in page.findChildren(QFrame)
+             if w.objectName() == 'plannerStoryCard'}
+    for profile, color in zip(profiles, ('red', 'blue')):
+        covers = [label.pixmap() for label in cards[profile.id].findChildren(QLabel)
+                  if not label.pixmap().isNull()]
+        assert covers[0].toImage().pixelColor(0, 0) == QColor(color)
+    assert not cards[profiles[1].id].findChildren(QProgressBar)
+    page.close()
+
+
+def test_pause_and_resume_preserve_weekdays_and_target(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    from novel_workflow.weekly_scheduler_page import WeeklySchedulerPage
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path)
+    profile = NovelProfile(name='Pause')
+    repo.save_profile(profile)
+    planner = TranslationPlanner(repo)
+    planner.save_weekly_schedule(profile.id, weekdays=[0, 3], target_chapters=7,
+                                 caught_up=False, enabled=True)
+    page = WeeklySchedulerPage(repo)
+    page.refresh()
+    row = page.rows[profile.id]
+    row.pause.click()
+    paused = planner.weekly_schedule(profile.id)
+    assert not paused['enabled'] and paused['weekdays'] == [0, 3]
+    assert paused['target_chapters'] == 7
+    row.resume.click()
+    assert planner.weekly_schedule(profile.id)['enabled']
+    page.close()
+
+
+def test_filter_one_hundred_novels_does_not_rebuild_or_save(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    from novel_workflow.weekly_scheduler_page import WeeklySchedulerPage
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path)
+    for i in range(100):
+        repo.save_profile(NovelProfile(name=f'Novel {i:03}'))
+    page = WeeklySchedulerPage(repo)
+    page.refresh()
+    ids = {key: id(row) for key, row in page.rows.items()}
+    page.search.setText('novel 099')
+    assert sum(not row.isHidden() for row in page.rows.values()) == 1
+    page.search.clear()
+    assert {key: id(row) for key, row in page.rows.items()} == ids
+    assert not page.planner.path.exists()
+    page.close()
