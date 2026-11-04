@@ -616,9 +616,12 @@ class TranslationBatchPage(QWidget):
             lines.append("⚠ " + self._reference_error)
         if group.missing:
             lines.extend(("", "บทที่ขาด: " + ", ".join(map(str, group.missing))))
+        detail_scroll = self.batch_workspace.text.verticalScrollBar()
+        scroll_position = detail_scroll.value() if previous == group else 0
         self.batch_workspace.show_selection(
             f"ชุด {group.index} · บท {group.start:04d}–{group.end:04d}",
             "\n".join(lines), switch=switch)
+        detail_scroll.setValue(scroll_position)
         self.batch_workspace.copy.setEnabled(self._copy_pending is None)
 
     def _copy_selected(self):
@@ -869,8 +872,9 @@ class TranslationBatchPage(QWidget):
         return dialog.clickedButton() is proceed
 
     def copy_group(self, group, button=None):
-        if not self._source or self._copy_pending is not None:
+        if not self._source or self._copy_pending is not None or group not in self._visible:
             return
+        source, revision = self._source, self._source_revision
         # Re-copying an old group never warns about skipped new groups.
         if self._group_status(group) == "new":
             skipped = next((
@@ -886,6 +890,13 @@ class TranslationBatchPage(QWidget):
                 "เลขบทที่ขาด:\n" + "\n".join(map(str, group.missing)),
             ):
                 return
+        if (self._source is not source or self._source_revision != revision
+                or self._copy_pending is not None or group not in self._visible):
+            return
+        # Copy is accepted only after all confirmations. Keep the list visible
+        # in narrow layouts and let later user selection win over worker results.
+        if self._selected_group != group:
+            self._select_group(group, switch=False)
         self._copy_pending = (group, button, self._source, self.mode.currentData(),
                               time.perf_counter())
         self.batch_workspace.copy.setEnabled(False)

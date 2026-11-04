@@ -5,11 +5,55 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from novel_workflow.models import NovelProfile
 from novel_workflow.storage import ProjectRepository
 from novel_workflow.translation_batch_page import TranslationBatchPage
+
+
+def test_pending_copy_selects_immediately_but_completion_keeps_newer_selection(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path / "repo")
+    profile = NovelProfile()
+    source = tmp_path / "source"
+    source.mkdir()
+    for i in range(1, 7):
+        (source / f"{i:04d}.txt").write_text(f"第{i}章\n正文", encoding="utf-8")
+    page = TranslationBatchPage(repo, lambda: profile, object(), {
+        "mode": "folder", "path": str(source), "size": 3
+    }, lambda _state: None, lambda: None)
+    try:
+        assert page._load_worker.wait(20000)
+        app.processEvents()
+        for _ in range(500):
+            app.processEvents()
+            if 1 in page._ready_bundles and page._copy_worker is None:
+                break
+            QTest.qWait(10)
+        bundle = page._ready_bundles.pop(1)
+        monkeypatch.setattr(page, "_schedule_prewarm", lambda *_args: None)
+        page._select_group(page._groups[1], switch=False)
+        page.findChild(QPushButton, "translationBatchCopy1").click()
+        assert page._copy_pending is not None
+        assert page._selected_group == page._groups[0]
+        assert "ชุด 1 ·" in page.batch_workspace.title.text()
+        page._select_group(page._groups[1], switch=False)
+        page._publish_ready(page._groups[0], bundle)
+        assert page._copy_pending is None
+        assert page._selected_group == page._groups[1]
+        assert "ชุด 2 ·" in page.batch_workspace.title.text()
+        assert "0004.txt" in page.batch_workspace.text.toPlainText()
+        assert "0001.txt" not in page.batch_workspace.text.toPlainText()
+        assert page._group_status(page._groups[0]) == "copied"
+        assert [Path(u.toLocalFile()).name for u in app.clipboard().mimeData().urls()] == [
+            "0001.txt", "0002.txt", "0003.txt"]
+    finally:
+        if page._copy_worker and page._copy_worker.isRunning():
+            page._copy_worker.wait(20000)
+        page.close()
+        app.processEvents()
 
 
 def test_translation_batch_ignores_lesson_inside_chapter(tmp_path):

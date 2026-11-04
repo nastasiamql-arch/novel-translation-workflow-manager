@@ -12,6 +12,44 @@ from novel_workflow.storage import ProjectRepository
 from novel_workflow.translation_batch_page import TranslationBatchPage
 
 
+def test_detail_scroll_resets_only_for_a_new_selection(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    repo = ProjectRepository(tmp_path / "repo")
+    profile = NovelProfile()
+    folder = tmp_path / "source"
+    folder.mkdir()
+    for number in range(1, 5):
+        (folder / f"{number:04d}.txt").write_text(f"第{number}章\n正文", encoding="utf-8")
+    page = TranslationBatchPage(repo, lambda: profile, object(),
+                                {"mode": "folder", "path": str(folder), "size": 2},
+                                lambda _state: None, lambda: None)
+    page.resize(1400, 640)
+    page.show()
+    try:
+        assert page._load_worker.wait(20000)
+        app.processEvents()
+        if page._copy_worker:
+            assert page._copy_worker.wait(20000)
+        app.processEvents()
+        page._display_references = tuple(folder / f"reference-{i:03d}.txt" for i in range(100))
+        page._select_group(page._groups[0], switch=False)
+        app.processEvents()
+        bar = page.batch_workspace.text.verticalScrollBar()
+        assert bar.maximum() > 0
+        bar.setValue(bar.maximum() // 2)
+        before = bar.value()
+        assert before > 0
+        page._update_row_states()
+        assert bar.value() == before
+        page._select_group(page._groups[1], switch=False)
+        assert bar.value() == 0
+    finally:
+        if page._copy_worker and page._copy_worker.isRunning():
+            page._copy_worker.wait(20000)
+        page.close()
+        app.processEvents()
+
+
 def test_translation_batch_86_copy_preserves_viewport_and_row(tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     repo = ProjectRepository(tmp_path / "repo")
@@ -66,6 +104,9 @@ def test_translation_batch_86_copy_preserves_viewport_and_row(tmp_path, monkeypa
 
         for copy_number in (1, 2):
             button.click()
+            assert page._selected_group == group
+            assert f"ชุด {group.index} ·" in page.batch_workspace.title.text()
+            assert page.state["selected_batch"]["index"] == group.index
             worker = page._copy_worker
             if worker is not None:
                 assert worker.wait(20000)
