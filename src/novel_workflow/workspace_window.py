@@ -1836,6 +1836,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
         from PySide6.QtCore import QDate
         planner = TranslationPlanner(self.repo)
         try:
+            weekly = planner.effective_weekly_plan(date.today(), profile_id)
+            if weekly and weekly['source'] == 'weekly':
+                self.today_page.refresh()
+                self.today_page._show_scheduler()
+                self.main_pages.setCurrentWidget(self.today_page)
+                self._sync_navigation()
+                return
             has_story_schedule = planner.story_schedule(profile_id) is not None
         except (OSError, ValueError):
             # Keep the existing Story Planner available to diagnose invalid data.
@@ -2952,7 +2959,7 @@ class MainShell(ManagementActionsMixin, QMainWindow):
 
     def navigate(self, key):
         if key == "today":
-            self.today_page.refresh()
+            self.today_page._show_today()
             self.main_pages.setCurrentWidget(self.today_page)
         elif key == "library": self.show_library()
         elif key == "workspace":

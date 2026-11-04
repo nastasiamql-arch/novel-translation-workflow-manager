@@ -79,6 +79,136 @@ class TranslationPlanner:
         bucket = self._load().get("days", {}).get(_date(day), {})
         return [dict(item) for item in bucket.get("plans", {}).values()]
 
+    def weekly_schedule(self, profile_id: str):
+        schedules = self._load().get("weekly_schedules", {})
+        if not isinstance(schedules, dict):
+            raise ValueError("Invalid weekly schedules")
+        schedule = schedules.get(profile_id)
+        if schedule is not None and not isinstance(schedule, dict):
+            raise ValueError("Invalid weekly schedule")
+        return dict(schedule) if schedule is not None else None
+
+    def save_weekly_schedule(self, profile_id: str, *, weekdays, target_chapters,
+                             caught_up: bool, enabled: bool = True):
+        if not isinstance(profile_id, str) or profile_id not in {p.id for p in self.repo.list_profiles()}:
+            raise ValueError("Select an existing novel")
+        if type(caught_up) is not bool or type(enabled) is not bool:
+            raise ValueError("Invalid weekly schedule state")
+        if not isinstance(weekdays, (list, tuple, set)) or any(
+            type(day) is not int or day < 0 or day > 6 for day in weekdays
+        ):
+            raise ValueError("Invalid weekday")
+        target = _positive(target_chapters, optional=caught_up or not enabled)
+        with self.repo.profile_lock:
+            data = self._load()
+            schedules = data.setdefault("weekly_schedules", {})
+            if not isinstance(schedules, dict):
+                raise ValueError("Invalid weekly schedules")
+            previous = schedules.get(profile_id, {})
+            if not isinstance(previous, dict):
+                raise ValueError("Invalid weekly schedule")
+            if caught_up and target is None:
+                target = _positive(previous.get("target_chapters"), optional=True)
+            now = _now()
+            history = previous.get("history", [])
+            if not isinstance(history, list):
+                raise ValueError("Invalid weekly schedule history")
+            history = list(history)
+            fields = {"weekdays": sorted(set(weekdays)), "target_chapters": target,
+                      "caught_up": caught_up, "enabled": enabled}
+            if previous and any(previous.get(key) != value for key, value in fields.items()):
+                history.append({"changed_at": now, "previous": {
+                    key: previous.get(key) for key in fields}})
+            schedule = {**previous, "weekdays": sorted(set(weekdays)),
+                        "target_chapters": target, "caught_up": caught_up,
+                        "enabled": enabled, "history": history, "updated_at": now}
+            schedule.setdefault("created_at", now)
+            schedules[profile_id] = schedule
+            write_json(self.path, data)
+        return dict(schedule)
+
+    def effective_weekly_plan(self, day: str | date, profile_id: str, *, _data=None):
+        """Resolve explicit plans and global rest before recurring weekly work.
+
+        Return None when no weekly schedule is enabled, so legacy consumers can
+        continue their existing resolution. A scheduled off-day is explicit and
+        suppresses the old story schedule without deleting it.
+        """
+        local_day = date.fromisoformat(_date(day))
+        data = self._load() if _data is None else _data
+        schedules = data.get("weekly_schedules", {})
+        if not isinstance(schedules, dict):
+            raise ValueError("Invalid weekly schedules")
+        schedule = schedules.get(profile_id)
+        if schedule is None:
+            return None
+        if not isinstance(schedule, dict):
+            raise ValueError("Invalid weekly schedule")
+        created_at = schedule.get("created_at")
+        if created_at is not None:
+            try:
+                if local_day < datetime.fromisoformat(created_at).date():
+                    return None
+                history = schedule.get("history", [])
+                if not isinstance(history, list):
+                    raise ValueError("Invalid weekly schedule history")
+                for event in history:
+                    if datetime.fromisoformat(event['changed_at']).date() > local_day:
+                        schedule = event['previous']
+                        break
+            except (KeyError, TypeError) as exc:
+                raise ValueError("Invalid weekly schedule history") from exc
+        if not isinstance(schedule, dict) or type(schedule.get("enabled")) is not bool:
+            raise ValueError("Invalid weekly schedule")
+        if not schedule["enabled"]:
+            return None
+        weekdays = schedule.get("weekdays")
+        if not isinstance(weekdays, list) or any(type(d) is not int or not 0 <= d <= 6 for d in weekdays):
+            raise ValueError("Invalid weekday")
+        caught_up = schedule.get("caught_up")
+        if type(caught_up) is not bool:
+            raise ValueError("Invalid catch-up state")
+        target = _positive(schedule.get("target_chapters"), optional=caught_up)
+        plans = data.get("days", {}).get(local_day.isoformat(), {}).get("plans", {})
+        explicit = plans.get(profile_id)
+        if isinstance(explicit, dict):
+            return {"source": "explicit", "plan": dict(explicit)}
+        story_schedules = data.get("story_schedules", {})
+        if not isinstance(story_schedules, dict):
+            raise ValueError("Invalid story schedules")
+        story = story_schedules.get(profile_id, {})
+        if not isinstance(story, dict):
+            raise ValueError("Invalid story schedule")
+        overrides = story.get("overrides", {})
+        if not isinstance(overrides, dict):
+            raise ValueError("Invalid day overrides")
+        if local_day.isoformat() in overrides:
+            override = overrides[local_day.isoformat()]
+            if type(override) is not int or override < 0:
+                raise ValueError("Invalid day override")
+            return {"source": "story_override", "target_chapters": override}
+        rest = plans.get("__global__")
+        if isinstance(rest, dict) and rest.get("plan_type") == "rest":
+            return {"source": "global_rest", "plan": dict(rest)}
+        if local_day.weekday() not in weekdays:
+            return {"source": "weekly", "scheduled": False}
+        return {"source": "weekly", "scheduled": True, "caught_up": caught_up,
+                "target_chapters": None if caught_up else target}
+
+    def weekly_day_result(self, day: str | date, profile):
+        """Calculate past and current weekly results from confirmed activity."""
+        local_day = date.fromisoformat(_date(day))
+        plan = self.effective_weekly_plan(local_day, profile.id)
+        if not plan or plan.get("source") != "weekly" or not plan.get("scheduled"):
+            return None
+        if plan["caught_up"]:
+            return {**plan, "status": "caught_up"}
+        actual = len(confirmed_daily_activity(profile).get(local_day.isoformat(), set()))
+        target = plan["target_chapters"]
+        status = ("complete" if actual >= target else
+                  "missed" if local_day < date.today() else "in_progress")
+        return {**plan, "actual": actual, "status": status}
+
     def get(self, day: str | date, profile_id: str | None = None):
         bucket = self._load().get("days", {}).get(_date(day), {})
         plans = bucket.get("plans", {})

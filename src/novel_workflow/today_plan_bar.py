@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 
 from .theme import theme_colors
 from .translation_planner import TranslationPlanner
+from .translation_progress import confirmed_daily_activity
 
 
 def today_plan_snapshot(planner, profile, day=None):
@@ -21,6 +22,27 @@ def today_plan_snapshot(planner, profile, day=None):
     """
     local_day = day or date.today()
     key = local_day.isoformat()
+    effective = planner.effective_weekly_plan(local_day, profile.id)
+    if effective is not None:
+        source = effective['source']
+        if source == 'weekly':
+            if not effective['scheduled']:
+                return {'status': 'empty', 'completed': 0, 'target': None}
+            completed = len(confirmed_daily_activity(profile).get(key, set()))
+            return {'status': 'caught_up' if effective['caught_up'] else 'active',
+                    'completed': completed, 'target': effective['target_chapters']}
+        if source == 'story_override':
+            target = effective['target_chapters']
+            if target == 0:
+                return {'status': 'rest', 'completed': 0, 'target': None}
+            return {'status': 'active', 'completed': len(confirmed_daily_activity(profile).get(key, set())), 'target': target}
+        summary = planner.summary(local_day, [profile], profile_id=profile.id)
+        if summary['status'] == 'rest':
+            return {'status': 'rest', 'completed': 0, 'target': None}
+        if summary['status'] == 'active':
+            target = summary['plan'].get('target_chapters') if summary['plan']['plan_type'] == 'daily' else None
+            return {'status': 'active' if target else 'focus', 'completed': summary['today_count'], 'target': target}
+        raise ValueError('Planner profile or state does not match the workspace')
     scheduled = planner.story_schedule(profile.id)
     if scheduled is not None:
         info = planner.story_day_rows(profile.id, local_day)
@@ -60,6 +82,8 @@ def today_plan_labels(snapshot):
         return "ยังไม่มีแผนวันนี้", "ตั้งแผนเพื่อเริ่มต้น", "", None
     if status == "rest":
         return "วันนี้เป็นวันพัก", "", "", None
+    if status == "caught_up":
+        return "ชนต้นฉบับแล้ว", "", "", None
     completed = snapshot["completed"]
     target = snapshot["target"]
     if target is None:

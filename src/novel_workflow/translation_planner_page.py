@@ -5,8 +5,10 @@ from PySide6.QtCore import Qt, Signal, QDate
 from PySide6.QtGui import QPixmap
 from pathlib import Path
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QSpinBox, QProgressBar, QFormLayout, QGroupBox, QMessageBox, QScrollArea, QFrame)
+    QComboBox, QSpinBox, QProgressBar, QFormLayout, QGroupBox, QMessageBox, QScrollArea, QFrame, QStackedWidget)
 from .translation_planner import TranslationPlanner
+from .translation_progress import confirmed_daily_activity
+from .weekly_scheduler_page import WeeklySchedulerPage
 from .thai_date_picker import ThaiDatePicker
 
 
@@ -16,7 +18,16 @@ class TodayPage(QWidget):
         super().__init__(parent)
         self.planner = TranslationPlanner(repo)
         self.repo = repo
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.pages = QStackedWidget()
+        outer.addWidget(self.pages)
+        self.today_content = QWidget()
+        self.pages.addWidget(self.today_content)
+        self.scheduler = WeeklySchedulerPage(repo)
+        self.pages.addWidget(self.scheduler)
+        self.scheduler.back.connect(self._show_today)
+        layout = QVBoxLayout(self.today_content)
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
         self.heading = QLabel()
@@ -45,6 +56,9 @@ class TodayPage(QWidget):
         self.edit_button = QPushButton("สร้างหรือแก้แผน")
         self.edit_button.clicked.connect(self._toggle_editor)
         actions.addWidget(self.edit_button)
+        self.schedule_button = QPushButton("ตารางแปลนิยาย")
+        self.schedule_button.clicked.connect(self._show_scheduler)
+        actions.addWidget(self.schedule_button)
         self.finish_button = QPushButton("ยืนยันจบเรื่อง")
         self.finish_button.clicked.connect(self._toggle_finish)
         self.finish_button.hide()
@@ -88,6 +102,14 @@ class TodayPage(QWidget):
         self.story_scroll.setWidget(self.story_cards)
         layout.addWidget(self.story_scroll, 1)
         self._selected_profile_id = None
+        self.refresh()
+
+    def _show_scheduler(self):
+        self.scheduler.refresh()
+        self.pages.setCurrentWidget(self.scheduler)
+
+    def _show_today(self):
+        self.pages.setCurrentWidget(self.today_content)
         self.refresh()
 
     def _toggle_editor(self):
@@ -228,6 +250,15 @@ class TodayPage(QWidget):
                 self.progress.setValue(info["percent"])
                 self.progress.show()
         self.open_button.setEnabled(self._selected_profile_id is not None)
+        effective = (self.planner.effective_weekly_plan(today, selected_profile)
+                     if selected_profile else None)
+        recurring = effective is not None and effective['source'] in ('weekly', 'story_override')
+        self.summary.setVisible(not recurring)
+        self.progress.setVisible(not recurring and info.get('percent') is not None)
+        self.cover.setVisible(not recurring and not self.cover.pixmap().isNull())
+        self.open_button.setVisible(not recurring)
+        if recurring:
+            self.finish_button.hide()
         rows = []
         for day, plans in self.planner.week_all(today + timedelta(days=1)):
             for plan in plans:
@@ -245,20 +276,40 @@ class TodayPage(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         total_target = total_done = count = 0
+        planner_data = self.planner._load()
         for profile in profiles:
-            scheduled = self.planner.story_day_rows(profile.id, today)
-            if scheduled:
-                day = next((row for row in scheduled["rows"] if row["date"] == today.isoformat()), None)
-                target = day["target"] if day else 0
-                actual = day["actual"] if day else 0
-                status = day["status"] if day else "ไม่มีแผนวันนี้"
-            else:
-                info = self.planner.summary(today, profiles, profile_id=profile.id)
-                if info["status"] == "empty":
+            effective = self.planner.effective_weekly_plan(today, profile.id, _data=planner_data)
+            caught_up = False
+            if effective and effective["source"] == "weekly":
+                if not effective["scheduled"]:
                     continue
-                target = info["plan"].get("target_chapters") or 0
+                caught_up = effective["caught_up"]
+                target = effective["target_chapters"] or 0
+                actual = len(confirmed_daily_activity(profile).get(today.isoformat(), set()))
+                status = 'ชนต้นฉบับแล้ว' if caught_up else ('ตามแผน' if actual >= target else 'กำลังแปล')
+            elif effective and effective["source"] in ("explicit", "global_rest"):
+                info = self.planner.summary(today, profiles, profile_id=profile.id)
+                target = info.get("plan", {}).get("target_chapters") or 0
                 actual = info.get("today_count", 0)
                 status = "วันพัก" if info["status"] == "rest" else ("ตามแผน" if actual >= target and target else "กำลังแปล")
+            elif effective and effective["source"] == "story_override":
+                target = effective["target_chapters"]
+                actual = len(confirmed_daily_activity(profile).get(today.isoformat(), set()))
+                status = "วันพัก" if target == 0 else ("ตามแผน" if actual >= target else "กำลังแปล")
+            else:
+                scheduled = self.planner.story_day_rows(profile.id, today)
+                if scheduled:
+                    day = next((row for row in scheduled["rows"] if row["date"] == today.isoformat()), None)
+                    target = day["target"] if day else 0
+                    actual = day["actual"] if day else 0
+                    status = day["status"] if day else "ไม่มีแผนวันนี้"
+                else:
+                    info = self.planner.summary(today, profiles, profile_id=profile.id)
+                    if info["status"] == "empty":
+                        continue
+                    target = info["plan"].get("target_chapters") or 0
+                    actual = info.get("today_count", 0)
+                    status = "วันพัก" if info["status"] == "rest" else ("ตามแผน" if actual >= target and target else "กำลังแปล")
             count += 1
             total_target += target
             total_done += actual
@@ -283,7 +334,7 @@ class TodayPage(QWidget):
             name.setWordWrap(True)
             name.setObjectName("sectionHeading")
             details.addWidget(name)
-            info_label = QLabel(f"เป้าหมาย {target} · สำเร็จจริง {actual} · เหลือ {max(0, target - actual)} บท · {status}")
+            info_label = QLabel("ชนต้นฉบับแล้ว" if caught_up else f"เป้าหมาย {target} · สำเร็จจริง {actual} · เหลือ {max(0, target - actual)} บท · {status}")
             info_label.setWordWrap(True)
             details.addWidget(info_label)
             if target:
@@ -299,4 +350,4 @@ class TodayPage(QWidget):
         if not count:
             self.story_cards_layout.addWidget(QLabel("ยังไม่มีแผนของนิยาย"))
         self.story_cards_layout.addStretch()
-        self.heading.setText(f"วันนี้ — {today.strftime('%d/%m/%Y')} · {count} เรื่อง · เป้า {total_target} บท · สำเร็จ {total_done} บท")
+        self.heading.setText(f"งานแปลวันนี้ — {today.strftime('%d/%m/%Y')} · {count} เรื่อง · เป้า {total_target} บท · สำเร็จ {total_done} บท")
