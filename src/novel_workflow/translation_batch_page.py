@@ -5,6 +5,7 @@ import tempfile
 import hashlib
 import os
 import time
+import zipfile
 from threading import Lock
 from copy import deepcopy
 from pathlib import Path
@@ -139,10 +140,14 @@ class TranslationPrewarmWorker(QThread):
 class TranslationBatchPage(QWidget):
     """No stage advancement, progress mutation, export or Polish History writes."""
 
-    def __init__(self, repo, profile_reader, assembler, state, on_change, on_close, parent=None):
+    def __init__(self, repo, profile_reader, assembler, state, on_change, on_close, parent=None,
+                 *, copy_as_zip=None, on_copy_mode_change=None):
         super().__init__(parent)
         self.repo, self.profile_reader, self.assembler = repo, profile_reader, assembler
         self.state = dict(state or {})
+        if copy_as_zip is not None:
+            self.state["zip"] = bool(copy_as_zip)
+        self.on_copy_mode_change = on_copy_mode_change
         profile = profile_reader()
         self.profile_id = getattr(profile, "id", None)
         if self.profile_id:
@@ -454,7 +459,23 @@ class TranslationBatchPage(QWidget):
 
     def _copy_mode_changed(self, *_):
         self.state["zip"] = bool(self.copy_mode.currentData())
-        self._persist()
+        if self.on_copy_mode_change is not None:
+            self.on_copy_mode_change(self.state["zip"])
+        else:
+            self._persist()
+        self._refresh_copy_mode()
+
+    def set_copy_as_zip(self, value):
+        value = bool(value)
+        if bool(self.copy_mode.currentData()) == value:
+            return
+        self.copy_mode.blockSignals(True)
+        self.copy_mode.setCurrentIndex(1 if value else 0)
+        self.copy_mode.blockSignals(False)
+        self.state["zip"] = value
+        self._refresh_copy_mode()
+
+    def _refresh_copy_mode(self):
         if self._source:
             self._invalidate_prepared()
             self._update_row_states()
@@ -942,6 +963,19 @@ class TranslationBatchPage(QWidget):
                 button.setText("ต้องตรวจใหม่…")
             self._schedule_prewarm(group)
             return
+        zipped = bool(self.copy_mode.currentData())
+        try:
+            if zipped:
+                if len(bundle.files) != 1 or bundle.files[0].suffix.lower() != '.zip':
+                    raise ValueError("ชุดไฟล์ที่เตรียมไว้ไม่ตรงกับโหมด ZIP")
+                with zipfile.ZipFile(bundle.files[0]) as archive:
+                    member_count = len(archive.infolist())
+            else:
+                member_count = len(bundle.files)
+        except (OSError, ValueError, zipfile.BadZipFile) as exc:
+            self._copy_failed(str(exc))
+            self._finish_copy()
+            return
         t = time.perf_counter()
         try:
             copied = copy_file_paths(bundle.files)
@@ -998,8 +1032,10 @@ class TranslationBatchPage(QWidget):
                 + (" · บันทึกประวัติไม่สำเร็จ: " + history_error if history_error else "")
                 + (" · ป้องกัน Cache ไม่สำเร็จ: " + pin_error if pin_error else ""))
         else:
+            detail = (f"ZIP 1 ไฟล์ · ภายใน {member_count} ไฟล์" if zipped
+                      else f"{len(copied)} ไฟล์")
             self.summary.setText(
-                f"✓ คัดลอกบท {group.start}–{group.end} สำเร็จ · {len(copied)} ไฟล์ · วางด้วย Ctrl+V")
+                f"✓ คัดลอก{' ZIP' if zipped else ''} บท {group.start:04d}–{group.end:04d} สำเร็จ · {detail} · วางด้วย Ctrl+V")
         if os.getenv("NOVELWORKFLOW_COPY_PERF"):
             print("translation_copy_perf", {
                 "cache_hit": bundle.timings.get("cache_hit"),
@@ -1008,8 +1044,6 @@ class TranslationBatchPage(QWidget):
                 "history_ms": round(history_ms, 2),
             })
         self._finish_copy()
-        if not history_error:
-            self._update_history_summary()
         # No scroll position is changed; only rendered row widgets are repainted.
         QTimer.singleShot(0, self._schedule_prewarm)
 

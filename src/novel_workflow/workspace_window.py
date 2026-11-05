@@ -1153,6 +1153,8 @@ class WorkspacePage(QWidget):
                 lambda state: self.owner.save_translation_batch_state(pid, state),
                 lambda: self.sync_vocabulary_source(),
                 self,
+                copy_as_zip=self.owner.settings.copy_files_as_zip,
+                on_copy_mode_change=self.owner.set_workflow_copy_as_zip,
             )
             self.editor_content_stack.addWidget(self.translation_batch_page)
         self.editor_content_stack.setCurrentWidget(self.translation_batch_page)
@@ -1599,6 +1601,13 @@ class MainShell(ManagementActionsMixin, QMainWindow):
                 page.status.setText(f'กำลังอัปเดต Glossary {done}/{total} ชุด…')
         self.run_history_job(update, finished, failed, progress)
 
+    def set_workflow_copy_as_zip(self, value):
+        value = bool(value)
+        if self.settings.copy_files_as_zip != value:
+            self.settings.copy_files_as_zip = value
+            self.repo.save_settings(self.settings)
+        self.update_copy_mode_labels()
+
     def update_copy_mode_labels(self):
         """Reflect the persisted clipboard mode without changing Export controls."""
         zipped = self.settings.copy_files_as_zip
@@ -1607,6 +1616,14 @@ class MainShell(ManagementActionsMixin, QMainWindow):
             workspace.copy_step_button.setToolTip(
                 'รวมไฟล์ทั้งหมดของขั้นตอนที่เลือกเป็น ZIP เดียว · Ctrl+Shift+C' if zipped
                 else 'คัดลอกไฟล์ของขั้นตอนที่เลือก · Ctrl+Shift+C')
+            if workspace.translation_batch_page is not None:
+                workspace.translation_batch_page.set_copy_as_zip(zipped)
+        if self._settings_page_state:
+            check = self._settings_page_state['page'].findChild(QCheckBox, 'copyFilesAsZip')
+            if check is not None and check.isChecked() != zipped:
+                check.blockSignals(True)
+                check.setChecked(zipped)
+                check.blockSignals(False)
         for page in self._utility_pages.values():
             if isinstance(page, PolishHistoryPage):
                 # Update the existing buttons in place. Qt deleteLater() keeps old

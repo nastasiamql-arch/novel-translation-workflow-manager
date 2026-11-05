@@ -391,14 +391,14 @@ class SettingsPage(QWidget):
         zip_mode.setObjectName("copyFilesAsZip")
         zip_mode.setChecked(owner.settings.copy_files_as_zip)
         general_layout.addWidget(zip_mode)
-        zip_hint = QLabel("ใช้กับปุ่มขั้นตอนแปลเท่านั้น · ZIP ของหน้า Novel Polish ตั้งค่าแยกในหน้านั้น")
+        zip_hint = QLabel("ใช้กับการคัดลอกไฟล์ในขั้นตอน Workflow และชุดบทแปล · Novel Polish ตั้งค่า ZIP แยกต่างหาก")
         zip_hint.setWordWrap(True)
         general_layout.addWidget(zip_hint)
         general_layout.addWidget(QLabel("ตัวคั่นเนื้อหา · ใช้ {FILE_NAME} แทนชื่อไฟล์"))
         separator = QLineEdit(owner.settings.separator)
         separator.setObjectName("assemblySeparator")
         general_layout.addWidget(separator)
-        checks = [(zip_mode, "copy_files_as_zip")]
+        checks = []
         for label, attr in (("แสดงชื่อไฟล์ในเนื้อหาที่ประกอบ", "show_filename_heading"),
                             ("ยืนยันก่อนลบไฟล์", "confirm_before_deleting"),
                             ("เปิดนิยายล่าสุดเมื่อเริ่มโปรแกรม", "open_last_profile")):
@@ -414,9 +414,10 @@ class SettingsPage(QWidget):
             owner.settings.separator = separator.text()
             for check, attr in checks:
                 setattr(owner.settings, attr, check.isChecked())
-            owner.repo.save_settings(owner.settings)
             if zip_changed:
-                owner.update_copy_mode_labels()
+                owner.set_workflow_copy_as_zip(zip_mode.isChecked())
+            else:
+                owner.repo.save_settings(owner.settings)
             if theme_changed:
                 owner.apply_theme()
             owner.statusBar().showMessage("บันทึกการตั้งค่าแล้ว", 2000)
@@ -424,6 +425,7 @@ class SettingsPage(QWidget):
         separator.editingFinished.connect(save_general)
         for check, _attr in checks:
             check.toggled.connect(save_general)
+        zip_mode.toggled.connect(save_general)
         detail.addWidget(general)
 
         export_preferences = QFrame()

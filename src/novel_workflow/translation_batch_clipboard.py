@@ -24,6 +24,7 @@ def prepare_translation_batch(source, group, references, cache_directory, *,
     root.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix="Translation-", dir=root))
     entries = []
+    occupied = set()
     input_hashes = {p: file_digest(p) for p in references}
     try:
         for chapter in selected:
@@ -36,14 +37,15 @@ def prepare_translation_batch(source, group, references, cache_directory, *,
             if payload is None:
                 raise ValueError(f"บท {chapter.number} ไม่มีเนื้อหา")
             destination = stage / "source" / chapter.filename
-            if destination.exists():
+            member = f"source/{chapter.filename}"
+            if member.casefold() in occupied or destination.exists():
                 raise ValueError(f"ชื่อไฟล์บทซ้ำ: {chapter.filename}")
+            occupied.add(member.casefold())
             destination.parent.mkdir(exist_ok=True)
             destination.write_bytes(payload)
             if destination.read_bytes() != payload:
                 raise OSError(f"ไฟล์บทไม่ตรงต้นฉบับ: {chapter.filename}")
-            entries.append((destination, f"source/{chapter.filename}"))
-        occupied = {name.casefold() for _, name in entries}
+            entries.append((destination, member))
         for i, path in enumerate(references, 1):
             name = f"references/{path.name}"
             if name.casefold() in occupied:
@@ -71,7 +73,8 @@ def prepare_translation_batch(source, group, references, cache_directory, *,
                 for file, member in entries:
                     out.write(file, member)
             with zipfile.ZipFile(archive) as check:
-                if check.testzip() is not None or set(check.namelist()) != {n for _, n in entries}:
+                if (check.testzip() is not None or len(check.namelist()) != len(entries)
+                        or set(check.namelist()) != {n for _, n in entries}):
                     raise OSError("ZIP ไม่ผ่านการตรวจสอบ")
                 for file, member in entries:
                     with check.open(member) as stream:
